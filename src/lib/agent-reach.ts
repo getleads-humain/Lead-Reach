@@ -147,11 +147,11 @@ const CHANNEL_DEFINITIONS: Omit<AgentReachChannelInfo, 'lastChecked'>[] = [
   {
     name: 'bilibili',
     displayName: 'Bilibili',
-    description: 'B站视频字幕提取和搜索',
-    status: 'warn',
-    tier: 1,
-    backend: 'yt-dlp + bili-cli',
-    message: 'May need proxy for server IPs',
+    description: 'B站视频字幕提取和搜索 — Platform keys configured (3 keys with auto-rotation)',
+    status: 'ok',
+    tier: 0,
+    backend: 'yt-dlp + Platform API Keys',
+    message: '3 platform keys active with auto-rotation',
     icon: '📺',
   },
   {

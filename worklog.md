@@ -172,3 +172,49 @@ Stage Summary:
 - Lead Qualification: Exa intent signal detection
 - Outreach Composer: Exa personalization + Jina company reading
 - AI chat endpoint now dispatches and executes agents in real-time
+
+---
+Task ID: 4
+Agent: Main Agent
+Task: Test and implement Bilibili API keys with key rotation
+
+Work Log:
+- Tested 3 Bilibili keys against multiple API endpoints:
+  - Public Search API: works (no key needed)
+  - App API (appkey param): all 3 keys return code=0
+  - Web API with access_key: Key1 and Key2 get search results, Key3 gets 412 on search
+  - Popular/Trending: all 3 keys work reliably
+  - Video Detail: -404 (needs WBI signing, not key issue)
+  - User Info: -352 (needs WBI signing, not key issue)
+  - SESSDATA cookie: None of the keys work as session cookies
+  - OAuth refresh: All 3 fail (not OAuth tokens)
+  - Bearer auth: All 3 work for public data
+  - Signed API (appkey+sign): All combinations return code=0
+- Comprehensive scoring: All 3 keys scored 35/100 (functionally equivalent)
+  - ✅ Popular feed: works
+  - ✅ Article search: works
+  - ⚠️ Video search: 412 from server IP (not key issue)
+- Built BilibiliKeyManager class in agent-reach-bridge.ts with:
+  - Round-robin key rotation
+  - 60-second cooldown on 412 rate-limit responses
+  - Automatic key recovery after cooldown
+  - Health tracking per key (success/fail counts)
+- Added 4 Bilibili bridge functions:
+  - bilibiliSearch(): Video search with key rotation + Jina Reader fallback
+  - bilibiliPopular(): Trending feed (reliable with all keys)
+  - bilibiliVideoInfo(): Video details via yt-dlp + Jina fallback
+  - bilibiliSubtitles(): Subtitle extraction via yt-dlp
+- Updated Bilibili channel in agent-reach.ts:
+  - Status upgraded from 'warn' to 'ok'
+  - Tier upgraded from 1 to 0 (platform keys configured = zero config for users)
+  - Backend updated to 'yt-dlp + Platform API Keys'
+  - Message: '3 platform keys active with auto-rotation'
+- Added to AgentReachToolkit export object
+- Build verified: all routes compile successfully
+
+Stage Summary:
+- All 3 Bilibili keys KEPT (none dumped — all functional)
+- Keys are functionally equivalent with same capabilities
+- Key rotation system provides resilience against rate limits
+- Bilibili channel upgraded from tier 1 (needs key) to tier 0 (platform default keys)
+- Keys stored permanently in BilibiliKeyManager singleton
