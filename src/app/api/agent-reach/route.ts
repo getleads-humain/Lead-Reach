@@ -42,7 +42,10 @@ export async function POST() {
       await db.agentReachChannel.upsert({
         where: { name: ch.name },
         update: {
+          displayName: ch.displayName,
+          description: ch.description,
           status: ch.status,
+          tier: ch.tier,
           backend: ch.backend,
           message: ch.message,
           lastChecked: new Date(),

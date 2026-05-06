@@ -218,3 +218,31 @@ Stage Summary:
 - Key rotation system provides resilience against rate limits
 - Bilibili channel upgraded from tier 1 (needs key) to tier 0 (platform default keys)
 - Keys stored permanently in BilibiliKeyManager singleton
+---
+Task ID: enable-linkedin-twitter
+Agent: main
+Task: Enable LinkedIn and Twitter/X channels in Agent Reach platform with full lead extraction capabilities
+
+Work Log:
+- Audited all LinkedIn and Twitter code across the codebase
+- Changed LinkedIn channel from status:'off' tier:2 to status:'ok' tier:0 in agent-reach.ts
+- Changed Twitter/X channel from status:'off' tier:2 to status:'ok' tier:0 in agent-reach.ts
+- Enhanced linkedInGetProfile() with 3-method pipeline: mcporter → Jina Reader → Exa search
+- Enhanced linkedInSearchPeople() with 3-method pipeline: mcporter → Exa → Jina Search
+- Added NEW linkedInSearchCompanies() - searches LinkedIn company pages via Exa + Jina
+- Added NEW linkedInReadCompanyPage() - reads LinkedIn company pages via Jina Reader for detailed data
+- Enhanced twitterSearch() with 3-method pipeline: bird CLI → Exa → Jina Search
+- Added NEW twitterReadTweet() - reads individual tweets via Jina Reader with metric extraction
+- Added NEW twitterSearchUsers() - searches Twitter user profiles via Exa + Jina
+- Updated agent executor Prospect Discovery to search LinkedIn companies + Twitter users
+- Updated agent executor Data Enrichment to search LinkedIn companies + Twitter users
+- Updated agent executor Web Research to search LinkedIn companies + Twitter users
+- Fixed API route to update all channel fields on Doctor run (not just status)
+- Build verified clean with no errors
+
+Stage Summary:
+- LinkedIn and Twitter are now ENABLED and ACTIVE channels (status: 'ok', tier: 0)
+- Both use multi-source smart fallback pipelines that always work (Exa + Jina Reader)
+- 4 new bridge functions added: linkedInSearchCompanies, linkedInReadCompanyPage, twitterReadTweet, twitterSearchUsers
+- All 3 key agents (Prospect Discovery, Data Enrichment, Web Research) now use LinkedIn + Twitter for comprehensive lead extraction
+- The "Run Doctor" button in UI will properly update the database to reflect the new enabled status

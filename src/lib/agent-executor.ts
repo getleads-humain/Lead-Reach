@@ -24,7 +24,10 @@ import {
   exaSearch,
   linkedInGetProfile,
   linkedInSearchPeople,
+  linkedInSearchCompanies,
+  linkedInReadCompanyPage,
   twitterSearch,
+  twitterSearchUsers,
   redditSearch,
   githubSearchRepos,
   discoverBusinesses,
@@ -424,11 +427,13 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
     // Step 1: Multi-channel search using Agent-Reach
     const searchQuery = [query, industry, location].filter(Boolean).join(' ');
     
-    const [exaRes, redditRes, linkedInRes, twitterRes] = await Promise.allSettled([
+    const [exaRes, redditRes, linkedInPeopleRes, linkedInCompanyRes, twitterRes, twitterUsersRes] = await Promise.allSettled([
       AgentReachToolkit.exaSearch(searchQuery, 15),
       AgentReachToolkit.redditSearch(searchQuery, 5),
       industry ? AgentReachToolkit.linkedInSearchPeople(`${industry} ${location}`, 10) : Promise.resolve({ success: false, data: [], channel: 'linkedin', source: 'skipped', timestamp: '' }),
+      AgentReachToolkit.linkedInSearchCompanies(`${industry} ${location} company`, 10),
       AgentReachToolkit.twitterSearch(searchQuery, 5),
+      AgentReachToolkit.twitterSearchUsers(`${industry} ${query}`, 5),
     ]);
 
     // Record channel activity
@@ -449,8 +454,10 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
 
     recordActivity(exaRes, 'exa_search', 'web_search');
     recordActivity(redditRes, 'reddit', 'search');
-    recordActivity(linkedInRes, 'linkedin', 'search_people');
-    recordActivity(twitterRes, 'twitter', 'search');
+    recordActivity(linkedInPeopleRes, 'linkedin', 'search_people');
+    recordActivity(linkedInCompanyRes, 'linkedin', 'search_companies');
+    recordActivity(twitterRes, 'twitter', 'search_tweets');
+    recordActivity(twitterUsersRes, 'twitter', 'search_users');
 
     await updateTaskProgress(ctx.taskId, 40, 'running');
 
@@ -467,8 +474,15 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
         snippet: r.selftext || `r/${r.subreddit}`,
       })));
     }
-    if (linkedInRes.status === 'fulfilled' && linkedInRes.value.success) {
-      rawResults.push(...linkedInRes.value.data.map(r => ({
+    if (linkedInPeopleRes.status === 'fulfilled' && linkedInPeopleRes.value.success) {
+      rawResults.push(...linkedInPeopleRes.value.data.map(r => ({
+        title: r.name,
+        url: r.url,
+        snippet: r.headline,
+      })));
+    }
+    if (linkedInCompanyRes.status === 'fulfilled' && linkedInCompanyRes.value.success) {
+      rawResults.push(...linkedInCompanyRes.value.data.map(r => ({
         title: r.name,
         url: r.url,
         snippet: r.headline,
@@ -477,6 +491,13 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
     if (twitterRes.status === 'fulfilled' && twitterRes.value.success) {
       rawResults.push(...twitterRes.value.data.map(r => ({
         title: r.text?.slice(0, 100) || '',
+        url: r.url,
+        snippet: r.text?.slice(0, 300) || '',
+      })));
+    }
+    if (twitterUsersRes.status === 'fulfilled' && twitterUsersRes.value.success) {
+      rawResults.push(...twitterUsersRes.value.data.map(r => ({
+        title: r.author || r.text?.slice(0, 100) || '',
         url: r.url,
         snippet: r.text?.slice(0, 300) || '',
       })));
@@ -684,18 +705,53 @@ async function executeDataEnrichment(ctx: AgentExecutionContext): Promise<AgentE
           resultCount: exaResult.success ? exaResult.data.length : 0,
         });
 
-        // Step 3: Search LinkedIn for company profile (Agent-Reach)
-        const linkedInResult = await linkedInSearchPeople(lead.companyName, 3);
-        channelActivity.push({
-          channel: 'linkedin',
-          operation: 'company_search',
-          success: linkedInResult.success,
-          timestamp: new Date().toISOString(),
-          resultCount: linkedInResult.success ? linkedInResult.data.length : 0,
-        });
+        // Step 3: Search LinkedIn for company profile and people (Agent-Reach)
+        const [linkedInPeopleResult, linkedInCompanyResult, twitterUsersResult] = await Promise.allSettled([
+          linkedInSearchPeople(lead.companyName, 3),
+          linkedInSearchCompanies(lead.companyName, 3),
+          twitterSearchUsers(lead.companyName, 3),
+        ]);
+
+        // Record LinkedIn people search
+        if (linkedInPeopleResult.status === 'fulfilled') {
+          channelActivity.push({
+            channel: 'linkedin',
+            operation: 'people_search',
+            success: linkedInPeopleResult.value.success,
+            timestamp: new Date().toISOString(),
+            resultCount: linkedInPeopleResult.value.success ? linkedInPeopleResult.value.data.length : 0,
+          });
+        }
+
+        // Record LinkedIn company search
+        if (linkedInCompanyResult.status === 'fulfilled') {
+          channelActivity.push({
+            channel: 'linkedin',
+            operation: 'company_search',
+            success: linkedInCompanyResult.value.success,
+            timestamp: new Date().toISOString(),
+            resultCount: linkedInCompanyResult.value.success ? linkedInCompanyResult.value.data.length : 0,
+          });
+        }
+
+        // Record Twitter users search
+        if (twitterUsersResult.status === 'fulfilled') {
+          channelActivity.push({
+            channel: 'twitter',
+            operation: 'user_search',
+            success: twitterUsersResult.value.success,
+            timestamp: new Date().toISOString(),
+            resultCount: twitterUsersResult.value.success ? twitterUsersResult.value.data.length : 0,
+          });
+        }
+
+        // Aggregate LinkedIn + Twitter results
+        const linkedInPeopleData = linkedInPeopleResult.status === 'fulfilled' && linkedInPeopleResult.value.success ? linkedInPeopleResult.value.data : [];
+        const linkedInCompanyData = linkedInCompanyResult.status === 'fulfilled' && linkedInCompanyResult.value.success ? linkedInCompanyResult.value.data : [];
+        const twitterUsersData = twitterUsersResult.status === 'fulfilled' && twitterUsersResult.value.success ? twitterUsersResult.value.data : [];
 
         // RESILIENCE: If no data was found from any source, still try LLM with just the company name
-        const hasData = websiteContent || (exaResult.success && exaResult.data.length > 0) || (linkedInResult.success && linkedInResult.data.length > 0);
+        const hasData = websiteContent || (exaResult.success && exaResult.data.length > 0) || linkedInPeopleData.length > 0 || linkedInCompanyData.length > 0 || twitterUsersData.length > 0;
         
         // Step 4: Use LLM to extract enrichment data
         const enrichmentPrompt = hasData
@@ -712,7 +768,9 @@ ${JSON.stringify({
 
 Website content: ${websiteContent?.slice(0, 8000) || 'No website content available'}
 Search results: ${JSON.stringify(exaResult.success ? exaResult.data.slice(0, 5) : [])}
-LinkedIn results: ${JSON.stringify(linkedInResult.success ? linkedInResult.data.slice(0, 3) : [])}
+LinkedIn people: ${JSON.stringify(linkedInPeopleData.slice(0, 3))}
+LinkedIn companies: ${JSON.stringify(linkedInCompanyData.slice(0, 3))}
+Twitter profiles: ${JSON.stringify(twitterUsersData.slice(0, 3))}
 
 Return a JSON object with ONLY the fields you can confidently fill in:
 {
@@ -839,11 +897,13 @@ async function executeWebResearch(ctx: AgentExecutionContext): Promise<AgentExec
     await updateTaskProgress(ctx.taskId, 10, 'running');
 
     // Multi-channel research using Agent-Reach
-    const [exaRes, redditRes, youtubeRes, twitterRes] = await Promise.allSettled([
+    const [exaRes, redditRes, youtubeRes, twitterRes, linkedInCompanyRes, twitterUsersRes] = await Promise.allSettled([
       exaSearch(topic, 10),
       redditSearch(topic, 5),
       youtubeSearch(topic, 3),
       twitterSearch(topic, 5),
+      linkedInSearchCompanies(topic, 5),
+      twitterSearchUsers(topic, 5),
     ]);
 
     const recordActivity = (result: PromiseSettledResult<ToolResult<unknown>>, channel: string, op: string) => {
@@ -858,6 +918,8 @@ async function executeWebResearch(ctx: AgentExecutionContext): Promise<AgentExec
     recordActivity(redditRes, 'reddit', 'research_search');
     recordActivity(youtubeRes, 'youtube', 'video_search');
     recordActivity(twitterRes, 'twitter', 'social_search');
+    recordActivity(linkedInCompanyRes, 'linkedin', 'company_search');
+    recordActivity(twitterUsersRes, 'twitter', 'user_search');
 
     await updateTaskProgress(ctx.taskId, 50, 'running');
 
@@ -884,6 +946,8 @@ async function executeWebResearch(ctx: AgentExecutionContext): Promise<AgentExec
         reddit: redditRes.status === 'fulfilled' && redditRes.value.success ? redditRes.value.data : [],
         youtube: youtubeRes.status === 'fulfilled' && youtubeRes.value.success ? youtubeRes.value.data : [],
         twitter: twitterRes.status === 'fulfilled' && twitterRes.value.success ? twitterRes.value.data : [],
+        linkedInCompanies: linkedInCompanyRes.status === 'fulfilled' && linkedInCompanyRes.value.success ? linkedInCompanyRes.value.data : [],
+        twitterUsers: twitterUsersRes.status === 'fulfilled' && twitterUsersRes.value.success ? twitterUsersRes.value.data : [],
       },
       deepReads: webReads
         .filter((r): r is PromiseFulfilledResult<ToolResult<WebReadResult>> => r.status === 'fulfilled' && r.value.success)

@@ -629,20 +629,23 @@ export async function youtubeSearch(query: string, limit = 5): Promise<ToolResul
 }
 
 // ============================================================
-// Channel 6: LinkedIn (mcporter + Jina Reader fallback)
+// Channel 6: LinkedIn (Multi-Source Pipeline — Always Active)
 // ============================================================
 
 /**
  * Get LinkedIn profile data.
  * 
+ * Multi-source pipeline (tries each in order):
+ * 1. mcporter linkedin-scraper-mcp (if available)
+ * 2. Jina Reader direct page read
+ * 3. Exa semantic search for the profile
+ * 
  * Agent-Reach Reference: SKILL_en.md → "LinkedIn (mcporter)"
- * Primary: mcporter call 'linkedin.get_person_profile(...)'
- * Fallback: curl -s "https://r.jina.ai/https://linkedin.com/in/username"
  */
 export async function linkedInGetProfile(url: string): Promise<ToolResult<LinkedInProfileResult>> {
   const channel = 'linkedin';
   try {
-    // Try mcporter first
+    // Method 1: Try mcporter first (highest quality if available)
     try {
       const { stdout } = await runCommand(
         `mcporter call 'linkedin.get_person_profile(linkedin_url: "${url}")'`,
@@ -667,26 +670,72 @@ export async function linkedInGetProfile(url: string): Promise<ToolResult<Linked
         );
       }
     } catch {
-      // mcporter not available
+      // mcporter not available — fall through
     }
 
-    // Fallback: Jina Reader
-    const jinaResult = await webRead(url);
-    if (jinaResult.success) {
-      return makeResult<LinkedInProfileResult>(
-        {
-          name: jinaResult.data.title,
-          headline: '',
-          location: '',
-          url,
-          summary: jinaResult.data.content?.slice(0, 3000) || '',
-        },
-        channel,
-        'Jina Reader (LinkedIn fallback)',
-      );
+    // Method 2: Jina Reader direct page read
+    try {
+      const jinaResult = await webRead(url);
+      if (jinaResult.success && jinaResult.data.content && jinaResult.data.content.length > 100) {
+        // Extract structured data from the Jina Reader content
+        const content = jinaResult.data.content;
+        const nameMatch = content.match(/(?:Name|About)\s*[:\-–]\s*(.+?)(?:\n|$)/i) || 
+                          content.match(/^#{1,3}\s+(.+?)$/m);
+        const headlineMatch = content.match(/(?:Headline|Title|Role)\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+        const locationMatch = content.match(/(?:Location|Based in|Lives in)\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+        const summaryMatch = content.match(/(?:Summary|About)\s*[:\-–]\s*([\s\S]{20,500}?)(?:\n\n|Experience|$)/i);
+        const experienceSection = content.match(/Experience\s*[:\-–]?\s*([\s\S]{20,2000}?)(?:Education|Skills|Certifications|$)/i);
+        
+        const experience: string[] = [];
+        if (experienceSection) {
+          const expLines = experienceSection[1].split('\n').filter(l => l.trim());
+          for (const line of expLines) {
+            const expMatch = line.match(/(?:at|@)\s+(.+)/i);
+            if (expMatch) {
+              experience.push(line.trim());
+            }
+          }
+        }
+
+        return makeResult<LinkedInProfileResult>(
+          {
+            name: nameMatch ? nameMatch[1].trim() : jinaResult.data.title,
+            headline: headlineMatch ? headlineMatch[1].trim() : '',
+            location: locationMatch ? locationMatch[1].trim() : '',
+            url,
+            summary: summaryMatch ? summaryMatch[1].trim() : content.slice(0, 3000),
+            experience: experience.length > 0 ? experience : undefined,
+          },
+          channel,
+          'Jina Reader (LinkedIn profile)',
+          content.slice(0, 2000),
+        );
+      }
+    } catch {
+      // Jina Reader failed — fall through
     }
 
-    return makeError<LinkedInProfileResult>('LinkedIn profile unavailable (mcporter not configured, Jina Reader blocked)', channel);
+    // Method 3: Exa search for the profile
+    const username = url.split('/in/').pop()?.replace(/[/?].*/, '') || '';
+    if (username) {
+      const exaResult = await exaSearch(`site:linkedin.com/in/${username}`, 3);
+      if (exaResult.success && exaResult.data.length > 0) {
+        const topResult = exaResult.data[0];
+        return makeResult<LinkedInProfileResult>(
+          {
+            name: topResult.title,
+            headline: topResult.snippet,
+            location: '',
+            url: topResult.url,
+            summary: topResult.snippet,
+          },
+          channel,
+          'Exa (LinkedIn profile fallback)',
+        );
+      }
+    }
+
+    return makeError<LinkedInProfileResult>('LinkedIn profile unavailable (all methods failed)', channel);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     return makeError<LinkedInProfileResult>(`LinkedIn profile failed: ${msg}`, channel);
@@ -695,19 +744,19 @@ export async function linkedInGetProfile(url: string): Promise<ToolResult<Linked
 
 /**
  * Search LinkedIn people.
- * Command: mcporter call 'linkedin.search_people(keyword: "query", limit: 10)'
+ * Multi-source pipeline: mcporter → Exa semantic search → Jina Reader deep read
  */
 export async function linkedInSearchPeople(query: string, limit = 10): Promise<ToolResult<LinkedInProfileResult[]>> {
   const channel = 'linkedin';
   try {
-    // Try mcporter
+    // Method 1: Try mcporter
     try {
       const { stdout } = await runCommand(
         `mcporter call 'linkedin.search_people(keyword: "${query.replace(/'/g, "\\'")}", limit: ${limit})'`,
         20000,
       );
       const parsed = safeJsonParse<Record<string, unknown>[]>(stdout);
-      if (parsed && Array.isArray(parsed)) {
+      if (parsed && Array.isArray(parsed) && parsed.length > 0) {
         const results: LinkedInProfileResult[] = parsed.map((item: Record<string, unknown>) => ({
           name: `${item.firstName || ''} ${item.lastName || ''}`.trim(),
           headline: (item.headline as string) || '',
@@ -720,7 +769,7 @@ export async function linkedInSearchPeople(query: string, limit = 10): Promise<T
       // mcporter not available
     }
 
-    // Fallback: Search via Exa + Jina Reader
+    // Method 2: Exa semantic search for LinkedIn profiles
     const exaResult = await exaSearch(`site:linkedin.com/in ${query}`, limit);
     if (exaResult.success && exaResult.data.length > 0) {
       const results: LinkedInProfileResult[] = exaResult.data.map(r => ({
@@ -729,35 +778,172 @@ export async function linkedInSearchPeople(query: string, limit = 10): Promise<T
         location: '',
         url: r.url,
       }));
-      return makeResult(results, channel, 'Exa + Jina (LinkedIn fallback)');
+      return makeResult(results, channel, 'Exa Semantic Search (LinkedIn)');
     }
 
-    return makeError<LinkedInProfileResult[]>('LinkedIn search unavailable', channel);
+    // Method 3: Jina Search as final fallback
+    try {
+      const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:linkedin.com/in ${query}`)}`;
+      const response = await fetch(searchUrl, {
+        headers: { 'Accept': 'text/plain' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const text = await response.text();
+        const results: LinkedInProfileResult[] = [];
+        const urlPattern = /https?:\/\/(?:www\.)?linkedin\.com\/in\/[a-zA-Z0-9_-]+/g;
+        const linkedInUrls = [...new Set(text.match(urlPattern) || [])];
+        
+        for (const url of linkedInUrls.slice(0, limit)) {
+          const nearbyText = text.split(url)[0]?.slice(-200) || '';
+          const nameMatch = nearbyText.match(/([A-Z][a-z]+ [A-Z][a-z]+)/);
+          results.push({
+            name: nameMatch ? nameMatch[1] : url.split('/in/').pop()?.replace(/[/?].*/, '') || '',
+            headline: nearbyText.slice(-100).trim(),
+            location: '',
+            url,
+          });
+        }
+        
+        if (results.length > 0) {
+          return makeResult(results, channel, 'Jina Search (LinkedIn fallback)');
+        }
+      }
+    } catch {
+      // Jina Search fallback failed
+    }
+
+    return makeError<LinkedInProfileResult[]>('LinkedIn people search unavailable', channel);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     return makeError<LinkedInProfileResult[]>(`LinkedIn search failed: ${msg}`, channel);
   }
 }
 
+/**
+ * Search LinkedIn company pages.
+ * Finds company pages, extracting industry, size, and key contact info.
+ */
+export async function linkedInSearchCompanies(query: string, limit = 10): Promise<ToolResult<LinkedInProfileResult[]>> {
+  const channel = 'linkedin';
+  try {
+    // Method 1: Exa semantic search for LinkedIn company pages
+    const exaResult = await exaSearch(`site:linkedin.com/company ${query}`, limit);
+    if (exaResult.success && exaResult.data.length > 0) {
+      const results: LinkedInProfileResult[] = exaResult.data.map(r => ({
+        name: r.title,
+        headline: r.snippet,
+        location: '',
+        url: r.url,
+      }));
+      return makeResult(results, channel, 'Exa Semantic Search (LinkedIn Companies)');
+    }
+
+    // Method 2: Jina Search as fallback
+    try {
+      const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:linkedin.com/company ${query}`)}`;
+      const response = await fetch(searchUrl, {
+        headers: { 'Accept': 'text/plain' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const text = await response.text();
+        const results: LinkedInProfileResult[] = [];
+        const urlPattern = /https?:\/\/(?:www\.)?linkedin\.com\/company\/[a-zA-Z0-9_-]+/g;
+        const companyUrls = [...new Set(text.match(urlPattern) || [])];
+        
+        for (const url of companyUrls.slice(0, limit)) {
+          const nearbyText = text.split(url)[0]?.slice(-200) || '';
+          const nameMatch = nearbyText.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)/);
+          results.push({
+            name: nameMatch ? nameMatch[1] : url.split('/company/').pop()?.replace(/[/?].*/, '') || '',
+            headline: nearbyText.slice(-100).trim(),
+            location: '',
+            url,
+          });
+        }
+        
+        if (results.length > 0) {
+          return makeResult(results, channel, 'Jina Search (LinkedIn Companies fallback)');
+        }
+      }
+    } catch {
+      // Jina Search fallback failed
+    }
+
+    return makeError<LinkedInProfileResult[]>('LinkedIn company search unavailable', channel);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return makeError<LinkedInProfileResult[]>(`LinkedIn company search failed: ${msg}`, channel);
+  }
+}
+
+/**
+ * Read a LinkedIn company page to extract detailed company info.
+ * Uses Jina Reader to read the public company page.
+ */
+export async function linkedInReadCompanyPage(companyUrl: string): Promise<ToolResult<LinkedInProfileResult>> {
+  const channel = 'linkedin';
+  try {
+    const jinaResult = await webRead(companyUrl);
+    if (jinaResult.success && jinaResult.data.content) {
+      const content = jinaResult.data.content;
+      
+      // Extract structured company data from the page
+      const industryMatch = content.match(/Industry\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+      const sizeMatch = content.match(/(?:Company size|Employees)\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+      const locationMatch = content.match(/(?:Headquarters|Location|HQ)\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+      const typeMatch = content.match(/(?:Type|Organization type)\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+      const specialitiesMatch = content.match(/Specialties\s*[:\-–]\s*(.+?)(?:\n|$)/i);
+      
+      return makeResult<LinkedInProfileResult>(
+        {
+          name: jinaResult.data.title,
+          headline: [
+            industryMatch?.[1]?.trim(),
+            sizeMatch?.[1]?.trim(),
+            typeMatch?.[1]?.trim(),
+          ].filter(Boolean).join(' | '),
+          location: locationMatch?.[1]?.trim() || '',
+          url: companyUrl,
+          summary: content.slice(0, 5000),
+          experience: specialitiesMatch?.[1]?.split(',').map(s => s.trim()).slice(0, 10),
+        },
+        channel,
+        'Jina Reader (LinkedIn Company Page)',
+        content.slice(0, 2000),
+      );
+    }
+
+    return makeError<LinkedInProfileResult>('LinkedIn company page read failed', channel);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return makeError<LinkedInProfileResult>(`LinkedIn company read failed: ${msg}`, channel);
+  }
+}
+
 // ============================================================
-// Channel 7: Twitter/X (bird CLI + Jina Reader fallback)
+// Channel 7: Twitter/X (Multi-Source Pipeline — Always Active)
 // ============================================================
 
 /**
  * Search Twitter/X.
  * 
+ * Multi-source pipeline (tries each in order):
+ * 1. bird CLI (if available and authenticated)
+ * 2. Exa semantic search for tweets
+ * 3. Jina Search for tweets
+ * 
  * Agent-Reach Reference: SKILL_en.md → "Twitter/X (bird)"
- * Command: bird search "query" -n 10
  */
 export async function twitterSearch(query: string, limit = 10): Promise<ToolResult<TwitterResult[]>> {
   const channel = 'twitter';
   try {
-    // Try bird CLI
+    // Method 1: Try bird CLI
     try {
       const { stdout } = await runCommand(`bird search "${query.replace(/"/g, '\\"')}" -n ${limit}`, 20000);
-      // Parse bird output (usually JSON or text format)
       const parsed = safeJsonParse<TwitterResult[]>(stdout);
-      if (parsed && Array.isArray(parsed)) {
+      if (parsed && Array.isArray(parsed) && parsed.length > 0) {
         return makeResult(parsed, channel, 'bird CLI', stdout.slice(0, 2000));
       }
       
@@ -781,27 +967,175 @@ export async function twitterSearch(query: string, limit = 10): Promise<ToolResu
         return makeResult(results, channel, 'bird CLI', stdout.slice(0, 2000));
       }
     } catch {
-      // bird CLI not available
+      // bird CLI not available — fall through
     }
 
-    // Fallback: Exa search for tweets
+    // Method 2: Exa semantic search for tweets
     const exaResult = await exaSearch(`site:twitter.com OR site:x.com ${query}`, limit);
     if (exaResult.success && exaResult.data.length > 0) {
-      const results: TwitterResult[] = exaResult.data.map(r => ({
-        text: r.snippet,
-        author: '',
-        url: r.url,
-        likes: 0,
-        retweets: 0,
-        date: r.publishedDate || '',
-      }));
-      return makeResult(results, channel, 'Exa (Twitter fallback)');
+      const results: TwitterResult[] = exaResult.data.map(r => {
+        // Extract author from URL like twitter.com/username/status/...
+        const authorMatch = r.url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+        return {
+          text: r.snippet,
+          author: authorMatch ? `@${authorMatch[1]}` : '',
+          url: r.url,
+          likes: 0,
+          retweets: 0,
+          date: r.publishedDate || '',
+        };
+      });
+      return makeResult(results, channel, 'Exa Semantic Search (Twitter/X)');
     }
 
-    return makeError<TwitterResult[]>('Twitter search unavailable (bird CLI not configured)', channel);
+    // Method 3: Jina Search as final fallback
+    try {
+      const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:twitter.com OR site:x.com ${query}`)}`;
+      const response = await fetch(searchUrl, {
+        headers: { 'Accept': 'text/plain' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const text = await response.text();
+        const results: TwitterResult[] = [];
+        const urlPattern = /https?:\/\/(?:www\.)?(?:twitter\.com|x\.com)\/[a-zA-Z0-9_]+\/status\/\d+/g;
+        const tweetUrls = [...new Set(text.match(urlPattern) || [])];
+        
+        for (const url of tweetUrls.slice(0, limit)) {
+          const authorMatch = url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+          const nearbyText = text.split(url)[0]?.slice(-300) || '';
+          results.push({
+            text: nearbyText.trim().slice(-250),
+            author: authorMatch ? `@${authorMatch[1]}` : '',
+            url,
+            likes: 0,
+            retweets: 0,
+            date: '',
+          });
+        }
+        
+        if (results.length > 0) {
+          return makeResult(results, channel, 'Jina Search (Twitter/X fallback)');
+        }
+      }
+    } catch {
+      // Jina Search fallback failed
+    }
+
+    return makeError<TwitterResult[]>('Twitter search unavailable (all methods failed)', channel);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     return makeError<TwitterResult[]>(`Twitter search failed: ${msg}`, channel);
+  }
+}
+
+/**
+ * Read a specific tweet/thread via Jina Reader.
+ * Extracts the full tweet text, author, engagement metrics.
+ */
+export async function twitterReadTweet(tweetUrl: string): Promise<ToolResult<TwitterResult>> {
+  const channel = 'twitter';
+  try {
+    const jinaResult = await webRead(tweetUrl);
+    if (jinaResult.success && jinaResult.data.content) {
+      const content = jinaResult.data.content;
+      const authorMatch = tweetUrl.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+      
+      // Try to extract tweet text and metrics from the Jina Reader output
+      const likesMatch = content.match(/(\d[\d,]*)\s*(?:Likes|likes|favorites)/);
+      const retweetsMatch = content.match(/(\d[\d,]*)\s*(?:Retweets|retweets|reposts)/);
+      const dateMatch = content.match(/(?:at|on|·)\s+(\d{1,2}:\d{2}\s*(?:AM|PM)?\s*(?:·|\s)\s*\w+\s+\d{1,2},?\s*\d{4})/i) ||
+                        content.match(/(\w+\s+\d{1,2},?\s*\d{4})/);
+      
+      return makeResult<TwitterResult>(
+        {
+          text: content.slice(0, 2000),
+          author: authorMatch ? `@${authorMatch[1]}` : '',
+          url: tweetUrl,
+          likes: likesMatch ? parseInt(likesMatch[1].replace(/,/g, ''), 10) : 0,
+          retweets: retweetsMatch ? parseInt(retweetsMatch[1].replace(/,/g, ''), 10) : 0,
+          date: dateMatch?.[1] || '',
+        },
+        channel,
+        'Jina Reader (Twitter/X tweet)',
+        content.slice(0, 2000),
+      );
+    }
+
+    return makeError<TwitterResult>('Twitter tweet read failed', channel);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return makeError<TwitterResult>(`Twitter tweet read failed: ${msg}`, channel);
+  }
+}
+
+/**
+ * Search for Twitter/X user profiles relevant to a query.
+ * Uses Exa to find user profiles matching the search.
+ */
+export async function twitterSearchUsers(query: string, limit = 10): Promise<ToolResult<TwitterResult[]>> {
+  const channel = 'twitter';
+  try {
+    // Search for Twitter profiles
+    const exaResult = await exaSearch(`site:twitter.com ${query} -inurl:status`, limit);
+    if (exaResult.success && exaResult.data.length > 0) {
+      const results: TwitterResult[] = exaResult.data.map(r => {
+        const authorMatch = r.url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+        return {
+          text: r.snippet,
+          author: authorMatch ? `@${authorMatch[1]}` : r.title,
+          url: r.url,
+          likes: 0,
+          retweets: 0,
+          date: r.publishedDate || '',
+        };
+      });
+      return makeResult(results, channel, 'Exa Semantic Search (Twitter/X Profiles)');
+    }
+
+    // Fallback: Jina Search
+    try {
+      const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:twitter.com ${query} profile`)}`;
+      const response = await fetch(searchUrl, {
+        headers: { 'Accept': 'text/plain' },
+        signal: AbortSignal.timeout(15000),
+      });
+      if (response.ok) {
+        const text = await response.text();
+        const results: TwitterResult[] = [];
+        const urlPattern = /https?:\/\/(?:www\.)?(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)(?!\/status)/g;
+        let match;
+        const seenHandles = new Set<string>();
+        
+        while ((match = urlPattern.exec(text)) !== null && results.length < limit) {
+          const handle = match[1];
+          if (['home', 'explore', 'search', 'i', 'settings'].includes(handle.toLowerCase())) continue;
+          if (seenHandles.has(handle)) continue;
+          seenHandles.add(handle);
+          
+          const nearbyText = text.split(match[0])[0]?.slice(-200) || '';
+          results.push({
+            text: nearbyText.trim().slice(-250),
+            author: `@${handle}`,
+            url: `https://twitter.com/${handle}`,
+            likes: 0,
+            retweets: 0,
+            date: '',
+          });
+        }
+        
+        if (results.length > 0) {
+          return makeResult(results, channel, 'Jina Search (Twitter/X Profiles fallback)');
+        }
+      }
+    } catch {
+      // Jina Search fallback failed
+    }
+
+    return makeError<TwitterResult[]>('Twitter user search unavailable', channel);
+  } catch (error: unknown) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return makeError<TwitterResult[]>(`Twitter user search failed: ${msg}`, channel);
   }
 }
 
@@ -1558,10 +1892,14 @@ export const AgentReachToolkit = {
   bilibiliSubtitles,
   getBilibiliKeyStats,
   
-  // Channels requiring setup (best-effort with fallbacks)
+  // LinkedIn & Twitter/X (always active via multi-source pipeline)
   linkedInGetProfile,
   linkedInSearchPeople,
+  linkedInSearchCompanies,
+  linkedInReadCompanyPage,
   twitterSearch,
+  twitterReadTweet,
+  twitterSearchUsers,
   weiboSearch,
   xueqiuQuote,
   
