@@ -57,3 +57,39 @@
 - **twitter**: Social prospecting and sentiment
 - **reddit**: Community intelligence
 - **rss**: Industry news and updates
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeProspectDiscovery()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler invokes Agent-Reach tool bridge functions (from `src/lib/agent-reach-bridge.ts`)
+3. Raw data from Agent-Reach channels is fed to the LLM (z-ai-web-dev-sdk) for structured extraction
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- `exaSearch()` — Primary web search for prospect discovery across industries and geographies
+- `redditSearch()` — Community intelligence and niche prospect identification
+- `linkedInSearchPeople()` — Professional and company profile search
+- `twitterSearch()` — Social prospecting and sentiment analysis
+- `discoverBusinesses()` — Business directory extraction and Google Maps discovery
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "prospect-discovery",
+  "taskType": "search",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Agent-Reach executes multi-channel search → Results stored as leads

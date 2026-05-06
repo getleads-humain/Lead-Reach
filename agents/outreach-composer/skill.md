@@ -56,3 +56,36 @@
 - **exa_search**: Industry pain point research, competitive messaging intelligence
 - **web**: Company website analysis for personalization hooks
 - **linkedin**: Contact role and seniority verification
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeOutreachComposer()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler invokes Agent-Reach tool bridge functions (from `src/lib/agent-reach-bridge.ts`)
+3. Raw data from Agent-Reach channels is fed to the LLM (z-ai-web-dev-sdk) for structured extraction
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- `exaSearch()` — Industry pain point research and personalization context gathering
+- `webRead()` — Company website analysis for personalization hooks and value proposition mapping
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "outreach-composer",
+  "taskType": "compose",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Agent-Reach gathers personalization data → Outreach messages composed and stored

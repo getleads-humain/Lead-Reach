@@ -125,3 +125,50 @@ Stage Summary:
 - Marketing nav: Features, Agents, Blog, FAQ + Launch Platform CTA
 - Footer: Product, Resources, Company, Legal columns with all links properly wired
 - Build compiles with all 16 routes confirmed
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Build Agent-Reach runtime integration — Agent Execution Engine + Tool Bridge
+
+Work Log:
+- Analyzed gap: Agent-Reach was only integrated at type/UI/DB level, not at runtime execution level
+- Built `src/lib/agent-reach-bridge.ts` — The actual execution layer with 17+ channel functions:
+  - webRead() — Jina Reader for any URL (zero config)
+  - exaSearch() — Semantic web search via Exa/mcporter with Jina Search fallback
+  - githubSearchRepos(), githubViewRepo() — GitHub CLI integration
+  - redditSearch(), redditSubreddit() — Reddit JSON API
+  - youtubeGetInfo(), youtubeGetSubtitles(), youtubeSearch() — yt-dlp integration
+  - linkedInGetProfile(), linkedInSearchPeople() — mcporter + Jina Reader fallback
+  - twitterSearch() — bird CLI + Exa fallback
+  - rssRead() — feedparser Python module
+  - v2exHotTopics() — V2EX public API
+  - weiboSearch() — Weibo via mcporter + Python toolkit
+  - xueqiuQuote() — Xueqiu stock API via Python toolkit
+  - discoverBusinesses() — Multi-channel composite search (Exa + Reddit + Web in parallel)
+  - enrichCompanyData() — Multi-page website reading for contact extraction
+  - runDoctor() — Agent-Reach health check via Python toolkit
+- Built `src/lib/agent-executor.ts` — The Agent Execution Engine:
+  - 8 agent handlers: executeOrchestrator, executeProspectDiscovery, executeDataEnrichment, executeWebResearch, executeLeadQualification, executeOutreachComposer, executePipelineManager, executeReportGenerator
+  - Each handler calls Agent-Reach bridge functions for real internet access
+  - Each handler feeds raw data to LLM (z-ai-web-dev-sdk) for structured extraction
+  - Results stored in database (lead records, outreach records, task output)
+  - Progress tracking with real-time updates
+  - Main dispatchers: executeTask(), executeAllPendingTasks(), dispatchAndExecute()
+- Created `/api/agents/execute` route with 3 modes: single, all, dispatch
+- Rewrote `/api/ai` route to actually EXECUTE agents (not just plan them)
+- Updated all 8 agent skill.md files with "Execution Engine Integration" section
+- Enhanced Agents UI with: Execution Engine status panel, Agent-Reach channel indicators per agent, Run buttons for pending tasks, Execute All button, auto-refresh every 5s, execution log
+- Updated agent-reach.ts header to document the new architecture
+- Build verified: all routes compile successfully including new /api/agents/execute
+
+Stage Summary:
+- Agent-Reach now FULLY INTEGRATED at runtime level — agents actually call real tools
+- Architecture: UI ←→ API Routes ←→ Agent Executor ←→ Agent-Reach Bridge ←→ Internet
+- Every agent with channel access uses Agent-Reach bridge functions at runtime
+- Prospect Discovery: searches Exa, Reddit, LinkedIn, Twitter simultaneously
+- Data Enrichment: reads company websites via Jina, searches for contact data
+- Web Research: multi-channel deep research across 7+ channels
+- Lead Qualification: Exa intent signal detection
+- Outreach Composer: Exa personalization + Jina company reading
+- AI chat endpoint now dispatches and executes agents in real-time

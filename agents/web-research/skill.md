@@ -58,3 +58,39 @@
 - **reddit**: Community discussions and market sentiment
 - **rss**: Industry publications and news feeds
 - **youtube**: Industry conference talks, company presentations
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeWebResearch()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler invokes Agent-Reach tool bridge functions (from `src/lib/agent-reach-bridge.ts`)
+3. Raw data from Agent-Reach channels is fed to the LLM (z-ai-web-dev-sdk) for structured extraction
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- `exaSearch()` — Industry reports, market research, news search, and competitive analysis
+- `redditSearch()` — Community discussions and market sentiment analysis
+- `youtubeSearch()` — Industry conference talks, company presentations, and video content research
+- `twitterSearch()` — Real-time news, company updates, and trending topics
+- `webRead()` — Deep content extraction from any website for company deep-dives and regulatory research
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "web-research",
+  "taskType": "research",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Agent-Reach executes multi-source research → Intelligence brief stored

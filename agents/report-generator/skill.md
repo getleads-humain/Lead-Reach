@@ -54,3 +54,35 @@
 - Prisma database (data source for all reports)
 - LLM API (for report narrative generation and recommendations)
 - No direct Agent-Reach access (operates on collected data)
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeReportGenerator()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler queries the database (Prisma) for campaign and pipeline data
+3. LLM (z-ai-web-dev-sdk) is used for report narrative generation, recommendations, and data synthesis
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- None — this agent operates exclusively on database operations and LLM analysis
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "report-generator",
+  "taskType": "report",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Database queries + LLM analysis → Reports generated and stored

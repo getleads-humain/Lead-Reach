@@ -57,3 +57,35 @@
 - **exa_search**: Intent signal detection via news and job posting search
 - **web**: Company website analysis for growth signals
 - **linkedin**: Company size verification, hiring signals
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeLeadQualification()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler invokes Agent-Reach tool bridge functions (from `src/lib/agent-reach-bridge.ts`)
+3. Raw data from Agent-Reach channels is fed to the LLM (z-ai-web-dev-sdk) for structured extraction
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- `exaSearch()` — Intent signal detection via news and job posting search
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "lead-qualification",
+  "taskType": "qualify",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Agent-Reach searches for intent signals → Qualified leads stored

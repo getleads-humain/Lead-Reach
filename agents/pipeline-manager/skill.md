@@ -55,3 +55,35 @@
 - Prisma database (primary state management)
 - Internal message bus (event notifications)
 - No direct Agent-Reach access (operates on already-collected data)
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executePipelineManager()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler performs database operations directly (Prisma) for state management, stage transitions, and analytics
+3. Event-driven processing triggers follow-up scheduling and alert management
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- None — this agent operates exclusively on database operations and internal event processing
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "pipeline-manager",
+  "taskType": "manage",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Database state transitions executed → Pipeline metrics and alerts updated

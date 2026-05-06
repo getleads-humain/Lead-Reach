@@ -57,3 +57,38 @@
 - **exa_search**: Finding company data across the web
 - **twitter**: Social profile linking
 - **github**: Tech stack detection for developer-focused companies
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeDataEnrichment()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler invokes Agent-Reach tool bridge functions (from `src/lib/agent-reach-bridge.ts`)
+3. Raw data from Agent-Reach channels is fed to the LLM (z-ai-web-dev-sdk) for structured extraction
+4. Results are stored in the database (leads, outreach, task output)
+
+**Agent-Reach Bridge Functions Used**:
+- `webRead()` — Full content extraction from company websites for contact info and tech stack detection
+- `enrichCompanyData()` — Firmographic data enrichment including revenue, employee count, and industry codes
+- `exaSearch()` — Finding company profile data, email patterns, and financial information across the web
+- `linkedInSearchPeople()` — Professional data, key personnel, and company profile enrichment
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "data-enrichment",
+  "taskType": "enrich",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → Agent-Reach fetches & enriches company data → Enriched records stored

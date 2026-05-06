@@ -3,7 +3,16 @@ import type { ChannelStatus } from './types';
 /**
  * Agent-Reach Integration Layer
  * 
- * This module provides TypeScript wrappers around the Agent-Reach Python toolkit.
+ * This module provides TypeScript types, channel definitions, and UI helper functions
+ * for the Agent-Reach toolkit integration.
+ * 
+ * ⚡ RUNTIME EXECUTION: The actual tool calls (Jina Reader, Exa Search, GitHub, etc.)
+ * are handled by `src/lib/agent-reach-bridge.ts` — the Tool Bridge that executes
+ * real HTTP/CLI commands against Agent-Reach channels.
+ * 
+ * 🧠 AGENT EXECUTION: The Agent Execution Engine at `src/lib/agent-executor.ts`
+ * dispatches tasks to agents, calls the Tool Bridge, and feeds results to the LLM.
+ * 
  * The original Python codebase is located at: /home/z/my-project/upload/Agent-Reach-main/
  * 
  * Agent-Reach gives AI agents internet access through 17+ channels:
@@ -11,9 +20,8 @@ import type { ChannelStatus } from './types';
  * - Semantic search via Exa
  * - LinkedIn, Twitter/X, YouTube, GitHub, Reddit, and more
  * 
- * In production, the Python CLI tools are called from API routes.
- * This module provides the TypeScript types, channel definitions, and helper functions
- * that the web app uses for UI rendering and API interaction.
+ * Architecture:
+ *   UI (this module) ←→ API Routes ←→ Agent Executor ←→ Agent-Reach Bridge ←→ Internet
  */
 
 // ============================================================

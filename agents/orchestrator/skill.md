@@ -43,3 +43,35 @@
 - Campaign state database (Prisma)
 - LLM API (z-ai-web-dev-sdk) for intent parsing and strategy
 - No direct Agent-Reach channel access (delegates to specialized agents)
+
+## Execution Engine Integration
+
+**Runtime Handler**: `executeOrchestrator()` in `src/lib/agent-executor.ts`
+
+This agent is executed at runtime by the Agent Execution Engine. When a task is dispatched to this agent:
+
+1. The engine calls the agent's handler function
+2. The handler uses LLM (z-ai-web-dev-sdk) for intent parsing, campaign planning, and strategy decisions
+3. Sub-tasks are created in the database and dispatched to specialized agents
+4. Results from child agents are aggregated and validated
+
+**Agent-Reach Bridge Functions Used**:
+- None directly — this agent delegates all external data gathering to other agents (prospect-discovery, data-enrichment, web-research, etc.)
+
+**API Dispatch**:
+```
+POST /api/agents/execute
+{
+  "mode": "dispatch",
+  "agentName": "orchestrator",
+  "taskType": "campaign-plan",
+  "input": { "query": "...", "industry": "...", "location": "..." }
+}
+```
+
+**Or via AI Chat**:
+```
+POST /api/ai
+{ "message": "Find accounting firms in Dubai" }
+```
+→ AI parses intent → Dispatches to this agent → LLM generates plan → Sub-tasks dispatched to specialized agents → Results aggregated
