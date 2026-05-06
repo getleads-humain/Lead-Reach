@@ -30,8 +30,6 @@ import {
   Eye,
   ExternalLink,
   Plus,
-  Filter,
-  ArrowUpRight,
   Loader2,
   MessageSquare,
   Linkedin,
@@ -75,7 +73,6 @@ export function OutreachView() {
   const [generating, setGenerating] = useState(false);
   const [leads, setLeads] = useState<LeadOption[]>([]);
 
-  // Compose form
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [channel, setChannel] = useState<string>('email');
   const [msgType, setMsgType] = useState<string>('cold_email');
@@ -142,7 +139,6 @@ export function OutreachView() {
       const data = await res.json();
 
       if (data.response) {
-        // Parse the response to extract subject and body
         const lines = data.response.split('\n');
         const subjectLine = lines.find((l: string) => l.toLowerCase().startsWith('subject:') || l.toLowerCase().startsWith('subject :'));
         if (subjectLine) {
@@ -194,26 +190,26 @@ export function OutreachView() {
 
   const statusIcon = (status: string) => {
     switch (status) {
-      case 'draft': return <Clock className="h-3.5 w-3.5 text-gray-400" />;
-      case 'sent': return <Send className="h-3.5 w-3.5 text-blue-500" />;
-      case 'delivered': return <CheckCircle2 className="h-3.5 w-3.5 text-blue-500" />;
-      case 'opened': return <Eye className="h-3.5 w-3.5 text-emerald-500" />;
-      case 'replied': return <MessageSquare className="h-3.5 w-3.5 text-emerald-600" />;
-      case 'bounced': return <ExternalLink className="h-3.5 w-3.5 text-red-500" />;
-      case 'failed': return <ExternalLink className="h-3.5 w-3.5 text-red-500" />;
-      default: return <Clock className="h-3.5 w-3.5 text-gray-400" />;
+      case 'draft': return <Clock className="h-3.5 w-3.5 text-gray-500" />;
+      case 'sent': return <Send className="h-3.5 w-3.5 text-cyan-400" />;
+      case 'delivered': return <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />;
+      case 'opened': return <Eye className="h-3.5 w-3.5 text-emerald-400" />;
+      case 'replied': return <MessageSquare className="h-3.5 w-3.5 text-emerald-400" />;
+      case 'bounced': return <ExternalLink className="h-3.5 w-3.5 text-red-400" />;
+      case 'failed': return <ExternalLink className="h-3.5 w-3.5 text-red-400" />;
+      default: return <Clock className="h-3.5 w-3.5 text-gray-500" />;
     }
   };
 
   const statusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      draft: 'border-gray-500/30 text-gray-500',
-      sent: 'border-blue-500/30 text-blue-600',
-      delivered: 'border-blue-500/30 text-blue-600',
-      opened: 'border-emerald-500/30 text-emerald-600',
-      replied: 'border-emerald-600/30 text-emerald-700',
-      bounced: 'border-red-500/30 text-red-600',
-      failed: 'border-red-500/30 text-red-600',
+      draft: 'border-gray-500/20 text-gray-500 bg-gray-500/5',
+      sent: 'border-cyan-500/20 text-cyan-400 bg-cyan-500/5',
+      delivered: 'border-cyan-500/20 text-cyan-400 bg-cyan-500/5',
+      opened: 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5',
+      replied: 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5',
+      bounced: 'border-red-500/20 text-red-400 bg-red-500/5',
+      failed: 'border-red-500/20 text-red-400 bg-red-500/5',
     };
     return styles[status] || styles.draft;
   };
@@ -232,14 +228,14 @@ export function OutreachView() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Outreach</h2>
+          <h2 className="text-2xl font-bold text-foreground">Outreach</h2>
           <p className="text-sm text-muted-foreground">
             Manage outreach messages and sequences
           </p>
         </div>
         <Button
           onClick={handleOpenCompose}
-          className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2"
+          className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
         >
           <Plus className="h-4 w-4" />
           Compose Message
@@ -253,7 +249,11 @@ export function OutreachView() {
             key={s}
             variant={statusFilter === s ? 'default' : 'outline'}
             size="sm"
-            className={`text-xs ${statusFilter === s ? 'bg-emerald-500 text-white hover:bg-emerald-600' : ''}`}
+            className={`text-xs transition-all duration-200 ${
+              statusFilter === s
+                ? 'bg-emerald-500 text-black hover:bg-emerald-400 font-semibold'
+                : 'border-border/40 text-muted-foreground hover:text-foreground hover:border-emerald-500/20'
+            }`}
             onClick={() => setStatusFilter(s)}
           >
             {s === 'all' ? 'All' : s.charAt(0).toUpperCase() + s.slice(1)}
@@ -265,13 +265,13 @@ export function OutreachView() {
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-24 rounded-lg" />
+            <Skeleton key={i} className="h-24 rounded-lg bg-secondary/30" />
           ))}
         </div>
       ) : outreach.length === 0 ? (
         <div className="text-center py-16">
-          <Mail className="h-12 w-12 mx-auto text-muted-foreground/50" />
-          <h3 className="mt-4 text-lg font-medium">No outreach messages</h3>
+          <Mail className="h-12 w-12 mx-auto text-muted-foreground/30" />
+          <h3 className="mt-4 text-lg font-medium text-foreground/80">No outreach messages</h3>
           <p className="text-sm text-muted-foreground">
             Compose your first outreach message to start engaging leads
           </p>
@@ -279,27 +279,27 @@ export function OutreachView() {
       ) : (
         <div className="space-y-2">
           {outreach.map((item) => (
-            <Card key={item.id} className="hover:shadow-sm transition-shadow">
+            <Card key={item.id} className="card-premium border-border/30">
               <CardContent className="p-4">
                 <div className="flex items-start gap-3">
-                  <div className="shrink-0 mt-0.5">
+                  <div className="shrink-0 mt-0.5 text-muted-foreground">
                     {channelIcon(item.channel)}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 mb-1">
-                      <span className="font-medium text-sm">
+                      <span className="font-medium text-sm text-foreground/90">
                         {item.lead.companyName}
                       </span>
                       <Badge variant="outline" className={`text-[10px] ${statusBadge(item.status)}`}>
                         {statusIcon(item.status)}
                         <span className="ml-1 capitalize">{item.status}</span>
                       </Badge>
-                      <Badge variant="outline" className="text-[10px]">
+                      <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
                         {item.type.replace(/_/g, ' ')}
                       </Badge>
                     </div>
                     {item.subject && (
-                      <div className="text-sm font-medium truncate">
+                      <div className="text-sm font-medium text-foreground/80 truncate">
                         {item.subject}
                       </div>
                     )}
@@ -322,22 +322,22 @@ export function OutreachView() {
 
       {/* Compose Dialog */}
       <Dialog open={composeOpen} onOpenChange={setComposeOpen}>
-        <DialogContent className="sm:max-w-2xl">
+        <DialogContent className="sm:max-w-2xl bg-card border-border/60">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Mail className="h-5 w-5 text-emerald-500" />
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <Mail className="h-5 w-5 text-emerald-400" />
               Compose Outreach
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
               <div className="space-y-2">
-                <label className="text-sm font-medium">Lead</label>
+                <label className="text-sm font-medium text-foreground/80">Lead</label>
                 <Select value={selectedLeadId} onValueChange={setSelectedLeadId}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
                     <SelectValue placeholder="Select lead" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-popover border-border/60">
                     {leads.map((lead) => (
                       <SelectItem key={lead.id} value={lead.id}>
                         {lead.companyName}
@@ -347,12 +347,12 @@ export function OutreachView() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Channel</label>
+                <label className="text-sm font-medium text-foreground/80">Channel</label>
                 <Select value={channel} onValueChange={setChannel}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-popover border-border/60">
                     <SelectItem value="email">Email</SelectItem>
                     <SelectItem value="linkedin">LinkedIn</SelectItem>
                     <SelectItem value="phone">Phone</SelectItem>
@@ -360,12 +360,12 @@ export function OutreachView() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium">Type</label>
+                <label className="text-sm font-medium text-foreground/80">Type</label>
                 <Select value={msgType} onValueChange={setMsgType}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
                     <SelectValue />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-popover border-border/60">
                     <SelectItem value="cold_email">Cold Email</SelectItem>
                     <SelectItem value="warm_intro">Warm Intro</SelectItem>
                     <SelectItem value="connection_request">Connection Request</SelectItem>
@@ -379,22 +379,23 @@ export function OutreachView() {
 
             {channel === 'email' && (
               <div className="space-y-2">
-                <label className="text-sm font-medium">Subject</label>
+                <label className="text-sm font-medium text-foreground/80">Subject</label>
                 <Input
                   placeholder="Email subject line..."
                   value={subject}
                   onChange={(e) => setSubject(e.target.value)}
+                  className="bg-secondary/30 border-border/40 focus:border-emerald-500/30"
                 />
               </div>
             )}
 
             <div className="space-y-2">
               <div className="flex items-center justify-between">
-                <label className="text-sm font-medium">Message</label>
+                <label className="text-sm font-medium text-foreground/80">Message</label>
                 <Button
                   variant="outline"
                   size="sm"
-                  className="gap-1.5 text-xs border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10"
+                  className="gap-1.5 text-xs border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all"
                   onClick={handleGenerateAI}
                   disabled={generating || !selectedLeadId}
                 >
@@ -411,18 +412,18 @@ export function OutreachView() {
                 value={body}
                 onChange={(e) => setBody(e.target.value)}
                 rows={8}
-                className="resize-none"
+                className="resize-none bg-secondary/30 border-border/40 focus:border-emerald-500/30"
               />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setComposeOpen(false)}>
+            <Button variant="outline" onClick={() => setComposeOpen(false)} className="border-border/40">
               Cancel
             </Button>
             <Button
               onClick={handleSend}
               disabled={!selectedLeadId || !body.trim() || composing}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2"
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all"
             >
               {composing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

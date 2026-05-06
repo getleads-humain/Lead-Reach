@@ -6,7 +6,6 @@ import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
 import { Skeleton } from '@/components/ui/skeleton';
-import { WalkingAvatar } from '@/components/avatar/walking-avatar';
 import {
   Target,
   Users,
@@ -18,7 +17,7 @@ import {
   CheckCircle2,
   AlertCircle,
   Loader2,
-  Play,
+  Zap,
 } from 'lucide-react';
 import type { CampaignWithCounts } from '@/lib/types';
 import { STAGE_LABELS, type LeadStage } from '@/lib/types';
@@ -94,12 +93,11 @@ export function DashboardView() {
         responseRate: contacted > 0 ? Math.round((responded / contacted) * 100) : 0,
       });
 
-      // Build pipeline
       const stageOrder: LeadStage[] = ['new', 'enriched', 'qualified', 'contacted', 'engaged', 'negotiating', 'closed_won', 'closed_lost', 'nurture'];
       const stageColors: Record<string, string> = {
-        new: 'bg-slate-500', enriched: 'bg-cyan-500', qualified: 'bg-emerald-500',
-        contacted: 'bg-blue-500', engaged: 'bg-violet-500', negotiating: 'bg-amber-500',
-        closed_won: 'bg-green-500', closed_lost: 'bg-red-500', nurture: 'bg-orange-500',
+        new: 'bg-slate-500', enriched: 'bg-cyan-400', qualified: 'bg-emerald-400',
+        contacted: 'bg-blue-400', engaged: 'bg-violet-400', negotiating: 'bg-amber-400',
+        closed_won: 'bg-emerald-500', closed_lost: 'bg-red-400', nurture: 'bg-orange-400',
       };
 
       const pipelineData = stageOrder.map((stage) => ({
@@ -123,13 +121,12 @@ export function DashboardView() {
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4].map((i) => (
-            <Skeleton key={i} className="h-32 rounded-xl" />
+            <Skeleton key={i} className="h-32 rounded-xl bg-secondary/30" />
           ))}
         </div>
-        <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
-          <Skeleton className="h-80 rounded-xl" />
-          <Skeleton className="h-80 rounded-xl" />
-          <Skeleton className="h-80 rounded-xl" />
+        <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+          <Skeleton className="h-80 rounded-xl bg-secondary/30" />
+          <Skeleton className="h-80 rounded-xl bg-secondary/30" />
         </div>
       </div>
     );
@@ -146,38 +143,38 @@ export function DashboardView() {
           value={stats.totalCampaigns}
           icon={Target}
           trend="+2 this week"
-          color="emerald"
+          accent="emerald"
         />
         <StatCard
           title="Total Leads"
           value={stats.totalLeads}
           icon={Users}
           trend="+18 today"
-          color="blue"
+          accent="cyan"
         />
         <StatCard
           title="Qualified Leads"
           value={stats.qualifiedLeads}
           icon={Award}
           trend={`${Math.round((stats.qualifiedLeads / Math.max(stats.totalLeads, 1)) * 100)}% rate`}
-          color="amber"
+          accent="amber"
         />
         <StatCard
           title="Response Rate"
           value={`${stats.responseRate}%`}
           icon={TrendingUp}
           trend="+5% vs last week"
-          color="violet"
+          accent="violet"
         />
       </div>
 
       {/* Main Content Grid */}
-      <div className="grid grid-cols-1 gap-6 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Pipeline Funnel */}
-        <Card className="lg:col-span-2">
+        <Card className="card-premium border-border/40">
           <CardHeader className="pb-3">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Activity className="h-4 w-4 text-emerald-500" />
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <Activity className="h-4 w-4 text-emerald-400" />
               Pipeline Overview
             </CardTitle>
           </CardHeader>
@@ -191,16 +188,16 @@ export function DashboardView() {
                       {stage.label}
                     </div>
                     <div className="flex-1">
-                      <div className="h-7 rounded-full bg-muted/50 overflow-hidden">
+                      <div className="h-6 rounded-full bg-secondary/40 overflow-hidden">
                         <div
-                          className={`h-full rounded-full ${stage.color} transition-all duration-500`}
+                          className={`h-full rounded-full ${stage.color} transition-all duration-700 ease-out`}
                           style={{
                             width: `${Math.max((stage.count / maxPipelineCount) * 100, 4)}%`,
                           }}
                         />
                       </div>
                     </div>
-                    <div className="w-10 text-right text-sm font-semibold">
+                    <div className="w-10 text-right text-sm font-bold text-foreground/80">
                       {stage.count}
                     </div>
                   </div>
@@ -209,22 +206,45 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        {/* Avatar & Brand */}
-        <Card className="flex flex-col items-center justify-center bg-gradient-to-br from-emerald-500/5 via-teal-500/5 to-cyan-500/5">
-          <CardContent className="flex flex-col items-center gap-2 py-4">
-            <WalkingAvatar size={120} />
-            <div className="text-center">
-              <h3 className="text-lg font-bold">
-                LeadReach <span className="text-emerald-500">AI</span>
-              </h3>
-              <p className="text-xs text-muted-foreground">
-                Agentic Lead Generation
-              </p>
+        {/* System Status Card (replacing Avatar) */}
+        <Card className="card-premium border-border/40 overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-cyan-500/5 pointer-events-none" />
+          <CardHeader className="pb-3 relative">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <Zap className="h-4 w-4 text-emerald-400" />
+              System Status
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="relative">
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { label: 'Active Agents', value: '8', status: 'online', color: 'emerald' },
+                { label: 'Channels', value: '17+', status: 'connected', color: 'cyan' },
+                { label: 'Queue Tasks', value: recentTasks.filter(t => t.status === 'running').length.toString(), status: 'processing', color: 'blue' },
+                { label: 'Uptime', value: '99.9%', status: 'healthy', color: 'emerald' },
+              ].map((item) => (
+                <div
+                  key={item.label}
+                  className="rounded-lg border border-border/30 bg-secondary/20 p-3 flex flex-col gap-1"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">{item.label}</span>
+                    <span className={`h-1.5 w-1.5 rounded-full ${
+                      item.color === 'emerald' ? 'bg-emerald-400' :
+                      item.color === 'cyan' ? 'bg-cyan-400' :
+                      'bg-blue-400'
+                    } animate-pulse`} />
+                  </div>
+                  <span className="text-lg font-bold text-foreground/90">{item.value}</span>
+                </div>
+              ))}
             </div>
-            <Badge variant="outline" className="mt-1 border-emerald-500/30 text-emerald-600 text-xs">
-              <span className="mr-1 inline-block h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
-              8 Agents Active
-            </Badge>
+            <div className="mt-4 flex items-center gap-2">
+              <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 text-[10px] bg-emerald-500/5">
+                <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                All Systems Operational
+              </Badge>
+            </div>
           </CardContent>
         </Card>
       </div>
@@ -232,24 +252,24 @@ export function DashboardView() {
       {/* Bottom Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
         {/* Active Campaigns */}
-        <Card>
+        <Card className="card-premium border-border/40">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Active Campaigns</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground/90">Active Campaigns</CardTitle>
           </CardHeader>
-          <CardContent className="space-y-4">
+          <CardContent className="space-y-3">
             {campaigns
               .filter((c) => c.status === 'active')
               .map((campaign) => (
                 <div
                   key={campaign.id}
-                  className="rounded-lg border border-border p-3 space-y-2"
+                  className="rounded-lg border border-border/30 bg-secondary/15 p-3 space-y-2 transition-colors hover:bg-secondary/25"
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="font-medium text-sm">{campaign.name}</span>
+                      <span className="font-medium text-sm text-foreground/90">{campaign.name}</span>
                       <Badge
                         variant="outline"
-                        className="text-[10px] border-emerald-500/30 text-emerald-600"
+                        className="text-[10px] border-emerald-500/20 text-emerald-400 bg-emerald-500/5"
                       >
                         Active
                       </Badge>
@@ -258,19 +278,19 @@ export function DashboardView() {
                   </div>
                   <div className="grid grid-cols-3 gap-2 text-xs text-muted-foreground">
                     <div>
-                      <span className="font-medium text-foreground">
+                      <span className="font-semibold text-foreground/80">
                         {campaign.leadsFound}
                       </span>{' '}
                       found
                     </div>
                     <div>
-                      <span className="font-medium text-foreground">
+                      <span className="font-semibold text-foreground/80">
                         {campaign.leadsQualified}
                       </span>{' '}
                       qualified
                     </div>
                     <div>
-                      <span className="font-medium text-foreground">
+                      <span className="font-semibold text-foreground/80">
                         {campaign.leadsContacted}
                       </span>{' '}
                       contacted
@@ -284,7 +304,7 @@ export function DashboardView() {
                           )
                         : 0
                     }
-                    className="h-1.5"
+                    className="h-1 bg-secondary/40"
                   />
                 </div>
               ))}
@@ -297,29 +317,29 @@ export function DashboardView() {
         </Card>
 
         {/* Recent Agent Activity */}
-        <Card>
+        <Card className="card-premium border-border/40">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base">Agent Activity</CardTitle>
+            <CardTitle className="text-sm font-semibold text-foreground/90">Agent Activity</CardTitle>
           </CardHeader>
           <CardContent className="space-y-2 max-h-72 overflow-y-auto">
             {recentTasks.map((task) => (
               <div
                 key={task.id}
-                className="flex items-center gap-3 rounded-lg border border-border p-2.5"
+                className="flex items-center gap-3 rounded-lg border border-border/25 bg-secondary/10 p-2.5 transition-colors hover:bg-secondary/20"
               >
                 <div className="shrink-0">
                   {task.status === 'completed' ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                   ) : task.status === 'running' ? (
-                    <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                    <Loader2 className="h-4 w-4 text-cyan-400 animate-spin" />
                   ) : task.status === 'failed' ? (
-                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <AlertCircle className="h-4 w-4 text-red-400" />
                   ) : (
-                    <Clock className="h-4 w-4 text-amber-500" />
+                    <Clock className="h-4 w-4 text-amber-400" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">
+                  <div className="text-sm font-medium text-foreground/90 truncate">
                     {task.agentName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                   </div>
                   <div className="text-xs text-muted-foreground">
@@ -330,12 +350,12 @@ export function DashboardView() {
                   variant="outline"
                   className={`text-[10px] shrink-0 ${
                     task.status === 'completed'
-                      ? 'border-emerald-500/30 text-emerald-600'
+                      ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5'
                       : task.status === 'running'
-                      ? 'border-blue-500/30 text-blue-600'
+                      ? 'border-cyan-500/20 text-cyan-400 bg-cyan-500/5'
                       : task.status === 'failed'
-                      ? 'border-red-500/30 text-red-600'
-                      : 'border-amber-500/30 text-amber-600'
+                      ? 'border-red-500/20 text-red-400 bg-red-500/5'
+                      : 'border-amber-500/20 text-amber-400 bg-amber-500/5'
                   }`}
                 >
                   {task.status}
@@ -359,43 +379,58 @@ function StatCard({
   value,
   icon: Icon,
   trend,
-  color,
+  accent,
 }: {
   title: string;
   value: number | string;
   icon: React.ElementType;
   trend: string;
-  color: string;
+  accent: string;
 }) {
-  const colorClasses: Record<string, string> = {
-    emerald: 'from-emerald-500/10 to-emerald-500/5 text-emerald-600',
-    blue: 'from-blue-500/10 to-blue-500/5 text-blue-600',
-    amber: 'from-amber-500/10 to-amber-500/5 text-amber-600',
-    violet: 'from-violet-500/10 to-violet-500/5 text-violet-600',
+  const accentStyles: Record<string, { icon: string; glow: string; text: string; bg: string }> = {
+    emerald: {
+      icon: 'text-emerald-400',
+      glow: 'from-emerald-500/8 to-emerald-500/2',
+      text: 'text-emerald-400',
+      bg: 'bg-emerald-500/10',
+    },
+    cyan: {
+      icon: 'text-cyan-400',
+      glow: 'from-cyan-500/8 to-cyan-500/2',
+      text: 'text-cyan-400',
+      bg: 'bg-cyan-500/10',
+    },
+    amber: {
+      icon: 'text-amber-400',
+      glow: 'from-amber-500/8 to-amber-500/2',
+      text: 'text-amber-400',
+      bg: 'bg-amber-500/10',
+    },
+    violet: {
+      icon: 'text-violet-400',
+      glow: 'from-violet-500/8 to-violet-500/2',
+      text: 'text-violet-400',
+      bg: 'bg-violet-500/10',
+    },
   };
 
-  const iconBgClasses: Record<string, string> = {
-    emerald: 'bg-emerald-500/15 text-emerald-600',
-    blue: 'bg-blue-500/15 text-blue-600',
-    amber: 'bg-amber-500/15 text-amber-600',
-    violet: 'bg-violet-500/15 text-violet-600',
-  };
+  const style = accentStyles[accent] || accentStyles.emerald;
 
   return (
-    <Card className={`bg-gradient-to-br ${colorClasses[color] || colorClasses.emerald}`}>
+    <Card className={`card-premium border-border/30 bg-gradient-to-br ${style.glow}`}>
       <CardContent className="p-5">
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">
+            <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
               {title}
             </p>
-            <p className="mt-1 text-2xl font-bold">{value}</p>
+            <p className="mt-1.5 text-2xl font-bold text-foreground/95">{value}</p>
           </div>
-          <div className={`rounded-lg p-2.5 ${iconBgClasses[color] || iconBgClasses.emerald}`}>
-            <Icon className="h-5 w-5" />
+          <div className={`rounded-lg p-2.5 ${style.bg}`}>
+            <Icon className={`h-5 w-5 ${style.icon}`} />
           </div>
         </div>
-        <p className="mt-2 text-xs text-muted-foreground flex items-center gap-1">
+        <p className={`mt-2.5 text-xs ${style.text} flex items-center gap-1 font-medium`}>
           <ArrowUpRight className="h-3 w-3" />
           {trend}
         </p>

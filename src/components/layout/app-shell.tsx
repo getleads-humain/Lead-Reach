@@ -27,7 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-background noise-bg">
         <Sidebar />
         <div
           className={cn(
@@ -36,7 +36,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           )}
         >
           <TopBar />
-          <main className="p-4 md:p-6">{children}</main>
+          <main className="p-4 md:p-6 lg:p-8">{children}</main>
         </div>
       </div>
     </TooltipProvider>

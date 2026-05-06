@@ -27,7 +27,6 @@ import {
   Plus,
   Search,
   Target,
-  Users,
   TrendingUp,
   MoreVertical,
   Play,
@@ -53,7 +52,6 @@ export function CampaignsView() {
   const [createOpen, setCreateOpen] = useState(false);
   const [detailCampaign, setDetailCampaign] = useState<CampaignWithCounts | null>(null);
 
-  // Form state
   const [formName, setFormName] = useState('');
   const [formDesc, setFormDesc] = useState('');
   const [formIndustry, setFormIndustry] = useState('');
@@ -135,10 +133,10 @@ export function CampaignsView() {
 
   const statusBadge = (status: string) => {
     const styles: Record<string, string> = {
-      active: 'border-emerald-500/30 text-emerald-600 bg-emerald-500/10',
-      paused: 'border-amber-500/30 text-amber-600 bg-amber-500/10',
-      completed: 'border-blue-500/30 text-blue-600 bg-blue-500/10',
-      archived: 'border-gray-500/30 text-gray-500 bg-gray-500/10',
+      active: 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5',
+      paused: 'border-amber-500/20 text-amber-400 bg-amber-500/5',
+      completed: 'border-cyan-500/20 text-cyan-400 bg-cyan-500/5',
+      archived: 'border-gray-500/20 text-gray-500 bg-gray-500/5',
     };
     return styles[status] || styles.active;
   };
@@ -147,12 +145,12 @@ export function CampaignsView() {
     return (
       <div className="space-y-4">
         <div className="flex items-center justify-between">
-          <Skeleton className="h-10 w-48" />
-          <Skeleton className="h-10 w-32" />
+          <Skeleton className="h-10 w-48 bg-secondary/30" />
+          <Skeleton className="h-10 w-32 bg-secondary/30" />
         </div>
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {[1, 2, 3].map((i) => (
-            <Skeleton key={i} className="h-56 rounded-xl" />
+            <Skeleton key={i} className="h-56 rounded-xl bg-secondary/30" />
           ))}
         </div>
       </div>
@@ -164,14 +162,14 @@ export function CampaignsView() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Campaigns</h2>
+          <h2 className="text-2xl font-bold text-foreground">Campaigns</h2>
           <p className="text-sm text-muted-foreground">
             Manage your lead generation campaigns
           </p>
         </div>
         <Button
           onClick={() => setCreateOpen(true)}
-          className="bg-emerald-500 hover:bg-emerald-600 text-white gap-2"
+          className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
         >
           <Plus className="h-4 w-4" />
           New Campaign
@@ -185,20 +183,20 @@ export function CampaignsView() {
           placeholder="Search campaigns..."
           value={search}
           onChange={(e) => setSearch(e.target.value)}
-          className="pl-10"
+          className="pl-10 bg-secondary/30 border-border/40 focus:border-emerald-500/30"
         />
       </div>
 
       {/* Campaign Grid */}
       {filteredCampaigns.length === 0 ? (
         <div className="text-center py-16">
-          <Target className="h-12 w-12 mx-auto text-muted-foreground/50" />
-          <h3 className="mt-4 text-lg font-medium">No campaigns yet</h3>
+          <Target className="h-12 w-12 mx-auto text-muted-foreground/30" />
+          <h3 className="mt-4 text-lg font-medium text-foreground/80">No campaigns yet</h3>
           <p className="text-sm text-muted-foreground">
             Create your first campaign to start generating leads
           </p>
           <Button
-            className="mt-4 bg-emerald-500 hover:bg-emerald-600 text-white"
+            className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -210,13 +208,13 @@ export function CampaignsView() {
           {filteredCampaigns.map((campaign) => (
             <Card
               key={campaign.id}
-              className="hover:shadow-md transition-shadow cursor-pointer group"
+              className="card-premium border-border/30 cursor-pointer group"
               onClick={() => setDetailCampaign(campaign)}
             >
               <CardContent className="p-5">
                 <div className="flex items-start justify-between">
                   <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm truncate">
+                    <h3 className="font-semibold text-sm truncate text-foreground/90">
                       {campaign.name}
                     </h3>
                     {campaign.description && (
@@ -230,13 +228,13 @@ export function CampaignsView() {
                       <Button
                         variant="ghost"
                         size="icon"
-                        className="h-7 w-7 shrink-0"
+                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
                         onClick={(e) => e.stopPropagation()}
                       >
                         <MoreVertical className="h-3.5 w-3.5" />
                       </Button>
                     </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end" className="bg-popover border-border/60">
                       <DropdownMenuItem
                         onClick={(e) => {
                           e.stopPropagation();
@@ -287,12 +285,12 @@ export function CampaignsView() {
                     {campaign.status}
                   </Badge>
                   {campaign.targetIndustry && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
                       {campaign.targetIndustry}
                     </Badge>
                   )}
                   {campaign.targetLocation && (
-                    <Badge variant="outline" className="text-[10px]">
+                    <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
                       {campaign.targetLocation}
                     </Badge>
                   )}
@@ -301,7 +299,7 @@ export function CampaignsView() {
                 <div className="mt-4 space-y-2">
                   <div className="flex items-center justify-between text-xs text-muted-foreground">
                     <span>Qualification Progress</span>
-                    <span className="font-medium text-foreground">
+                    <span className="font-semibold text-foreground/80">
                       {campaign.leadsFound > 0
                         ? Math.round(
                             (campaign.leadsQualified / campaign.leadsFound) * 100
@@ -318,25 +316,25 @@ export function CampaignsView() {
                           )
                         : 0
                     }
-                    className="h-1.5"
+                    className="h-1.5 bg-secondary/40"
                   />
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                  <div className="rounded-md bg-muted/50 p-2">
-                    <div className="text-sm font-bold">
+                  <div className="rounded-md bg-secondary/20 p-2">
+                    <div className="text-sm font-bold text-foreground/90">
                       {campaign.leadsFound}
                     </div>
                     <div className="text-[10px] text-muted-foreground">Found</div>
                   </div>
-                  <div className="rounded-md bg-muted/50 p-2">
-                    <div className="text-sm font-bold">
+                  <div className="rounded-md bg-secondary/20 p-2">
+                    <div className="text-sm font-bold text-foreground/90">
                       {campaign.leadsQualified}
                     </div>
                     <div className="text-[10px] text-muted-foreground">Qualified</div>
                   </div>
-                  <div className="rounded-md bg-muted/50 p-2">
-                    <div className="text-sm font-bold">
+                  <div className="rounded-md bg-secondary/20 p-2">
+                    <div className="text-sm font-bold text-foreground/90">
                       {campaign.leadsContacted}
                     </div>
                     <div className="text-[10px] text-muted-foreground">Contacted</div>
@@ -350,36 +348,38 @@ export function CampaignsView() {
 
       {/* Create Campaign Dialog */}
       <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg bg-card border-border/60">
           <DialogHeader>
-            <DialogTitle>Create New Campaign</DialogTitle>
+            <DialogTitle className="text-foreground">Create New Campaign</DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label>Campaign Name *</Label>
+              <Label className="text-foreground/80">Campaign Name *</Label>
               <Input
                 placeholder="e.g., Accounting Firms in Dubai"
                 value={formName}
                 onChange={(e) => setFormName(e.target.value)}
+                className="bg-secondary/30 border-border/40 focus:border-emerald-500/30"
               />
             </div>
             <div className="space-y-2">
-              <Label>Description</Label>
+              <Label className="text-foreground/80">Description</Label>
               <Textarea
                 placeholder="Describe the target audience and goals..."
                 value={formDesc}
                 onChange={(e) => setFormDesc(e.target.value)}
                 rows={3}
+                className="bg-secondary/30 border-border/40 focus:border-emerald-500/30 resize-none"
               />
             </div>
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Target Industry</Label>
+                <Label className="text-foreground/80">Target Industry</Label>
                 <Select value={formIndustry} onValueChange={setFormIndustry}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
                     <SelectValue placeholder="Select industry" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-popover border-border/60">
                     {INDUSTRIES.map((ind) => (
                       <SelectItem key={ind} value={ind}>
                         {ind}
@@ -389,12 +389,12 @@ export function CampaignsView() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <Label>Target Location</Label>
+                <Label className="text-foreground/80">Target Location</Label>
                 <Select value={formLocation} onValueChange={setFormLocation}>
-                  <SelectTrigger>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
                     <SelectValue placeholder="Select location" />
                   </SelectTrigger>
-                  <SelectContent>
+                  <SelectContent className="bg-popover border-border/60">
                     {LOCATIONS.map((loc) => (
                       <SelectItem key={loc} value={loc}>
                         {loc}
@@ -405,12 +405,12 @@ export function CampaignsView() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label>Company Size</Label>
+              <Label className="text-foreground/80">Company Size</Label>
               <Select value={formSize} onValueChange={setFormSize}>
-                <SelectTrigger>
+                <SelectTrigger className="bg-secondary/30 border-border/40">
                   <SelectValue placeholder="Select company size" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="bg-popover border-border/60">
                   {COMPANY_SIZES.map((size) => (
                     <SelectItem key={size} value={size}>
                       {size} employees
@@ -421,13 +421,13 @@ export function CampaignsView() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>
+            <Button variant="outline" onClick={() => setCreateOpen(false)} className="border-border/40">
               Cancel
             </Button>
             <Button
               onClick={handleCreate}
               disabled={!formName.trim() || formCreating}
-              className="bg-emerald-500 hover:bg-emerald-600 text-white"
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all"
             >
               {formCreating ? 'Creating...' : 'Create Campaign'}
             </Button>
@@ -437,11 +437,11 @@ export function CampaignsView() {
 
       {/* Campaign Detail Dialog */}
       <Dialog open={!!detailCampaign} onOpenChange={() => setDetailCampaign(null)}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg bg-card border-border/60">
           {detailCampaign && (
             <>
               <DialogHeader>
-                <DialogTitle>{detailCampaign.name}</DialogTitle>
+                <DialogTitle className="text-foreground">{detailCampaign.name}</DialogTitle>
               </DialogHeader>
               <div className="space-y-4">
                 {detailCampaign.description && (
@@ -454,29 +454,24 @@ export function CampaignsView() {
                     {detailCampaign.status}
                   </Badge>
                   {detailCampaign.targetIndustry && (
-                    <Badge variant="outline">{detailCampaign.targetIndustry}</Badge>
+                    <Badge variant="outline" className="border-border/30 text-muted-foreground">{detailCampaign.targetIndustry}</Badge>
                   )}
                   {detailCampaign.targetLocation && (
-                    <Badge variant="outline">{detailCampaign.targetLocation}</Badge>
+                    <Badge variant="outline" className="border-border/30 text-muted-foreground">{detailCampaign.targetLocation}</Badge>
                   )}
                 </div>
                 <div className="grid grid-cols-4 gap-3 text-center">
-                  <div className="rounded-lg bg-muted/50 p-3">
-                    <div className="text-xl font-bold">{detailCampaign.leadsFound}</div>
-                    <div className="text-xs text-muted-foreground">Found</div>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
-                    <div className="text-xl font-bold">{detailCampaign.leadsQualified}</div>
-                    <div className="text-xs text-muted-foreground">Qualified</div>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
-                    <div className="text-xl font-bold">{detailCampaign.leadsContacted}</div>
-                    <div className="text-xs text-muted-foreground">Contacted</div>
-                  </div>
-                  <div className="rounded-lg bg-muted/50 p-3">
-                    <div className="text-xl font-bold">{detailCampaign.leadsResponded}</div>
-                    <div className="text-xs text-muted-foreground">Responded</div>
-                  </div>
+                  {[
+                    { value: detailCampaign.leadsFound, label: 'Found' },
+                    { value: detailCampaign.leadsQualified, label: 'Qualified' },
+                    { value: detailCampaign.leadsContacted, label: 'Contacted' },
+                    { value: detailCampaign.leadsResponded, label: 'Responded' },
+                  ].map((item) => (
+                    <div key={item.label} className="rounded-lg bg-secondary/20 p-3">
+                      <div className="text-xl font-bold text-foreground/90">{item.value}</div>
+                      <div className="text-xs text-muted-foreground">{item.label}</div>
+                    </div>
+                  ))}
                 </div>
                 <div className="text-xs text-muted-foreground">
                   Created {new Date(detailCampaign.createdAt).toLocaleDateString()} • Last updated{' '}
@@ -491,6 +486,7 @@ export function CampaignsView() {
                     setActiveView('leads');
                     setDetailCampaign(null);
                   }}
+                  className="border-border/40"
                 >
                   View Leads
                 </Button>

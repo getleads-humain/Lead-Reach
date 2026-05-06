@@ -7,10 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
 import {
   Bell,
-  Search,
   Sparkles,
-  Menu,
-  X,
   Send,
 } from 'lucide-react';
 import {
@@ -21,7 +18,7 @@ import {
 } from '@/components/ui/dialog';
 
 export function TopBar() {
-  const { notifications, markNotificationRead, sidebarCollapsed } = useAppStore();
+  const { notifications, sidebarCollapsed } = useAppStore();
   const [searchOpen, setSearchOpen] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -43,7 +40,6 @@ export function TopBar() {
       setAiResponse(data.response || 'No response');
 
       if (data.plan) {
-        // Create campaign if the plan suggests one
         if (data.plan.campaignName) {
           const campaignRes = await fetch('/api/campaigns', {
             method: 'POST',
@@ -56,7 +52,6 @@ export function TopBar() {
           });
           const campaign = await campaignRes.json();
 
-          // Create agent tasks
           if (data.agentTasks?.length && campaign.id) {
             for (const task of data.agentTasks) {
               await fetch('/api/agents', {
@@ -81,12 +76,10 @@ export function TopBar() {
 
   return (
     <>
-      <header
-        className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-sm"
-      >
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/50 glass px-4">
         <div className="flex items-center gap-3">
-          <h2 className="text-sm font-medium text-muted-foreground">
-            Agentic Lead Generation Platform
+          <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
+            Agentic Lead Generation
           </h2>
         </div>
 
@@ -94,17 +87,17 @@ export function TopBar() {
           <Button
             variant="outline"
             size="sm"
-            className="gap-2 border-emerald-500/30 text-emerald-600 hover:bg-emerald-500/10 hover:text-emerald-600"
+            className="gap-2 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30 transition-all duration-200"
             onClick={() => setSearchOpen(true)}
           >
             <Sparkles className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">Ask AI</span>
+            <span className="hidden sm:inline text-xs">Ask AI</span>
           </Button>
 
-          <Button variant="ghost" size="icon" className="relative">
+          <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <Badge className="absolute -right-1 -top-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-emerald-500 text-white border-0">
+              <Badge className="absolute -right-1 -top-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-emerald-500 text-black border-0 font-bold">
                 {unreadCount}
               </Badge>
             )}
@@ -114,10 +107,10 @@ export function TopBar() {
 
       {/* AI Search Dialog */}
       <Dialog open={searchOpen} onOpenChange={setSearchOpen}>
-        <DialogContent className="sm:max-w-lg">
+        <DialogContent className="sm:max-w-lg bg-card border-border/60">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Sparkles className="h-5 w-5 text-emerald-500" />
+            <DialogTitle className="flex items-center gap-2 text-foreground">
+              <Sparkles className="h-5 w-5 text-emerald-400" />
               Ask LeadReach AI
             </DialogTitle>
           </DialogHeader>
@@ -128,22 +121,22 @@ export function TopBar() {
                 value={aiQuery}
                 onChange={(e) => setAiQuery(e.target.value)}
                 onKeyDown={(e) => e.key === 'Enter' && handleAiSubmit()}
-                className="flex-1"
+                className="flex-1 bg-secondary/50 border-border/50 focus:border-emerald-500/30"
               />
               <Button
                 onClick={handleAiSubmit}
                 disabled={aiLoading || !aiQuery.trim()}
-                className="bg-emerald-500 hover:bg-emerald-600 text-white"
+                className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all duration-200"
               >
                 {aiLoading ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-white/30 border-t-white" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}
               </Button>
             </div>
             {aiResponse && (
-              <div className="rounded-lg border border-border bg-muted/50 p-4 text-sm whitespace-pre-wrap">
+              <div className="rounded-lg border border-border/50 bg-secondary/30 p-4 text-sm whitespace-pre-wrap text-foreground/90">
                 {aiResponse}
               </div>
             )}
@@ -157,7 +150,7 @@ export function TopBar() {
                   key={suggestion}
                   variant="outline"
                   size="sm"
-                  className="text-xs"
+                  className="text-xs border-border/40 text-muted-foreground hover:text-foreground hover:border-emerald-500/20 transition-all"
                   onClick={() => {
                     setAiQuery(suggestion);
                   }}

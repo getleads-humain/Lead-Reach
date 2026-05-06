@@ -35,7 +35,6 @@ import {
 } from '@/components/ui/dropdown-menu';
 import {
   Search,
-  Filter,
   MoreVertical,
   ExternalLink,
   Mail,
@@ -44,8 +43,6 @@ import {
   Building2,
   MapPin,
   Users,
-  DollarSign,
-  Calendar,
   Trash2,
   ArrowUpDown,
   ChevronLeft,
@@ -212,7 +209,7 @@ export function LeadsView() {
       {/* Header */}
       <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h2 className="text-2xl font-bold">Leads</h2>
+          <h2 className="text-2xl font-bold text-foreground">Leads</h2>
           <p className="text-sm text-muted-foreground">
             {total} leads discovered across all campaigns
           </p>
@@ -227,27 +224,27 @@ export function LeadsView() {
             placeholder="Search companies, contacts, locations..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1); }}
-            className="pl-10"
+            className="pl-10 bg-secondary/30 border-border/40 focus:border-emerald-500/30"
           />
         </div>
         <div className="flex gap-2">
           <Select value={tierFilter} onValueChange={(v) => { setTierFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-32">
+            <SelectTrigger className="w-32 bg-secondary/30 border-border/40">
               <SelectValue placeholder="Tier" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-popover border-border/60">
               <SelectItem value="all">All Tiers</SelectItem>
-              <SelectItem value="hot">🔥 Hot</SelectItem>
-              <SelectItem value="warm">🟡 Warm</SelectItem>
-              <SelectItem value="cold">🔵 Cold</SelectItem>
-              <SelectItem value="unqualified">⚫ Unqualified</SelectItem>
+              <SelectItem value="hot">Hot</SelectItem>
+              <SelectItem value="warm">Warm</SelectItem>
+              <SelectItem value="cold">Cold</SelectItem>
+              <SelectItem value="unqualified">Unqualified</SelectItem>
             </SelectContent>
           </Select>
           <Select value={stageFilter} onValueChange={(v) => { setStageFilter(v); setPage(1); }}>
-            <SelectTrigger className="w-36">
+            <SelectTrigger className="w-36 bg-secondary/30 border-border/40">
               <SelectValue placeholder="Stage" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-popover border-border/60">
               <SelectItem value="all">All Stages</SelectItem>
               {Object.entries(STAGE_LABELS).map(([key, label]) => (
                 <SelectItem key={key} value={key}>
@@ -257,10 +254,10 @@ export function LeadsView() {
             </SelectContent>
           </Select>
           <Select value={campaignFilter} onValueChange={(v) => { setCampaignFilter(v); setPage(1); setSelectedCampaignId(v === 'all' ? null : v); }}>
-            <SelectTrigger className="w-48">
+            <SelectTrigger className="w-48 bg-secondary/30 border-border/40">
               <SelectValue placeholder="Campaign" />
             </SelectTrigger>
-            <SelectContent>
+            <SelectContent className="bg-popover border-border/60">
               <SelectItem value="all">All Campaigns</SelectItem>
               {campaigns.map((c) => (
                 <SelectItem key={c.id} value={c.id}>
@@ -276,34 +273,34 @@ export function LeadsView() {
       {loading ? (
         <div className="space-y-2">
           {[1, 2, 3, 4, 5].map((i) => (
-            <Skeleton key={i} className="h-12 rounded-lg" />
+            <Skeleton key={i} className="h-12 rounded-lg bg-secondary/30" />
           ))}
         </div>
       ) : sortedLeads.length === 0 ? (
         <div className="text-center py-16">
-          <Building2 className="h-12 w-12 mx-auto text-muted-foreground/50" />
-          <h3 className="mt-4 text-lg font-medium">No leads found</h3>
+          <Building2 className="h-12 w-12 mx-auto text-muted-foreground/30" />
+          <h3 className="mt-4 text-lg font-medium text-foreground/80">No leads found</h3>
           <p className="text-sm text-muted-foreground">
             Try adjusting your filters or search terms
           </p>
         </div>
       ) : (
-        <div className="rounded-lg border border-border overflow-hidden">
+        <div className="rounded-lg border border-border/30 overflow-hidden">
           <div className="overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead className="cursor-pointer" onClick={() => handleSort('companyName')}>
+                <TableRow className="border-border/30 hover:bg-transparent">
+                  <TableHead className="cursor-pointer text-muted-foreground text-xs uppercase tracking-wider" onClick={() => handleSort('companyName')}>
                     <span className="flex items-center gap-1">Company <ArrowUpDown className="h-3 w-3" /></span>
                   </TableHead>
-                  <TableHead>Industry</TableHead>
-                  <TableHead>Location</TableHead>
-                  <TableHead>Contact</TableHead>
-                  <TableHead className="cursor-pointer" onClick={() => handleSort('leadScore')}>
+                  <TableHead className="text-muted-foreground text-xs uppercase tracking-wider">Industry</TableHead>
+                  <TableHead className="text-muted-foreground text-xs uppercase tracking-wider">Location</TableHead>
+                  <TableHead className="text-muted-foreground text-xs uppercase tracking-wider">Contact</TableHead>
+                  <TableHead className="cursor-pointer text-muted-foreground text-xs uppercase tracking-wider" onClick={() => handleSort('leadScore')}>
                     <span className="flex items-center gap-1">Score <ArrowUpDown className="h-3 w-3" /></span>
                   </TableHead>
-                  <TableHead>Tier</TableHead>
-                  <TableHead>Stage</TableHead>
+                  <TableHead className="text-muted-foreground text-xs uppercase tracking-wider">Tier</TableHead>
+                  <TableHead className="text-muted-foreground text-xs uppercase tracking-wider">Stage</TableHead>
                   <TableHead className="w-10"></TableHead>
                 </TableRow>
               </TableHeader>
@@ -311,42 +308,42 @@ export function LeadsView() {
                 {sortedLeads.map((lead) => (
                   <TableRow
                     key={lead.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="cursor-pointer hover:bg-secondary/20 border-border/20 transition-colors"
                     onClick={() => setSelectedLead(lead)}
                   >
                     <TableCell>
                       <div className="flex items-center gap-2">
-                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-600 text-xs font-bold shrink-0">
+                        <div className="flex h-8 w-8 items-center justify-center rounded-md bg-emerald-500/10 text-emerald-400 text-xs font-bold shrink-0">
                           {lead.companyName.charAt(0)}
                         </div>
                         <div className="min-w-0">
-                          <div className="font-medium text-sm truncate max-w-40">{lead.companyName}</div>
+                          <div className="font-medium text-sm text-foreground/90 truncate max-w-40">{lead.companyName}</div>
                           {lead.website && (
                             <div className="text-xs text-muted-foreground truncate max-w-40">{lead.website.replace('https://', '')}</div>
                           )}
                         </div>
                       </div>
                     </TableCell>
-                    <TableCell className="text-xs">{lead.industry || '—'}</TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-xs text-muted-foreground">{lead.industry || '—'}</TableCell>
+                    <TableCell className="text-xs text-muted-foreground">
                       {lead.city && lead.country ? `${lead.city}, ${lead.country}` : lead.country || '—'}
                     </TableCell>
-                    <TableCell className="text-xs">
+                    <TableCell className="text-xs text-muted-foreground">
                       {lead.keyContactName || lead.ceoName || '—'}
                     </TableCell>
                     <TableCell>
                       <div className="flex items-center gap-1.5">
-                        <div className="h-2 w-12 rounded-full bg-muted overflow-hidden">
+                        <div className="h-1.5 w-12 rounded-full bg-secondary/50 overflow-hidden">
                           <div
                             className={`h-full rounded-full ${
-                              lead.leadScore >= 80 ? 'bg-emerald-500' :
-                              lead.leadScore >= 60 ? 'bg-amber-500' :
+                              lead.leadScore >= 80 ? 'bg-emerald-400' :
+                              lead.leadScore >= 60 ? 'bg-amber-400' :
                               'bg-red-400'
                             }`}
                             style={{ width: `${lead.leadScore}%` }}
                           />
                         </div>
-                        <span className="text-xs font-medium">{lead.leadScore}</span>
+                        <span className="text-xs font-semibold text-foreground/80">{lead.leadScore}</span>
                       </div>
                     </TableCell>
                     <TableCell>
@@ -362,11 +359,11 @@ export function LeadsView() {
                     <TableCell>
                       <DropdownMenu>
                         <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => e.stopPropagation()}>
+                          <Button variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground" onClick={(e) => e.stopPropagation()}>
                             <MoreVertical className="h-3.5 w-3.5" />
                           </Button>
                         </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
+                        <DropdownMenuContent align="end" className="bg-popover border-border/60">
                           <DropdownMenuItem onClick={(e) => { e.stopPropagation(); setSelectedLead(lead); }}>
                             <ExternalLink className="h-3.5 w-3.5 mr-2" />View Details
                           </DropdownMenuItem>
@@ -383,7 +380,7 @@ export function LeadsView() {
           </div>
 
           {/* Pagination */}
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border">
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border/20 bg-secondary/10">
             <div className="text-xs text-muted-foreground">
               Showing {((page - 1) * limit) + 1}-{Math.min(page * limit, total)} of {total}
             </div>
@@ -391,17 +388,17 @@ export function LeadsView() {
               <Button
                 variant="outline"
                 size="icon"
-                className="h-7 w-7"
+                className="h-7 w-7 border-border/30 text-muted-foreground"
                 disabled={page <= 1}
                 onClick={() => setPage(page - 1)}
               >
                 <ChevronLeft className="h-3.5 w-3.5" />
               </Button>
-              <span className="text-xs">{page} / {totalPages || 1}</span>
+              <span className="text-xs text-foreground/80 font-medium">{page} / {totalPages || 1}</span>
               <Button
                 variant="outline"
                 size="icon"
-                className="h-7 w-7"
+                className="h-7 w-7 border-border/30 text-muted-foreground"
                 disabled={page >= totalPages}
                 onClick={() => setPage(page + 1)}
               >
@@ -414,16 +411,16 @@ export function LeadsView() {
 
       {/* Lead Detail Sheet */}
       <Sheet open={!!selectedLead} onOpenChange={() => setSelectedLead(null)}>
-        <SheetContent className="sm:max-w-lg overflow-y-auto">
+        <SheetContent className="sm:max-w-lg overflow-y-auto bg-card border-border/40">
           {selectedLead && (
             <>
               <SheetHeader>
                 <SheetTitle className="flex items-center gap-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-600 text-lg font-bold">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 text-lg font-bold">
                     {selectedLead.companyName.charAt(0)}
                   </div>
                   <div>
-                    <div className="text-lg">{selectedLead.companyName}</div>
+                    <div className="text-lg text-foreground">{selectedLead.companyName}</div>
                     <div className="flex gap-1.5 mt-1">
                       <Badge variant="outline" className={`text-[10px] ${TIER_COLORS[selectedLead.leadTier as LeadTier] || ''}`}>
                         {selectedLead.leadTier}
@@ -439,7 +436,7 @@ export function LeadsView() {
               <div className="mt-6 space-y-6">
                 {/* Score Breakdown */}
                 <div>
-                  <h4 className="text-sm font-semibold mb-3">Lead Score: {selectedLead.leadScore}/100</h4>
+                  <h4 className="text-sm font-semibold mb-3 text-foreground/90">Lead Score: {selectedLead.leadScore}/100</h4>
                   <div className="space-y-2">
                     {[
                       { label: 'Firmographic', value: selectedLead.firmographicScore },
@@ -450,13 +447,13 @@ export function LeadsView() {
                     ].map((item) => (
                       <div key={item.label} className="flex items-center gap-3">
                         <span className="text-xs text-muted-foreground w-24">{item.label}</span>
-                        <div className="flex-1 h-2 rounded-full bg-muted overflow-hidden">
+                        <div className="flex-1 h-1.5 rounded-full bg-secondary/40 overflow-hidden">
                           <div
-                            className="h-full rounded-full bg-emerald-500"
+                            className="h-full rounded-full bg-emerald-400"
                             style={{ width: `${item.value}%` }}
                           />
                         </div>
-                        <span className="text-xs font-medium w-8">{item.value}</span>
+                        <span className="text-xs font-semibold text-foreground/80 w-8">{item.value}</span>
                       </div>
                     ))}
                   </div>
@@ -464,25 +461,25 @@ export function LeadsView() {
 
                 {/* Company Info */}
                 <div>
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
                     <Building2 className="h-4 w-4 text-muted-foreground" /> Company
                   </h4>
                   <div className="space-y-1.5 text-sm">
-                    {selectedLead.industry && <div><span className="text-muted-foreground">Industry:</span> {selectedLead.industry}{selectedLead.subIndustry ? ` / ${selectedLead.subIndustry}` : ''}</div>}
-                    {selectedLead.employeeCount && <div><span className="text-muted-foreground">Employees:</span> {selectedLead.employeeCount}</div>}
-                    {selectedLead.revenueEstimate && <div><span className="text-muted-foreground">Revenue:</span> {selectedLead.revenueEstimate}</div>}
-                    {selectedLead.foundingYear && <div><span className="text-muted-foreground">Founded:</span> {selectedLead.foundingYear}</div>}
-                    {selectedLead.ownershipType && <div><span className="text-muted-foreground">Ownership:</span> {selectedLead.ownershipType}</div>}
+                    {selectedLead.industry && <div><span className="text-muted-foreground">Industry:</span> <span className="text-foreground/80">{selectedLead.industry}</span>{selectedLead.subIndustry ? ` / ${selectedLead.subIndustry}` : ''}</div>}
+                    {selectedLead.employeeCount && <div><span className="text-muted-foreground">Employees:</span> <span className="text-foreground/80">{selectedLead.employeeCount}</span></div>}
+                    {selectedLead.revenueEstimate && <div><span className="text-muted-foreground">Revenue:</span> <span className="text-foreground/80">{selectedLead.revenueEstimate}</span></div>}
+                    {selectedLead.foundingYear && <div><span className="text-muted-foreground">Founded:</span> <span className="text-foreground/80">{selectedLead.foundingYear}</span></div>}
+                    {selectedLead.ownershipType && <div><span className="text-muted-foreground">Ownership:</span> <span className="text-foreground/80">{selectedLead.ownershipType}</span></div>}
                   </div>
                 </div>
 
                 {/* Location */}
                 {(selectedLead.city || selectedLead.hqAddress) && (
                   <div>
-                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
                       <MapPin className="h-4 w-4 text-muted-foreground" /> Location
                     </h4>
-                    <div className="space-y-1.5 text-sm">
+                    <div className="space-y-1.5 text-sm text-foreground/80">
                       {selectedLead.hqAddress && <div>{selectedLead.hqAddress}</div>}
                       {selectedLead.city && <div>{selectedLead.city}{selectedLead.stateProvince ? `, ${selectedLead.stateProvince}` : ''}{selectedLead.country ? `, ${selectedLead.country}` : ''}</div>}
                     </div>
@@ -491,19 +488,19 @@ export function LeadsView() {
 
                 {/* Contact Info */}
                 <div>
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2">
+                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
                     <Users className="h-4 w-4 text-muted-foreground" /> Key Contacts
                   </h4>
                   <div className="space-y-2">
                     {selectedLead.ceoName && (
-                      <div className="rounded-lg border border-border p-2.5">
-                        <div className="font-medium text-sm">{selectedLead.ceoName}</div>
+                      <div className="rounded-lg border border-border/30 bg-secondary/15 p-2.5">
+                        <div className="font-medium text-sm text-foreground/90">{selectedLead.ceoName}</div>
                         <div className="text-xs text-muted-foreground">CEO{selectedLead.ceoEmail ? ` • ${selectedLead.ceoEmail}` : ''}</div>
                       </div>
                     )}
                     {selectedLead.keyContactName && (
-                      <div className="rounded-lg border border-border p-2.5">
-                        <div className="font-medium text-sm">{selectedLead.keyContactName}</div>
+                      <div className="rounded-lg border border-border/30 bg-secondary/15 p-2.5">
+                        <div className="font-medium text-sm text-foreground/90">{selectedLead.keyContactName}</div>
                         <div className="text-xs text-muted-foreground">
                           {selectedLead.keyContactTitle || 'Key Contact'}
                           {selectedLead.keyContactEmail ? ` • ${selectedLead.keyContactEmail}` : ''}
@@ -515,32 +512,32 @@ export function LeadsView() {
 
                 {/* Contact Channels */}
                 <div>
-                  <h4 className="text-sm font-semibold mb-2">Contact Channels</h4>
+                  <h4 className="text-sm font-semibold mb-2 text-foreground/90">Contact Channels</h4>
                   <div className="space-y-1.5 text-sm">
                     {selectedLead.phoneMain && (
-                      <div className="flex items-center gap-2">
-                        <Phone className="h-3.5 w-3.5 text-muted-foreground" />
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Phone className="h-3.5 w-3.5" />
                         {selectedLead.phoneMain}
                       </div>
                     )}
                     {selectedLead.generalEmail && (
-                      <div className="flex items-center gap-2">
-                        <Mail className="h-3.5 w-3.5 text-muted-foreground" />
+                      <div className="flex items-center gap-2 text-muted-foreground">
+                        <Mail className="h-3.5 w-3.5" />
                         {selectedLead.generalEmail}
                       </div>
                     )}
                     {selectedLead.website && (
                       <div className="flex items-center gap-2">
                         <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                        <a href={selectedLead.website} target="_blank" rel="noopener noreferrer" className="text-emerald-600 hover:underline">
+                        <a href={selectedLead.website} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 transition-colors">
                           {selectedLead.website.replace('https://', '')}
                         </a>
                       </div>
                     )}
                     {selectedLead.linkedinUrl && (
                       <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-blue-600">in</span>
-                        <a href={selectedLead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:underline text-xs">
+                        <span className="text-[10px] font-bold text-cyan-400">in</span>
+                        <a href={selectedLead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs transition-colors">
                           LinkedIn
                         </a>
                       </div>
@@ -550,15 +547,15 @@ export function LeadsView() {
 
                 {/* Stage Update */}
                 <div>
-                  <h4 className="text-sm font-semibold mb-2">Update Stage</h4>
+                  <h4 className="text-sm font-semibold mb-2 text-foreground/90">Update Stage</h4>
                   <Select
                     value={selectedLead.stage}
                     onValueChange={(v) => handleStageChange(selectedLead.id, v)}
                   >
-                    <SelectTrigger>
+                    <SelectTrigger className="bg-secondary/30 border-border/40">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent>
+                    <SelectContent className="bg-popover border-border/60">
                       {Object.entries(STAGE_LABELS).map(([key, label]) => (
                         <SelectItem key={key} value={key}>
                           {label}

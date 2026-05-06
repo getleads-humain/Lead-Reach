@@ -141,7 +141,7 @@ export function AgentsView() {
       <div className="space-y-6">
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-4">
           {[1, 2, 3, 4, 5, 6, 7, 8].map((i) => (
-            <Skeleton key={i} className="h-48 rounded-xl" />
+            <Skeleton key={i} className="h-48 rounded-xl bg-secondary/30" />
           ))}
         </div>
       </div>
@@ -152,7 +152,7 @@ export function AgentsView() {
     <div className="space-y-6">
       {/* Header */}
       <div>
-        <h2 className="text-2xl font-bold">AI Agents</h2>
+        <h2 className="text-2xl font-bold text-foreground">AI Agents</h2>
         <p className="text-sm text-muted-foreground">
           Monitor and manage your agentic workforce
         </p>
@@ -167,16 +167,16 @@ export function AgentsView() {
           const currentTask = getAgentCurrentTask(def.name);
 
           return (
-            <Card key={def.name} className="relative overflow-hidden">
+            <Card key={def.name} className="card-premium border-border/30 relative overflow-hidden">
               <div
-                className="absolute top-0 left-0 right-0 h-1"
+                className="absolute top-0 left-0 right-0 h-0.5"
                 style={{ backgroundColor: def.color }}
               />
               <CardContent className="p-4">
                 <div className="flex items-start justify-between">
                   <div
                     className="rounded-lg p-2"
-                    style={{ backgroundColor: `${def.color}15`, color: def.color }}
+                    style={{ backgroundColor: `${def.color}12`, color: def.color }}
                   >
                     <Icon className="h-5 w-5" />
                   </div>
@@ -184,12 +184,12 @@ export function AgentsView() {
                     <span
                       className={`h-2 w-2 rounded-full ${
                         status === 'processing'
-                          ? 'bg-blue-500 animate-pulse'
+                          ? 'bg-cyan-400 animate-pulse'
                           : status === 'active'
-                          ? 'bg-emerald-500'
+                          ? 'bg-emerald-400'
                           : status === 'error'
-                          ? 'bg-red-500'
-                          : 'bg-gray-400'
+                          ? 'bg-red-400'
+                          : 'bg-gray-600'
                       }`}
                     />
                     <span className="text-[10px] capitalize text-muted-foreground">
@@ -198,16 +198,16 @@ export function AgentsView() {
                   </div>
                 </div>
 
-                <h3 className="mt-3 font-semibold text-sm">{def.displayName}</h3>
+                <h3 className="mt-3 font-semibold text-sm text-foreground/90">{def.displayName}</h3>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
                   {def.description}
                 </p>
 
                 {currentTask && (
-                  <div className="mt-3 rounded-md bg-blue-500/5 border border-blue-500/10 p-2">
+                  <div className="mt-3 rounded-md bg-cyan-500/5 border border-cyan-500/10 p-2">
                     <div className="flex items-center gap-1.5">
-                      <Loader2 className="h-3 w-3 text-blue-500 animate-spin" />
-                      <span className="text-xs text-blue-600 font-medium truncate">
+                      <Loader2 className="h-3 w-3 text-cyan-400 animate-spin" />
+                      <span className="text-xs text-cyan-400 font-medium truncate">
                         {currentTask}
                       </span>
                     </div>
@@ -215,16 +215,16 @@ export function AgentsView() {
                 )}
 
                 <div className="mt-3 grid grid-cols-3 gap-1 text-center">
-                  <div className="rounded bg-emerald-500/10 p-1.5">
-                    <div className="text-xs font-bold text-emerald-600">{stats.completed}</div>
+                  <div className="rounded bg-emerald-500/8 p-1.5">
+                    <div className="text-xs font-bold text-emerald-400">{stats.completed}</div>
                     <div className="text-[9px] text-muted-foreground">Done</div>
                   </div>
-                  <div className="rounded bg-blue-500/10 p-1.5">
-                    <div className="text-xs font-bold text-blue-600">{stats.running}</div>
+                  <div className="rounded bg-cyan-500/8 p-1.5">
+                    <div className="text-xs font-bold text-cyan-400">{stats.running}</div>
                     <div className="text-[9px] text-muted-foreground">Active</div>
                   </div>
-                  <div className="rounded bg-red-500/10 p-1.5">
-                    <div className="text-xs font-bold text-red-600">{stats.failed}</div>
+                  <div className="rounded bg-red-500/8 p-1.5">
+                    <div className="text-xs font-bold text-red-400">{stats.failed}</div>
                     <div className="text-[9px] text-muted-foreground">Failed</div>
                   </div>
                 </div>
@@ -235,17 +235,17 @@ export function AgentsView() {
       </div>
 
       {/* Agent-Reach Panel */}
-      <Card>
+      <Card className="card-premium border-border/30">
         <CardHeader className="pb-3">
           <div className="flex items-center justify-between">
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Zap className="h-4 w-4 text-amber-500" />
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <Zap className="h-4 w-4 text-amber-400" />
               Agent-Reach Channels
             </CardTitle>
             <Button
               variant="outline"
               size="sm"
-              className="gap-2"
+              className="gap-2 border-border/40 text-muted-foreground hover:text-foreground hover:border-emerald-500/20 transition-all"
               onClick={runDoctor}
               disabled={doctorRunning}
             >
@@ -259,13 +259,13 @@ export function AgentsView() {
             {channels.map((channel) => (
               <div
                 key={channel.id}
-                className="flex items-center gap-3 rounded-lg border border-border p-3"
+                className="flex items-center gap-3 rounded-lg border border-border/25 bg-secondary/10 p-3 transition-colors hover:bg-secondary/15"
               >
                 <span className={`h-2.5 w-2.5 rounded-full ${getChannelStatusColor(channel.status as Parameters<typeof getChannelStatusColor>[0])}`} />
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2">
-                    <span className="font-medium text-sm">{channel.displayName}</span>
-                    <Badge variant="outline" className="text-[9px]">
+                    <span className="font-medium text-sm text-foreground/90">{channel.displayName}</span>
+                    <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground">
                       {getTierLabel(channel.tier)}
                     </Badge>
                   </div>
@@ -278,12 +278,12 @@ export function AgentsView() {
                     variant="outline"
                     className={`text-[10px] ${
                       channel.status === 'ok'
-                        ? 'border-emerald-500/30 text-emerald-600'
+                        ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5'
                         : channel.status === 'warn'
-                        ? 'border-amber-500/30 text-amber-600'
+                        ? 'border-amber-500/20 text-amber-400 bg-amber-500/5'
                         : channel.status === 'off'
-                        ? 'border-gray-500/30 text-gray-500'
-                        : 'border-red-500/30 text-red-600'
+                        ? 'border-gray-500/20 text-gray-500 bg-gray-500/5'
+                        : 'border-red-500/20 text-red-400 bg-red-500/5'
                     }`}
                   >
                     {getChannelStatusLabel(channel.status as Parameters<typeof getChannelStatusLabel>[0])}
@@ -301,49 +301,49 @@ export function AgentsView() {
       </Card>
 
       {/* Recent Tasks */}
-      <Card>
+      <Card className="card-premium border-border/30">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base">Task Queue</CardTitle>
+          <CardTitle className="text-sm font-semibold text-foreground/90">Task Queue</CardTitle>
         </CardHeader>
         <CardContent>
           <div className="space-y-2 max-h-72 overflow-y-auto">
             {tasks.map((task) => (
               <div
                 key={task.id}
-                className="flex items-center gap-3 rounded-lg border border-border p-2.5"
+                className="flex items-center gap-3 rounded-lg border border-border/25 bg-secondary/10 p-2.5 transition-colors hover:bg-secondary/15"
               >
                 <div className="shrink-0">
                   {task.status === 'completed' ? (
-                    <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
                   ) : task.status === 'running' ? (
-                    <Loader2 className="h-4 w-4 text-blue-500 animate-spin" />
+                    <Loader2 className="h-4 w-4 text-cyan-400 animate-spin" />
                   ) : task.status === 'failed' ? (
-                    <AlertCircle className="h-4 w-4 text-red-500" />
+                    <AlertCircle className="h-4 w-4 text-red-400" />
                   ) : (
-                    <Clock className="h-4 w-4 text-amber-500" />
+                    <Clock className="h-4 w-4 text-amber-400" />
                   )}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="text-sm font-medium truncate">
+                  <div className="text-sm font-medium text-foreground/90 truncate">
                     {task.agentName.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
                     <span className="text-muted-foreground"> • {task.taskType}</span>
                   </div>
                   {task.status === 'running' && (
-                    <Progress value={task.progress} className="h-1 mt-1" />
+                    <Progress value={task.progress} className="h-1 mt-1 bg-secondary/40" />
                   )}
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <Badge variant="outline" className="text-[9px]">P{task.priority}</Badge>
+                  <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground">P{task.priority}</Badge>
                   <Badge
                     variant="outline"
                     className={`text-[10px] ${
                       task.status === 'completed'
-                        ? 'border-emerald-500/30 text-emerald-600'
+                        ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5'
                         : task.status === 'running'
-                        ? 'border-blue-500/30 text-blue-600'
+                        ? 'border-cyan-500/20 text-cyan-400 bg-cyan-500/5'
                         : task.status === 'failed'
-                        ? 'border-red-500/30 text-red-600'
-                        : 'border-amber-500/30 text-amber-600'
+                        ? 'border-red-500/20 text-red-400 bg-red-500/5'
+                        : 'border-amber-500/20 text-amber-400 bg-amber-500/5'
                     }`}
                   >
                     {task.status}

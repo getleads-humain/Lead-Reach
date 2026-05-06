@@ -39,26 +39,26 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-border bg-card transition-all duration-300',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300',
         sidebarCollapsed ? 'w-16' : 'w-60'
       )}
     >
       {/* Logo */}
-      <div className="flex h-14 items-center border-b border-border px-3">
-        <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-teal-600">
-            <Zap className="h-4 w-4 text-white" />
+      <div className="flex h-14 items-center border-b border-sidebar-border px-3">
+        <div className="flex items-center gap-2.5">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald-sm">
+            <Zap className="h-4 w-4 text-black" />
           </div>
           {!sidebarCollapsed && (
-            <span className="text-base font-bold tracking-tight">
-              LeadReach <span className="text-emerald-500">AI</span>
+            <span className="text-sm font-bold tracking-tight">
+              LeadReach <span className="text-gradient">AI</span>
             </span>
           )}
         </div>
       </div>
 
       {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-2 overflow-y-auto">
+      <nav className="flex-1 space-y-0.5 p-2 overflow-y-auto">
         {navItems.map((item) => {
           const Icon = item.icon;
           const isActive = activeView === item.view;
@@ -66,16 +66,25 @@ export function Sidebar() {
           const button = (
             <Button
               key={item.view}
-              variant={isActive ? 'secondary' : 'ghost'}
+              variant="ghost"
               className={cn(
-                'w-full justify-start gap-3 transition-all',
-                isActive && 'bg-emerald-500/10 text-emerald-600 hover:bg-emerald-500/15 hover:text-emerald-600',
+                'w-full justify-start gap-3 transition-all duration-200 rounded-lg',
+                isActive
+                  ? 'bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/15 hover:text-emerald-400 glow-border'
+                  : 'text-sidebar-foreground/60 hover:text-sidebar-foreground hover:bg-sidebar-accent',
                 sidebarCollapsed && 'justify-center px-2'
               )}
               onClick={() => setActiveView(item.view)}
             >
-              <Icon className={cn('h-4 w-4 shrink-0', isActive && 'text-emerald-500')} />
-              {!sidebarCollapsed && <span className="truncate">{item.label}</span>}
+              <Icon className={cn(
+                'h-4 w-4 shrink-0 transition-colors duration-200',
+                isActive ? 'text-emerald-400' : ''
+              )} />
+              {!sidebarCollapsed && (
+                <span className={cn('truncate text-sm', isActive ? 'font-semibold' : 'font-medium')}>
+                  {item.label}
+                </span>
+              )}
             </Button>
           );
 
@@ -83,7 +92,7 @@ export function Sidebar() {
             return (
               <Tooltip key={item.view} delayDuration={0}>
                 <TooltipTrigger asChild>{button}</TooltipTrigger>
-                <TooltipContent side="right">{item.label}</TooltipContent>
+                <TooltipContent side="right" className="bg-popover border-border">{item.label}</TooltipContent>
               </Tooltip>
             );
           }
@@ -93,11 +102,11 @@ export function Sidebar() {
       </nav>
 
       {/* Collapse Toggle */}
-      <div className="border-t border-border p-2">
+      <div className="border-t border-sidebar-border p-2">
         <Button
           variant="ghost"
           size="sm"
-          className="w-full justify-center"
+          className="w-full justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
           onClick={() => setSidebarCollapsed(!sidebarCollapsed)}
         >
           {sidebarCollapsed ? (
