@@ -10,7 +10,7 @@ export async function GET() {
 
     if (channels.length === 0) {
       const defaults = getDefaultChannels();
-      channels = await db.agentReachChannel.createMany({
+      await db.agentReachChannel.createMany({
         data: defaults.map((ch) => ({
           name: ch.name,
           displayName: ch.displayName,

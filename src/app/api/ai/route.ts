@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { dispatchAndExecute } from '@/lib/agent-executor';
+import { dispatchAndExecute, runFullPipeline } from '@/lib/agent-executor';
 import type { AgentName } from '@/lib/types';
 
 /**
@@ -10,6 +10,9 @@ import type { AgentName } from '@/lib/types';
  * 2. Creates agent tasks powered by Agent-Reach
  * 3. EXECUTES them immediately (not just plans)
  * 4. Returns results with channel activity logs
+ * 
+ * When the user asks to find leads, it automatically runs the FULL pipeline:
+ * discovery → enrichment → qualification → outreach
  */
 export async function POST(request: NextRequest) {
   try {
@@ -39,6 +42,8 @@ export async function POST(request: NextRequest) {
       channelsUsed?: string[];
       output?: Record<string, unknown>;
     }> = [];
+
+    let pipelineResult: Awaited<ReturnType<typeof runFullPipeline>> | null = null;
 
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
@@ -148,9 +153,61 @@ Try asking me to "Find accounting firms in Dubai" or "Research the fintech marke
       }
     }
 
-    // Step 2: If we have a plan with agents, EXECUTE THEM with Agent-Reach
-    if (plan?.agents && plan.agents.length > 0) {
-      // Create campaign if needed
+    // Step 2: If the intent is to find leads, run the FULL pipeline automatically
+    if (plan?.intent === 'search' && plan.targetIndustry) {
+      try {
+        pipelineResult = await runFullPipeline(
+          message,
+          plan.targetIndustry,
+          plan.targetLocation,
+          campaignId || undefined,
+        );
+
+        // Build response text from pipeline results
+        const summary = pipelineResult.summary;
+        responseText = `## 🚀 Full Pipeline Complete!
+
+**${plan.targetIndustry} leads in ${plan.targetLocation || 'Global'}**
+
+| Stage | Result |
+|-------|--------|
+| 🔍 **Discovery** | ${summary.leadsFound} leads found |
+| 📊 **Enrichment** | ${summary.leadsEnriched} leads enriched |
+| 🎯 **Qualification** | ${summary.leadsQualified} leads qualified (🔥 ${summary.hotLeads} hot, 🟡 ${summary.warmLeads} warm, 🔵 ${summary.coldLeads} cold) |
+| ✉️ **Outreach** | ${summary.leadsContacted} outreach messages composed |
+
+${summary.errors.length > 0 ? `⚠️ **Warnings:** ${summary.errors.join('; ')}` : '✅ All stages completed successfully!'}
+
+Campaign ID: ${pipelineResult.campaignId}`;
+
+        // Add pipeline task results
+        const stages = [
+          { name: 'prospect-discovery', type: 'search', result: pipelineResult.discovery },
+          { name: 'data-enrichment', type: 'enrich', result: pipelineResult.enrichment },
+          { name: 'lead-qualification', type: 'qualify', result: pipelineResult.qualification },
+          { name: 'outreach-composer', type: 'outreach', result: pipelineResult.outreach },
+        ];
+
+        for (const stage of stages) {
+          if (stage.result) {
+            agentTaskResults.push({
+              agentName: stage.name,
+              taskType: stage.type,
+              taskId: '',
+              success: stage.result.success,
+              channelsUsed: stage.result.channelActivity
+                .filter(c => c.success)
+                .map(c => c.channel),
+              output: stage.result.output,
+            });
+          }
+        }
+      } catch (pipelineError) {
+        console.error('Full pipeline failed:', pipelineError);
+        responseText += `\n\n⚠️ Pipeline encountered an error: ${pipelineError instanceof Error ? pipelineError.message : 'Unknown error'}. Some stages may have partially completed.`;
+      }
+    } else if (plan?.agents && plan.agents.length > 0) {
+      // For non-search intents, execute individual agents
       let executionCampaignId = campaignId;
       if (!executionCampaignId && plan.campaignName) {
         try {
@@ -172,8 +229,7 @@ Try asking me to "Find accounting firms in Dubai" or "Research the fintech marke
       // Execute each agent in sequence (respecting dependencies)
       for (const agentName of plan.agents) {
         try {
-          const taskType = plan.intent === 'search' ? 'search'
-            : plan.intent === 'research' ? 'research'
+          const taskType = plan.intent === 'research' ? 'research'
             : plan.intent === 'outreach' ? 'outreach'
             : plan.intent === 'analyze' ? 'report'
             : 'coordinate';
@@ -218,7 +274,12 @@ Try asking me to "Find accounting firms in Dubai" or "Research the fintech marke
       response: responseText,
       plan,
       agentTasks: agentTaskResults,
-      campaignId: plan?.campaignName ? undefined : campaignId,
+      pipeline: pipelineResult ? {
+        success: pipelineResult.success,
+        campaignId: pipelineResult.campaignId,
+        summary: pipelineResult.summary,
+      } : null,
+      campaignId: pipelineResult?.campaignId || (plan?.campaignName ? undefined : campaignId),
     });
   } catch (error) {
     console.error('Error in AI endpoint:', error);

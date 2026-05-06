@@ -572,7 +572,7 @@ export async function youtubeGetSubtitles(url: string, lang = 'en'): Promise<Too
       const content = await fs.readFile(`${tmpFile}/${vttFile}`, 'utf-8');
       // Clean up VTT formatting
       const cleanText = content
-        .replace(/WEBVTT.*?\n\n/s, '')
+        .replace(/WEBVTT[\s\S]*?\n\n/, '')
         .replace(/\d{2}:\d{2}:\d{2}\.\d{3}.*?\d{2}:\d{2}:\d{2}\.\d{3}.*/g, '')
         .replace(/<[^>]+>/g, '')
         .replace(/\n{3,}/g, '\n\n')
@@ -1061,7 +1061,7 @@ async function bilibiliFetch(url: string, retries = 3): Promise<Response> {
       // Check if the JSON response indicates an error
       if (response.ok) {
         const data = await response.json() as Record<string, unknown>;
-        if (data.get('code') === 0) {
+        if ((data as Record<string, unknown>)['code'] === 0) {
           bilibiliKeys.reportSuccess(key);
           // Return a new Response with the same data
           return new Response(JSON.stringify(data), {
@@ -1105,7 +1105,7 @@ export async function bilibiliSearch(keyword: string, page = 1, pageSize = 10): 
       const response = await bilibiliFetch(searchUrl);
       const data = await response.json() as Record<string, unknown>;
       
-      if (data.get('code') === 0 && (data.get('data') as Record<string, unknown>)?.result) {
+      if ((data as Record<string, unknown>)['code'] === 0 && ((data as Record<string, unknown>)['data'] as Record<string, unknown>)?.result) {
         const results = ((data as Record<string, unknown>).data as Record<string, unknown>).result as Array<Record<string, unknown>>;
         const searchResults: BilibiliSearchResult[] = results.map((item: Record<string, unknown>) => ({
           type: (item.type as string) || 'video',
@@ -1151,7 +1151,7 @@ export async function bilibiliPopular(page = 1, pageSize = 10): Promise<ToolResu
     const response = await bilibiliFetch(popularUrl);
     const data = await response.json() as Record<string, unknown>;
     
-    if (data.get('code') === 0 && (data.get('data') as Record<string, unknown>)?.list) {
+    if ((data as Record<string, unknown>)['code'] === 0 && ((data as Record<string, unknown>)['data'] as Record<string, unknown>)?.list) {
       const items = ((data as Record<string, unknown>).data as Record<string, unknown>).list as Array<Record<string, unknown>>;
       const results: BilibiliPopularResult[] = items.map((item: Record<string, unknown>) => ({
         bvid: (item.bvid as string) || '',
@@ -1266,7 +1266,7 @@ export async function bilibiliSubtitles(urlOrBvid: string, lang = 'zh-Hans,zh,en
     if (vttFile) {
       const content = await fs.readFile(`${tmpFile}/${vttFile}`, 'utf-8');
       const cleanText = content
-        .replace(/WEBVTT.*?\n\n/s, '')
+        .replace(/WEBVTT[\s\S]*?\n\n/, '')
         .replace(/\d{2}:\d{2}:\d{2}\.\d{3}.*?\d{2}:\d{2}:\d{2}\.\d{3}.*/g, '')
         .replace(/<[^>]+>/g, '')
         .replace(/\n{3,}/g, '\n\n')
