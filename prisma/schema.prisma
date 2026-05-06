@@ -1,0 +1,152 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:../db/custom.db"
+}
+
+model Campaign {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  status      String   @default("active") // active, paused, completed, archived
+  targetIndustry String?
+  targetLocation String?
+  targetCompanySize String?
+  targetCriteria String? // JSON string of ICP criteria
+  leadsFound  Int      @default(0)
+  leadsQualified Int   @default(0)
+  leadsContacted Int   @default(0)
+  leadsResponded Int   @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  leads       Lead[]
+  tasks       AgentTask[]
+}
+
+model Lead {
+  id            String   @id @default(cuid())
+  campaignId    String
+  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  
+  // Company Info
+  companyName   String
+  legalName     String?
+  website       String?
+  industry      String?
+  subIndustry   String?
+  sicCode       String?
+  naicsCode     String?
+  
+  // Location
+  hqAddress     String?
+  city          String?
+  stateProvince String?
+  country       String?
+  postalCode    String?
+  
+  // Contact Info
+  phoneMain     String?
+  phoneDirect   String?
+  generalEmail  String?
+  supportEmail  String?
+  
+  // Key People
+  ceoName       String?
+  ceoEmail      String?
+  keyContactName  String?
+  keyContactTitle String?
+  keyContactEmail  String?
+  
+  // Firmographics
+  employeeCount String?
+  revenueEstimate String?
+  foundingYear  String?
+  ownershipType String?
+  
+  // Digital
+  linkedinUrl   String?
+  twitterHandle String?
+  facebookPage  String?
+  techStack     String? // JSON array
+  
+  // Qualification
+  leadScore     Int      @default(0)
+  leadTier      String   @default("unqualified") // hot, warm, cold, unqualified
+  firmographicScore Int  @default(0)
+  intentScore   Int      @default(0)
+  reachabilityScore Int @default(0)
+  strategicScore Int     @default(0)
+  dataCompleteness Int  @default(0)
+  
+  // Pipeline
+  stage         String   @default("new") // new, enriched, qualified, contacted, engaged, negotiating, closed_won, closed_lost, nurture
+  lastContactDate DateTime?
+  nextFollowUp  DateTime?
+  notes         String?
+  
+  // Discovery
+  sources       String?  // JSON array of discovery sources
+  discoveredAt  DateTime @default(now())
+  enrichedAt    DateTime?
+  qualifiedAt   DateTime?
+  contactedAt   DateTime?
+  
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  outreach      Outreach[]
+}
+
+model Outreach {
+  id          String   @id @default(cuid())
+  leadId      String
+  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  
+  channel     String   // email, linkedin, phone
+  type        String   // cold_email, warm_intro, connection_request, follow_up_1, follow_up_2, break_up
+  subject     String?
+  body        String
+  status      String   @default("draft") // draft, sent, delivered, opened, replied, bounced, failed
+  sentAt      DateTime?
+  openedAt    DateTime?
+  repliedAt   DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AgentTask {
+  id          String   @id @default(cuid())
+  campaignId  String?
+  campaign    Campaign? @relation(fields: [campaignId], references: [id])
+  
+  agentName   String   // orchestrator, prospect-discovery, data-enrichment, web-research, lead-qualification, outreach-composer, pipeline-manager, report-generator
+  taskType    String   // search, enrich, qualify, outreach, report, coordinate
+  status      String   @default("pending") // pending, running, completed, failed, cancelled
+  priority    Int      @default(5) // 1-10, 10 highest
+  input       String?  // JSON string of task input
+  output      String?  // JSON string of task output
+  error       String?
+  progress    Int      @default(0) // 0-100
+  
+  startedAt   DateTime?
+  completedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AgentReachChannel {
+  id          String   @id @default(cuid())
+  name        String   @unique // web, exa_search, linkedin, twitter, youtube, github, reddit, etc.
+  displayName String
+  description String?
+  status      String   @default("unknown") // ok, warn, off, error, unknown
+  tier        Int      @default(0) // 0=zero-config, 1=needs-key, 2=needs-setup
+  backend     String?  // e.g. "Jina Reader", "Exa via mcporter"
+  message     String?
+  lastChecked DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
