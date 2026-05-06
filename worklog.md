@@ -97,3 +97,31 @@ Stage Summary:
 - Premium card surfaces with refined borders and glow effects
 - Industry-grade UI/UX with glassmorphism, noise texture, and micro-interactions
 - Build compiles successfully
+
+---
+Task ID: 2
+Agent: Main Agent + Full-Stack Developer Subagent
+Task: Add marketing pages (Landing, Blog, FAQ, Agent, Privacy, Terms) with perfect navigation and CTAs
+
+Work Log:
+- Restructured routing: moved platform from / to /app route
+- Created src/app/app/page.tsx with the exact same AppShell platform code
+- Created src/components/marketing/marketing-layout.tsx with glassmorphism nav bar, mobile hamburger, and full footer
+- Created Landing Page (/) with 8 sections: Hero, Trusted By, How It Works, Features Grid, Agent Showcase, Pricing, Testimonials, Final CTA
+- Created Blog Page (/blog) with search, 5 category tabs, 9 blog post cards, sidebar with tags/newsletter, bottom CTA banner
+- Created FAQ Page (/faq) with 5 category tabs, 20 accordion FAQ items using shadcn Accordion, CTA section
+- Created Agent Page (/agent) with 8 detailed agent cards, Agent-Reach 17+ channels section, architecture diagram, CTA
+- Created Privacy Page (/privacy) with 8 sections of real SaaS privacy policy content, sticky TOC sidebar
+- Created Terms Page (/terms) with 11 sections of real AI SaaS terms content, sticky TOC sidebar
+- All pages use MarketingLayout wrapper for consistent nav/footer
+- All CTA buttons link to /app (Launch Platform / Start Free Trial)
+- All pages maintain premium dark theme consistency
+- Build verified: all 16 routes compile successfully
+
+Stage Summary:
+- 6 new pages created + platform moved to /app route
+- Full navigation linking between all pages with consistent header/footer
+- CTA implementation: every page has prominent "Launch Platform" / "Start Free Trial" buttons linking to /app
+- Marketing nav: Features, Agents, Blog, FAQ + Launch Platform CTA
+- Footer: Product, Resources, Company, Legal columns with all links properly wired
+- Build compiles with all 16 routes confirmed
