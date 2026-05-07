@@ -1,5 +1,6 @@
 import { db } from '@/lib/db';
 import { runFullPipeline } from '@/lib/agent-executor';
+import { after } from 'next/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -30,6 +31,10 @@ export async function GET(request: NextRequest) {
  *
  * Create a new campaign AND optionally auto-start the full agent pipeline.
  *
+ * IMPORTANT: The pipeline runs ASYNCHRONOUSLY using Next.js after() API.
+ * This endpoint returns immediately after creating the campaign.
+ * The frontend polls GET /api/campaigns/[id]/pipeline-status for real-time progress.
+ *
  * Body:
  * - name: string (required) — Campaign name
  * - description?: string — Campaign description
@@ -50,7 +55,7 @@ export async function POST(request: NextRequest) {
       targetLocation,
       targetCompanySize,
       targetCriteria,
-      autoRun = true, // Auto-run pipeline by default
+      autoRun = true,
       query: customQuery,
     } = body;
 
@@ -69,77 +74,54 @@ export async function POST(request: NextRequest) {
         targetCriteria: targetCriteria || null,
         status: 'active',
       },
+      include: {
+        _count: { select: { leads: true } },
+      },
     });
 
-    // If autoRun is true (default), trigger the full pipeline immediately
-    let pipelineResult: Awaited<ReturnType<typeof runFullPipeline>> | null = null;
+    // If autoRun is true (default), trigger the full pipeline AFTER the response is sent
+    // using Next.js after() API. This ensures the response is sent immediately
+    // and the pipeline runs in the background without blocking.
     if (autoRun) {
-      try {
-        const industry = targetIndustry || '';
-        const location = targetLocation || '';
-        const query = customQuery || `${industry || name} companies in ${location || 'global'}`.trim();
+      const industry = targetIndustry || '';
+      const location = targetLocation || '';
+      const query = customQuery || `${industry || name} companies in ${location || 'global'}`.trim();
+      const campaignId = campaign.id;
+      const campaignName = name;
 
-        console.log(`[Campaigns] Auto-starting pipeline for campaign "${name}" (ID: ${campaign.id})`);
-        console.log(`[Campaigns] Query: "${query}", Industry: "${industry}", Location: "${location}"`);
+      console.log(`[Campaigns] Scheduling pipeline for campaign "${campaignName}" (ID: ${campaignId})`);
+      console.log(`[Campaigns] Query: "${query}", Industry: "${industry}", Location: "${location}"`);
 
-        pipelineResult = await runFullPipeline(
-          query,
-          industry || undefined,
-          location || undefined,
-          campaign.id,
-        );
-
-        console.log(`[Campaigns] Pipeline completed for "${name}": ${pipelineResult.summary.leadsFound} found, ${pipelineResult.summary.leadsQualified} qualified`);
-
-        // Reload campaign to get updated lead counts
-        const updatedCampaign = await db.campaign.findUnique({
-          where: { id: campaign.id },
-          include: {
-            _count: { select: { leads: true } },
-          },
-        });
-
-        return NextResponse.json(
-          {
-            ...updatedCampaign,
-            pipeline: {
-              success: pipelineResult.success,
-              summary: pipelineResult.summary,
-              stages: {
-                discovery: pipelineResult.discovery?.success ?? false,
-                enrichment: pipelineResult.enrichment?.success ?? false,
-                qualification: pipelineResult.qualification?.success ?? false,
-                outreach: pipelineResult.outreach?.success ?? false,
-              },
-            },
-          },
-          { status: 201 },
-        );
-      } catch (pipelineError) {
-        // Pipeline failed — still return the campaign, but with pipeline error info
-        console.error(`[Campaigns] Pipeline failed for campaign "${name}":`, pipelineError);
-        const updatedCampaign = await db.campaign.findUnique({
-          where: { id: campaign.id },
-          include: {
-            _count: { select: { leads: true } },
-          },
-        });
-
-        return NextResponse.json(
-          {
-            ...updatedCampaign,
-            pipeline: {
-              success: false,
-              error: pipelineError instanceof Error ? pipelineError.message : 'Pipeline execution failed',
-              summary: null,
-            },
-          },
-          { status: 201 },
-        );
-      }
+      // Use after() to schedule the pipeline to run after the response is sent
+      // This is the Next.js-recommended way to do background work
+      after(async () => {
+        try {
+          console.log(`[Campaigns] Starting pipeline for campaign "${campaignName}" (ID: ${campaignId})`);
+          const result = await runFullPipeline(
+            query,
+            industry || undefined,
+            location || undefined,
+            campaignId,
+          );
+          console.log(`[Campaigns] Pipeline completed for "${campaignName}": ${result.summary.leadsFound} found, ${result.summary.leadsQualified} qualified`);
+        } catch (pipelineError) {
+          console.error(`[Campaigns] Pipeline failed for campaign "${campaignName}":`, pipelineError);
+        }
+      });
     }
 
-    return NextResponse.json(campaign, { status: 201 });
+    // Return the campaign immediately — the pipeline is scheduled to run after the response
+    return NextResponse.json(
+      {
+        ...campaign,
+        pipeline: {
+          started: autoRun,
+          status: autoRun ? 'running' : 'not_started',
+          message: autoRun ? 'Pipeline started in the background. Poll /api/campaigns/[id]/pipeline-status for progress.' : 'Pipeline not started. POST to /api/campaigns/[id]/run-pipeline to start.',
+        },
+      },
+      { status: 201 },
+    );
   } catch (error) {
     console.error('Error creating campaign:', error);
     return NextResponse.json({ error: 'Failed to create campaign' }, { status: 500 });

@@ -128,23 +128,32 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 2): 
       return content;
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
+      const errorName = error instanceof Error ? error.name : '';
       
       // Detect the specific "Unexpected token '<'" error that means HTML was returned instead of JSON
       // This happens when the API gateway returns an HTML error page (rate limit, maintenance, 404, etc.)
       // instead of the expected JSON response. The SDK's internal JSON.parse() throws this SyntaxError.
       const isHtmlResponseError = (
-        msg.includes('Unexpected token') && msg.includes('is not valid JSON') &&
-        (msg.includes('<html') || msg.includes('<!DOCTYPE') || msg.includes('"<html'))
-      ) || msg.includes('HTML instead of JSON');
+        // Standard detection: SDK's JSON.parse threw on HTML
+        (msg.includes('Unexpected token') && msg.includes('is not valid JSON') &&
+        (msg.includes('<html') || msg.includes('<!DOCTYPE') || msg.includes('"<html')))
+        // Also catch any SyntaxError from the SDK (likely HTML parsing)
+        || (errorName === 'SyntaxError' && (msg.includes('<') || msg.includes('html') || msg.includes('HTML')))
+        // Catch our own HTML detection messages
+        || msg.includes('HTML instead of JSON')
+        || msg.includes('HTML error page')
+        || msg.includes('invalid response structure')
+      );
       
       if (isHtmlResponseError) {
         console.warn(`[callLLM] API gateway returned HTML instead of JSON on attempt ${attempt + 1}. This is likely a rate limit or maintenance page. ${attempt < retries ? 'Retrying with backoff...' : 'All retries exhausted.'}`);
+      } else {
+        console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg.slice(0, 300)}`);
       }
       
       if (attempt < retries) {
         // Add exponential backoff for rate-limit-style errors
         const backoffMs = isHtmlResponseError ? (attempt + 1) * 3000 : 1000;
-        console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg.slice(0, 200)}, retrying in ${backoffMs}ms...`);
         await new Promise(resolve => setTimeout(resolve, backoffMs));
         continue;
       }

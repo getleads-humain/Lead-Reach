@@ -178,9 +178,13 @@ export function AgentsView() {
   const getAgentStatus = (name: AgentName): 'active' | 'idle' | 'processing' | 'error' => {
     const stats = agentStats[name];
     if (!stats || (stats.completed === 0 && stats.running === 0 && stats.failed === 0 && stats.pending === 0)) return 'idle';
+    // Only show "processing" if there's actually a running task (not just pending)
+    // Pending tasks alone don't mean the agent is processing — they're waiting to be executed
     if (stats.running > 0) return 'processing';
     if (stats.failed > 0 && stats.completed === 0) return 'error';
     if (stats.completed > 0) return 'active';
+    // Only pending tasks — agent is idle (waiting to be dispatched)
+    if (stats.pending > 0 && stats.running === 0) return 'idle';
     return 'idle';
   };
 

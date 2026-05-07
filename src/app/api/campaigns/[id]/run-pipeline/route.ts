@@ -1,22 +1,24 @@
 import { db } from '@/lib/db';
 import { runFullPipeline } from '@/lib/agent-executor';
+import { after } from 'next/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 /**
  * POST /api/campaigns/[id]/run-pipeline
  *
- * Triggers the full 4-stage lead generation pipeline for a campaign:
+ * Triggers the full 4-stage lead generation pipeline for a campaign.
+ * The pipeline runs ASYNCHRONOUSLY using Next.js after() API —
+ * this endpoint returns immediately and the frontend polls
+ * GET /api/campaigns/[id]/pipeline-status for progress.
+ *
+ * Stages:
  * 1. Prospect Discovery → find leads across 6+ channels
  * 2. Data Enrichment → enrich leads with contact data
  * 3. Lead Qualification → score and tier leads
  * 4. Outreach Composer → craft personalized messages
  *
- * This is the primary way to make a campaign "come alive" — after creating
- * a campaign, the user triggers this endpoint to start the autonomous agent pipeline.
- *
  * Body options:
  * - { query?: string } — Override search query (defaults to "{industry} companies in {location}")
- * - { stages?: string[] } — Run specific stages only (default: all 4)
  */
 export async function POST(
   request: NextRequest,
@@ -40,6 +42,25 @@ export async function POST(
       );
     }
 
+    // Check if a pipeline is already running for this campaign
+    const runningTasks = await db.agentTask.findMany({
+      where: {
+        campaignId,
+        status: 'running',
+      },
+    });
+    if (runningTasks.length > 0) {
+      return NextResponse.json(
+        {
+          started: false,
+          status: 'already_running',
+          message: 'A pipeline is already running for this campaign. Poll /api/campaigns/[id]/pipeline-status for progress.',
+          runningTaskCount: runningTasks.length,
+        },
+        { status: 200 },
+      );
+    }
+
     // Ensure campaign is active
     if (campaign.status !== 'active') {
       await db.campaign.update({
@@ -55,69 +76,40 @@ export async function POST(
       body.query ||
       `${industry || campaign.name} companies in ${location || 'global'}`.trim();
 
-    console.log(`[Pipeline] Starting full pipeline for campaign "${campaign.name}" (ID: ${campaignId})`);
+    const campaignName = campaign.name;
+
+    console.log(`[Pipeline] Scheduling pipeline for campaign "${campaignName}" (ID: ${campaignId})`);
     console.log(`[Pipeline] Query: "${query}", Industry: "${industry}", Location: "${location}"`);
 
-    // Run the full pipeline — this executes all 4 stages sequentially
-    const pipelineResult = await runFullPipeline(
-      query,
-      industry || undefined,
-      location || undefined,
-      campaignId,
-    );
+    // Use after() to schedule the pipeline to run after the response is sent
+    after(async () => {
+      try {
+        console.log(`[Pipeline] Starting pipeline for campaign "${campaignName}" (ID: ${campaignId})`);
+        const result = await runFullPipeline(
+          query,
+          industry || undefined,
+          location || undefined,
+          campaignId,
+        );
+        console.log(`[Pipeline] Completed for campaign "${campaignName}": ${result.summary.leadsFound} found, ${result.summary.leadsQualified} qualified, ${result.summary.leadsContacted} contacted`);
+      } catch (pipelineError) {
+        console.error(`[Pipeline] Failed for campaign "${campaignName}":`, pipelineError);
+      }
+    });
 
-    console.log(`[Pipeline] Completed for campaign "${campaign.name}": ${pipelineResult.summary.leadsFound} found, ${pipelineResult.summary.leadsQualified} qualified, ${pipelineResult.summary.leadsContacted} contacted`);
-
+    // Return immediately — the pipeline is scheduled to run after the response
     return NextResponse.json({
-      success: pipelineResult.success,
+      started: true,
+      status: 'running',
       campaignId,
       campaignName: campaign.name,
-      summary: pipelineResult.summary,
-      stages: {
-        discovery: pipelineResult.discovery
-          ? {
-              success: pipelineResult.discovery.success,
-              leadsFound: (pipelineResult.discovery.output as Record<string, unknown>)?.found ?? 0,
-              channelsUsed: pipelineResult.discovery.channelActivity
-                .filter(c => c.success)
-                .map(c => c.channel),
-            }
-          : null,
-        enrichment: pipelineResult.enrichment
-          ? {
-              success: pipelineResult.enrichment.success,
-              leadsEnriched: (pipelineResult.enrichment.output as Record<string, unknown>)?.enriched ?? 0,
-              channelsUsed: pipelineResult.enrichment.channelActivity
-                .filter(c => c.success)
-                .map(c => c.channel),
-            }
-          : null,
-        qualification: pipelineResult.qualification
-          ? {
-              success: pipelineResult.qualification.success,
-              leadsQualified: (pipelineResult.qualification.output as Record<string, unknown>)?.qualified ?? 0,
-              channelsUsed: pipelineResult.qualification.channelActivity
-                .filter(c => c.success)
-                .map(c => c.channel),
-            }
-          : null,
-        outreach: pipelineResult.outreach
-          ? {
-              success: pipelineResult.outreach.success,
-              messagesComposed: (pipelineResult.outreach.output as Record<string, unknown>)?.composed ?? 0,
-              channelsUsed: pipelineResult.outreach.channelActivity
-                .filter(c => c.success)
-                .map(c => c.channel),
-            }
-          : null,
-      },
-      errors: pipelineResult.summary.errors,
+      message: 'Pipeline started in the background. Poll /api/campaigns/[id]/pipeline-status for progress.',
     });
   } catch (error) {
-    console.error('[Pipeline] Campaign pipeline failed:', error);
+    console.error('[Pipeline] Campaign pipeline failed to start:', error);
     return NextResponse.json(
       {
-        error: 'Pipeline execution failed',
+        error: 'Pipeline execution failed to start',
         details: error instanceof Error ? error.message : 'Unknown error',
       },
       { status: 500 },

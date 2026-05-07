@@ -1,18 +1,20 @@
+import { after } from 'next/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { dispatchAndExecute, runFullPipeline } from '@/lib/agent-executor';
 import type { AgentName } from '@/lib/types';
 
 /**
  * POST /api/ai
- * 
+ *
  * AI chat endpoint that:
  * 1. Understands the user's intent
  * 2. Creates agent tasks powered by Agent-Reach
- * 3. EXECUTES them immediately (not just plans)
- * 4. Returns results with channel activity logs
- * 
- * When the user asks to find leads, it automatically runs the FULL pipeline:
+ * 3. For search intents, fires the full pipeline ASYNCHRONOUSLY
+ * 4. Returns a response immediately with pipeline status info
+ *
+ * When the user asks to find leads, it automatically triggers the FULL pipeline:
  * discovery → enrichment → qualification → outreach
+ * The pipeline runs in the background — the frontend polls for progress.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -42,8 +44,6 @@ export async function POST(request: NextRequest) {
       channelsUsed?: string[];
       output?: Record<string, unknown>;
     }> = [];
-
-    let pipelineResult: Awaited<ReturnType<typeof runFullPipeline>> | null = null;
 
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
@@ -162,61 +162,65 @@ Try asking me to "Find accounting firms in Dubai" or "Research the fintech marke
       }
     }
 
-    // Step 2: If the intent is to find leads, run the FULL pipeline automatically
+    // Step 2: If the intent is to find leads, trigger the FULL pipeline ASYNCHRONOUSLY
+    let pipelineCampaignId: string | null = null;
+
     if (plan?.intent === 'search' && plan.targetIndustry) {
+      // Create a campaign first so we have an ID
       try {
-        pipelineResult = await runFullPipeline(
-          message,
-          plan.targetIndustry,
-          plan.targetLocation,
-          campaignId || undefined,
-        );
-
-        // Build response text from pipeline results
-        const summary = pipelineResult.summary;
-        responseText = `## 🚀 Full Pipeline Complete!
-
-**${plan.targetIndustry} leads in ${plan.targetLocation || 'Global'}**
-
-| Stage | Result |
-|-------|--------|
-| 🔍 **Discovery** | ${summary.leadsFound} leads found |
-| 📊 **Enrichment** | ${summary.leadsEnriched} leads enriched |
-| 🎯 **Qualification** | ${summary.leadsQualified} leads qualified (🔥 ${summary.hotLeads} hot, 🟡 ${summary.warmLeads} warm, 🔵 ${summary.coldLeads} cold) |
-| ✉️ **Outreach** | ${summary.leadsContacted} outreach messages composed |
-
-${summary.errors.length > 0 ? `⚠️ **Warnings:** ${summary.errors.join('; ')}` : '✅ All stages completed successfully!'}
-
-Campaign ID: ${pipelineResult.campaignId}`;
-
-        // Add pipeline task results
-        const stages = [
-          { name: 'prospect-discovery', type: 'search', result: pipelineResult.discovery },
-          { name: 'data-enrichment', type: 'enrich', result: pipelineResult.enrichment },
-          { name: 'lead-qualification', type: 'qualify', result: pipelineResult.qualification },
-          { name: 'outreach-composer', type: 'outreach', result: pipelineResult.outreach },
-        ];
-
-        for (const stage of stages) {
-          if (stage.result) {
-            agentTaskResults.push({
-              agentName: stage.name,
-              taskType: stage.type,
-              taskId: '',
-              success: stage.result.success,
-              channelsUsed: stage.result.channelActivity
-                .filter(c => c.success)
-                .map(c => c.channel),
-              output: stage.result.output,
-            });
-          }
-        }
-      } catch (pipelineError) {
-        console.error('Full pipeline failed:', pipelineError);
-        responseText += `\n\n⚠️ Pipeline encountered an error: ${pipelineError instanceof Error ? pipelineError.message : 'Unknown error'}. Some stages may have partially completed.`;
+        const { db } = await import('@/lib/db');
+        const campaign = await db.campaign.create({
+          data: {
+            name: plan.campaignName || `${plan.targetIndustry} Campaign - ${plan.targetLocation || 'Global'}`,
+            targetIndustry: plan.targetIndustry || null,
+            targetLocation: plan.targetLocation || null,
+            status: 'active',
+          },
+        });
+        pipelineCampaignId = campaign.id;
+      } catch (dbError) {
+        console.error('Failed to create campaign for pipeline:', dbError);
       }
+
+      // Use after() to schedule the pipeline to run after the response is sent
+      const finalCampaignId = pipelineCampaignId || campaignId;
+      after(async () => {
+        try {
+          const result = await runFullPipeline(
+            message,
+            plan.targetIndustry,
+            plan.targetLocation,
+            finalCampaignId || undefined,
+          );
+          console.log(`[AI Chat] Pipeline completed: ${result.summary.leadsFound} found, ${result.summary.leadsQualified} qualified`);
+        } catch (pipelineError) {
+          console.error('[AI Chat] Pipeline failed:', pipelineError);
+        }
+      });
+
+      responseText = `## 🚀 Pipeline Started!
+
+I've launched the full 4-stage agent pipeline for **${plan.targetIndustry}** in **${plan.targetLocation || 'Global'}**:
+
+1. 🔍 **Discovery** — Searching across Exa, LinkedIn, Twitter, Reddit, and more
+2. 📊 **Enrichment** — Reading company websites, extracting contact data
+3. 🎯 **Qualification** — AI-powered scoring with intent signals
+4. ✉️ **Outreach** — Crafting personalized messages
+
+The pipeline is running in the background. Check the **Campaigns** page for real-time progress!
+
+Campaign ID: ${finalCampaignId}`;
+
+      agentTaskResults.push({
+        agentName: 'pipeline',
+        taskType: 'full_pipeline',
+        taskId: '',
+        success: true,
+        output: { campaignId: finalCampaignId, status: 'running' },
+      });
     } else if (plan?.agents && plan.agents.length > 0) {
       // For non-search intents, execute individual agents
+      // These are typically quick (web-research, outreach, reports)
       let executionCampaignId = campaignId;
       if (!executionCampaignId && plan.campaignName) {
         try {
@@ -260,7 +264,7 @@ Campaign ID: ${pipelineResult.campaignId}`;
           agentTaskResults.push({
             agentName,
             taskType,
-            taskId: '', // Task ID is generated inside dispatchAndExecute
+            taskId: '',
             success: result.success,
             channelsUsed: result.channelActivity
               .filter(c => c.success)
@@ -283,12 +287,12 @@ Campaign ID: ${pipelineResult.campaignId}`;
       response: responseText,
       plan,
       agentTasks: agentTaskResults,
-      pipeline: pipelineResult ? {
-        success: pipelineResult.success,
-        campaignId: pipelineResult.campaignId,
-        summary: pipelineResult.summary,
+      pipeline: pipelineCampaignId ? {
+        started: true,
+        status: 'running',
+        campaignId: pipelineCampaignId,
       } : null,
-      campaignId: pipelineResult?.campaignId || (plan?.campaignName ? undefined : campaignId),
+      campaignId: pipelineCampaignId || campaignId,
     });
   } catch (error) {
     console.error('Error in AI endpoint:', error);

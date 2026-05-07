@@ -1,7 +1,7 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
@@ -27,17 +27,16 @@ import {
   Plus,
   Search,
   Target,
-  TrendingUp,
-  MoreVertical,
-  Play,
-  Pause,
-  Archive,
-  Eye,
   Loader2,
   Zap,
   CheckCircle2,
   AlertCircle,
   RotateCw,
+  MoreVertical,
+  Play,
+  Pause,
+  Archive,
+  Eye,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -49,6 +48,50 @@ import { useAppStore } from '@/lib/store';
 import type { CampaignWithCounts, CampaignStatus } from '@/lib/types';
 import { INDUSTRIES, LOCATIONS, COMPANY_SIZES } from '@/lib/types';
 import { safeFetchJSON } from '@/lib/utils';
+
+// ============================================================
+// Pipeline Status Types
+// ============================================================
+
+interface PipelineStageStatus {
+  status: string;
+  progress: number;
+  startedAt: string | null;
+  completedAt: string | null;
+  error: string | null;
+  result?: Record<string, unknown>;
+}
+
+interface PipelineStatusResponse {
+  campaignId: string;
+  campaignName: string;
+  pipelineStatus: 'idle' | 'running' | 'completed' | 'failed';
+  overallProgress: number;
+  currentStage: string;
+  stages: Record<string, PipelineStageStatus>;
+  summary: {
+    leadsFound: number;
+    leadsEnriched: number;
+    leadsQualified: number;
+    leadsContacted: number;
+    hotLeads: number;
+    warmLeads: number;
+    coldLeads: number;
+  };
+  errors: Array<{ agent: string; error: string | null }>;
+}
+
+// Pipeline stage display names and order
+const PIPELINE_STAGES = [
+  { key: 'prospect-discovery', label: 'Discovery', icon: '🔍' },
+  { key: 'data-enrichment', label: 'Enrichment', icon: '📊' },
+  { key: 'lead-qualification', label: 'Qualification', icon: '⭐' },
+  { key: 'outreach-composer', label: 'Outreach', icon: '✉️' },
+] as const;
+
+// ============================================================
+// Component
+// ============================================================
 
 export function CampaignsView() {
   const { setActiveView, setSelectedCampaignId } = useAppStore();
@@ -65,33 +108,31 @@ export function CampaignsView() {
   const [formSize, setFormSize] = useState('');
   const [formCreating, setFormCreating] = useState(false);
 
-  // Pipeline running state: campaignId -> { running, result }
-  const [pipelineState, setPipelineState] = useState<Record<string, {
-    running: boolean;
-    result?: {
-      success: boolean;
-      summary?: {
-        leadsFound: number;
-        leadsEnriched: number;
-        leadsQualified: number;
-        leadsContacted: number;
-        hotLeads: number;
-        warmLeads: number;
-        coldLeads: number;
-        errors: string[];
-      };
-      error?: string;
-    };
-  }>>({});
+  // Pipeline status per campaign: campaignId -> PipelineStatusResponse
+  const [pipelineStatuses, setPipelineStatuses] = useState<Record<string, PipelineStatusResponse>>({});
+  // Track which campaigns we're actively polling
+  const pollingRef = useRef<Set<string>>(new Set());
+  const pollingTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
 
   useEffect(() => {
     loadCampaigns();
+    return () => {
+      // Clean up all polling timers on unmount
+      for (const timer of Object.values(pollingTimersRef.current)) {
+        clearInterval(timer);
+      }
+    };
   }, []);
 
   const loadCampaigns = async () => {
     try {
       const data = await safeFetchJSON<CampaignWithCounts[]>('/api/campaigns');
       setCampaigns(data);
+
+      // Check for any campaigns that might have running pipelines
+      for (const campaign of data) {
+        pollPipelineStatus(campaign.id);
+      }
     } catch (error) {
       console.error('Error loading campaigns:', error);
     } finally {
@@ -99,12 +140,61 @@ export function CampaignsView() {
     }
   };
 
+  // ============================================================
+  // Pipeline Status Polling
+  // ============================================================
+
+  const pollPipelineStatus = useCallback((campaignId: string) => {
+    // Don't start duplicate polling
+    if (pollingRef.current.has(campaignId)) return;
+    pollingRef.current.add(campaignId);
+
+    const fetchStatus = async () => {
+      try {
+        const status = await safeFetchJSON<PipelineStatusResponse>(
+          `/api/campaigns/${campaignId}/pipeline-status`
+        );
+        setPipelineStatuses(prev => ({
+          ...prev,
+          [campaignId]: status,
+        }));
+
+        // If pipeline is no longer running, stop polling and reload campaign data
+        if (status.pipelineStatus === 'completed' || status.pipelineStatus === 'failed' || status.pipelineStatus === 'idle') {
+          stopPolling(campaignId);
+          // Reload campaigns to get updated lead counts
+          loadCampaigns();
+        }
+      } catch (error) {
+        console.error(`Error polling pipeline status for ${campaignId}:`, error);
+      }
+    };
+
+    // Fetch immediately
+    fetchStatus();
+
+    // Then poll every 3 seconds
+    pollingTimersRef.current[campaignId] = setInterval(fetchStatus, 3000);
+  }, []);
+
+  const stopPolling = useCallback((campaignId: string) => {
+    pollingRef.current.delete(campaignId);
+    if (pollingTimersRef.current[campaignId]) {
+      clearInterval(pollingTimersRef.current[campaignId]);
+      delete pollingTimersRef.current[campaignId];
+    }
+  }, []);
+
+  // ============================================================
+  // Campaign Creation
+  // ============================================================
+
   const handleCreate = async () => {
     if (!formName.trim()) return;
     setFormCreating(true);
     try {
       const newCampaign = await safeFetchJSON<CampaignWithCounts & {
-        pipeline?: { success: boolean; summary?: Record<string, unknown>; error?: string }
+        pipeline?: { started: boolean; status: string; message: string }
       }>('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -114,41 +204,19 @@ export function CampaignsView() {
           targetIndustry: formIndustry,
           targetLocation: formLocation,
           targetCompanySize: formSize,
-          autoRun: true, // Auto-start the pipeline
+          autoRun: true,
         }),
       });
 
-      // Add the new campaign with pipeline results to the list
+      // Add the new campaign to the list
       setCampaigns((prev) => [newCampaign, ...prev]);
       setCreateOpen(false);
       resetForm();
 
-      // If pipeline ran, update the pipeline state
-      if (newCampaign.pipeline) {
-        setPipelineState(prev => ({
-          ...prev,
-          [newCampaign.id]: {
-            running: false,
-            result: {
-              success: newCampaign.pipeline!.success,
-              summary: newCampaign.pipeline!.summary as unknown as {
-                leadsFound: number;
-                leadsEnriched: number;
-                leadsQualified: number;
-                leadsContacted: number;
-                hotLeads: number;
-                warmLeads: number;
-                coldLeads: number;
-                errors: string[];
-              },
-              error: newCampaign.pipeline!.error,
-            },
-          },
-        }));
+      // Start polling for pipeline status
+      if (newCampaign.pipeline?.started) {
+        pollPipelineStatus(newCampaign.id);
       }
-
-      // Reload campaigns to get updated counts
-      setTimeout(() => loadCampaigns(), 1000);
     } catch (error) {
       console.error('Error creating campaign:', error);
     } finally {
@@ -156,51 +224,28 @@ export function CampaignsView() {
     }
   };
 
-  const handleRunPipeline = async (campaignId: string, campaignName: string) => {
-    setPipelineState(prev => ({
-      ...prev,
-      [campaignId]: { running: true },
-    }));
+  // ============================================================
+  // Run Pipeline (for existing campaigns)
+  // ============================================================
 
+  const handleRunPipeline = async (campaignId: string, _campaignName: string) => {
     try {
       const result = await safeFetchJSON<{
-        success: boolean;
-        summary?: {
-          leadsFound: number;
-          leadsEnriched: number;
-          leadsQualified: number;
-          leadsContacted: number;
-          hotLeads: number;
-          warmLeads: number;
-          coldLeads: number;
-          errors: string[];
-        };
-        error?: string;
+        started: boolean;
+        status: string;
+        message?: string;
       }>(`/api/campaigns/${campaignId}/run-pipeline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       });
 
-      setPipelineState(prev => ({
-        ...prev,
-        [campaignId]: { running: false, result },
-      }));
-
-      // Reload campaigns to get updated counts
-      await loadCampaigns();
+      if (result.started) {
+        // Start polling for this campaign
+        pollPipelineStatus(campaignId);
+      }
     } catch (error) {
       console.error('Error running pipeline:', error);
-      setPipelineState(prev => ({
-        ...prev,
-        [campaignId]: {
-          running: false,
-          result: {
-            success: false,
-            error: error instanceof Error ? error.message : 'Pipeline execution failed',
-          },
-        },
-      }));
     }
   };
 
@@ -227,12 +272,20 @@ export function CampaignsView() {
     }
   };
 
+  // ============================================================
+  // Filtering
+  // ============================================================
+
   const filteredCampaigns = campaigns.filter(
     (c) =>
       c.name.toLowerCase().includes(search.toLowerCase()) ||
       (c.targetIndustry || '').toLowerCase().includes(search.toLowerCase()) ||
       (c.targetLocation || '').toLowerCase().includes(search.toLowerCase())
   );
+
+  // ============================================================
+  // Helpers
+  // ============================================================
 
   const statusBadge = (status: string) => {
     const styles: Record<string, string> = {
@@ -243,6 +296,15 @@ export function CampaignsView() {
     };
     return styles[status] || styles.active;
   };
+
+  const getStageLabel = (stageKey: string): string => {
+    const stage = PIPELINE_STAGES.find(s => s.key === stageKey);
+    return stage?.label || stageKey;
+  };
+
+  // ============================================================
+  // Loading State
+  // ============================================================
 
   if (loading) {
     return (
@@ -259,6 +321,10 @@ export function CampaignsView() {
       </div>
     );
   }
+
+  // ============================================================
+  // Render
+  // ============================================================
 
   return (
     <div className="space-y-6">
@@ -309,10 +375,16 @@ export function CampaignsView() {
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
           {filteredCampaigns.map((campaign) => {
-            const pipeline = pipelineState[campaign.id];
-            const isPipelineRunning = pipeline?.running;
-            const pipelineResult = pipeline?.result;
-            const hasLeads = campaign.leadsFound > 0;
+            const pipelineStatus = pipelineStatuses[campaign.id];
+            const isPipelineRunning = pipelineStatus?.pipelineStatus === 'running';
+            const isPipelineCompleted = pipelineStatus?.pipelineStatus === 'completed';
+            const isPipelineFailed = pipelineStatus?.pipelineStatus === 'failed';
+            const hasLeads = campaign.leadsFound > 0 || (pipelineStatus?.summary?.leadsFound || 0) > 0;
+
+            // Use pipeline status summary if available, otherwise campaign data
+            const displayFound = pipelineStatus?.summary?.leadsFound ?? campaign.leadsFound;
+            const displayQualified = pipelineStatus?.summary?.leadsQualified ?? campaign.leadsQualified;
+            const displayContacted = pipelineStatus?.summary?.leadsContacted ?? campaign.leadsContacted;
 
             return (
               <Card
@@ -324,6 +396,10 @@ export function CampaignsView() {
                   style={{
                     backgroundColor: isPipelineRunning
                       ? '#06b6d4'
+                      : isPipelineCompleted
+                      ? '#10b981'
+                      : isPipelineFailed
+                      ? '#ef4444'
                       : hasLeads
                       ? '#10b981'
                       : '#6b7280',
@@ -427,17 +503,53 @@ export function CampaignsView() {
                     )}
                   </div>
 
-                  {/* Pipeline Progress or Start Button */}
-                  {isPipelineRunning ? (
-                    <div className="mt-4 space-y-2">
+                  {/* Pipeline Progress — Running */}
+                  {isPipelineRunning && pipelineStatus ? (
+                    <div className="mt-4 space-y-3">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
-                        <span className="text-xs text-cyan-400 font-medium">Agent Pipeline Running...</span>
+                        <span className="text-xs text-cyan-400 font-medium">
+                          {pipelineStatus.currentStage
+                            ? `${getStageLabel(pipelineStatus.currentStage)}...`
+                            : 'Pipeline Running...'}
+                        </span>
+                        <span className="text-[10px] text-muted-foreground ml-auto">
+                          {pipelineStatus.overallProgress}%
+                        </span>
                       </div>
-                      <Progress value={undefined} className="h-1.5 bg-secondary/40 animate-pulse" />
-                      <p className="text-[10px] text-muted-foreground">
-                        Discovery → Enrichment → Qualification → Outreach
-                      </p>
+                      <Progress
+                        value={pipelineStatus.overallProgress}
+                        className="h-1.5 bg-secondary/40"
+                      />
+                      {/* Stage indicators */}
+                      <div className="flex gap-1">
+                        {PIPELINE_STAGES.map((stage) => {
+                          const stageStatus = pipelineStatus.stages[stage.key];
+                          const isRunning = stageStatus?.status === 'running';
+                          const isDone = stageStatus?.status === 'completed';
+                          const isFailed = stageStatus?.status === 'failed';
+                          return (
+                            <div
+                              key={stage.key}
+                              className={`flex-1 h-1 rounded-full transition-all duration-300 ${
+                                isDone
+                                  ? 'bg-emerald-400'
+                                  : isRunning
+                                  ? 'bg-cyan-400 animate-pulse'
+                                  : isFailed
+                                  ? 'bg-red-400'
+                                  : 'bg-secondary/30'
+                              }`}
+                              title={`${stage.label}: ${stageStatus?.status || 'pending'} (${stageStatus?.progress || 0}%)`}
+                            />
+                          );
+                        })}
+                      </div>
+                      <div className="flex justify-between text-[9px] text-muted-foreground">
+                        {PIPELINE_STAGES.map((stage) => (
+                          <span key={stage.key} className="flex-1 text-center">{stage.label}</span>
+                        ))}
+                      </div>
                     </div>
                   ) : !hasLeads ? (
                     <div className="mt-4">
@@ -456,20 +568,16 @@ export function CampaignsView() {
                       <div className="flex items-center justify-between text-xs text-muted-foreground">
                         <span>Qualification Progress</span>
                         <span className="font-semibold text-foreground/80">
-                          {campaign.leadsFound > 0
-                            ? Math.round(
-                                (campaign.leadsQualified / campaign.leadsFound) * 100
-                              )
+                          {displayFound > 0
+                            ? Math.round((displayQualified / displayFound) * 100)
                             : 0}
                           %
                         </span>
                       </div>
                       <Progress
                         value={
-                          campaign.leadsFound > 0
-                            ? Math.round(
-                                (campaign.leadsQualified / campaign.leadsFound) * 100
-                              )
+                          displayFound > 0
+                            ? Math.round((displayQualified / displayFound) * 100)
                             : 0
                         }
                         className="h-1.5 bg-secondary/40"
@@ -477,28 +585,30 @@ export function CampaignsView() {
                     </div>
                   )}
 
-                  {/* Pipeline Result Toast */}
-                  {pipelineResult && !isPipelineRunning && (
-                    <div className={`mt-3 rounded-md p-2 text-[10px] ${
-                      pipelineResult.success
-                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
-                        : 'bg-red-500/10 border border-red-500/20 text-red-400'
-                    }`}>
-                      <div className="flex items-center gap-1.5 font-medium">
-                        {pipelineResult.success ? (
-                          <CheckCircle2 className="h-3 w-3" />
-                        ) : (
-                          <AlertCircle className="h-3 w-3" />
-                        )}
-                        {pipelineResult.success ? 'Pipeline Complete' : 'Pipeline Issues'}
+                  {/* Pipeline Result Banner */}
+                  {isPipelineCompleted && pipelineStatus && (
+                    <div className="mt-3 rounded-md p-2 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                      <div className="flex items-center gap-1.5 font-medium text-[10px]">
+                        <CheckCircle2 className="h-3 w-3" />
+                        Pipeline Complete
                       </div>
-                      {pipelineResult.summary && (
-                        <div className="mt-1 text-muted-foreground">
-                          {pipelineResult.summary.leadsFound} found → {pipelineResult.summary.leadsEnriched} enriched → {pipelineResult.summary.leadsQualified} qualified ({pipelineResult.summary.hotLeads} hot)
+                      <div className="mt-1 text-[10px] text-muted-foreground">
+                        {pipelineStatus.summary.leadsFound} found → {pipelineStatus.summary.leadsEnriched} enriched → {pipelineStatus.summary.leadsQualified} qualified ({pipelineStatus.summary.hotLeads} hot)
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Pipeline Error Banner */}
+                  {isPipelineFailed && pipelineStatus && (
+                    <div className="mt-3 rounded-md p-2 bg-red-500/10 border border-red-500/20 text-red-400">
+                      <div className="flex items-center gap-1.5 font-medium text-[10px]">
+                        <AlertCircle className="h-3 w-3" />
+                        Pipeline Issues
+                      </div>
+                      {pipelineStatus.errors.length > 0 && (
+                        <div className="mt-1 text-[10px] text-muted-foreground">
+                          {pipelineStatus.errors.map(e => e.error).filter(Boolean).join('; ')}
                         </div>
-                      )}
-                      {pipelineResult.error && (
-                        <div className="mt-1">{pipelineResult.error}</div>
                       )}
                     </div>
                   )}
@@ -506,19 +616,19 @@ export function CampaignsView() {
                   <div className="grid grid-cols-3 gap-2 mt-4 text-center">
                     <div className="rounded-md bg-secondary/20 p-2">
                       <div className="text-sm font-bold text-foreground/90">
-                        {campaign.leadsFound}
+                        {displayFound}
                       </div>
                       <div className="text-[10px] text-muted-foreground">Found</div>
                     </div>
                     <div className="rounded-md bg-secondary/20 p-2">
                       <div className="text-sm font-bold text-foreground/90">
-                        {campaign.leadsQualified}
+                        {displayQualified}
                       </div>
                       <div className="text-[10px] text-muted-foreground">Qualified</div>
                     </div>
                     <div className="rounded-md bg-secondary/20 p-2">
                       <div className="text-sm font-bold text-foreground/90">
-                        {campaign.leadsContacted}
+                        {displayContacted}
                       </div>
                       <div className="text-[10px] text-muted-foreground">Contacted</div>
                     </div>
@@ -634,7 +744,7 @@ export function CampaignsView() {
               {formCreating ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
-                  Creating & Running Pipeline...
+                  Creating Campaign...
                 </>
               ) : (
                 <>
@@ -708,9 +818,9 @@ export function CampaignsView() {
                     handleRunPipeline(detailCampaign.id, detailCampaign.name);
                     setDetailCampaign(null);
                   }}
-                  disabled={pipelineState[detailCampaign.id]?.running}
+                  disabled={pipelineStatuses[detailCampaign.id]?.pipelineStatus === 'running'}
                 >
-                  {pipelineState[detailCampaign.id]?.running ? (
+                  {pipelineStatuses[detailCampaign.id]?.pipelineStatus === 'running' ? (
                     <Loader2 className="h-4 w-4 animate-spin" />
                   ) : (
                     <Zap className="h-4 w-4" />
