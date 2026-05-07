@@ -214,3 +214,69 @@
   outline-offset: 2px;
   border-radius: 4px;
 }
+
+/* ============================================================
+   SPLINE 3D BACKGROUND — Landing Page Interactive Background
+   ============================================================
+   The Spline viewer is a fixed, interactive 3D background that
+   stays visible during scroll and responds to pointer movement.
+   The landing page content sits on top with pointer-events: none
+   on the wrapper, allowing mouse events to pass through to the
+   Spline. Interactive elements (buttons, links, cards) re-enable
+   pointer-events: auto so they remain fully clickable.
+   ============================================================ */
+
+/* Spline background container — fixed, full viewport, behind content */
+.spline-bg-container {
+  opacity: 0.3;
+  pointer-events: auto;
+  transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+/* Make the Spline viewer background transparent to blend with our dark theme */
+spline-viewer {
+  background: transparent !important;
+  --spline-bg: transparent;
+}
+
+/* Ensure the Spline canvas fills its container */
+spline-viewer canvas {
+  background: transparent !important;
+}
+
+/* Landing page content layer — above Spline, pointer-events pass through */
+.landing-content {
+  position: relative;
+  z-index: 2;
+  pointer-events: none;
+}
+
+/* Re-enable pointer events on all interactive elements within landing content */
+.landing-content a,
+.landing-content button,
+.landing-content input,
+.landing-content textarea,
+.landing-content select,
+.landing-content [role="button"],
+.landing-content [tabindex],
+.landing-content [type="button"],
+.landing-content [type="submit"],
+.landing-content summary,
+.landing-content details,
+.landing-content .card-premium,
+.landing-content [data-interactive] {
+  pointer-events: auto;
+}
+
+/* Ensure cards are interactive and have a subtle glass backdrop
+   so content remains readable over the Spline background */
+.landing-content .card-premium {
+  backdrop-filter: blur(8px) saturate(1.1);
+  -webkit-backdrop-filter: blur(8px) saturate(1.1);
+}
+
+/* Footer must be above the Spline background on the landing page */
+.marketing-footer {
+  position: relative;
+  z-index: 10;
+}

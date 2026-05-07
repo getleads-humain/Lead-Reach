@@ -269,3 +269,39 @@ Stage Summary:
 - All 8 agent codenames verified: Atlas, Scout, Forge, Sage, Judge, Bard, Flow, Echo
 - All Agent-Reach bridge functions properly referenced in skill files
 - Total documentation size: 821 KB of comprehensive agent specifications
+---
+Task ID: spline-landing-bg
+Agent: Super Z (main)
+Task: Embed Spline 3D interactive background on Landing Page as sticky/fixed background
+
+Work Log:
+- Explored project structure: Next.js 16 + React 19 + TypeScript + Tailwind CSS 4
+- Landing page at src/app/page.tsx, MarketingLayout at src/components/marketing/marketing-layout.tsx
+- Created SplineBackground component (src/components/spline-background.tsx) that:
+  - Loads Spline viewer script dynamically via useEffect
+  - Creates <spline-viewer> custom element programmatically (avoids React/JSX friction with web components)
+  - Fixed position covering full viewport (stays visible during scroll)
+  - z-index: 1 (behind all content, above noise texture)
+  - Container opacity: 0.3 for visual transparency
+  - pointer-events: auto (allows 3D model to respond to cursor)
+- Updated Landing Page (src/app/page.tsx):
+  - Added SplineBackground component
+  - Wrapped all content sections in <div className="landing-content"> with z-index: 2 and pointer-events: none
+- Added CSS rules (src/app/globals.css):
+  - .spline-bg-container: opacity 0.3, pointer-events auto
+  - spline-viewer: background transparent
+  - .landing-content: position relative, z-index 2, pointer-events none
+  - Re-enabled pointer-events: auto on all interactive elements (a, button, input, .card-premium, etc.)
+  - .card-premium: added backdrop-filter blur for readability over Spline
+  - .marketing-footer: position relative, z-index 10 (above Spline)
+- Updated MarketingLayout footer with marketing-footer class
+- Build passes successfully, landing page returns 200, HTML structure verified
+
+Stage Summary:
+- Spline 3D model embedded as interactive, fixed background on Landing Page only
+- Stays visible during scroll (position: fixed)
+- Interactive: responds to pointer movement through pointer-events passthrough
+- Transparent: 0.3 opacity ensures visibility without obscuring content
+- All foreground elements (buttons, links, cards) remain fully clickable
+- Footer properly layered above Spline background
+- Files created/modified: spline-background.tsx, page.tsx, globals.css, marketing-layout.tsx

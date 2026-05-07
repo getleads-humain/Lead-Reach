@@ -3,6 +3,7 @@
 import React from 'react';
 import Link from 'next/link';
 import { MarketingLayout } from '@/components/marketing/marketing-layout';
+import { SplineBackground } from '@/components/spline-background';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -163,6 +164,11 @@ const AGENT_PREVIEW = [
 export default function LandingPage() {
   return (
     <MarketingLayout>
+      {/* Spline 3D Interactive Background — fixed, centered, stays visible during scroll */}
+      <SplineBackground />
+
+      {/* Landing page content — above Spline, pointer-events pass through to Spline */}
+      <div className="landing-content">
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         {/* Grid Background */}
@@ -513,6 +519,7 @@ export default function LandingPage() {
           </div>
         </div>
       </section>
+      </div>{/* end landing-content */}
     </MarketingLayout>
   );
 }
