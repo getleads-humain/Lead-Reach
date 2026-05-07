@@ -14,8 +14,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!seeded) {
-      safeFetchJSON('/api/seed', { method: 'POST' })
-        .then((data: { success?: boolean; counts?: Record<string, number> }) => {
+      safeFetchJSON<{ success?: boolean; counts?: Record<string, number> }>('/api/seed', { method: 'POST' })
+        .then((data) => {
           if (data.success) {
             console.log('Demo data seeded:', data.counts);
           }

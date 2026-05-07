@@ -47,3 +47,27 @@ Stage Summary:
 - LLM fallback generates companies when web search channels return no structured data
 - Found 8 real marketing agencies in Toronto through the LLM knowledge fallback
 - All agent tasks complete successfully: Discovery → Enrichment → Qualification → Outreach
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix preview not loading - diagnose and fix all issues preventing the frontend from loading
+
+Work Log:
+- Diagnosed that the Next.js production server was not running, causing Caddy reverse proxy (port 81) to return 502
+- Found that `next.config.ts` had invalid `serverTimeout` in `experimental` object (not supported in Next.js 16)
+- Found Prisma database path issue: relative path `file:../db/custom.db` in schema doesn't resolve correctly when standalone server runs from `.next/standalone/`
+- Fixed `next.config.ts` - removed `serverTimeout`, added `serverExternalPackages`
+- Fixed `app-shell.tsx` TypeScript error with `safeFetchJSON` type annotation
+- Created database symlink at `.next/standalone/db/custom.db` pointing to project root DB
+- Created `start-server.sh` script with proper DATABASE_URL environment variable
+- Created `keep-alive.js` persistent launcher script
+- Rebuilt the production app and started the server successfully
+- Verified all routes return 200: Landing (/), App (/app), Agent (/agent), and all API endpoints
+- Caddy proxy on port 81 now correctly proxies to Next.js on port 3000
+
+Stage Summary:
+- Root cause: Next.js production server was not running (no persistent process), and when started, Prisma couldn't find the database
+- Fix: Removed invalid next.config.ts key, fixed DB path, created persistent startup scripts
+- All pages and APIs now load correctly through Caddy proxy on port 81
+- Server process PID 27163 is running and stable
