@@ -13,7 +13,7 @@ import type { ChannelStatus } from './types';
  * 🧠 AGENT EXECUTION: The Agent Execution Engine at `src/lib/agent-executor.ts`
  * dispatches tasks to agents, calls the Tool Bridge, and feeds results to the LLM.
  * 
- * The original Python codebase is located at: /home/z/my-project/upload/Agent-Reach-main/
+ * The Python toolkit is located at: /home/z/my-project/agent-reach-toolkit/
  * 
  * Agent-Reach gives AI agents internet access through 17+ channels:
  * - Web reading via Jina Reader
@@ -340,15 +340,15 @@ export function getChannelCommand(channel: string, operation: string): string {
 
 /**
  * Get the Python source path for an Agent-Reach channel.
- * References the actual Python codebase at /home/z/my-project/upload/Agent-Reach-main/
+ * References the Python toolkit at /home/z/my-project/agent-reach-toolkit/
  */
 export function getChannelSourcePath(channel: string): string {
-  return `/home/z/my-project/upload/Agent-Reach-main/agent_reach/channels/${channel}.py`;
+  return `/home/z/my-project/agent-reach-toolkit/agent_reach/channels/${channel}.py`;
 }
 
 /**
  * Get the Agent-Reach skill reference path.
  */
 export function getSkillReferencePath(reference: string): string {
-  return `/home/z/my-project/upload/Agent-Reach-main/agent_reach/skill/references/${reference}.md`;
+  return `/home/z/my-project/agent-reach-toolkit/agent_reach/skill/references/${reference}.md`;
 }

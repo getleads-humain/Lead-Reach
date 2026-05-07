@@ -11,7 +11,6 @@
  * Each function returns structured data that agents can use directly.
  * All commands reference the Agent-Reach Python toolkit at:
  *   /home/z/my-project/agent-reach-toolkit/
- *   /home/z/my-project/upload/Agent-Reach-main/
  */
 
 import { exec } from 'child_process';
