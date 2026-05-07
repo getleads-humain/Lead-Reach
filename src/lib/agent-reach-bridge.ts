@@ -285,42 +285,72 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
 }
 
 // ============================================================
-// Channel 2: Exa Search (Semantic Web Search)
+// Channel 2: Web Search (z-ai-web-dev-sdk → Exa/mcporter → Jina)
 // ============================================================
 
 /**
- * AI-powered semantic web search using Exa via mcporter.
- * Works without API key (auto-configured via MCP).
+ * AI-powered web search using multiple sources with smart fallback.
+ * 
+ * Pipeline (tries each in order until one returns results):
+ * 1. z-ai-web-dev-sdk web_search (MOST RELIABLE — always available)
+ * 2. mcporter Exa (if available)
+ * 3. Jina Search (s.jina.ai)
  * 
  * Agent-Reach Reference: SKILL_en.md → "Web Search (Exa)"
- * Command: mcporter call 'exa.web_search_exa(query: "query", numResults: 5)'
  */
 export async function exaSearch(query: string, numResults = 10): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
-  try {
-    // Try mcporter first
-    try {
-      const { stdout } = await runCommand(
-        `mcporter call 'exa.web_search_exa(query: "${query.replace(/'/g, "\\'")}", numResults: ${numResults})'`,
-        25000,
-      );
-      
-      const parsed = safeJsonParse<Record<string, unknown>[]>(stdout);
-      if (parsed && Array.isArray(parsed)) {
-        const results: SearchResult[] = parsed.map((item: Record<string, unknown>) => ({
-          title: (item.title as string) || '',
-          url: (item.url as string) || '',
-          snippet: (item.text as string)?.slice(0, 300) || (item.snippet as string) || '',
-          score: (item.score as number) || undefined,
-          publishedDate: (item.publishedDate as string) || undefined,
-        }));
-        return makeResult(results, channel, 'Exa via mcporter', stdout.slice(0, 2000));
-      }
-    } catch {
-      // mcporter not available, try fallback
-    }
 
-    // Fallback: Use Jina Reader to search (less semantic but works)
+  // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
+  try {
+    const ZAI = (await import('z-ai-web-dev-sdk')).default;
+    const zai = await ZAI.create();
+    const searchResult = await zai.functions.invoke('web_search', {
+      query,
+      num: numResults,
+    });
+
+    if (Array.isArray(searchResult) && searchResult.length > 0) {
+      const results: SearchResult[] = searchResult.map((item: { url?: string; name?: string; snippet?: string; rank?: number; date?: string }) => ({
+        title: item.name || '',
+        url: item.url || '',
+        snippet: item.snippet || '',
+        score: item.rank || undefined,
+        publishedDate: item.date || undefined,
+      }));
+      console.log(`[exaSearch] z-ai-web-dev-sdk returned ${results.length} results for "${query.slice(0, 60)}"`);
+      return makeResult(results, channel, 'z-ai-web-dev-sdk Web Search', JSON.stringify(searchResult).slice(0, 2000));
+    }
+    console.warn(`[exaSearch] z-ai-web-dev-sdk returned 0 results for "${query.slice(0, 60)}"`);
+  } catch (sdkError) {
+    const msg = sdkError instanceof Error ? sdkError.message : 'Unknown error';
+    console.warn(`[exaSearch] z-ai-web-dev-sdk failed: ${msg.slice(0, 200)}`);
+  }
+
+  // ===== METHOD 2: mcporter Exa (if available) =====
+  try {
+    const { stdout } = await runCommand(
+      `mcporter call 'exa.web_search_exa(query: "${query.replace(/'/g, "\\'")}", numResults: ${numResults})'`,
+      25000,
+    );
+    
+    const parsed = safeJsonParse<Record<string, unknown>[]>(stdout);
+    if (parsed && Array.isArray(parsed) && parsed.length > 0) {
+      const results: SearchResult[] = parsed.map((item: Record<string, unknown>) => ({
+        title: (item.title as string) || '',
+        url: (item.url as string) || '',
+        snippet: (item.text as string)?.slice(0, 300) || (item.snippet as string) || '',
+        score: (item.score as number) || undefined,
+        publishedDate: (item.publishedDate as string) || undefined,
+      }));
+      return makeResult(results, channel, 'Exa via mcporter', stdout.slice(0, 2000));
+    }
+  } catch {
+    // mcporter not available, try fallback
+  }
+
+  // ===== METHOD 3: Jina Search (final fallback) =====
+  try {
     const searchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
     const response = await fetch(searchUrl, {
       headers: { 'Accept': 'text/plain' },
@@ -328,10 +358,16 @@ export async function exaSearch(query: string, numResults = 10): Promise<ToolRes
     });
 
     if (!response.ok) {
-      return makeError<SearchResult[]>(`Exa search fallback returned ${response.status}`, channel);
+      return makeError<SearchResult[]>(`All search methods failed (Jina returned ${response.status})`, channel);
     }
 
     const text = await response.text();
+    
+    // Detect HTML error pages
+    if (text.trim().startsWith('<') || text.trim().startsWith('<!DOCTYPE')) {
+      return makeError<SearchResult[]>('Jina Search returned HTML error page', channel);
+    }
+    
     const results: SearchResult[] = [];
     const blocks = text.split(/\n\n+/);
     
@@ -364,7 +400,7 @@ export async function exaSearch(query: string, numResults = 10): Promise<ToolRes
     return makeResult(results, channel, 'Jina Search (Exa fallback)', text.slice(0, 2000));
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    return makeError<SearchResult[]>(`Exa search failed: ${msg}`, channel);
+    return makeError<SearchResult[]>(`All search methods failed: ${msg}`, channel);
   }
 }
 
@@ -1789,6 +1825,8 @@ export async function xueqiuQuote(symbol: string): Promise<ToolResult<XueqiuResu
  * 
  * This is what makes Agent-Reach so powerful for lead generation —
  * it casts a wide net across ALL available channels simultaneously.
+ * 
+ * Pipeline: z-ai-web-dev-sdk web_search → Exa → Reddit → Web directories
  */
 export async function discoverBusinesses(
   query: string,
@@ -1797,13 +1835,59 @@ export async function discoverBusinesses(
 ): Promise<ToolResult<SearchResult[]>> {
   const fullQuery = location ? `${query} ${location}` : query;
   const industryQuery = industry ? `${industry} companies ${location || ''}` : fullQuery;
+  
+  // ===== PRIMARY: Use z-ai-web-dev-sdk web_search directly =====
+  // This is the most reliable channel — try it first with multiple query variations
+  try {
+    const ZAI = (await import('z-ai-web-dev-sdk')).default;
+    const zai = await ZAI.create();
+    
+    // Search with multiple query variations for better coverage
+    const searchQueries = [
+      fullQuery,
+      industryQuery,
+      `${industry || query} agencies firms ${location || ''}`,
+      `top ${industry || query} companies ${location || ''} list`,
+    ].filter((q, i, arr) => arr.indexOf(q) === i); // deduplicate
+    
+    const allSdkResults: SearchResult[] = [];
+    
+    for (const searchQuery of searchQueries.slice(0, 3)) { // max 3 queries
+      try {
+        const searchResult = await zai.functions.invoke('web_search', {
+          query: searchQuery,
+          num: 10,
+        });
+        
+        if (Array.isArray(searchResult) && searchResult.length > 0) {
+          for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
+            // Deduplicate by URL
+            if (item.url && !allSdkResults.some(r => r.url === item.url)) {
+              allSdkResults.push({
+                title: item.name || '',
+                url: item.url,
+                snippet: item.snippet || '',
+              });
+            }
+          }
+        }
+      } catch (e) {
+        console.warn(`[discoverBusinesses] SDK search failed for "${searchQuery}": ${e instanceof Error ? e.message.slice(0, 100) : 'Unknown'}`);
+      }
+    }
+    
+    if (allSdkResults.length > 0) {
+      console.log(`[discoverBusinesses] SDK web_search found ${allSdkResults.length} unique results`);
+      return makeResult(allSdkResults, 'multi', 'z-ai-web-dev-sdk Multi-query Discovery');
+    }
+  } catch (sdkError) {
+    console.warn(`[discoverBusinesses] SDK initialization failed: ${sdkError instanceof Error ? sdkError.message.slice(0, 100) : 'Unknown'}`);
+  }
 
-  // Fire off parallel searches across multiple channels
-  const [exaResults, redditResults, webResults] = await Promise.allSettled([
+  // ===== FALLBACK: Traditional multi-channel search =====
+  const [exaResults, redditResults] = await Promise.allSettled([
     exaSearch(fullQuery, 15),
     redditSearch(fullQuery, 5),
-    // Also search for business directories
-    webRead(`https://www.google.com/search?q=${encodeURIComponent(`${industryQuery} business directory list`)}`),
   ]);
 
   const allResults: SearchResult[] = [];
@@ -1822,21 +1906,7 @@ export async function discoverBusinesses(
     })));
   }
 
-  // Collect web directory results
-  if (webResults.status === 'fulfilled' && webResults.value.success) {
-    const content = webResults.value.data.content || '';
-    // Extract URLs from Jina Reader output
-    const urlMatches = content.matchAll(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g);
-    for (const match of urlMatches) {
-      allResults.push({
-        title: match[1],
-        url: match[2],
-        snippet: '',
-      });
-    }
-  }
-
-  return makeResult(allResults, 'multi', 'Multi-channel discovery (Exa + Reddit + Web)');
+  return makeResult(allResults, 'multi', 'Multi-channel discovery (Exa + Reddit)');
 }
 
 /**

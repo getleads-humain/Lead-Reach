@@ -6,9 +6,9 @@ import { NextRequest, NextResponse } from 'next/server';
  * POST /api/campaigns/[id]/run-pipeline
  *
  * Triggers the full 4-stage lead generation pipeline for a campaign.
- *
+ * 
  * The pipeline runs in a SEPARATE Node.js worker process to prevent
- * the Next.js dev server from crashing during long-running execution.
+ * blocking or crashing the Next.js server during long-running execution.
  * This endpoint returns immediately after spawning the worker.
  *
  * The frontend polls GET /api/campaigns/[id]/pipeline-status for progress.
@@ -59,17 +59,26 @@ export async function POST(
     // Build query from campaign data
     const industry = campaign.targetIndustry || '';
     const location = campaign.targetLocation || '';
-    const query =
-      body.query ||
-      `${industry || campaign.name} companies in ${location || 'global'}`.trim();
+    let query: string;
+    
+    if (body.query) {
+      query = body.query;
+    } else if (industry && location) {
+      query = `${industry} companies in ${location}`;
+    } else if (industry) {
+      query = `${industry} companies`;
+    } else {
+      // Use the campaign name as the query, which often contains the full search intent
+      query = campaign.name;
+    }
 
     const campaignName = campaign.name;
     console.log(`[Pipeline] Spawning worker for campaign "${campaignName}" (ID: ${campaignId})`);
 
-    // Spawn the pipeline worker in a SEPARATE process
-    // This keeps the Next.js server alive and responsive
+    // Use the compiled worker JS (faster startup than npx tsx)
     const projectRoot = process.cwd();
-    const workerCommand = `npx tsx "${projectRoot}/src/lib/workers/pipeline-worker.ts" "${campaignId}" "${query.replace(/"/g, '\\"')}" "${industry}" "${location}"`;
+    const workerPath = `${projectRoot}/dist/lib/workers/pipeline-worker.js`;
+    const workerCommand = `node "${workerPath}" "${campaignId}" "${query.replace(/"/g, '\\"')}" "${industry}" "${location}"`;
 
     exec(workerCommand, {
       cwd: projectRoot,
