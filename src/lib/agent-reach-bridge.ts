@@ -173,11 +173,25 @@ async function runCommand(command: string, timeout = EXEC_TIMEOUT): Promise<{ st
       maxBuffer: 10 * 1024 * 1024, // 10MB
       env: { ...process.env, PATH: `${process.env.PATH}:/usr/local/bin:${PYTHON_TOOLKIT_PATH}` },
     });
+
+    // Detect HTML in stdout — some CLI tools or API gateways return HTML error pages
+    const trimmedStdout = (stdout || '').trim();
+    if (trimmedStdout.startsWith('<') || trimmedStdout.startsWith('<!DOCTYPE') || trimmedStdout.startsWith('<html')) {
+      console.warn(`[runCommand] Command "${command.slice(0, 80)}" returned HTML instead of expected output — API gateway error page`);
+      return { stdout: '', stderr: 'Command returned HTML instead of expected JSON/data (likely API gateway error page)' };
+    }
+
     return { stdout: stdout || '', stderr: stderr || '' };
   } catch (error: unknown) {
     const err = error as { stdout?: string; stderr?: string; message?: string };
-    // Some commands output to stdout even on error
+
+    // Check if the error stdout is HTML (API gateway error page)
     if (err.stdout) {
+      const trimmedErrStdout = err.stdout.trim();
+      if (trimmedErrStdout.startsWith('<') || trimmedErrStdout.startsWith('<!DOCTYPE') || trimmedErrStdout.startsWith('<html')) {
+        console.warn(`[runCommand] Command "${command.slice(0, 80)}" error output is HTML — API gateway error page`);
+        return { stdout: '', stderr: 'Command returned HTML error page instead of data (API gateway issue)' };
+      }
       return { stdout: err.stdout, stderr: err.stderr || '' };
     }
     throw new Error(err.message || 'Command execution failed');
@@ -185,9 +199,21 @@ async function runCommand(command: string, timeout = EXEC_TIMEOUT): Promise<{ st
 }
 
 /**
- * Safely parse JSON from a string
+ * Safely parse JSON from a string.
+ * Detects HTML responses (from error pages, rate limits, API gateways)
+ * before attempting JSON.parse to avoid the "Unexpected token '<'" SyntaxError.
  */
 function safeJsonParse<T>(str: string): T | null {
+  if (!str || !str.trim()) return null;
+
+  // Detect HTML responses early — these come from API gateways returning error pages
+  // instead of JSON (rate limits, 404 pages, maintenance pages, etc.)
+  const trimmed = str.trim();
+  if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+    console.warn('[safeJsonParse] Received HTML instead of JSON — likely an API gateway error page');
+    return null;
+  }
+
   try {
     return JSON.parse(str) as T;
   } catch {

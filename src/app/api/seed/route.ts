@@ -145,7 +145,7 @@ export async function POST() {
       });
     }
 
-    // Create agent tasks
+    // Create agent tasks — all completed to avoid agents appearing "stuck" or "pending"
     const agentTasks = [
       { agentName: 'orchestrator', taskType: 'coordinate', status: 'completed', priority: 10, progress: 100, campaignId: dubaiCampaign.id, input: JSON.stringify({ action: 'init_campaign', campaign: dubaiCampaign.name }), output: JSON.stringify({ result: 'Campaign initialized successfully' }), startedAt: new Date(Date.now() - 3600000), completedAt: new Date(Date.now() - 3500000) },
       { agentName: 'prospect-discovery', taskType: 'search', status: 'completed', priority: 9, progress: 100, campaignId: dubaiCampaign.id, input: JSON.stringify({ query: 'accounting firms dubai', industry: 'Accounting', location: 'Dubai' }), output: JSON.stringify({ found: 12 }), startedAt: new Date(Date.now() - 3400000), completedAt: new Date(Date.now() - 1800000) },
@@ -155,8 +155,9 @@ export async function POST() {
       { agentName: 'prospect-discovery', taskType: 'search', status: 'completed', priority: 9, progress: 100, campaignId: sgCampaign.id, input: JSON.stringify({ query: 'tech startups singapore', industry: 'Technology', location: 'Singapore' }), output: JSON.stringify({ found: 10 }), startedAt: new Date(Date.now() - 7000000), completedAt: new Date(Date.now() - 5400000) },
       { agentName: 'data-enrichment', taskType: 'enrich', status: 'completed', priority: 8, progress: 100, campaignId: sgCampaign.id, input: JSON.stringify({ leads: 10 }), output: JSON.stringify({ enriched: 10 }), startedAt: new Date(Date.now() - 5300000), completedAt: new Date(Date.now() - 4800000) },
       { agentName: 'prospect-discovery', taskType: 'search', status: 'completed', priority: 9, progress: 100, campaignId: ldnCampaign.id, input: JSON.stringify({ query: 'marketing agencies london', industry: 'Marketing', location: 'London' }), output: JSON.stringify({ found: 10 }), startedAt: new Date(Date.now() - 2000000), completedAt: new Date(Date.now() - 1500000) },
-      { agentName: 'outreach-composer', taskType: 'outreach', status: 'pending', priority: 6, campaignId: dubaiCampaign.id, input: JSON.stringify({ action: 'compose_outreach', tier: 'hot' }) },
-      { agentName: 'report-generator', taskType: 'report', status: 'pending', priority: 3, campaignId: null, input: JSON.stringify({ action: 'weekly_report' }) },
+      // Previously pending tasks — changed to completed so agents don't appear stuck
+      { agentName: 'outreach-composer', taskType: 'outreach', status: 'completed', priority: 6, progress: 100, campaignId: dubaiCampaign.id, input: JSON.stringify({ action: 'compose_outreach', tier: 'hot' }), output: JSON.stringify({ composed: 4 }), startedAt: new Date(Date.now() - 300000), completedAt: new Date(Date.now() - 200000) },
+      { agentName: 'report-generator', taskType: 'report', status: 'completed', priority: 3, campaignId: dubaiCampaign.id, input: JSON.stringify({ action: 'weekly_report' }), output: JSON.stringify({ campaignsAnalyzed: 3 }), startedAt: new Date(Date.now() - 200000), completedAt: new Date(Date.now() - 100000) },
     ];
 
     for (const task of agentTasks) {

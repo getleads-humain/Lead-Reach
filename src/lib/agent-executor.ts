@@ -130,22 +130,26 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 2): 
       const msg = error instanceof Error ? error.message : 'Unknown error';
       
       // Detect the specific "Unexpected token '<'" error that means HTML was returned instead of JSON
-      const isHtmlResponseError = msg.includes('Unexpected token') && msg.includes('is not valid JSON');
+      // This happens when the API gateway returns an HTML error page (rate limit, maintenance, 404, etc.)
+      // instead of the expected JSON response. The SDK's internal JSON.parse() throws this SyntaxError.
+      const isHtmlResponseError = (
+        msg.includes('Unexpected token') && msg.includes('is not valid JSON') &&
+        (msg.includes('<html') || msg.includes('<!DOCTYPE') || msg.includes('"<html'))
+      ) || msg.includes('HTML instead of JSON');
+      
       if (isHtmlResponseError) {
-        console.warn(`[callLLM] API gateway returned HTML instead of JSON on attempt ${attempt + 1}. This is likely a rate limit or maintenance page. ${attempt < retries ? 'Retrying...' : 'All retries exhausted.'}`);
+        console.warn(`[callLLM] API gateway returned HTML instead of JSON on attempt ${attempt + 1}. This is likely a rate limit or maintenance page. ${attempt < retries ? 'Retrying with backoff...' : 'All retries exhausted.'}`);
       }
       
       if (attempt < retries) {
         // Add exponential backoff for rate-limit-style errors
-        const backoffMs = isHtmlResponseError ? (attempt + 1) * 2000 : 500;
-        if (backoffMs > 500) {
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
-        }
-        console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg}, retrying...`);
+        const backoffMs = isHtmlResponseError ? (attempt + 1) * 3000 : 1000;
+        console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg.slice(0, 200)}, retrying in ${backoffMs}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoffMs));
         continue;
       }
       console.error('LLM call failed after retries:', error);
-      throw new Error(`LLM call failed: ${msg}`);
+      throw new Error(`LLM call failed after ${retries + 1} attempts: ${msg.slice(0, 200)}`);
     }
   }
   return '';
@@ -207,6 +211,13 @@ async function callLLMForJSON<T>(systemPrompt: string, userMessage: string, defa
  */
 function extractJSONFromString<T>(response: string): T | null {
   if (!response || !response.trim()) return null;
+
+  // Guard: If the response is HTML (from an API gateway error page), skip parsing
+  const trimmed = response.trim();
+  if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
+    console.warn('[extractJSONFromString] Response is HTML, not JSON — skipping parse');
+    return null;
+  }
 
   // Strategy 1: Strip markdown code blocks
   const codeBlockMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?\s*```/);

@@ -33,6 +33,11 @@ import {
   Pause,
   Archive,
   Eye,
+  Loader2,
+  Zap,
+  CheckCircle2,
+  AlertCircle,
+  RotateCw,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -60,6 +65,25 @@ export function CampaignsView() {
   const [formSize, setFormSize] = useState('');
   const [formCreating, setFormCreating] = useState(false);
 
+  // Pipeline running state: campaignId -> { running, result }
+  const [pipelineState, setPipelineState] = useState<Record<string, {
+    running: boolean;
+    result?: {
+      success: boolean;
+      summary?: {
+        leadsFound: number;
+        leadsEnriched: number;
+        leadsQualified: number;
+        leadsContacted: number;
+        hotLeads: number;
+        warmLeads: number;
+        coldLeads: number;
+        errors: string[];
+      };
+      error?: string;
+    };
+  }>>({});
+
   useEffect(() => {
     loadCampaigns();
   }, []);
@@ -79,7 +103,9 @@ export function CampaignsView() {
     if (!formName.trim()) return;
     setFormCreating(true);
     try {
-      const newCampaign = await safeFetchJSON<CampaignWithCounts>('/api/campaigns', {
+      const newCampaign = await safeFetchJSON<CampaignWithCounts & {
+        pipeline?: { success: boolean; summary?: Record<string, unknown>; error?: string }
+      }>('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -88,15 +114,93 @@ export function CampaignsView() {
           targetIndustry: formIndustry,
           targetLocation: formLocation,
           targetCompanySize: formSize,
+          autoRun: true, // Auto-start the pipeline
         }),
       });
+
+      // Add the new campaign with pipeline results to the list
       setCampaigns((prev) => [newCampaign, ...prev]);
       setCreateOpen(false);
       resetForm();
+
+      // If pipeline ran, update the pipeline state
+      if (newCampaign.pipeline) {
+        setPipelineState(prev => ({
+          ...prev,
+          [newCampaign.id]: {
+            running: false,
+            result: {
+              success: newCampaign.pipeline!.success,
+              summary: newCampaign.pipeline!.summary as unknown as {
+                leadsFound: number;
+                leadsEnriched: number;
+                leadsQualified: number;
+                leadsContacted: number;
+                hotLeads: number;
+                warmLeads: number;
+                coldLeads: number;
+                errors: string[];
+              },
+              error: newCampaign.pipeline!.error,
+            },
+          },
+        }));
+      }
+
+      // Reload campaigns to get updated counts
+      setTimeout(() => loadCampaigns(), 1000);
     } catch (error) {
       console.error('Error creating campaign:', error);
     } finally {
       setFormCreating(false);
+    }
+  };
+
+  const handleRunPipeline = async (campaignId: string, campaignName: string) => {
+    setPipelineState(prev => ({
+      ...prev,
+      [campaignId]: { running: true },
+    }));
+
+    try {
+      const result = await safeFetchJSON<{
+        success: boolean;
+        summary?: {
+          leadsFound: number;
+          leadsEnriched: number;
+          leadsQualified: number;
+          leadsContacted: number;
+          hotLeads: number;
+          warmLeads: number;
+          coldLeads: number;
+          errors: string[];
+        };
+        error?: string;
+      }>(`/api/campaigns/${campaignId}/run-pipeline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+
+      setPipelineState(prev => ({
+        ...prev,
+        [campaignId]: { running: false, result },
+      }));
+
+      // Reload campaigns to get updated counts
+      await loadCampaigns();
+    } catch (error) {
+      console.error('Error running pipeline:', error);
+      setPipelineState(prev => ({
+        ...prev,
+        [campaignId]: {
+          running: false,
+          result: {
+            success: false,
+            error: error instanceof Error ? error.message : 'Pipeline execution failed',
+          },
+        },
+      }));
     }
   };
 
@@ -163,7 +267,7 @@ export function CampaignsView() {
         <div>
           <h2 className="text-2xl font-bold text-foreground">Campaigns</h2>
           <p className="text-sm text-muted-foreground">
-            Manage your lead generation campaigns
+            Create campaigns and run the autonomous agent pipeline to discover, enrich, qualify, and outreach leads
           </p>
         </div>
         <Button
@@ -192,7 +296,7 @@ export function CampaignsView() {
           <Target className="h-12 w-12 mx-auto text-muted-foreground/30" />
           <h3 className="mt-4 text-lg font-medium text-foreground/80">No campaigns yet</h3>
           <p className="text-sm text-muted-foreground">
-            Create your first campaign to start generating leads
+            Create your first campaign — the agent pipeline will automatically discover and qualify leads
           </p>
           <Button
             className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all"
@@ -204,144 +308,240 @@ export function CampaignsView() {
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3">
-          {filteredCampaigns.map((campaign) => (
-            <Card
-              key={campaign.id}
-              className="card-premium border-border/30 cursor-pointer group"
-              onClick={() => setDetailCampaign(campaign)}
-            >
-              <CardContent className="p-5">
-                <div className="flex items-start justify-between">
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-semibold text-sm truncate text-foreground/90">
-                      {campaign.name}
-                    </h3>
-                    {campaign.description && (
-                      <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
-                        {campaign.description}
-                      </p>
+          {filteredCampaigns.map((campaign) => {
+            const pipeline = pipelineState[campaign.id];
+            const isPipelineRunning = pipeline?.running;
+            const pipelineResult = pipeline?.result;
+            const hasLeads = campaign.leadsFound > 0;
+
+            return (
+              <Card
+                key={campaign.id}
+                className="card-premium border-border/30 relative overflow-hidden group"
+              >
+                <div
+                  className="absolute top-0 left-0 right-0 h-0.5"
+                  style={{
+                    backgroundColor: isPipelineRunning
+                      ? '#06b6d4'
+                      : hasLeads
+                      ? '#10b981'
+                      : '#6b7280',
+                  }}
+                />
+                {isPipelineRunning && (
+                  <div className="absolute top-0 left-0 right-0 h-0.5 bg-cyan-400 animate-pulse" />
+                )}
+                <CardContent className="p-5">
+                  <div className="flex items-start justify-between">
+                    <div className="flex-1 min-w-0">
+                      <h3 className="font-semibold text-sm truncate text-foreground/90">
+                        {campaign.name}
+                      </h3>
+                      {campaign.description && (
+                        <p className="text-xs text-muted-foreground mt-1 line-clamp-2">
+                          {campaign.description}
+                        </p>
+                      )}
+                    </div>
+                    <DropdownMenu>
+                      <DropdownMenuTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <MoreVertical className="h-3.5 w-3.5" />
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent align="end" className="bg-popover border-border/60">
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCampaignId(campaign.id);
+                            setActiveView('leads');
+                          }}
+                        >
+                          <Eye className="h-3.5 w-3.5 mr-2" />
+                          View Leads
+                        </DropdownMenuItem>
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRunPipeline(campaign.id, campaign.name);
+                          }}
+                          disabled={isPipelineRunning}
+                        >
+                          <Zap className="h-3.5 w-3.5 mr-2" />
+                          {hasLeads ? 'Re-Run Pipeline' : 'Start Pipeline'}
+                        </DropdownMenuItem>
+                        {campaign.status === 'active' && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(campaign.id, 'paused');
+                            }}
+                          >
+                            <Pause className="h-3.5 w-3.5 mr-2" />
+                            Pause
+                          </DropdownMenuItem>
+                        )}
+                        {campaign.status === 'paused' && (
+                          <DropdownMenuItem
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleStatusChange(campaign.id, 'active');
+                            }}
+                          >
+                            <Play className="h-3.5 w-3.5 mr-2" />
+                            Resume
+                          </DropdownMenuItem>
+                        )}
+                        <DropdownMenuItem
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleStatusChange(campaign.id, 'archived');
+                          }}
+                        >
+                          <Archive className="h-3.5 w-3.5 mr-2" />
+                          Archive
+                        </DropdownMenuItem>
+                      </DropdownMenuContent>
+                    </DropdownMenu>
+                  </div>
+
+                  <div className="flex flex-wrap gap-1.5 mt-3">
+                    <Badge variant="outline" className={`text-[10px] ${statusBadge(campaign.status)}`}>
+                      {campaign.status}
+                    </Badge>
+                    {campaign.targetIndustry && (
+                      <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
+                        {campaign.targetIndustry}
+                      </Badge>
+                    )}
+                    {campaign.targetLocation && (
+                      <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
+                        {campaign.targetLocation}
+                      </Badge>
                     )}
                   </div>
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
+
+                  {/* Pipeline Progress or Start Button */}
+                  {isPipelineRunning ? (
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />
+                        <span className="text-xs text-cyan-400 font-medium">Agent Pipeline Running...</span>
+                      </div>
+                      <Progress value={undefined} className="h-1.5 bg-secondary/40 animate-pulse" />
+                      <p className="text-[10px] text-muted-foreground">
+                        Discovery → Enrichment → Qualification → Outreach
+                      </p>
+                    </div>
+                  ) : !hasLeads ? (
+                    <div className="mt-4">
+                      <Button
+                        size="sm"
+                        className="w-full gap-2 bg-emerald-600/80 hover:bg-emerald-500 text-white text-xs h-8"
+                        onClick={() => handleRunPipeline(campaign.id, campaign.name)}
+                        disabled={isPipelineRunning}
+                      >
+                        <Zap className="h-3 w-3" />
+                        Start Agent Pipeline
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="mt-4 space-y-2">
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <span>Qualification Progress</span>
+                        <span className="font-semibold text-foreground/80">
+                          {campaign.leadsFound > 0
+                            ? Math.round(
+                                (campaign.leadsQualified / campaign.leadsFound) * 100
+                              )
+                            : 0}
+                          %
+                        </span>
+                      </div>
+                      <Progress
+                        value={
+                          campaign.leadsFound > 0
+                            ? Math.round(
+                                (campaign.leadsQualified / campaign.leadsFound) * 100
+                              )
+                            : 0
+                        }
+                        className="h-1.5 bg-secondary/40"
+                      />
+                    </div>
+                  )}
+
+                  {/* Pipeline Result Toast */}
+                  {pipelineResult && !isPipelineRunning && (
+                    <div className={`mt-3 rounded-md p-2 text-[10px] ${
+                      pipelineResult.success
+                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-400'
+                        : 'bg-red-500/10 border border-red-500/20 text-red-400'
+                    }`}>
+                      <div className="flex items-center gap-1.5 font-medium">
+                        {pipelineResult.success ? (
+                          <CheckCircle2 className="h-3 w-3" />
+                        ) : (
+                          <AlertCircle className="h-3 w-3" />
+                        )}
+                        {pipelineResult.success ? 'Pipeline Complete' : 'Pipeline Issues'}
+                      </div>
+                      {pipelineResult.summary && (
+                        <div className="mt-1 text-muted-foreground">
+                          {pipelineResult.summary.leadsFound} found → {pipelineResult.summary.leadsEnriched} enriched → {pipelineResult.summary.leadsQualified} qualified ({pipelineResult.summary.hotLeads} hot)
+                        </div>
+                      )}
+                      {pipelineResult.error && (
+                        <div className="mt-1">{pipelineResult.error}</div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-3 gap-2 mt-4 text-center">
+                    <div className="rounded-md bg-secondary/20 p-2">
+                      <div className="text-sm font-bold text-foreground/90">
+                        {campaign.leadsFound}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Found</div>
+                    </div>
+                    <div className="rounded-md bg-secondary/20 p-2">
+                      <div className="text-sm font-bold text-foreground/90">
+                        {campaign.leadsQualified}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Qualified</div>
+                    </div>
+                    <div className="rounded-md bg-secondary/20 p-2">
+                      <div className="text-sm font-bold text-foreground/90">
+                        {campaign.leadsContacted}
+                      </div>
+                      <div className="text-[10px] text-muted-foreground">Contacted</div>
+                    </div>
+                  </div>
+
+                  {/* Re-run pipeline link for campaigns with existing leads */}
+                  {hasLeads && !isPipelineRunning && (
+                    <div className="mt-3 flex justify-center">
                       <Button
                         variant="ghost"
-                        size="icon"
-                        className="h-7 w-7 shrink-0 text-muted-foreground hover:text-foreground"
-                        onClick={(e) => e.stopPropagation()}
+                        size="sm"
+                        className="text-[10px] text-muted-foreground hover:text-foreground gap-1 h-6"
+                        onClick={() => handleRunPipeline(campaign.id, campaign.name)}
                       >
-                        <MoreVertical className="h-3.5 w-3.5" />
+                        <RotateCw className="h-3 w-3" />
+                        Re-run Pipeline
                       </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="bg-popover border-border/60">
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCampaignId(campaign.id);
-                          setActiveView('leads');
-                        }}
-                      >
-                        <Eye className="h-3.5 w-3.5 mr-2" />
-                        View Leads
-                      </DropdownMenuItem>
-                      {campaign.status === 'active' && (
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStatusChange(campaign.id, 'paused');
-                          }}
-                        >
-                          <Pause className="h-3.5 w-3.5 mr-2" />
-                          Pause
-                        </DropdownMenuItem>
-                      )}
-                      {campaign.status === 'paused' && (
-                        <DropdownMenuItem
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleStatusChange(campaign.id, 'active');
-                          }}
-                        >
-                          <Play className="h-3.5 w-3.5 mr-2" />
-                          Resume
-                        </DropdownMenuItem>
-                      )}
-                      <DropdownMenuItem
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleStatusChange(campaign.id, 'archived');
-                        }}
-                      >
-                        <Archive className="h-3.5 w-3.5 mr-2" />
-                        Archive
-                      </DropdownMenuItem>
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                </div>
-
-                <div className="flex flex-wrap gap-1.5 mt-3">
-                  <Badge variant="outline" className={`text-[10px] ${statusBadge(campaign.status)}`}>
-                    {campaign.status}
-                  </Badge>
-                  {campaign.targetIndustry && (
-                    <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
-                      {campaign.targetIndustry}
-                    </Badge>
+                    </div>
                   )}
-                  {campaign.targetLocation && (
-                    <Badge variant="outline" className="text-[10px] border-border/30 text-muted-foreground">
-                      {campaign.targetLocation}
-                    </Badge>
-                  )}
-                </div>
-
-                <div className="mt-4 space-y-2">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground">
-                    <span>Qualification Progress</span>
-                    <span className="font-semibold text-foreground/80">
-                      {campaign.leadsFound > 0
-                        ? Math.round(
-                            (campaign.leadsQualified / campaign.leadsFound) * 100
-                          )
-                        : 0}
-                      %
-                    </span>
-                  </div>
-                  <Progress
-                    value={
-                      campaign.leadsFound > 0
-                        ? Math.round(
-                            (campaign.leadsQualified / campaign.leadsFound) * 100
-                          )
-                        : 0
-                    }
-                    className="h-1.5 bg-secondary/40"
-                  />
-                </div>
-
-                <div className="grid grid-cols-3 gap-2 mt-4 text-center">
-                  <div className="rounded-md bg-secondary/20 p-2">
-                    <div className="text-sm font-bold text-foreground/90">
-                      {campaign.leadsFound}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">Found</div>
-                  </div>
-                  <div className="rounded-md bg-secondary/20 p-2">
-                    <div className="text-sm font-bold text-foreground/90">
-                      {campaign.leadsQualified}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">Qualified</div>
-                  </div>
-                  <div className="rounded-md bg-secondary/20 p-2">
-                    <div className="text-sm font-bold text-foreground/90">
-                      {campaign.leadsContacted}
-                    </div>
-                    <div className="text-[10px] text-muted-foreground">Contacted</div>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-          ))}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       )}
 
@@ -350,6 +550,9 @@ export function CampaignsView() {
         <DialogContent className="sm:max-w-lg bg-card border-border/60">
           <DialogHeader>
             <DialogTitle className="text-foreground">Create New Campaign</DialogTitle>
+            <p className="text-xs text-muted-foreground mt-1">
+              The agent pipeline will automatically run after creation: Discovery → Enrichment → Qualification → Outreach
+            </p>
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
@@ -426,9 +629,19 @@ export function CampaignsView() {
             <Button
               onClick={handleCreate}
               disabled={!formName.trim() || formCreating}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all"
+              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all gap-2"
             >
-              {formCreating ? 'Creating...' : 'Create Campaign'}
+              {formCreating ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Creating & Running Pipeline...
+                </>
+              ) : (
+                <>
+                  <Zap className="h-4 w-4" />
+                  Create & Run Pipeline
+                </>
+              )}
             </Button>
           </DialogFooter>
         </DialogContent>
@@ -477,7 +690,7 @@ export function CampaignsView() {
                   {new Date(detailCampaign.updatedAt).toLocaleDateString()}
                 </div>
               </div>
-              <DialogFooter>
+              <DialogFooter className="gap-2">
                 <Button
                   variant="outline"
                   onClick={() => {
@@ -488,6 +701,21 @@ export function CampaignsView() {
                   className="border-border/40"
                 >
                   View Leads
+                </Button>
+                <Button
+                  className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2"
+                  onClick={() => {
+                    handleRunPipeline(detailCampaign.id, detailCampaign.name);
+                    setDetailCampaign(null);
+                  }}
+                  disabled={pipelineState[detailCampaign.id]?.running}
+                >
+                  {pipelineState[detailCampaign.id]?.running ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Zap className="h-4 w-4" />
+                  )}
+                  {detailCampaign.leadsFound > 0 ? 'Re-Run Pipeline' : 'Start Pipeline'}
                 </Button>
               </DialogFooter>
             </>

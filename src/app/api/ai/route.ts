@@ -95,7 +95,11 @@ For general questions, respond naturally.`;
       try {
         const jsonMatch = responseText.match(/\{[\s\S]*\}/);
         if (jsonMatch) {
-          plan = JSON.parse(jsonMatch[0]);
+          // Guard: Don't try to parse HTML as JSON
+          const candidate = jsonMatch[0].trim();
+          if (!candidate.startsWith('<') && !candidate.startsWith('<!DOCTYPE')) {
+            plan = JSON.parse(candidate);
+          }
         }
       } catch {
         // Not JSON, that's fine

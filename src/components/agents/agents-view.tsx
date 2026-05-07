@@ -131,9 +131,10 @@ export function AgentsView() {
       });
 
       // Update execution log
-      if (data.results) {
+      const results = data.results;
+      if (results && Array.isArray(results)) {
         setExecutionLog(prev => [
-          ...data.results.map((r: { taskId: string; agentName: string; success: boolean }) => ({
+          ...results.map((r: { taskId: string; agentName: string; success: boolean }) => ({
             taskId: r.taskId,
             agentName: r.agentName,
             status: r.success ? 'completed' : 'failed',
