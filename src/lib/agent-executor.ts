@@ -1814,14 +1814,14 @@ export async function executeTask(taskId: string): Promise<AgentExecutionResult>
     return { success: false, output: { error: 'Task not found' }, channelActivity: [], error: 'Task not found' };
   }
 
-  if (task.status !== 'pending' && task.status !== 'running') {
-    return { success: false, output: { error: `Task already ${task.status}` }, channelActivity: [], error: `Task already ${task.status}` };
+  if (task.status !== 'pending' && task.status !== 'running' && task.status !== 'failed') {
+    return { success: false, output: { error: `Task already ${task.status}. Only pending, running, or failed tasks can be executed.` }, channelActivity: [], error: `Task already ${task.status}` };
   }
 
-  // Mark as running
+  // Mark as running (clear previous error if retrying a failed task)
   await db.agentTask.update({
     where: { id: taskId },
-    data: { status: 'running', startedAt: new Date(), progress: 5 },
+    data: { status: 'running', startedAt: new Date(), progress: 5, error: null, completedAt: null },
   });
 
   // Parse input

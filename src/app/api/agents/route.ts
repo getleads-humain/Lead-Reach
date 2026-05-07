@@ -1,8 +1,35 @@
 import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
+// Tasks stuck in "running" state for longer than this are considered orphaned
+const RUNNING_TASK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+
 export async function GET(request: NextRequest) {
   try {
+    // Auto-recover orphaned "running" tasks that have been stuck for too long
+    // This prevents ghost tasks from making agents appear permanently "processing"
+    const cutoff = new Date(Date.now() - RUNNING_TASK_TIMEOUT_MS);
+    const stuckTasks = await db.agentTask.findMany({
+      where: {
+        status: 'running',
+        updatedAt: { lt: cutoff },
+      },
+    });
+
+    if (stuckTasks.length > 0) {
+      console.warn(`[AgentRecovery] Found ${stuckTasks.length} orphaned running task(s), marking as failed`);
+      for (const task of stuckTasks) {
+        await db.agentTask.update({
+          where: { id: task.id },
+          data: {
+            status: 'failed',
+            error: 'Task timed out — no progress update for over 10 minutes. Auto-recovered by system.',
+            completedAt: new Date(),
+          },
+        });
+      }
+    }
+
     const { searchParams } = new URL(request.url);
     const agentName = searchParams.get('agentName');
     const status = searchParams.get('status');

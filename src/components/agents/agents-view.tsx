@@ -180,7 +180,7 @@ export function AgentsView() {
 
   const getAgentStatus = (name: AgentName): 'active' | 'idle' | 'processing' | 'error' => {
     const stats = agentStats[name];
-    if (!stats) return 'idle';
+    if (!stats || (stats.completed === 0 && stats.running === 0 && stats.failed === 0 && stats.pending === 0)) return 'idle';
     if (stats.running > 0) return 'processing';
     if (stats.failed > 0 && stats.completed === 0) return 'error';
     if (stats.completed > 0) return 'active';
@@ -555,7 +555,7 @@ export function AgentsView() {
                     )}
                   </div>
                   <div className="flex items-center gap-2 shrink-0">
-                    {task.status === 'pending' && (
+                    {(task.status === 'pending' || task.status === 'failed') && (
                       <Button
                         variant="ghost"
                         size="sm"
@@ -564,7 +564,7 @@ export function AgentsView() {
                         disabled={!!executingTask}
                       >
                         <Play className="h-3 w-3 mr-1" />
-                        Run
+                        {task.status === 'failed' ? 'Retry' : 'Run'}
                       </Button>
                     )}
                     <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground">P{task.priority}</Badge>
