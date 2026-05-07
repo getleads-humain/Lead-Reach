@@ -36,6 +36,7 @@ import {
   Phone,
 } from 'lucide-react';
 import type { OutreachChannel, OutreachType, OutreachStatus } from '@/lib/types';
+import { safeFetchJSON } from '@/lib/utils';
 
 interface OutreachItem {
   id: string;
@@ -88,8 +89,7 @@ export function OutreachView() {
     try {
       const params = new URLSearchParams();
       if (statusFilter !== 'all') params.set('status', statusFilter);
-      const res = await fetch(`/api/outreach?${params}`);
-      const data = await res.json();
+      const data = await safeFetchJSON<OutreachItem[]>(`/api/outreach?${params}`);
       setOutreach(data);
     } catch (error) {
       console.error('Error loading outreach:', error);
@@ -100,8 +100,7 @@ export function OutreachView() {
 
   const loadLeads = async () => {
     try {
-      const res = await fetch('/api/leads?stage=qualified&limit=50');
-      const data = await res.json();
+      const data = await safeFetchJSON<{ leads: LeadOption[] }>('/api/leads?stage=qualified&limit=50');
       setLeads(
         (data.leads || []).map((l: LeadOption) => ({
           id: l.id,
@@ -129,14 +128,13 @@ export function OutreachView() {
 
     setGenerating(true);
     try {
-      const res = await fetch('/api/ai', {
+      const data = await safeFetchJSON<{ response?: string }>('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: `Generate a ${msgType.replace(/_/g, ' ')} message for ${lead.companyName} (${channel} channel). Contact: ${lead.keyContactName || 'Decision Maker'}. Make it professional, concise, and compelling.`,
         }),
       });
-      const data = await res.json();
 
       if (data.response) {
         const lines = data.response.split('\n');

@@ -5,6 +5,7 @@ import { useAppStore } from '@/lib/store';
 import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
 import { cn } from '@/lib/utils';
+import { safeFetchJSON } from '@/lib/utils';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -13,9 +14,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!seeded) {
-      fetch('/api/seed', { method: 'POST' })
-        .then((res) => res.json())
-        .then((data) => {
+      safeFetchJSON('/api/seed', { method: 'POST' })
+        .then((data: { success?: boolean; counts?: Record<string, number> }) => {
           if (data.success) {
             console.log('Demo data seeded:', data.counts);
           }

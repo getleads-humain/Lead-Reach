@@ -16,6 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { safeFetchJSON } from '@/lib/utils';
 
 export function TopBar() {
   const { notifications, sidebarCollapsed } = useAppStore();
@@ -31,17 +32,16 @@ export function TopBar() {
     setAiLoading(true);
     setAiResponse('');
     try {
-      const res = await fetch('/api/ai', {
+      const data = await safeFetchJSON<{ response?: string; plan?: { campaignName?: string; targetIndustry?: string; targetLocation?: string }; agentTasks?: Array<Record<string, unknown>>; campaignId?: string }>('/api/ai', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ message: aiQuery }),
       });
-      const data = await res.json();
       setAiResponse(data.response || 'No response');
 
       if (data.plan) {
         if (data.plan.campaignName) {
-          const campaignRes = await fetch('/api/campaigns', {
+          const campaign = await safeFetchJSON<{ id: string; name: string }>('/api/campaigns', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -50,20 +50,10 @@ export function TopBar() {
               targetLocation: data.plan.targetLocation,
             }),
           });
-          const campaign = await campaignRes.json();
 
-          if (data.agentTasks?.length && campaign.id) {
-            for (const task of data.agentTasks) {
-              await fetch('/api/agents', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                  ...task,
-                  campaignId: campaign.id,
-                }),
-              });
-            }
-          }
+          // Note: /api/ai already executes tasks via dispatchAndExecute().
+          // We do NOT re-create tasks here to avoid duplicates.
+          // The pipeline already ran server-side.
         }
       }
     } catch (error) {

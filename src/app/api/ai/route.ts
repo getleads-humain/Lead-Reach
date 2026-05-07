@@ -84,6 +84,11 @@ For general questions, respond naturally.`;
         temperature: 0.3,
       });
 
+      // Validate the response is structured correctly (not HTML from gateway)
+      if (!result || !result.choices || !Array.isArray(result.choices)) {
+        throw new Error('LLM API returned an invalid response structure (possible HTML error page from API gateway)');
+      }
+
       responseText = result.choices?.[0]?.message?.content || '';
 
       // Try to parse the plan from the response

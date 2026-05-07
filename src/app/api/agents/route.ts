@@ -2,7 +2,7 @@ import { db } from '@/lib/db';
 import { NextRequest, NextResponse } from 'next/server';
 
 // Tasks stuck in "running" state for longer than this are considered orphaned
-const RUNNING_TASK_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes
+const RUNNING_TASK_TIMEOUT_MS = 3 * 60 * 1000; // 3 minutes
 
 export async function GET(request: NextRequest) {
   try {
@@ -12,7 +12,10 @@ export async function GET(request: NextRequest) {
     const stuckTasks = await db.agentTask.findMany({
       where: {
         status: 'running',
-        updatedAt: { lt: cutoff },
+        OR: [
+          { updatedAt: { lt: cutoff } },
+          { startedAt: { lt: cutoff } },
+        ],
       },
     });
 
@@ -23,7 +26,7 @@ export async function GET(request: NextRequest) {
           where: { id: task.id },
           data: {
             status: 'failed',
-            error: 'Task timed out — no progress update for over 10 minutes. Auto-recovered by system.',
+            error: 'Task timed out — no progress update for over 3 minutes. Auto-recovered by system.',
             completedAt: new Date(),
           },
         });

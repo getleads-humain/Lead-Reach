@@ -96,7 +96,7 @@ export interface FullPipelineResult {
  * This is used by every agent to turn raw web data into structured intelligence.
  * Retries once on timeout.
  */
-async function callLLM(systemPrompt: string, userMessage: string, retries = 1): Promise<string> {
+async function callLLM(systemPrompt: string, userMessage: string, retries = 2): Promise<string> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
@@ -111,7 +111,12 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 1): 
         max_tokens: 4000,
       });
 
-      const content = result.choices?.[0]?.message?.content || '';
+      // Validate the response is structured correctly (not HTML/stray text)
+      if (!result || !result.choices || !Array.isArray(result.choices)) {
+        throw new Error('LLM returned an invalid response structure (possible HTML error page from API gateway)');
+      }
+
+      const content = result.choices[0]?.message?.content || '';
       if (content.trim()) {
         return content;
       }
@@ -123,7 +128,19 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 1): 
       return content;
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
+      
+      // Detect the specific "Unexpected token '<'" error that means HTML was returned instead of JSON
+      const isHtmlResponseError = msg.includes('Unexpected token') && msg.includes('is not valid JSON');
+      if (isHtmlResponseError) {
+        console.warn(`[callLLM] API gateway returned HTML instead of JSON on attempt ${attempt + 1}. This is likely a rate limit or maintenance page. ${attempt < retries ? 'Retrying...' : 'All retries exhausted.'}`);
+      }
+      
       if (attempt < retries) {
+        // Add exponential backoff for rate-limit-style errors
+        const backoffMs = isHtmlResponseError ? (attempt + 1) * 2000 : 500;
+        if (backoffMs > 500) {
+          await new Promise(resolve => setTimeout(resolve, backoffMs));
+        }
         console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg}, retrying...`);
         continue;
       }

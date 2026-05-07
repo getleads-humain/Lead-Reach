@@ -51,6 +51,7 @@ import {
 import { useAppStore } from '@/lib/store';
 import type { LeadTier, LeadStage } from '@/lib/types';
 import { TIER_COLORS, STAGE_LABELS, STAGE_COLORS } from '@/lib/types';
+import { safeFetchJSON } from '@/lib/utils';
 
 interface Lead {
   id: string;
@@ -124,8 +125,7 @@ export function LeadsView() {
   }, [selectedCampaignId]);
 
   useEffect(() => {
-    fetch('/api/campaigns')
-      .then((r) => r.json())
+    safeFetchJSON<CampaignOption[]>('/api/campaigns')
       .then((data) => setCampaigns(data.map((c: CampaignOption) => ({ id: c.id, name: c.name }))))
       .catch(() => {});
   }, []);
@@ -141,8 +141,7 @@ export function LeadsView() {
       if (campaignFilter !== 'all') params.set('campaignId', campaignFilter);
       if (search) params.set('search', search);
 
-      const res = await fetch(`/api/leads?${params}`);
-      const data = await res.json();
+      const data = await safeFetchJSON<{ leads: Lead[]; total: number }>(`/api/leads?${params}`);
       setLeads(data.leads || []);
       setTotal(data.total || 0);
     } catch (error) {
@@ -187,12 +186,11 @@ export function LeadsView() {
 
   const handleStageChange = async (id: string, stage: string) => {
     try {
-      const res = await fetch(`/api/leads/${id}`, {
+      const updated = await safeFetchJSON<Lead>(`/api/leads/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ stage }),
       });
-      const updated = await res.json();
       setLeads((prev) => prev.map((l) => (l.id === id ? { ...l, ...updated } : l)));
       if (selectedLead?.id === id) {
         setSelectedLead({ ...selectedLead, ...updated });

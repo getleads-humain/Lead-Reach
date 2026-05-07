@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import type { CampaignWithCounts } from '@/lib/types';
 import { STAGE_LABELS, type LeadStage } from '@/lib/types';
+import { safeFetchJSON } from '@/lib/utils';
 
 interface DashboardStats {
   totalCampaigns: number;
@@ -63,15 +64,11 @@ export function DashboardView() {
 
   const loadDashboard = async () => {
     try {
-      const [campaignsRes, leadsRes, tasksRes] = await Promise.all([
-        fetch('/api/campaigns'),
-        fetch('/api/leads?limit=1000'),
-        fetch('/api/agents'),
+      const [campaignsData, leadsData, tasksData] = await Promise.all([
+        safeFetchJSON<CampaignWithCounts[]>('/api/campaigns'),
+        safeFetchJSON<{ leads: Array<{ stage: string }>; total: number }>('/api/leads?limit=1000'),
+        safeFetchJSON<{ tasks: AgentTask[] }>('/api/agents'),
       ]);
-
-      const campaignsData = await campaignsRes.json();
-      const leadsData = await leadsRes.json();
-      const tasksData = await tasksRes.json();
 
       setCampaigns(campaignsData);
 

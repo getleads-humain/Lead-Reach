@@ -30,6 +30,7 @@ import {
 import type { AgentName } from '@/lib/types';
 import { AGENT_DEFINITIONS } from '@/lib/types';
 import { getChannelStatusColor, getChannelStatusLabel, getTierLabel, mapAgentToChannels } from '@/lib/agent-reach';
+import { safeFetchJSON } from '@/lib/utils';
 
 interface AgentTask {
   id: string;
@@ -94,12 +95,10 @@ export function AgentsView() {
 
   const loadData = useCallback(async () => {
     try {
-      const [tasksRes, channelsRes] = await Promise.all([
-        fetch('/api/agents'),
-        fetch('/api/agent-reach'),
+      const [tasksData, channelsData] = await Promise.all([
+        safeFetchJSON<{ tasks: AgentTask[]; agentStats: Record<string, AgentStats> }>('/api/agents'),
+        safeFetchJSON<Channel[]>('/api/agent-reach'),
       ]);
-      const tasksData = await tasksRes.json();
-      const channelsData = await channelsRes.json();
 
       setTasks(tasksData.tasks || []);
       setAgentStats(tasksData.agentStats || {});
@@ -114,8 +113,7 @@ export function AgentsView() {
   const runDoctor = async () => {
     setDoctorRunning(true);
     try {
-      const res = await fetch('/api/agent-reach', { method: 'POST' });
-      const data = await res.json();
+      const data = await safeFetchJSON<Channel[]>('/api/agent-reach', { method: 'POST' });
       setChannels(data);
     } catch (error) {
       console.error('Error running doctor:', error);
@@ -126,12 +124,11 @@ export function AgentsView() {
 
   const executePendingTasks = async () => {
     try {
-      const res = await fetch('/api/agents/execute', {
+      const data = await safeFetchJSON<{ results?: Array<{ taskId: string; agentName: string; success: boolean }> }>('/api/agents/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: 'all' }),
       });
-      const data = await res.json();
 
       // Update execution log
       if (data.results) {
@@ -156,12 +153,11 @@ export function AgentsView() {
   const executeSingleTask = async (taskId: string) => {
     setExecutingTask(taskId);
     try {
-      const res = await fetch('/api/agents/execute', {
+      const data = await safeFetchJSON<{ success?: boolean; channelActivity?: Array<{ channel: string; success: boolean }> }>('/api/agents/execute', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ mode: 'single', taskId }),
       });
-      const data = await res.json();
 
       setExecutionLog(prev => [{
         taskId,

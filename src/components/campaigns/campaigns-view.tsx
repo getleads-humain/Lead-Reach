@@ -43,6 +43,7 @@ import {
 import { useAppStore } from '@/lib/store';
 import type { CampaignWithCounts, CampaignStatus } from '@/lib/types';
 import { INDUSTRIES, LOCATIONS, COMPANY_SIZES } from '@/lib/types';
+import { safeFetchJSON } from '@/lib/utils';
 
 export function CampaignsView() {
   const { setActiveView, setSelectedCampaignId } = useAppStore();
@@ -65,8 +66,7 @@ export function CampaignsView() {
 
   const loadCampaigns = async () => {
     try {
-      const res = await fetch('/api/campaigns');
-      const data = await res.json();
+      const data = await safeFetchJSON<CampaignWithCounts[]>('/api/campaigns');
       setCampaigns(data);
     } catch (error) {
       console.error('Error loading campaigns:', error);
@@ -79,7 +79,7 @@ export function CampaignsView() {
     if (!formName.trim()) return;
     setFormCreating(true);
     try {
-      const res = await fetch('/api/campaigns', {
+      const newCampaign = await safeFetchJSON<CampaignWithCounts>('/api/campaigns', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -90,7 +90,6 @@ export function CampaignsView() {
           targetCompanySize: formSize,
         }),
       });
-      const newCampaign = await res.json();
       setCampaigns((prev) => [newCampaign, ...prev]);
       setCreateOpen(false);
       resetForm();

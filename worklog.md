@@ -305,3 +305,33 @@ Stage Summary:
 - All foreground elements (buttons, links, cards) remain fully clickable
 - Footer properly layered above Spline background
 - Files created/modified: spline-background.tsx, page.tsx, globals.css, marketing-layout.tsx
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix SyntaxError "Unexpected token '<'" during Report Generator task and related agent state issues
+
+Work Log:
+- Investigated root cause: The SyntaxError occurs when API endpoints return HTML instead of JSON, and client-side code blindly calls `.json()` on the response
+- Created `safeFetchJSON<T>()` utility in `/src/lib/utils.ts` that validates response.ok, content-type, and handles HTML responses gracefully
+- Updated 7 client-side components to use `safeFetchJSON` instead of raw `fetch().json()`:
+  - agents-view.tsx (4 fetch calls)
+  - top-bar.tsx (2 fetch calls + removed duplicate task creation)
+  - dashboard-view.tsx (3 fetch calls)
+  - reports-view.tsx (4 fetch calls)
+  - campaigns-view.tsx (2 fetch calls)
+  - outreach-view.tsx (3 fetch calls)
+  - leads-view.tsx (3 fetch calls)
+  - app-shell.tsx (1 fetch call)
+- Fixed server-side `callLLM()` in agent-executor.ts: added response structure validation, HTML error detection, exponential backoff for rate-limit errors, increased retries from 1 to 2
+- Fixed `/api/ai/route.ts`: Added response structure validation after SDK call
+- Removed duplicate task creation in top-bar.tsx (lines 55-66) that was re-creating tasks already executed by `dispatchAndExecute()`
+- Reduced orphaned task timeout from 10 minutes to 3 minutes in `/api/agents/route.ts`
+- Enhanced orphaned task recovery to also check `startedAt` field (not just `updatedAt`)
+- Build verified: `npx next build` completes successfully
+
+Stage Summary:
+- Created comprehensive `safeFetchJSON` utility that prevents all SyntaxError crashes from HTML responses
+- Fixed 22+ client-side fetch calls across 8 files
+- Fixed server-side LLM call error handling with retry + backoff
+- Removed duplicate task creation bug in top-bar.tsx
+- Improved orphaned task recovery for better agent state display

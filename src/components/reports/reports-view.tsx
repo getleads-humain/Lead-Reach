@@ -22,6 +22,7 @@ import {
   TrendingUp,
   CheckCircle2,
 } from 'lucide-react';
+import { safeFetchJSON } from '@/lib/utils';
 
 interface ReportData {
   totalLeads: number;
@@ -52,12 +53,10 @@ export function ReportsView() {
 
   const loadReport = async () => {
     try {
-      const [campaignsRes, leadsRes] = await Promise.all([
-        fetch('/api/campaigns'),
-        fetch('/api/leads?limit=1000'),
+      const [campaigns, leadsData] = await Promise.all([
+        safeFetchJSON<Array<{ id: string; name: string; status: string; targetIndustry?: string; targetLocation?: string; leadsFound: number; leadsQualified: number; leadsContacted: number; leadsResponded: number }>>('/api/campaigns'),
+        safeFetchJSON<{ leads: Array<{ stage: string; leadTier: string; industry: string | null; country: string | null; leadScore: number }>; total: number }>('/api/leads?limit=1000'),
       ]);
-      const campaigns = await campaignsRes.json();
-      const leadsData = await leadsRes.json();
       const leads = leadsData.leads || [];
 
       const qualified = leads.filter((l: { stage: string }) =>
@@ -108,9 +107,8 @@ export function ReportsView() {
   const handleExport = async () => {
     setExporting(true);
     try {
-      const leadsRes = await fetch('/api/leads?limit=1000');
-      const leadsData = await leadsRes.json();
-      const leads = leadsData.leads || [];
+      const leadsRes = await safeFetchJSON<{ leads: Array<Record<string, unknown>> }>('/api/leads?limit=1000');
+      const leads = leadsRes.leads || [];
 
       let csv = '';
       if (exportType === 'full') {
@@ -119,8 +117,7 @@ export function ReportsView() {
           csv += `"${lead.companyName}","${lead.industry || ''}","${lead.city || ''}, ${lead.country || ''}","${lead.phoneMain || ''}","${lead.generalEmail || ''}","${lead.website || ''}","${lead.employeeCount || ''}","${lead.revenueEstimate || ''}",${lead.leadScore},"${lead.leadTier}","${lead.stage}","${lead.keyContactName || ''}"\n`;
         }
       } else if (exportType === 'campaign') {
-        const campaignsRes = await fetch('/api/campaigns');
-        const campaigns = await campaignsRes.json();
+        const campaigns = await safeFetchJSON<Array<Record<string, unknown>>>('/api/campaigns');
         csv = 'Campaign,Status,Industry,Location,Found,Qualified,Contacted,Responded\n';
         for (const c of campaigns) {
           csv += `"${c.name}","${c.status}","${c.targetIndustry || ''}","${c.targetLocation || ''}",${c.leadsFound},${c.leadsQualified},${c.leadsContacted},${c.leadsResponded}\n`;
