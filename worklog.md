@@ -21,3 +21,41 @@ Stage Summary:
 - Enrichment stage hits SDK rate limit but pipeline continues gracefully
 - Compiled worker at dist/lib/workers/pipeline-worker.js
 - Build script updated to compile worker before Next.js build
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix frontend preview blank/not loading
+
+Work Log:
+- Diagnosed that Next.js server was not persisting in the Kubernetes container
+- Server kept dying after background process was started because container process management killed detached processes
+- Discovered that using `node keep-alive.js` (which auto-restarts the server) was the reliable approach
+- Verified server responds with HTTP 200 both directly (localhost:3000) and through Caddy proxy (localhost:81)
+- Landing page serves 74KB+ of complete HTML content with all sections
+- /app dashboard page also returns 200
+
+Stage Summary:
+- Frontend now loads successfully via preview URL through Caddy proxy
+- Server auto-restarts via keep-alive.js if it crashes
+- Key issue was that the container's process management kills background Node processes
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix AI pipeline - campaigns returning 0 results
+
+Work Log:
+- Found ROOT CAUSE: The pipeline worker path was wrong when running in standalone mode
+- In standalone server (process.cwd() = .next/standalone/), the worker path resolved to `.next/standalone/dist/lib/workers/pipeline-worker.js` which didn't exist
+- The actual dist/ directory was at the project root `/home/z/my-project/dist/`
+- Fixed run-pipeline route to search multiple possible paths for the worker
+- Also fixed: copied dist/ to .next/standalone/dist/ so standalone server can find it
+- Updated package.json build script to copy dist/ to standalone during build
+- Increased pipeline timeout from 5min to 10min (outreach stage was timing out)
+- Verified pipeline works end-to-end: 10 found → 10 enriched → qualifying → outreach
+- Pipeline uses z-ai-web-dev-sdk web_search (PRIMARY), LinkedIn, Reddit as channels
+
+Stage Summary:
+- Pipeline now works: campaigns produce real results (10+ leads found per campaign)
+- Worker path resolution fixed for both dev and standalone modes
+- Build script updated to include dist/ in standalone output

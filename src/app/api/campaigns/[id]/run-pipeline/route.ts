@@ -76,13 +76,44 @@ export async function POST(
     console.log(`[Pipeline] Spawning worker for campaign "${campaignName}" (ID: ${campaignId})`);
 
     // Use the compiled worker JS (faster startup than npx tsx)
-    const projectRoot = process.cwd();
-    const workerPath = `${projectRoot}/dist/lib/workers/pipeline-worker.js`;
+    // IMPORTANT: In standalone mode, process.cwd() is .next/standalone/, but the
+    // dist/ directory might be at the project root. We check multiple locations.
+    const fs = await import('fs/promises');
+    const possibleRoots = [
+      process.cwd(),
+      '/home/z/my-project',
+      // In standalone mode, the project root is one level up from .next/standalone/
+      process.cwd().replace('/.next/standalone', ''),
+    ];
+
+    let workerPath = '';
+    let projectRoot = '';
+    for (const root of possibleRoots) {
+      const candidate = `${root}/dist/lib/workers/pipeline-worker.js`;
+      try {
+        await fs.access(candidate);
+        workerPath = candidate;
+        projectRoot = root;
+        break;
+      } catch {
+        // Not found, try next
+      }
+    }
+
+    if (!workerPath) {
+      console.error('[Pipeline] Could not find pipeline-worker.js in any expected location');
+      return NextResponse.json(
+        { error: 'Pipeline worker not found. Please rebuild the project.' },
+        { status: 500 },
+      );
+    }
+
+    console.log(`[Pipeline] Using worker at: ${workerPath} (projectRoot: ${projectRoot})`);
     const workerCommand = `node "${workerPath}" "${campaignId}" "${query.replace(/"/g, '\\"')}" "${industry}" "${location}"`;
 
     exec(workerCommand, {
       cwd: projectRoot,
-      timeout: 5 * 60 * 1000, // 5 minute timeout
+      timeout: 10 * 60 * 1000, // 10 minute timeout (increased from 5min for full pipeline)
       maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
     }, (error, stdout, stderr) => {

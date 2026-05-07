@@ -1709,7 +1709,7 @@ export async function runFullPipeline(
   location?: string,
   campaignId?: string,
 ): Promise<FullPipelineResult> {
-  const PIPELINE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max for the entire pipeline
+  const PIPELINE_TIMEOUT_MS = 10 * 60 * 1000; // 10 minutes max for the entire pipeline (increased for full 4-stage execution)
   const errors: string[] = [];
   let pipelineCampaignId = campaignId || null;
 
