@@ -183,7 +183,12 @@ async function runCommand(command: string, timeout = EXEC_TIMEOUT): Promise<{ st
 
     return { stdout: stdout || '', stderr: stderr || '' };
   } catch (error: unknown) {
-    const err = error as { stdout?: string; stderr?: string; message?: string };
+    const err = error as { stdout?: string; stderr?: string; message?: string; killed?: boolean };
+
+    // If the process was killed (timeout), return a meaningful error instead of throwing
+    if (err.killed) {
+      return { stdout: '', stderr: `Command timed out after ${timeout}ms` };
+    }
 
     // Check if the error stdout is HTML (API gateway error page)
     if (err.stdout) {
@@ -194,7 +199,12 @@ async function runCommand(command: string, timeout = EXEC_TIMEOUT): Promise<{ st
       }
       return { stdout: err.stdout, stderr: err.stderr || '' };
     }
-    throw new Error(err.message || 'Command execution failed');
+
+    // Instead of throwing, return empty result with error info
+    // This prevents uncaught errors from crashing the server process
+    const errMsg = err.message || 'Command execution failed';
+    console.warn(`[runCommand] Command failed: ${errMsg.slice(0, 200)}`);
+    return { stdout: '', stderr: errMsg };
   }
 }
 

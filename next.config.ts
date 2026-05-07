@@ -7,6 +7,10 @@ const nextConfig: NextConfig = {
     ignoreBuildErrors: true,
   },
   reactStrictMode: false,
+  // Increase timeout for long-running API routes (pipeline execution)
+  experimental: {
+    serverTimeout: 300000, // 5 minutes for pipeline execution
+  },
 };
 
 export default nextConfig;

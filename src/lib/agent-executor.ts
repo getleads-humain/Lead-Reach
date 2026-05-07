@@ -616,6 +616,47 @@ IMPORTANT RULES:
         `Search query: "${searchQuery}"\n\nSearch results:\n${JSON.stringify(rawResults.slice(0, 30))}`,
         [],
       );
+
+      // RESILIENCE: If LLM extraction returned 0 companies from search results,
+      // fall back to LLM knowledge generation (same as when no search results)
+      if (companies.length === 0) {
+        console.warn('[ProspectDiscovery] LLM extracted 0 companies from search results, using knowledge fallback');
+        const fallbackPrompt = `You are a lead generation specialist. Web search results didn't contain structured company data, but the user wants to find companies.
+
+Based on your knowledge, generate a list of 5-10 REAL, well-known companies in the following industry and location.
+Only include companies you are confident actually exist.
+
+Industry: ${industry || 'General'}
+Location: ${location || 'Global'}
+Query: ${query || industry}
+
+Return a JSON array of company objects:
+[
+  {
+    "companyName": "Company Name",
+    "website": "https://example.com",
+    "industry": "Industry",
+    "city": "City",
+    "country": "Country",
+    "phoneMain": null,
+    "generalEmail": null,
+    "hqAddress": null,
+    "linkedinUrl": null,
+    "description": "Brief description",
+    "sources": ["llm_knowledge"]
+  }
+]`;
+
+        companies = await callLLMForJSON<Array<Record<string, unknown>>>(fallbackPrompt, `Generate companies for: ${searchQuery}`, []);
+        channelActivity.push({
+          channel: 'llm_fallback',
+          operation: 'generate_companies_from_knowledge',
+          success: companies.length > 0,
+          timestamp: new Date().toISOString(),
+          resultCount: companies.length,
+          error: companies.length === 0 ? 'LLM knowledge fallback also returned 0 companies' : 'Search results had no structured company data; used LLM knowledge',
+        });
+      }
     }
 
     await updateTaskProgress(ctx.taskId, 80, 'running');
@@ -1590,8 +1631,12 @@ export async function runFullPipeline(
   location?: string,
   campaignId?: string,
 ): Promise<FullPipelineResult> {
+  const PIPELINE_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutes max for the entire pipeline
   const errors: string[] = [];
   let pipelineCampaignId = campaignId || null;
+
+  // Wrap the entire pipeline in a timeout to prevent it from hanging forever
+  const pipelinePromise = (async (): Promise<FullPipelineResult> => {
 
   // Create a campaign if one doesn't exist
   if (!pipelineCampaignId) {
@@ -1812,6 +1857,51 @@ export async function runFullPipeline(
       errors,
     },
   };
+  })(); // End of pipelinePromise
+
+  // Race the pipeline against a timeout
+  try {
+    return await Promise.race([
+      pipelinePromise,
+      new Promise<FullPipelineResult>((_, reject) =>
+        setTimeout(() => reject(new Error(`Pipeline timed out after ${PIPELINE_TIMEOUT_MS / 1000}s`)), PIPELINE_TIMEOUT_MS)
+      ),
+    ]);
+  } catch (timeoutError) {
+    const msg = timeoutError instanceof Error ? timeoutError.message : 'Pipeline timed out';
+    console.error(`[runFullPipeline] ${msg}`);
+
+    // Mark any running tasks as failed
+    if (pipelineCampaignId) {
+      try {
+        await db.agentTask.updateMany({
+          where: { campaignId: pipelineCampaignId, status: 'running' },
+          data: { status: 'failed', error: msg, completedAt: new Date() },
+        });
+      } catch (dbErr) {
+        console.error(`[runFullPipeline] Failed to update stuck tasks:`, dbErr);
+      }
+    }
+
+    return {
+      success: false,
+      campaignId: pipelineCampaignId,
+      discovery: null,
+      enrichment: null,
+      qualification: null,
+      outreach: null,
+      summary: {
+        leadsFound: 0,
+        leadsEnriched: 0,
+        leadsQualified: 0,
+        leadsContacted: 0,
+        hotLeads: 0,
+        warmLeads: 0,
+        coldLeads: 0,
+        errors: [msg],
+      },
+    };
+  }
 }
 
 // ============================================================

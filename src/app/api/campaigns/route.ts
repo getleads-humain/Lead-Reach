@@ -1,6 +1,4 @@
 import { db } from '@/lib/db';
-import { runFullPipeline } from '@/lib/agent-executor';
-import { after } from 'next/server';
 import { NextRequest, NextResponse } from 'next/server';
 
 export async function GET(request: NextRequest) {
@@ -31,19 +29,8 @@ export async function GET(request: NextRequest) {
  *
  * Create a new campaign AND optionally auto-start the full agent pipeline.
  *
- * IMPORTANT: The pipeline runs ASYNCHRONOUSLY using Next.js after() API.
- * This endpoint returns immediately after creating the campaign.
- * The frontend polls GET /api/campaigns/[id]/pipeline-status for real-time progress.
- *
- * Body:
- * - name: string (required) — Campaign name
- * - description?: string — Campaign description
- * - targetIndustry?: string — Target industry for lead discovery
- * - targetLocation?: string — Target location for lead discovery
- * - targetCompanySize?: string — Target company size range
- * - targetCriteria?: string — Additional targeting criteria
- * - autoRun?: boolean — If true, automatically triggers the full pipeline after creation (default: true)
- * - query?: string — Override search query for the pipeline
+ * The pipeline runs asynchronously — this endpoint returns immediately
+ * after creating the campaign. The frontend polls pipeline-status for progress.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -79,49 +66,38 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // If autoRun is true (default), trigger the full pipeline AFTER the response is sent
-    // using Next.js after() API. This ensures the response is sent immediately
-    // and the pipeline runs in the background without blocking.
-    if (autoRun) {
-      const industry = targetIndustry || '';
-      const location = targetLocation || '';
-      const query = customQuery || `${industry || name} companies in ${location || 'global'}`.trim();
-      const campaignId = campaign.id;
-      const campaignName = name;
-
-      console.log(`[Campaigns] Scheduling pipeline for campaign "${campaignName}" (ID: ${campaignId})`);
-      console.log(`[Campaigns] Query: "${query}", Industry: "${industry}", Location: "${location}"`);
-
-      // Use after() to schedule the pipeline to run after the response is sent
-      // This is the Next.js-recommended way to do background work
-      after(async () => {
-        try {
-          console.log(`[Campaigns] Starting pipeline for campaign "${campaignName}" (ID: ${campaignId})`);
-          const result = await runFullPipeline(
-            query,
-            industry || undefined,
-            location || undefined,
-            campaignId,
-          );
-          console.log(`[Campaigns] Pipeline completed for "${campaignName}": ${result.summary.leadsFound} found, ${result.summary.leadsQualified} qualified`);
-        } catch (pipelineError) {
-          console.error(`[Campaigns] Pipeline failed for campaign "${campaignName}":`, pipelineError);
-        }
-      });
-    }
-
-    // Return the campaign immediately — the pipeline is scheduled to run after the response
-    return NextResponse.json(
+    const response = NextResponse.json(
       {
         ...campaign,
         pipeline: {
           started: autoRun,
           status: autoRun ? 'running' : 'not_started',
-          message: autoRun ? 'Pipeline started in the background. Poll /api/campaigns/[id]/pipeline-status for progress.' : 'Pipeline not started. POST to /api/campaigns/[id]/run-pipeline to start.',
+          message: autoRun
+            ? 'Pipeline will start in the background. Poll /api/campaigns/[id]/pipeline-status for progress.'
+            : 'Pipeline not started. POST to /api/campaigns/[id]/run-pipeline to start.',
         },
       },
       { status: 201 },
     );
+
+    // If autoRun, trigger the pipeline via internal fetch (fire-and-forget)
+    if (autoRun) {
+      const campaignId = campaign.id;
+      const port = process.env.PORT || 3000;
+      const baseUrl = `http://127.0.0.1:${port}`;
+
+      // Fire-and-forget: start the pipeline in a separate request context
+      // This avoids blocking the current response and prevents server crashes
+      fetch(`${baseUrl}/api/campaigns/${campaignId}/run-pipeline`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      }).catch((err) => {
+        console.error(`[Campaigns] Failed to trigger pipeline for ${campaignId}:`, err.message);
+      });
+    }
+
+    return response;
   } catch (error) {
     console.error('Error creating campaign:', error);
     return NextResponse.json({ error: 'Failed to create campaign' }, { status: 500 });

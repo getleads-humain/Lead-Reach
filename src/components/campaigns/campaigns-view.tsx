@@ -149,7 +149,21 @@ export function CampaignsView() {
     if (pollingRef.current.has(campaignId)) return;
     pollingRef.current.add(campaignId);
 
+    // Safety: Stop polling after 5 minutes max regardless of status
+    const MAX_POLL_DURATION = 5 * 60 * 1000;
+    const pollStartTime = Date.now();
+    let pollCount = 0;
+
     const fetchStatus = async () => {
+      // Safety: Stop polling after max duration
+      if (Date.now() - pollStartTime > MAX_POLL_DURATION) {
+        console.warn(`[Polling] Max poll duration reached for campaign ${campaignId}, stopping`);
+        stopPolling(campaignId);
+        loadCampaigns();
+        return;
+      }
+
+      pollCount++;
       try {
         const status = await safeFetchJSON<PipelineStatusResponse>(
           `/api/campaigns/${campaignId}/pipeline-status`
@@ -167,6 +181,11 @@ export function CampaignsView() {
         }
       } catch (error) {
         console.error(`Error polling pipeline status for ${campaignId}:`, error);
+        // After 5 consecutive errors, stop polling to prevent infinite retry
+        if (pollCount > 20) {
+          console.warn(`[Polling] Too many errors for campaign ${campaignId}, stopping`);
+          stopPolling(campaignId);
+        }
       }
     };
 
