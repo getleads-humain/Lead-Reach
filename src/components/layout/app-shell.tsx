@@ -6,6 +6,7 @@ import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
 import { cn } from '@/lib/utils';
 import { safeFetchJSON } from '@/lib/utils';
+import type { CampaignWithCounts } from '@/lib/types';
 import { TooltipProvider } from '@/components/ui/tooltip';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
@@ -14,10 +15,18 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     if (!seeded) {
-      safeFetchJSON<{ success?: boolean; counts?: Record<string, number> }>('/api/seed', { method: 'POST' })
+      // Only seed if no campaigns exist yet (first-time setup)
+      safeFetchJSON<CampaignWithCounts[]>('/api/campaigns')
+        .then((campaigns) => {
+          if (campaigns.length === 0) {
+            // No data yet — seed demo data
+            return safeFetchJSON<{ success?: boolean; counts?: Record<string, number> }>('/api/seed', { method: 'POST' });
+          }
+          return null;
+        })
         .then((data) => {
-          if (data.success) {
-            console.log('Demo data seeded:', data.counts);
+          if (data && (data as { success?: boolean }).success) {
+            console.log('Demo data seeded:', (data as { counts?: Record<string, number> }).counts);
           }
         })
         .catch((err) => console.error('Seed error:', err))

@@ -133,6 +133,19 @@ const JINA_READER_BASE = 'https://r.jina.ai';
 const EXEC_TIMEOUT = 30000; // 30 seconds for CLI commands
 const PYTHON_TOOLKIT_PATH = '/home/z/my-project/agent-reach-toolkit';
 
+// Rate limiter for z-ai-web-dev-sdk calls (prevents 429 errors)
+let lastSdkCallTime = 0;
+const SDK_MIN_INTERVAL_MS = 3000; // Minimum 3s between SDK calls (increased to avoid 429)
+
+async function waitForSdkRateLimit() {
+  const now = Date.now();
+  const elapsed = now - lastSdkCallTime;
+  if (elapsed < SDK_MIN_INTERVAL_MS) {
+    await new Promise(r => setTimeout(r, SDK_MIN_INTERVAL_MS - elapsed));
+  }
+  lastSdkCallTime = Date.now();
+}
+
 // ============================================================
 // Core Utilities
 // ============================================================
@@ -303,6 +316,7 @@ export async function exaSearch(query: string, numResults = 10): Promise<ToolRes
 
   // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
   try {
+    await waitForSdkRateLimit();
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
     const searchResult = await zai.functions.invoke('web_search', {
@@ -1839,6 +1853,7 @@ export async function discoverBusinesses(
   // ===== PRIMARY: Use z-ai-web-dev-sdk web_search directly =====
   // This is the most reliable channel — try it first with multiple query variations
   try {
+    await waitForSdkRateLimit();
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
     
@@ -1852,8 +1867,9 @@ export async function discoverBusinesses(
     
     const allSdkResults: SearchResult[] = [];
     
-    for (const searchQuery of searchQueries.slice(0, 3)) { // max 3 queries
+    for (const searchQuery of searchQueries.slice(0, 2)) { // max 2 queries (reduced from 3 to avoid rate limits)
       try {
+        await waitForSdkRateLimit(); // Rate limit between queries
         const searchResult = await zai.functions.invoke('web_search', {
           query: searchQuery,
           num: 10,

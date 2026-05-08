@@ -26,52 +26,87 @@ export async function GET(request: NextRequest) {
 }
 
 /**
- * Helper: Spawn a detached pipeline worker process
+ * Spawn a pipeline worker as a completely detached child process.
+ * Uses `bun run` which handles TypeScript natively.
+ * 
+ * Key: We use detached mode + unref so the child process is completely
+ * independent from the Next.js server. If the server restarts, the
+ * pipeline continues running.
  */
 function spawnPipelineWorker(campaignId: string, query: string, industry: string, location: string) {
   console.log(`[Campaigns] Spawning pipeline worker for campaign ${campaignId}`);
 
-  const worker = spawn('npx', [
-    'tsx',
-    'src/lib/workers/pipeline-worker.ts',
-    campaignId,
-    query,
-    industry || '',
-    location || '',
-  ], {
-    cwd: '/home/z/my-project',
-    env: { ...process.env, DATABASE_URL: 'file:./db/custom.db' },
-    stdio: ['pipe', 'pipe', 'pipe'],
-    detached: true,
-  });
+  try {
+    // Use shell command with nohup and background to completely decouple
+    // the pipeline process from the Next.js server process.
+    // This prevents any parent-child relationship that could cause crashes.
+    const escapedQuery = query.replace(/'/g, "'\\''");
+    const cmd = `cd /home/z/my-project && DATABASE_URL=file:./db/custom.db nohup bun run src/lib/workers/pipeline-worker.ts '${campaignId}' '${escapedQuery}' '${industry || ''}' '${location || ''}' > /tmp/pipeline-${campaignId}.log 2>&1 &`;
+    
+    const child = spawn('sh', ['-c', cmd], {
+      stdio: 'ignore',
+      detached: true,
+    });
 
-  worker.stdout?.on('data', (data: Buffer) => {
-    const output = data.toString().trim();
-    if (output) console.log(`[PipelineWorker] ${output.slice(0, 500)}`);
-  });
+    child.unref();
+    
+    console.log(`[Campaigns] Pipeline worker launched via shell (PID: ${child.pid})`);
+  } catch (spawnError) {
+    console.error(`[Campaigns] Failed to spawn pipeline worker:`, spawnError);
+  }
+}
 
-  worker.stderr?.on('data', (data: Buffer) => {
-    const output = data.toString().trim();
-    if (output) console.warn(`[PipelineWorker:stderr] ${output.slice(0, 500)}`);
-  });
+/**
+ * Fallback: Run pipeline inline in the background.
+ * Only used if spawn fails.
+ */
+async function runPipelineInBackground(campaignId: string, query: string, industry: string, location: string): Promise<void> {
+  try {
+    const { runFullPipeline } = await import('@/lib/agent-executor');
+    
+    console.log(`[Pipeline] Starting inline pipeline for campaign ${campaignId}: "${query}"`);
+    
+    const result = await runFullPipeline(query, industry || undefined, location || undefined, campaignId);
+    
+    console.log(`[Pipeline] Completed for ${campaignId}: ${result.summary.leadsFound} found, ${result.summary.leadsQualified} qualified, ${result.summary.leadsContacted} contacted`);
+    
+    if (result.summary.errors.length > 0) {
+      console.warn(`[Pipeline] Errors for ${campaignId}: ${result.summary.errors.join('; ')}`);
+    }
 
-  worker.on('close', (code: number) => {
-    console.log(`[Pipeline] Worker for ${campaignId} exited with code ${code}`);
-  });
+    try {
+      await db.campaign.update({
+        where: { id: campaignId },
+        data: {
+          leadsFound: result.summary.leadsFound,
+          leadsQualified: result.summary.leadsQualified,
+          leadsContacted: result.summary.leadsContacted,
+          status: 'completed',
+        },
+      });
+    } catch (dbErr) {
+      console.error(`[Pipeline] Failed to update campaign ${campaignId}:`, dbErr);
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Pipeline] Pipeline failed for ${campaignId}: ${msg}`);
 
-  worker.on('error', (err: Error) => {
-    console.error(`[Pipeline] Worker spawn error for ${campaignId}:`, err.message);
-  });
-
-  // Allow the parent process to exit independently
-  worker.unref();
+    try {
+      await db.agentTask.updateMany({
+        where: { campaignId, status: 'running' },
+        data: { status: 'failed', error: `Pipeline failed: ${msg}`, completedAt: new Date() },
+      });
+    } catch (dbErr) {
+      console.error(`[Pipeline] Failed to update stuck tasks for ${campaignId}:`, dbErr);
+    }
+  }
 }
 
 /**
  * POST /api/campaigns
  *
  * Create a new campaign AND optionally auto-start the full agent pipeline.
- * Uses spawn() to run the pipeline in a detached child process.
+ * Uses detached child process (bun run) for pipeline execution.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -107,7 +142,7 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // If autoRun, spawn the pipeline worker directly (no self-fetch)
+    // If autoRun, spawn the pipeline worker
     if (autoRun) {
       const industry = campaign.targetIndustry || '';
       const location = campaign.targetLocation || '';
@@ -123,7 +158,7 @@ export async function POST(request: NextRequest) {
         query = campaign.name;
       }
 
-      // Spawn the worker process directly
+      // Spawn the worker process (completely detached)
       spawnPipelineWorker(campaign.id, query, industry, location);
     }
 

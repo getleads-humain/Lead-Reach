@@ -2,16 +2,14 @@ import { db } from '@/lib/db';
 import { spawn } from 'child_process';
 import { NextRequest, NextResponse } from 'next/server';
 
+const runningPipelines = new Set<string>();
+
 /**
  * POST /api/campaigns/[id]/run-pipeline
  *
  * Triggers the full 4-stage lead generation pipeline for a campaign.
- * Uses spawn() to run the pipeline in a detached child process.
- * The frontend polls GET /api/campaigns/[id]/pipeline-status for progress.
+ * Uses detached bun process for pipeline execution.
  */
-
-const runningPipelines = new Set<string>();
-
 export async function POST(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> },
@@ -74,42 +72,26 @@ export async function POST(
 
     runningPipelines.add(campaignId);
 
-    // Spawn the pipeline worker as a detached child process
-    const worker = spawn('npx', [
-      'tsx',
-      'src/lib/workers/pipeline-worker.ts',
-      campaignId,
-      query,
-      industry || '',
-      location || '',
-    ], {
-      cwd: '/home/z/my-project',
-      env: { ...process.env, DATABASE_URL: 'file:./db/custom.db' },
-      stdio: ['pipe', 'pipe', 'pipe'],
-      detached: true,
-    });
+    // Spawn the pipeline as a completely detached process via shell
+    try {
+      const escapedQuery = query.replace(/'/g, "'\\''");
+      const cmd = `cd /home/z/my-project && DATABASE_URL=file:./db/custom.db nohup bun run src/lib/workers/pipeline-worker.ts '${campaignId}' '${escapedQuery}' '${industry || ''}' '${location || ''}' > /tmp/pipeline-${campaignId}.log 2>&1 &`;
+      
+      const child = spawn('sh', ['-c', cmd], {
+        stdio: 'ignore',
+        detached: true,
+      });
 
-    worker.stdout?.on('data', (data: Buffer) => {
-      const output = data.toString().trim();
-      if (output) console.log(`[PipelineWorker] ${output.slice(0, 500)}`);
-    });
+      child.unref();
 
-    worker.stderr?.on('data', (data: Buffer) => {
-      const output = data.toString().trim();
-      if (output) console.warn(`[PipelineWorker:stderr] ${output.slice(0, 500)}`);
-    });
-
-    worker.on('close', (code: number) => {
-      console.log(`[Pipeline] Worker for ${campaignId} exited with code ${code}`);
+      // Clean up the running set after a timeout
+      setTimeout(() => {
+        runningPipelines.delete(campaignId);
+      }, 10 * 60 * 1000); // 10 minutes
+    } catch (spawnError) {
       runningPipelines.delete(campaignId);
-    });
-
-    worker.on('error', (err: Error) => {
-      console.error(`[Pipeline] Worker spawn error:`, err.message);
-      runningPipelines.delete(campaignId);
-    });
-
-    worker.unref();
+      console.error('[Pipeline] Failed to spawn worker:', spawnError);
+    }
 
     return NextResponse.json({
       started: true,
