@@ -6,10 +6,10 @@ import { NextRequest, NextResponse } from 'next/server';
  * POST /api/campaigns/[id]/run-pipeline
  *
  * Triggers the full 4-stage lead generation pipeline for a campaign.
- * 
- * The pipeline runs in a SEPARATE Node.js worker process to prevent
- * blocking or crashing the Next.js server during long-running execution.
- * This endpoint returns immediately after spawning the worker.
+ *
+ * The pipeline runs in a SEPARATE process via `npx tsx` to prevent
+ * the heavy agent-executor module from crashing the Next.js server.
+ * This endpoint returns immediately after spawning the process.
  *
  * The frontend polls GET /api/campaigns/[id]/pipeline-status for progress.
  */
@@ -60,7 +60,7 @@ export async function POST(
     const industry = campaign.targetIndustry || '';
     const location = campaign.targetLocation || '';
     let query: string;
-    
+
     if (body.query) {
       query = body.query;
     } else if (industry && location) {
@@ -68,52 +68,24 @@ export async function POST(
     } else if (industry) {
       query = `${industry} companies`;
     } else {
-      // Use the campaign name as the query, which often contains the full search intent
       query = campaign.name;
     }
 
     const campaignName = campaign.name;
     console.log(`[Pipeline] Spawning worker for campaign "${campaignName}" (ID: ${campaignId})`);
 
-    // Use the compiled worker JS (faster startup than npx tsx)
-    // IMPORTANT: In standalone mode, process.cwd() is .next/standalone/, but the
-    // dist/ directory might be at the project root. We check multiple locations.
-    const fs = await import('fs/promises');
-    const possibleRoots = [
-      process.cwd(),
-      '/home/z/my-project',
-      // In standalone mode, the project root is one level up from .next/standalone/
-      process.cwd().replace('/.next/standalone', ''),
-    ];
+    // Use npx tsx to run the pipeline worker script directly from TypeScript
+    // This runs in a separate process, keeping the Next.js server stable
+    const workerScript = 'src/lib/workers/pipeline-worker.ts';
+    const escapedQuery = query.replace(/"/g, '\\"');
+    const escapedIndustry = industry.replace(/"/g, '\\"');
+    const escapedLocation = location.replace(/"/g, '\\"');
 
-    let workerPath = '';
-    let projectRoot = '';
-    for (const root of possibleRoots) {
-      const candidate = `${root}/dist/lib/workers/pipeline-worker.js`;
-      try {
-        await fs.access(candidate);
-        workerPath = candidate;
-        projectRoot = root;
-        break;
-      } catch {
-        // Not found, try next
-      }
-    }
-
-    if (!workerPath) {
-      console.error('[Pipeline] Could not find pipeline-worker.js in any expected location');
-      return NextResponse.json(
-        { error: 'Pipeline worker not found. Please rebuild the project.' },
-        { status: 500 },
-      );
-    }
-
-    console.log(`[Pipeline] Using worker at: ${workerPath} (projectRoot: ${projectRoot})`);
-    const workerCommand = `node "${workerPath}" "${campaignId}" "${query.replace(/"/g, '\\"')}" "${industry}" "${location}"`;
+    const workerCommand = `npx tsx "${workerScript}" "${campaignId}" "${escapedQuery}" "${escapedIndustry}" "${escapedLocation}"`;
 
     exec(workerCommand, {
-      cwd: projectRoot,
-      timeout: 10 * 60 * 1000, // 10 minute timeout (increased from 5min for full pipeline)
+      cwd: '/home/z/my-project',
+      timeout: 10 * 60 * 1000, // 10 minute timeout
       maxBuffer: 10 * 1024 * 1024,
       env: { ...process.env, DATABASE_URL: process.env.DATABASE_URL },
     }, (error, stdout, stderr) => {
@@ -121,7 +93,7 @@ export async function POST(
         console.error(`[Pipeline] Worker error for "${campaignName}":`, error.message);
       }
       if (stdout) {
-        console.log(`[Pipeline] Worker output:`, stdout.trim());
+        console.log(`[Pipeline] Worker output:`, stdout.trim().slice(0, 500));
       }
       if (stderr) {
         console.warn(`[Pipeline] Worker stderr:`, stderr.trim().slice(0, 500));

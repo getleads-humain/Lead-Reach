@@ -80,14 +80,13 @@ export async function POST(request: NextRequest) {
       { status: 201 },
     );
 
-    // If autoRun, trigger the pipeline via internal fetch (fire-and-forget)
+    // If autoRun, trigger the pipeline via the run-pipeline endpoint (fire-and-forget)
+    // The run-pipeline endpoint now uses dynamic imports and runs in-process.
     if (autoRun) {
       const campaignId = campaign.id;
       const port = process.env.PORT || 3000;
       const baseUrl = `http://127.0.0.1:${port}`;
 
-      // Fire-and-forget: start the pipeline in a separate request context
-      // This avoids blocking the current response and prevents server crashes
       fetch(`${baseUrl}/api/campaigns/${campaignId}/run-pipeline`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

@@ -5,8 +5,7 @@
  * to prevent the Next.js dev server from crashing during long-running
  * pipeline execution.
  *
- * Usage: node dist/lib/workers/pipeline-worker.js <campaignId> <query> [industry] [location]
- * Or via tsx: npx tsx src/lib/workers/pipeline-worker.ts <campaignId> <query> [industry] [location]
+ * Usage: npx tsx src/lib/workers/pipeline-worker.ts <campaignId> <query> [industry] [location]
  */
 
 import { db } from '../db';
@@ -32,6 +31,23 @@ async function main() {
     if (result.summary.errors.length > 0) {
       console.warn(`[PipelineWorker] Errors: ${result.summary.errors.join('; ')}`);
     }
+
+    // Update the campaign with final lead counts and status
+    try {
+      await db.campaign.update({
+        where: { id: campaignId },
+        data: {
+          leadsFound: result.summary.leadsFound,
+          leadsQualified: result.summary.leadsQualified,
+          leadsContacted: result.summary.leadsContacted,
+          status: 'completed',
+        },
+      });
+      console.log(`[PipelineWorker] Campaign ${campaignId} updated with final lead counts`);
+    } catch (dbErr) {
+      console.error(`[PipelineWorker] Failed to update campaign lead counts:`, dbErr);
+    }
+
     process.exit(0);
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
