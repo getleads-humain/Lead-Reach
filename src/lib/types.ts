@@ -1,4 +1,4 @@
-export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports';
+export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports' | 'setter' | 'booking' | 'messaging' | 'analytics';
 
 export type CampaignStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type LeadTier = 'hot' | 'warm' | 'cold' | 'unqualified';
@@ -160,3 +160,37 @@ export const LOCATIONS = [
 export const COMPANY_SIZES = [
   '1-10', '11-50', '51-200', '201-500', '501-1000', '1001-5000', '5000+',
 ];
+
+export type SetterStatus = 'active' | 'paused' | 'training';
+export type ConversationStatus = 'active' | 'qualified' | 'disqualified' | 'booked' | 'lost';
+export type MessagingChannel = 'sms' | 'whatsapp' | 'instagram' | 'messenger' | 'email';
+
+export const SUPPORTED_LANGUAGES = [
+  { code: 'en', name: 'English' },
+  { code: 'es', name: 'Spanish' },
+  { code: 'fr', name: 'French' },
+  { code: 'de', name: 'German' },
+  { code: 'pt', name: 'Portuguese' },
+  { code: 'it', name: 'Italian' },
+  { code: 'nl', name: 'Dutch' },
+  { code: 'ru', name: 'Russian' },
+  { code: 'zh', name: 'Chinese' },
+  { code: 'ja', name: 'Japanese' },
+  { code: 'ko', name: 'Korean' },
+  { code: 'ar', name: 'Arabic' },
+  { code: 'hi', name: 'Hindi' },
+  { code: 'tr', name: 'Turkish' },
+  { code: 'pl', name: 'Polish' },
+  { code: 'sv', name: 'Swedish' },
+  { code: 'da', name: 'Danish' },
+];
+
+export const AI_SETTER_METRICS = {
+  humanSetterConversion: { min: 10, max: 20, unit: '%', label: 'Human Setter Avg' },
+  aiSetterConversion: { min: 30, max: 40, unit: '%', label: 'AI Setter Avg' },
+  humanSetterCost: 2000,
+  aiSetterCostStarter: 97,
+  aiSetterCostPro: 297,
+  humanCapacity: 150,
+  aiCapacity: 10000,
+};

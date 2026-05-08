@@ -7,7 +7,7 @@ const STANDALONE_DIR = path.join(__dirname, '.next', 'standalone');
 
 const env = {
   ...process.env,
-  DATABASE_URL: 'file:./db/custom.db',
+  DATABASE_URL: 'file:/home/z/my-project/db/custom.db',
   PORT: '3000',
   HOSTNAME: '0.0.0.0',
   NODE_ENV: 'production',

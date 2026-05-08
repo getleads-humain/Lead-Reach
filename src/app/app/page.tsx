@@ -8,6 +8,10 @@ import { LeadsView } from '@/components/leads/leads-view';
 import { AgentsView } from '@/components/agents/agents-view';
 import { OutreachView } from '@/components/outreach/outreach-view';
 import { ReportsView } from '@/components/reports/reports-view';
+import { SetterView } from '@/components/setter/setter-view';
+import { BookingView } from '@/components/booking/booking-view';
+import { MessagingView } from '@/components/messaging/messaging-view';
+import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { useAppStore } from '@/lib/store';
 
 export default function AppPage() {
@@ -23,8 +27,16 @@ export default function AppPage() {
         return <LeadsView />;
       case 'agents':
         return <AgentsView />;
+      case 'setter':
+        return <SetterView />;
+      case 'booking':
+        return <BookingView />;
+      case 'messaging':
+        return <MessagingView />;
       case 'outreach':
         return <OutreachView />;
+      case 'analytics':
+        return <AnalyticsView />;
       case 'reports':
         return <ReportsView />;
       default:

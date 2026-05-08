@@ -13,6 +13,10 @@ import {
   Zap,
   ChevronLeft,
   ChevronRight,
+  Heart,
+  Calendar,
+  MessageCircle,
+  TrendingUp,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -29,7 +33,11 @@ const navItems: NavItem[] = [
   { view: 'campaigns', label: 'Campaigns', icon: Target },
   { view: 'leads', label: 'Leads', icon: Users },
   { view: 'agents', label: 'Agents', icon: Bot },
+  { view: 'setter', label: 'AI Setter', icon: Heart },
+  { view: 'booking', label: 'Bookings', icon: Calendar },
+  { view: 'messaging', label: 'Messaging', icon: MessageCircle },
   { view: 'outreach', label: 'Outreach', icon: Mail },
+  { view: 'analytics', label: 'Analytics', icon: TrendingUp },
   { view: 'reports', label: 'Reports', icon: BarChart3 },
 ];
 

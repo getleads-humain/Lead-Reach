@@ -28,6 +28,16 @@ import {
   Layers,
   Network,
   ChevronRight,
+  MessageSquareHeart,
+  CalendarCheck,
+  Instagram,
+  Facebook,
+  DollarSign,
+  ArrowDown,
+  FlaskConical,
+  Cog,
+  Reply,
+  MessageCircle,
 } from 'lucide-react';
 
 const TRUSTED_COMPANIES = [
@@ -77,34 +87,38 @@ const FEATURES = [
 const PRICING_TIERS = [
   {
     name: 'Starter',
-    price: '$49',
+    price: '$97',
     period: '/mo',
-    description: 'Perfect for solo founders and small teams getting started with AI lead generation.',
+    description: 'Perfect for solo coaches and consultants getting started with AI setting.',
     features: [
-      '2 AI Agents',
+      '2 AI Setters',
       '500 leads/month',
-      '3 channels',
-      'Basic enrichment',
-      'Email outreach',
-      'Standard reports',
+      'SMS + Email channels',
+      'Basic qualification',
+      'Calendar booking',
+      'Standard follow-ups',
+      '1 language',
     ],
     cta: 'Start Free Trial',
     highlighted: false,
   },
   {
     name: 'Professional',
-    price: '$149',
+    price: '$297',
     period: '/mo',
-    description: 'For growing sales teams that need the full power of autonomous lead generation.',
+    description: 'For agencies and teams that need the full power of AI setting.',
     features: [
-      '8 AI Agents (full workforce)',
-      '5,000 leads/month',
-      '17+ channels',
-      'Advanced enrichment',
-      'Multi-channel outreach',
-      'Custom scoring models',
-      'Priority support',
-      'API access',
+      'Unlimited AI Setters',
+      '10,000+ leads/month',
+      'All channels (SMS, WhatsApp, IG, FB)',
+      'Advanced qualification & scoring',
+      'Conversational booking',
+      'Custom follow-up sequences',
+      '17+ languages',
+      'A/B split testing',
+      'GHL CRM integration',
+      'Custom AI tasks',
+      '5 sub-accounts',
     ],
     cta: 'Start Free Trial',
     highlighted: true,
@@ -113,16 +127,16 @@ const PRICING_TIERS = [
     name: 'Enterprise',
     price: 'Custom',
     period: '',
-    description: 'For large organizations with custom requirements and high-volume needs.',
+    description: 'For large agencies with custom requirements and high-volume needs.',
     features: [
-      'Unlimited AI Agents',
-      'Unlimited leads',
-      'All channels + custom',
+      'Unlimited everything',
+      'Unlimited sub-accounts',
       'Custom integrations',
-      'Dedicated CSM',
+      'Dedicated success manager',
       'SLA guarantee',
-      'On-premise option',
-      'Custom training',
+      'Custom AI training',
+      'White-label option',
+      'Priority support',
     ],
     cta: 'Contact Sales',
     highlighted: false,
@@ -180,17 +194,16 @@ export default function LandingPage() {
           <div className="text-center max-w-4xl mx-auto">
             <Badge className="mb-6 bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15">
               <Sparkles className="h-3 w-3 mr-1" />
-              Agentic Lead Generation Platform
+              The #1 AI Setter for Agencies, Coaches &amp; Consultants
             </Badge>
 
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-foreground leading-tight tracking-tight">
-              Autonomous AI Agents That{' '}
-              <span className="text-gradient">Generate Leads</span>{' '}
-              While You Sleep
+              AI Setters That Qualify &amp; Book{' '}
+              <span className="text-gradient">While You Sleep</span>
             </h1>
 
             <p className="mt-6 text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              Deploy 8 specialized AI agents that discover, enrich, qualify, and engage leads across 17+ channels — all on autopilot. Turn your sales pipeline into an autonomous machine.
+              Outperform human setters. 30-40% conversion vs 10-20%. 10,000+ leads/day. $97/mo vs $2,000/mo. Deploy AI setters that qualify, book, and follow up on autopilot.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -213,12 +226,12 @@ export default function LandingPage() {
                 <div className="text-xs text-muted-foreground mt-1">Channels</div>
               </div>
               <div>
-                <div className="text-2xl sm:text-3xl font-bold text-foreground">8</div>
-                <div className="text-xs text-muted-foreground mt-1">AI Agents</div>
+                <div className="text-2xl sm:text-3xl font-bold text-foreground">30-40%</div>
+                <div className="text-xs text-muted-foreground mt-1">Conversion Rate</div>
               </div>
               <div>
-                <div className="text-2xl sm:text-3xl font-bold text-foreground">10x</div>
-                <div className="text-xs text-muted-foreground mt-1">Faster Outreach</div>
+                <div className="text-2xl sm:text-3xl font-bold text-foreground">10,000+</div>
+                <div className="text-xs text-muted-foreground mt-1">Leads/Day</div>
               </div>
             </div>
           </div>
@@ -307,6 +320,192 @@ export default function LandingPage() {
         </div>
       </section>
 
+      {/* AI Setter Advantage */}
+      <section className="py-20 lg:py-28 border-t border-border/20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <Badge variant="outline" className="mb-4 border-emerald-500/20 text-emerald-400">
+              AI Setter Advantage
+            </Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
+              Outperform human setters. <span className="text-gradient">At a fraction of the cost.</span>
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {/* Increase Conversions */}
+            <Card className="card-premium border-border/30 bg-card/50 text-center">
+              <CardContent className="p-6 lg:p-8">
+                <div className="rounded-xl p-3 inline-flex mx-auto mb-4 bg-emerald-500/10 text-emerald-400">
+                  <TrendingUp className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-4">Increase Conversions</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Human setter average</div>
+                    <div className="text-2xl font-bold text-red-400">10-20%</div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <ArrowDown className="h-4 w-4 text-emerald-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">AI setter average</div>
+                    <div className="text-2xl font-bold text-emerald-400">30-40%</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            {/* Reduce Expenses */}
+            <Card className="card-premium border-border/30 bg-card/50 text-center">
+              <CardContent className="p-6 lg:p-8">
+                <div className="rounded-xl p-3 inline-flex mx-auto mb-4 bg-cyan-500/10 text-cyan-400">
+                  <DollarSign className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-4">Reduce Expenses</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm text-muted-foreground">1 human setter</div>
+                    <div className="text-2xl font-bold text-red-400">$2,000/mo</div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <ArrowDown className="h-4 w-4 text-cyan-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">Unlimited AI setters</div>
+                    <div className="text-2xl font-bold text-cyan-400">$97-297/mo</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+            {/* Maximize Capacity */}
+            <Card className="card-premium border-border/30 bg-card/50 text-center">
+              <CardContent className="p-6 lg:p-8">
+                <div className="rounded-xl p-3 inline-flex mx-auto mb-4 bg-violet-500/10 text-violet-400">
+                  <Zap className="h-6 w-6" />
+                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-4">Maximize Capacity</h3>
+                <div className="space-y-3">
+                  <div>
+                    <div className="text-sm text-muted-foreground">Human capacity</div>
+                    <div className="text-2xl font-bold text-red-400">150/day</div>
+                  </div>
+                  <div className="flex items-center justify-center gap-2">
+                    <ArrowDown className="h-4 w-4 text-violet-400" />
+                  </div>
+                  <div>
+                    <div className="text-sm text-muted-foreground">AI setter capacity</div>
+                    <div className="text-2xl font-bold text-violet-400">10,000+/day</div>
+                  </div>
+                </div>
+              </CardContent>
+            </Card>
+          </div>
+        </div>
+      </section>
+
+      {/* Conversational AI Booking */}
+      <section className="py-20 lg:py-28 border-t border-border/20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="text-center max-w-2xl mx-auto mb-16">
+            <Badge variant="outline" className="mb-4 border-emerald-500/20 text-emerald-400">
+              Conversational Booking
+            </Badge>
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
+              Say goodbye to booking links. <span className="text-gradient">Hello, conversational booking.</span>
+            </h2>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
+            {[
+              { title: 'Human-like Scheduling', desc: 'AI guides prospects to book naturally through conversation. No awkward forms or links — just smooth, intelligent dialogue that feels genuinely personal.', icon: MessageSquareHeart, color: '#10B981' },
+              { title: 'Real-time Calendar Sync', desc: 'Knows your availability and confirms instantly. Your AI setter checks your calendar in real-time and proposes slots that work for both parties.', icon: CalendarCheck, color: '#3B82F6' },
+              { title: 'Zero Friction Booking', desc: 'From "interested" to "booked" in one conversation. No redirects, no scheduling pages, no abandoned bookings. Just seamless appointment setting.', icon: Zap, color: '#F59E0B' },
+            ].map((item, i) => (
+              <Card key={i} className="card-premium border-border/30 bg-card/50">
+                <CardContent className="p-6">
+                  <div className="rounded-lg p-2.5 inline-flex mb-4" style={{ backgroundColor: `${item.color}12`, color: item.color }}>
+                    <item.icon className="h-5 w-5" />
+                  </div>
+                  <h3 className="text-base font-semibold text-foreground mb-2">{item.title}</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed">{item.desc}</p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Multi-Channel Messaging */}
+      <section className="py-20 lg:py-28 border-t border-border/20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            <div>
+              <Badge variant="outline" className="mb-4 border-emerald-500/20 text-emerald-400">
+                Multi-Channel
+              </Badge>
+              <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+                Every channel connected. <span className="text-gradient">One unified inbox.</span>
+              </h2>
+              <p className="text-muted-foreground mb-8">
+                SMS, WhatsApp, Instagram, and Facebook Messenger — all in one place. Native GoHighLevel integration means setup in minutes, not hours.
+              </p>
+              <div className="space-y-4">
+                {[
+                  { channel: 'SMS', desc: 'Direct text messaging with 98% open rates', icon: MessageCircle },
+                  { channel: 'WhatsApp', desc: 'Global reach with 2B+ users worldwide', icon: MessageCircle },
+                  { channel: 'Instagram DM', desc: 'Meet prospects where they scroll', icon: Instagram },
+                  { channel: 'Facebook Messenger', desc: 'Capture leads from your pages instantly', icon: Facebook },
+                ].map((ch, i) => (
+                  <div key={i} className="flex items-center gap-3 rounded-lg border border-border/30 bg-secondary/15 p-3">
+                    <div className="rounded-lg p-2 bg-emerald-500/10 text-emerald-400">
+                      <ch.icon className="h-4 w-4" />
+                    </div>
+                    <div>
+                      <div className="text-sm font-semibold text-foreground/90">{ch.channel}</div>
+                      <div className="text-xs text-muted-foreground">{ch.desc}</div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+            <div className="space-y-4">
+              <Card className="card-premium border-emerald-500/20 bg-gradient-to-br from-emerald-500/5 to-transparent">
+                <CardContent className="p-6">
+                  <div className="flex items-center gap-3 mb-4">
+                    <div className="rounded-lg p-2 bg-emerald-500/15 text-emerald-400">
+                      <Layers className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <h3 className="font-semibold text-foreground">GoHighLevel Integration</h3>
+                      <p className="text-xs text-muted-foreground">Native connection — setup in minutes</p>
+                    </div>
+                  </div>
+                  <p className="text-sm text-muted-foreground">Direct GHL integration means all your conversations, contacts, and calendar sync seamlessly. More CRM integrations launching soon.</p>
+                </CardContent>
+              </Card>
+              <Card className="card-premium border-border/30 bg-card/50">
+                <CardContent className="p-6">
+                  <h3 className="font-semibold text-foreground mb-3">Platform Features</h3>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { label: 'A/B Split Testing', icon: FlaskConical },
+                      { label: 'Custom AI Tasks', icon: Cog },
+                      { label: 'Follow-up System', icon: Reply },
+                      { label: 'Sub-Accounts', icon: Users },
+                      { label: '17+ Languages', icon: Globe },
+                      { label: 'Analytics', icon: BarChart3 },
+                    ].map((feat, i) => (
+                      <div key={i} className="flex items-center gap-2 text-sm">
+                        <feat.icon className="h-4 w-4 text-emerald-400 shrink-0" />
+                        <span className="text-muted-foreground">{feat.label}</span>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+          </div>
+        </div>
+      </section>
+
       {/* Features Grid */}
       <section id="features" className="py-20 lg:py-28 border-t border-border/20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
@@ -374,7 +573,7 @@ export default function LandingPage() {
           </div>
 
           <div className="mt-10 text-center">
-            <Link href="/agent">
+            <Link href="/app">
               <Button variant="outline" className="border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400 hover:border-emerald-500/30 transition-all duration-200">
                 Explore All Agents
                 <ArrowRight className="ml-2 h-4 w-4" />

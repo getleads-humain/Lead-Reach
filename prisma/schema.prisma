@@ -150,3 +150,178 @@ model AgentReachChannel {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+model AISetter {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  status      String   @default("active") // active, paused, training
+  avatar      String?  // emoji or icon name
+  
+  // Qualification Criteria
+  qualificationRules String? // JSON: { mustHave: [], niceToHave: [], disqualify: [] }
+  
+  // Performance
+  conversationsHandled Int    @default(0)
+  leadsQualified      Int    @default(0)
+  leadsBooked         Int    @default(0)
+  conversionRate      Float  @default(0) // percentage
+  avgResponseTime     Int    @default(0) // seconds
+  
+  // Configuration
+  language     String   @default("en") // supports 17+ languages
+  channels     String?  // JSON array: ["sms","whatsapp","instagram","messenger","email"]
+  calendarLink String?  // booking calendar URL
+  followUpEnabled Boolean @default(true)
+  followUpDelay    Int    @default(3600) // seconds before first follow-up
+  maxFollowUps     Int    @default(5)
+  
+  // GHL Integration
+  ghlIntegrationId String?  // GoHighLevel integration ID
+  
+  // A/B Testing
+  activeVariant   String? // "A" or "B"
+  variantAMessage String? // JSON: greeting, qualification_prompt, booking_prompt
+  variantBMessage String? // JSON: greeting, qualification_prompt, booking_prompt
+  
+  subAccountId String?
+  subAccount   SubAccount? @relation(fields: [subAccountId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  conversations SetterConversation[]
+}
+
+model SetterConversation {
+  id          String   @id @default(cuid())
+  setterId    String
+  setter      AISetter @relation(fields: [setterId], references: [id], onDelete: Cascade)
+  
+  leadName    String
+  leadChannel String   // sms, whatsapp, instagram, messenger, email
+  leadPhone   String?
+  leadEmail   String?
+  
+  status      String   @default("active") // active, qualified, disqualified, booked, lost
+  language    String   @default("en")
+  
+  // Conversation flow
+  messages    String?  // JSON array of {role, content, timestamp}
+  painPoints  String?  // JSON array of identified pain points
+  objections  String?  // JSON array of objections raised
+  
+  // Qualification
+  qualificationScore Int  @default(0) // 0-100
+  qualificationAnswers String? // JSON: {question: answer}
+  
+  // Booking
+  bookedAppointment Boolean @default(false)
+  bookedAt          DateTime?
+  appointmentDate   DateTime?
+  appointmentNotes  String?
+  
+  // Follow-up
+  followUpCount    Int      @default(0)
+  lastFollowUpAt   DateTime?
+  nextFollowUpAt   DateTime?
+  
+  // A/B
+  variant String? // "A" or "B"
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model SubAccount {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  status      String   @default("active") // active, suspended
+  
+  // Client info
+  clientName  String?
+  clientEmail String?
+  industry    String?
+  
+  // Limits
+  maxSetters  Int      @default(5)
+  maxLeads    Int      @default(1000)
+  currentLeads Int     @default(0)
+  
+  // Usage stats
+  totalConversations Int @default(0)
+  totalBookings      Int @default(0)
+  totalQualified     Int @default(0)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  setters     AISetter[]
+  customTasks CustomAITask[]
+}
+
+model CustomAITask {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  type        String   // update_crm, add_tag, trigger_workflow, segment_email, custom
+  status      String   @default("active") // active, paused
+  
+  // Configuration
+  trigger     String?  // JSON: {event, conditions}
+  actions     String?  // JSON array: [{type, config}]
+  
+  // Stats
+  executionsCount Int  @default(0)
+  lastExecutedAt  DateTime?
+  
+  subAccountId String?
+  subAccount   SubAccount? @relation(fields: [subAccountId], references: [id])
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model ABTest {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  status      String   @default("running") // running, completed, paused
+  
+  variantAName String  @default("Variant A")
+  variantBName String  @default("Variant B")
+  
+  // Metrics
+  variantAImpressions Int @default(0)
+  variantBImpressions Int @default(0)
+  variantAConversions Int @default(0)
+  variantBConversions Int @default(0)
+  variantAConversionRate Float @default(0)
+  variantBConversionRate Float @default(0)
+  
+  winner String? // "A" or "B" or null
+  
+  startDate DateTime @default(now())
+  endDate   DateTime?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model FollowUpSequence {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+  status      String   @default("active")
+  
+  steps       String   // JSON array: [{delay, channel, message_template}]
+  totalSteps  Int      @default(0)
+  
+  // Stats
+  enrolledCount  Int @default(0)
+  completedCount Int @default(0)
+  responseRate   Float @default(0)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
