@@ -13,6 +13,7 @@ import { BookingView } from '@/components/booking/booking-view';
 import { MessagingView } from '@/components/messaging/messaging-view';
 import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment-view';
+import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
 import { useAppStore } from '@/lib/store';
 
 export default function PlatformPage() {
@@ -22,6 +23,8 @@ export default function PlatformPage() {
     switch (activeView) {
       case 'dashboard':
         return <DashboardView />;
+      case 'prospect-discovery':
+        return <ProspectDiscoveryView />;
       case 'campaigns':
         return <CampaignsView />;
       case 'leads':

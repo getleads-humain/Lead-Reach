@@ -13,6 +13,7 @@ import { BookingView } from '@/components/booking/booking-view';
 import { MessagingView } from '@/components/messaging/messaging-view';
 import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment-view';
+import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
 import { useAppStore } from '@/lib/store';
 
 export default function AppPage() {
@@ -42,6 +43,8 @@ export default function AppPage() {
         return <ReportsView />;
       case 'data-enrichment':
         return <DataEnrichmentView />;
+      case 'prospect-discovery':
+        return <ProspectDiscoveryView />;
       default:
         return <DashboardView />;
     }

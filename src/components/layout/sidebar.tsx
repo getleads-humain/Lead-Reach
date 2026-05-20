@@ -18,6 +18,7 @@ import {
   MessageCircle,
   TrendingUp,
   Database,
+  Telescope,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -31,6 +32,7 @@ interface NavItem {
 
 const navItems: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+  { view: 'prospect-discovery', label: 'Prospect Discovery', icon: Telescope },
   { view: 'campaigns', label: 'Campaigns', icon: Target },
   { view: 'leads', label: 'Leads', icon: Users },
   { view: 'data-enrichment', label: 'Enrichment', icon: Database },
