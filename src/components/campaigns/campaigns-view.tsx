@@ -113,6 +113,8 @@ export function CampaignsView() {
   // Track which campaigns we're actively polling
   const pollingRef = useRef<Set<string>>(new Set());
   const pollingTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
+  // Guard against concurrent loadCampaigns calls
+  const isLoadingRef = useRef(false);
 
   useEffect(() => {
     loadCampaigns();
@@ -122,21 +124,71 @@ export function CampaignsView() {
         clearInterval(timer);
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const loadCampaigns = async () => {
+    // Prevent concurrent loads (e.g., from polling completion triggering reload)
+    if (isLoadingRef.current) return;
+    isLoadingRef.current = true;
     try {
       const data = await safeFetchJSON<CampaignWithCounts[]>('/api/campaigns');
       setCampaigns(data);
 
-      // Check for any campaigns that might have running pipelines
-      for (const campaign of data) {
-        pollPipelineStatus(campaign.id);
+      // Use the batch endpoint to check pipeline status for all campaigns at once
+      // Only then start polling for campaigns that are actually running
+      try {
+        const activeCampaigns = data.filter(c => c.status === 'active' || c.status === 'completed');
+        if (activeCampaigns.length > 0) {
+          const ids = activeCampaigns.map(c => c.id).join(',');
+          const batchStatuses = await safeFetchJSON<Record<string, {
+            totalLeads: number;
+            pipelineStatus: 'idle' | 'running' | 'completed' | 'failed';
+            overallProgress: number;
+            currentStage: string;
+          }>>(`/api/campaigns/pipeline-status-batch?campaignIds=${encodeURIComponent(ids)}`);
+
+          // Set pipeline statuses from batch response
+          const newStatuses: Record<string, PipelineStatusResponse> = {};
+          for (const [campaignId, status] of Object.entries(batchStatuses)) {
+            if (status.pipelineStatus === 'running') {
+              // Only start polling for campaigns that are actually running
+              pollPipelineStatus(campaignId);
+            } else {
+              // For non-running campaigns, just set the status directly without polling
+              newStatuses[campaignId] = {
+                campaignId,
+                campaignName: activeCampaigns.find(c => c.id === campaignId)?.name || '',
+                pipelineStatus: status.pipelineStatus,
+                overallProgress: status.overallProgress,
+                currentStage: status.currentStage,
+                stages: {},
+                summary: {
+                  leadsFound: status.totalLeads,
+                  leadsEnriched: 0,
+                  leadsQualified: 0,
+                  leadsContacted: 0,
+                  hotLeads: 0,
+                  warmLeads: 0,
+                  coldLeads: 0,
+                },
+                errors: [],
+              };
+            }
+          }
+          if (Object.keys(newStatuses).length > 0) {
+            setPipelineStatuses(prev => ({ ...prev, ...newStatuses }));
+          }
+        }
+      } catch (batchError) {
+        // Batch endpoint failure should not block the page
+        console.warn('Batch pipeline status check failed, skipping:', batchError);
       }
     } catch (error) {
       console.error('Error loading campaigns:', error);
     } finally {
       setLoading(false);
+      isLoadingRef.current = false;
     }
   };
 
@@ -152,7 +204,7 @@ export function CampaignsView() {
     // Safety: Stop polling after 5 minutes max regardless of status
     const MAX_POLL_DURATION = 5 * 60 * 1000;
     const pollStartTime = Date.now();
-    let pollCount = 0;
+    let consecutiveErrors = 0;
 
     const fetchStatus = async () => {
       // Safety: Stop polling after max duration
@@ -163,11 +215,11 @@ export function CampaignsView() {
         return;
       }
 
-      pollCount++;
       try {
         const status = await safeFetchJSON<PipelineStatusResponse>(
           `/api/campaigns/${campaignId}/pipeline-status`
         );
+        consecutiveErrors = 0; // Reset on success
         setPipelineStatuses(prev => ({
           ...prev,
           [campaignId]: status,
@@ -180,9 +232,10 @@ export function CampaignsView() {
           loadCampaigns();
         }
       } catch (error) {
+        consecutiveErrors++;
         console.error(`Error polling pipeline status for ${campaignId}:`, error);
         // After 5 consecutive errors, stop polling to prevent infinite retry
-        if (pollCount > 20) {
+        if (consecutiveErrors > 5) {
           console.warn(`[Polling] Too many errors for campaign ${campaignId}, stopping`);
           stopPolling(campaignId);
         }
@@ -192,8 +245,9 @@ export function CampaignsView() {
     // Fetch immediately
     fetchStatus();
 
-    // Then poll every 3 seconds
-    pollingTimersRef.current[campaignId] = setInterval(fetchStatus, 3000);
+    // Then poll every 5 seconds (increased from 3 to reduce server load)
+    pollingTimersRef.current[campaignId] = setInterval(fetchStatus, 5000);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const stopPolling = useCallback((campaignId: string) => {
