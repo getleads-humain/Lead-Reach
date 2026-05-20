@@ -47,3 +47,32 @@ Stage Summary:
 - All agent modules and API routes rebuilt
 - Data enrichment feature restored
 - Platform has 11 sidebar views including new Enrichment section
+
+---
+Task ID: 11
+Agent: Main
+Task: Fix HTTP 502 error in Prospect Discovery Pipeline
+
+Work Log:
+- Diagnosed root cause: the `/api/prospect-discovery/search` route had a simple `callLLM()` function with no rate limiting, no exponential backoff, no HTML error detection, and no timeout guards
+- The research pipeline makes 4-6 sequential network calls (exaSearch, webRead, linkedInSearch, deep research, news, Twitter) that can take 60-120+ seconds, causing the server/proxy to return 502
+- Replaced the simple `callLLM()` with a robust version featuring: rate limiting (3s min between calls), exponential backoff (4s/8s for rate-limit errors, 2s for others), HTML response detection, response structure validation, 2 retries (up from 1)
+- Enhanced `callLLMForJSON()` with retry logic (1 retry on JSON extraction failure)
+- Added `withTimeout<T>()` wrapper function for all external calls with per-step timeouts (20-45s per step, 240s overall)
+- Added `export const maxDuration = 300;` to the search route (5 min for production)
+- Added proper null checks for all `withTimeout` return values (can return null on timeout/error)
+- Added gateway error and rate-limit detection in the POST handler for user-friendly error messages
+- Updated Caddy proxy config with transport timeouts (300s read/write, 30s dial)
+- Frontend: Added 5-minute AbortController timeout for the fetch call
+- Frontend: Added retry button on error messages
+- Frontend: Added `RefreshCw` icon import
+- Removed unused `db` import from search route
+- Created `src/instrumentation.ts` for server-side initialization
+- Tested successfully: "Farm to Cafeteria Canada" returns 65% completeness with all 6 research steps completed
+
+Stage Summary:
+- 502 error is fixed — the pipeline now handles rate limits, gateway errors, and timeouts gracefully
+- Every external call has a timeout guard (20-45s per step, 240s overall)
+- The `callLLM()` is now as robust as the one in `agent-executor.ts`
+- Frontend has a retry button for failed searches
+- Tested and working end-to-end

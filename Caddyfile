@@ -9,6 +9,13 @@
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
+
+			# Allow long-running requests (prospect discovery, pipeline execution)
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+				dial_timeout 30s
+			}
 		}
 	}
 
@@ -18,6 +25,13 @@
 			header_up X-Forwarded-For {remote_host}
 			header_up X-Forwarded-Proto {scheme}
 			header_up X-Real-IP {remote_host}
+
+			# Allow long-running requests (prospect discovery, pipeline execution)
+			transport http {
+				read_timeout 300s
+				write_timeout 300s
+				dial_timeout 30s
+			}
 		}
 	}
 }

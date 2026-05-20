@@ -36,6 +36,7 @@ import {
   DollarSign,
   FileText,
   Star,
+  RefreshCw,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { safeFetchJSON } from '@/lib/utils';
@@ -259,13 +260,18 @@ export function ProspectDiscoveryView() {
     setCurrentSteps([]);
 
     try {
-      // Call the search API - this is a long-running request
-      // We poll for progress updates while it runs
+      // Call the search API - this is a long-running request (up to 5 min)
+      // Add a 5-minute timeout since the research pipeline can take a while
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 minutes
+
       const result = await safeFetchJSON<SearchResult>('/api/prospect-discovery/search', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ query: userQuery }),
+        signal: controller.signal,
       });
+      clearTimeout(timeoutId);
 
       setCurrentSteps(result.steps || []);
 
@@ -313,6 +319,12 @@ export function ProspectDiscoveryView() {
     } catch (error) {
       console.error('Error converting to lead:', error);
     }
+  };
+
+  // Retry a failed search
+  const handleRetry = (originalQuery: string) => {
+    setQuery(originalQuery);
+    setTimeout(() => handleSearch(), 100);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -419,8 +431,27 @@ export function ProspectDiscoveryView() {
                 {/* System Error */}
                 {msg.role === 'system' && (
                   <div className="flex justify-center">
-                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2">
+                    <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 max-w-md">
                       <p className="text-xs text-red-400">{msg.content}</p>
+                      {/* Find the user query that preceded this error */}
+                      {(() => {
+                        const msgIndex = messages.indexOf(msg);
+                        const prevUserMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
+                        if (prevUserMsg) {
+                          return (
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="text-[10px] text-red-300 hover:text-red-200 hover:bg-red-500/10 gap-1 h-6 mt-2"
+                              onClick={() => handleRetry(prevUserMsg.content)}
+                            >
+                              <RefreshCw className="h-3 w-3" />
+                              Retry search
+                            </Button>
+                          );
+                        }
+                        return null;
+                      })()}
                     </div>
                   </div>
                 )}
