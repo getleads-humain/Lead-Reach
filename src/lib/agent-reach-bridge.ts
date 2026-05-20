@@ -311,7 +311,7 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
  * 
  * Agent-Reach Reference: SKILL_en.md → "Web Search (Exa)"
  */
-export async function exaSearch(query: string, numResults = 10): Promise<ToolResult<SearchResult[]>> {
+export async function exaSearch(query: string, numResults = 25): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
 
   // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
@@ -428,7 +428,7 @@ export async function exaSearch(query: string, numResults = 10): Promise<ToolRes
  * Agent-Reach Reference: SKILL_en.md → "GitHub (gh CLI)"
  * Command: gh search repos "query" --sort stars --limit 10
  */
-export async function githubSearchRepos(query: string, limit = 10): Promise<ToolResult<GitHubRepoResult[]>> {
+export async function githubSearchRepos(query: string, limit = 25): Promise<ToolResult<GitHubRepoResult[]>> {
   const channel = 'github';
   try {
     const { stdout } = await runCommand(
@@ -484,7 +484,7 @@ export async function githubViewRepo(ownerRepo: string): Promise<ToolResult<Reco
  * Agent-Reach Reference: SKILL_en.md → "Reddit"
  * Command: curl -s "https://www.reddit.com/search.json?q=QUERY&limit=10"
  */
-export async function redditSearch(query: string, limit = 10): Promise<ToolResult<RedditPostResult[]>> {
+export async function redditSearch(query: string, limit = 25): Promise<ToolResult<RedditPostResult[]>> {
   const channel = 'reddit';
   try {
     const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=${limit}&sort=relevance`;
@@ -535,7 +535,7 @@ export async function redditSearch(query: string, limit = 10): Promise<ToolResul
  * Get hot posts from a subreddit.
  * Command: curl -s "https://www.reddit.com/r/SUBREDDIT/hot.json?limit=10"
  */
-export async function redditSubreddit(subreddit: string, limit = 10): Promise<ToolResult<RedditPostResult[]>> {
+export async function redditSubreddit(subreddit: string, limit = 25): Promise<ToolResult<RedditPostResult[]>> {
   const channel = 'reddit';
   try {
     const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=${limit}`;
@@ -680,7 +680,7 @@ export async function youtubeGetSubtitles(url: string, lang = 'en'): Promise<Too
  * Search YouTube videos.
  * Command: yt-dlp --dump-json "ytsearch5:query"
  */
-export async function youtubeSearch(query: string, limit = 5): Promise<ToolResult<YouTubeResult[]>> {
+export async function youtubeSearch(query: string, limit = 25): Promise<ToolResult<YouTubeResult[]>> {
   const channel = 'youtube';
   try {
     const { stdout } = await runCommand(`yt-dlp --dump-json "ytsearch${limit}:${query}"`, 30000);
@@ -831,7 +831,7 @@ export async function linkedInGetProfile(url: string): Promise<ToolResult<Linked
  * Search LinkedIn people.
  * Multi-source pipeline: mcporter → Exa semantic search → Jina Reader deep read
  */
-export async function linkedInSearchPeople(query: string, limit = 10): Promise<ToolResult<LinkedInProfileResult[]>> {
+export async function linkedInSearchPeople(query: string, limit = 25): Promise<ToolResult<LinkedInProfileResult[]>> {
   const channel = 'linkedin';
   try {
     // Method 1: Try mcporter
@@ -909,7 +909,7 @@ export async function linkedInSearchPeople(query: string, limit = 10): Promise<T
  * Search LinkedIn company pages.
  * Finds company pages, extracting industry, size, and key contact info.
  */
-export async function linkedInSearchCompanies(query: string, limit = 10): Promise<ToolResult<LinkedInProfileResult[]>> {
+export async function linkedInSearchCompanies(query: string, limit = 25): Promise<ToolResult<LinkedInProfileResult[]>> {
   const channel = 'linkedin';
   try {
     // Method 1: Exa semantic search for LinkedIn company pages
@@ -1021,7 +1021,7 @@ export async function linkedInReadCompanyPage(companyUrl: string): Promise<ToolR
  * 
  * Agent-Reach Reference: SKILL_en.md → "Twitter/X (bird)"
  */
-export async function twitterSearch(query: string, limit = 10): Promise<ToolResult<TwitterResult[]>> {
+export async function twitterSearch(query: string, limit = 25): Promise<ToolResult<TwitterResult[]>> {
   const channel = 'twitter';
   try {
     // Method 1: Try bird CLI
@@ -1158,7 +1158,7 @@ export async function twitterReadTweet(tweetUrl: string): Promise<ToolResult<Twi
  * Search for Twitter/X user profiles relevant to a query.
  * Uses Exa to find user profiles matching the search.
  */
-export async function twitterSearchUsers(query: string, limit = 10): Promise<ToolResult<TwitterResult[]>> {
+export async function twitterSearchUsers(query: string, limit = 25): Promise<ToolResult<TwitterResult[]>> {
   const channel = 'twitter';
   try {
     // Search for Twitter profiles
@@ -1234,7 +1234,7 @@ export async function twitterSearchUsers(query: string, limit = 10): Promise<Too
  * Agent-Reach Reference: SKILL_en.md → "RSS (feedparser)"
  * Command: python3 -c "import feedparser; ..."
  */
-export async function rssRead(feedUrl: string, limit = 10): Promise<ToolResult<RSSResult[]>> {
+export async function rssRead(feedUrl: string, limit = 25): Promise<ToolResult<RSSResult[]>> {
   const channel = 'rss';
   try {
     // Use Python feedparser via Agent-Reach toolkit
@@ -1719,7 +1719,7 @@ export function getBilibiliKeyStats() {
  * 
  * Agent-Reach Reference: SKILL_en.md → "V2EX (public API)"
  */
-export async function v2exHotTopics(limit = 10): Promise<ToolResult<V2EXResult[]>> {
+export async function v2exHotTopics(limit = 25): Promise<ToolResult<V2EXResult[]>> {
   const channel = 'v2ex';
   try {
     const response = await fetch('https://www.v2ex.com/api/topics/hot.json', {
@@ -1757,7 +1757,7 @@ export async function v2exHotTopics(limit = 10): Promise<ToolResult<V2EXResult[]
  * 
  * Agent-Reach Reference: SKILL_en.md → "Weibo (mcporter)"
  */
-export async function weiboSearch(keyword: string, limit = 10): Promise<ToolResult<WeiboResult[]>> {
+export async function weiboSearch(keyword: string, limit = 25): Promise<ToolResult<WeiboResult[]>> {
   const channel = 'weibo';
   try {
     // Try mcporter
@@ -1846,83 +1846,170 @@ export async function discoverBusinesses(
   query: string,
   location?: string,
   industry?: string,
+  maxPages: number = 5,
 ): Promise<ToolResult<SearchResult[]>> {
   const fullQuery = location ? `${query} ${location}` : query;
-  const industryQuery = industry ? `${industry} companies ${location || ''}` : fullQuery;
-  
-  // ===== PRIMARY: Use z-ai-web-dev-sdk web_search directly =====
-  // This is the most reliable channel — try it first with multiple query variations
+  const ind = industry || query;
+
+  // Generate 8+ query variations for maximum coverage
+  const searchQueries = [
+    fullQuery,
+    `${ind} companies ${location || ''}`,
+    `${ind} agencies firms ${location || ''}`,
+    `top ${ind} companies ${location || ''} list`,
+    `${ind} businesses directory ${location || ''}`,
+    `best ${ind} services ${location || ''}`,
+    `${query} companies near me ${location || ''}`,
+    `${ind} startups ${location || ''}`,
+    `${ind} providers vendors ${location || ''}`,
+    `${ind} consulting firms ${location || ''}`,
+  ].filter((q, i, arr) => arr.indexOf(q) === i); // deduplicate
+
+  console.log(`[discoverBusinesses] Starting exhaustive deep search with ${searchQueries.length} query variations, maxPages=${maxPages}`);
+
+  const allResults: SearchResult[] = [];
+  const seenUrls = new Set<string>();
+
+  // ===== PRIMARY: Use z-ai-web-dev-sdk web_search with PAGINATION =====
   try {
-    await waitForSdkRateLimit();
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     const zai = await ZAI.create();
-    
-    // Search with multiple query variations for better coverage
-    const searchQueries = [
-      fullQuery,
-      industryQuery,
-      `${industry || query} agencies firms ${location || ''}`,
-      `top ${industry || query} companies ${location || ''} list`,
-    ].filter((q, i, arr) => arr.indexOf(q) === i); // deduplicate
-    
-    const allSdkResults: SearchResult[] = [];
-    
-    for (const searchQuery of searchQueries.slice(0, 2)) { // max 2 queries (reduced from 3 to avoid rate limits)
-      try {
-        await waitForSdkRateLimit(); // Rate limit between queries
-        const searchResult = await zai.functions.invoke('web_search', {
-          query: searchQuery,
-          num: 10,
-        });
-        
-        if (Array.isArray(searchResult) && searchResult.length > 0) {
-          for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
-            // Deduplicate by URL
-            if (item.url && !allSdkResults.some(r => r.url === item.url)) {
-              allSdkResults.push({
-                title: item.name || '',
-                url: item.url,
-                snippet: item.snippet || '',
-              });
+
+    for (const searchQuery of searchQueries) {
+      let previousCount = allResults.length;
+
+      for (let page = 0; page < maxPages; page++) {
+        try {
+          await waitForSdkRateLimit();
+          const searchResult = await zai.functions.invoke('web_search', {
+            query: page === 0 ? searchQuery : `${searchQuery} page ${page + 1}`,
+            num: 50,
+          });
+
+          let newResultsThisPage = 0;
+          if (Array.isArray(searchResult) && searchResult.length > 0) {
+            for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
+              if (item.url && !seenUrls.has(item.url)) {
+                seenUrls.add(item.url);
+                allResults.push({
+                  title: item.name || '',
+                  url: item.url,
+                  snippet: item.snippet || '',
+                });
+                newResultsThisPage++;
+              }
             }
           }
+
+          console.log(`[discoverBusinesses] Query "${searchQuery.slice(0, 50)}" page ${page + 1}: ${newResultsThisPage} new results (total: ${allResults.length})`);
+
+          // If no new results on this page, stop paginating this query
+          if (newResultsThisPage === 0) {
+            break;
+          }
+        } catch (e) {
+          console.warn(`[discoverBusinesses] SDK search failed for "${searchQuery.slice(0, 50)}" page ${page + 1}: ${e instanceof Error ? e.message.slice(0, 100) : 'Unknown'}`);
+          break; // Stop paginating this query on error
         }
-      } catch (e) {
-        console.warn(`[discoverBusinesses] SDK search failed for "${searchQuery}": ${e instanceof Error ? e.message.slice(0, 100) : 'Unknown'}`);
       }
+
+      // Log per-query summary
+      const queryNewResults = allResults.length - previousCount;
+      console.log(`[discoverBusinesses] Query "${searchQuery.slice(0, 50)}" total new: ${queryNewResults}`);
     }
-    
-    if (allSdkResults.length > 0) {
-      console.log(`[discoverBusinesses] SDK web_search found ${allSdkResults.length} unique results`);
-      return makeResult(allSdkResults, 'multi', 'z-ai-web-dev-sdk Multi-query Discovery');
+
+    if (allResults.length > 0) {
+      console.log(`[discoverBusinesses] SDK web_search found ${allResults.length} unique results across all queries and pages`);
+      return makeResult(allResults, 'multi', 'z-ai-web-dev-sdk Exhaustive Deep Discovery');
     }
   } catch (sdkError) {
     console.warn(`[discoverBusinesses] SDK initialization failed: ${sdkError instanceof Error ? sdkError.message.slice(0, 100) : 'Unknown'}`);
   }
 
   // ===== FALLBACK: Traditional multi-channel search =====
-  const [exaResults, redditResults] = await Promise.allSettled([
-    exaSearch(fullQuery, 15),
-    redditSearch(fullQuery, 5),
+  console.log('[discoverBusinesses] SDK primary search returned no results, falling back to multi-channel search');
+  const [exaResults, redditResults, linkedInResults, githubResults, twitterResults, youtubeResults] = await Promise.allSettled([
+    exaSearch(fullQuery, 25),
+    redditSearch(fullQuery, 25),
+    linkedInSearchCompanies(`${ind} ${location || ''}`, 25),
+    githubSearchRepos(`${ind} tool software`, 25),
+    twitterSearch(fullQuery, 25),
+    youtubeSearch(fullQuery, 25),
   ]);
-
-  const allResults: SearchResult[] = [];
 
   // Collect Exa results
   if (exaResults.status === 'fulfilled' && exaResults.value.success) {
-    allResults.push(...exaResults.value.data);
+    for (const r of exaResults.value.data) {
+      if (r.url && !seenUrls.has(r.url)) {
+        seenUrls.add(r.url);
+        allResults.push(r);
+      }
+    }
+    console.log(`[discoverBusinesses] Exa: ${exaResults.value.data.length} results`);
+  }
+
+  // Collect LinkedIn results
+  if (linkedInResults.status === 'fulfilled' && linkedInResults.value.success) {
+    for (const r of linkedInResults.value.data) {
+      if (r.url && !seenUrls.has(r.url)) {
+        seenUrls.add(r.url);
+        allResults.push({ title: r.name, url: r.url, snippet: r.headline });
+      }
+    }
+    console.log(`[discoverBusinesses] LinkedIn: ${linkedInResults.value.data.length} results`);
+  }
+
+  // Collect GitHub results
+  if (githubResults.status === 'fulfilled' && githubResults.value.success) {
+    for (const r of githubResults.value.data) {
+      if (r.url && !seenUrls.has(r.url)) {
+        seenUrls.add(r.url);
+        allResults.push({ title: r.fullName, url: r.url, snippet: r.description });
+      }
+    }
+    console.log(`[discoverBusinesses] GitHub: ${githubResults.value.data.length} results`);
+  }
+
+  // Collect Twitter results
+  if (twitterResults.status === 'fulfilled' && twitterResults.value.success) {
+    for (const r of twitterResults.value.data) {
+      if (r.url && !seenUrls.has(r.url)) {
+        seenUrls.add(r.url);
+        allResults.push({ title: r.author, url: r.url, snippet: r.text?.slice(0, 200) });
+      }
+    }
+    console.log(`[discoverBusinesses] Twitter: ${twitterResults.value.data.length} results`);
   }
 
   // Collect Reddit results
   if (redditResults.status === 'fulfilled' && redditResults.value.success) {
-    allResults.push(...redditResults.value.data.map(r => ({
-      title: r.title,
-      url: r.url,
-      snippet: r.selftext || `r/${r.subreddit} — ${r.score} upvotes`,
-    })));
+    for (const r of redditResults.value.data) {
+      if (r.url && !seenUrls.has(r.url)) {
+        seenUrls.add(r.url);
+        allResults.push({
+          title: r.title,
+          url: r.url,
+          snippet: r.selftext || `r/${r.subreddit} — ${r.score} upvotes`,
+        });
+      }
+    }
+    console.log(`[discoverBusinesses] Reddit: ${redditResults.value.data.length} results`);
   }
 
-  return makeResult(allResults, 'multi', 'Multi-channel discovery (Exa + Reddit)');
+  // Collect YouTube results
+  if (youtubeResults.status === 'fulfilled' && youtubeResults.value.success) {
+    for (const r of youtubeResults.value.data) {
+      const ytUrl = `https://youtube.com/watch?v=${r.id}`;
+      if (!seenUrls.has(ytUrl)) {
+        seenUrls.add(ytUrl);
+        allResults.push({ title: r.title, url: ytUrl, snippet: r.description?.slice(0, 200) });
+      }
+    }
+    console.log(`[discoverBusinesses] YouTube: ${youtubeResults.value.data.length} results`);
+  }
+
+  console.log(`[discoverBusinesses] Multi-channel fallback found ${allResults.length} unique results`);
+  return makeResult(allResults, 'multi', 'Multi-channel discovery (Exa + LinkedIn + GitHub + Twitter + Reddit + YouTube)');
 }
 
 /**

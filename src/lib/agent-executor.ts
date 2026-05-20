@@ -109,7 +109,7 @@ async function waitForRateLimit() {
   lastLLMCallTime = Date.now();
 }
 
-async function callLLM(systemPrompt: string, userMessage: string, retries = 1): Promise<string> {
+export async function callLLM(systemPrompt: string, userMessage: string, retries = 1): Promise<string> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       // Rate limit: wait before making the call
@@ -191,7 +191,7 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 1): 
  * 4. Retry up to 2 times with a more explicit prompt
  * 5. Return a safe default structure instead of crashing
  */
-async function callLLMForJSON<T>(systemPrompt: string, userMessage: string, defaultValue?: T): Promise<T> {
+export async function callLLMForJSON<T>(systemPrompt: string, userMessage: string, defaultValue?: T): Promise<T> {
   const MAX_RETRIES = 1;
   let lastError: Error | null = null;
 
@@ -235,7 +235,7 @@ async function callLLMForJSON<T>(systemPrompt: string, userMessage: string, defa
 /**
  * Extract JSON from a string using multiple strategies.
  */
-function extractJSONFromString<T>(response: string): T | null {
+export function extractJSONFromString<T>(response: string): T | null {
   if (!response || !response.trim()) return null;
 
   // Guard: If the response is HTML (from an API gateway error page), skip parsing
@@ -625,10 +625,13 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
       error: discoveryResult.error,
     });
 
-    // Also search LinkedIn and Twitter in parallel for additional coverage
-    const [linkedInCompanyRes, redditRes] = await Promise.allSettled([
-      AgentReachToolkit.linkedInSearchCompanies(`${industry} ${location} company`, 10),
-      AgentReachToolkit.redditSearch(searchQuery, 5),
+    // Also search LinkedIn, GitHub, Twitter, YouTube, Reddit in parallel for additional coverage
+    const [linkedInCompanyRes, redditRes, githubRes, twitterRes, youtubeRes] = await Promise.allSettled([
+      AgentReachToolkit.linkedInSearchCompanies(`${industry} ${location} company`, 25),
+      AgentReachToolkit.redditSearch(searchQuery, 25),
+      AgentReachToolkit.githubSearchRepos(`${industry || query} tool software`, 25),
+      AgentReachToolkit.twitterSearch(searchQuery, 25),
+      AgentReachToolkit.youtubeSearch(searchQuery, 25),
     ]);
 
     const recordActivity = (result: PromiseSettledResult<ToolResult<unknown>>, channel: string, operation: string) => {
@@ -648,6 +651,9 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
 
     recordActivity(linkedInCompanyRes, 'linkedin', 'search_companies');
     recordActivity(redditRes, 'reddit', 'search');
+    recordActivity(githubRes, 'github', 'search_repos');
+    recordActivity(twitterRes, 'twitter', 'search');
+    recordActivity(youtubeRes, 'youtube', 'search');
 
     await updateTaskProgress(ctx.taskId, 40, 'running');
 
@@ -667,6 +673,7 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
         url: r.url,
         snippet: r.headline,
       })));
+      console.log(`[ProspectDiscovery] LinkedIn returned ${linkedInCompanyRes.value.data.length} results`);
     }
     
     // Reddit results
@@ -676,6 +683,37 @@ async function executeProspectDiscovery(ctx: AgentExecutionContext): Promise<Age
         url: r.url,
         snippet: r.selftext || `r/${r.subreddit}`,
       })));
+      console.log(`[ProspectDiscovery] Reddit returned ${redditRes.value.data.length} results`);
+    }
+
+    // GitHub results
+    if (githubRes.status === 'fulfilled' && githubRes.value.success) {
+      rawResults.push(...githubRes.value.data.map(r => ({
+        title: r.fullName,
+        url: r.url,
+        snippet: r.description,
+      })));
+      console.log(`[ProspectDiscovery] GitHub returned ${githubRes.value.data.length} results`);
+    }
+
+    // Twitter results
+    if (twitterRes.status === 'fulfilled' && twitterRes.value.success) {
+      rawResults.push(...twitterRes.value.data.map(r => ({
+        title: r.author,
+        url: r.url,
+        snippet: r.text?.slice(0, 200) || '',
+      })));
+      console.log(`[ProspectDiscovery] Twitter returned ${twitterRes.value.data.length} results`);
+    }
+
+    // YouTube results
+    if (youtubeRes.status === 'fulfilled' && youtubeRes.value.success) {
+      rawResults.push(...youtubeRes.value.data.map(r => ({
+        title: r.title,
+        url: `https://youtube.com/watch?v=${r.id}`,
+        snippet: r.description?.slice(0, 200) || '',
+      })));
+      console.log(`[ProspectDiscovery] YouTube returned ${youtubeRes.value.data.length} results`);
     }
 
     // Deduplicate by URL
@@ -726,11 +764,98 @@ IMPORTANT RULES:
 - Deduplicate companies that appear multiple times
 - Include AT LEAST 5 companies if the search results contain any business-related content`;
 
-      companies = await callLLMForJSON<Array<Record<string, unknown>>>(
-        extractionPrompt,
-        `Search query: "${searchQuery}"\n\nSearch results:\n${JSON.stringify(dedupedResults.slice(0, 30))}`,
-        [],
-      );
+      // Process ALL results in batches of 50 to avoid LLM token limits
+      const BATCH_SIZE = 50;
+      const allExtractedCompanies: Array<Record<string, unknown>> = [];
+      for (let batchStart = 0; batchStart < dedupedResults.length; batchStart += BATCH_SIZE) {
+        const batch = dedupedResults.slice(batchStart, batchStart + BATCH_SIZE);
+        const batchCompanies = await callLLMForJSON<Array<Record<string, unknown>>>(
+          extractionPrompt,
+          `Search query: "${searchQuery}" (batch ${Math.floor(batchStart / BATCH_SIZE) + 1}/${Math.ceil(dedupedResults.length / BATCH_SIZE)})\n\nSearch results:\n${JSON.stringify(batch)}`,
+          [],
+        );
+        allExtractedCompanies.push(...batchCompanies);
+        console.log(`[ProspectDiscovery] LLM extraction batch ${Math.floor(batchStart / BATCH_SIZE) + 1}: extracted ${batchCompanies.length} companies (total: ${allExtractedCompanies.length})`);
+      }
+      companies = allExtractedCompanies;
+
+      // ===== MULTI-ROUND DEEP SEARCH =====
+      // After first round of LLM extraction, use the LLM to identify sub-categories/niches
+      // and generate additional targeted search queries for those sub-categories
+      if (companies.length > 0 && dedupedResults.length > 0) {
+        try {
+          const subQueryPrompt = `You are a B2B lead generation expert. Given the following search query and extracted companies, identify 3-5 specific sub-categories, niches, or market segments that could yield ADDITIONAL companies not yet found.
+
+Search query: "${searchQuery}"
+Industry: "${industry}"
+Location: "${location}"
+
+Companies already found (${companies.length}):
+${companies.slice(0, 20).map(c => `- ${(c.companyName as string) || 'Unknown'}`).join('\n')}
+
+Return a JSON array of sub-query strings for targeted searches:
+["sub-category 1 companies location", "niche 2 firms location", ...]
+
+IMPORTANT: Each sub-query should target a DIFFERENT segment than what's already found. Be specific and creative.`;
+
+          const subQueries = await callLLMForJSON<string[]>(subQueryPrompt, `Generate sub-queries for: ${searchQuery}`, []);
+
+          if (subQueries.length > 0) {
+            console.log(`[ProspectDiscovery] Multi-round deep search: generated ${subQueries.length} sub-queries: ${subQueries.join(', ')}`);
+
+            // Execute sub-queries across multiple channels
+            const existingCompanyNames = new Set(companies.map(c => ((c.companyName as string) || '').toLowerCase()));
+            const subQueryResults: SearchResult[] = [];
+
+            for (const subQ of subQueries.slice(0, 5)) { // max 5 sub-queries
+              try {
+                const subDiscovery = await discoverBusinesses(subQ, location, industry);
+                if (subDiscovery.success && Array.isArray(subDiscovery.data)) {
+                  subQueryResults.push(...subDiscovery.data);
+                }
+              } catch {
+                // Continue with other sub-queries
+              }
+            }
+
+            // Also search LinkedIn and Twitter for sub-queries
+            const [subLinkedIn, subTwitter] = await Promise.allSettled([
+              AgentReachToolkit.linkedInSearchCompanies(`${industry} ${subQueries[0] || ''}`, 25),
+              AgentReachToolkit.twitterSearch(subQueries.slice(0, 2).join(' OR '), 25),
+            ]);
+
+            if (subLinkedIn.status === 'fulfilled' && subLinkedIn.value.success) {
+              subQueryResults.push(...subLinkedIn.value.data.map(r => ({ title: r.name, url: r.url, snippet: r.headline })));
+            }
+            if (subTwitter.status === 'fulfilled' && subTwitter.value.success) {
+              subQueryResults.push(...subTwitter.value.data.map(r => ({ title: r.author, url: r.url, snippet: r.text?.slice(0, 200) || '' })));
+            }
+
+            // Extract companies from sub-query results
+            if (subQueryResults.length > 0) {
+              const subExtracted = await callLLMForJSON<Array<Record<string, unknown>>>(
+                extractionPrompt,
+                `Sub-query search results for: "${searchQuery}"\n\nSearch results:\n${JSON.stringify(subQueryResults.slice(0, 50))}`,
+                [],
+              );
+
+              // Only add NEW companies not already found
+              let newFromSubQueries = 0;
+              for (const company of subExtracted) {
+                const name = ((company.companyName as string) || '').toLowerCase();
+                if (name && !existingCompanyNames.has(name)) {
+                  existingCompanyNames.add(name);
+                  companies.push(company);
+                  newFromSubQueries++;
+                }
+              }
+              console.log(`[ProspectDiscovery] Multi-round deep search: found ${newFromSubQueries} additional unique companies from sub-queries (total: ${companies.length})`);
+            }
+          }
+        } catch (deepSearchError) {
+          console.warn(`[ProspectDiscovery] Multi-round deep search failed: ${deepSearchError instanceof Error ? deepSearchError.message.slice(0, 100) : 'Unknown'}`);
+        }
+      }
 
       // RESILIENCE: If LLM extraction returned 0 companies from search results,
       // fall back to LLM knowledge generation
@@ -834,9 +959,11 @@ async function executeDataEnrichment(ctx: AgentExecutionContext): Promise<AgentE
     await updateTaskProgress(ctx.taskId, 10, 'running');
 
     // Get leads that need enrichment (stage = 'new', missing contact data)
+    // Process ALL leads in batches — no artificial cap
+    const BATCH_SIZE = 500;
     const leads = campaignId
-      ? await db.lead.findMany({ where: { campaignId, stage: 'new' }, take: 20 })
-      : await db.lead.findMany({ where: { stage: 'new' }, take: 20 });
+      ? await db.lead.findMany({ where: { campaignId, stage: 'new' }, take: BATCH_SIZE })
+      : await db.lead.findMany({ where: { stage: 'new' }, take: BATCH_SIZE });
 
     if (leads.length === 0) {
       await updateTaskProgress(ctx.taskId, 100, 'completed', { enriched: 0, message: 'No new leads to enrich' });
@@ -1203,7 +1330,7 @@ async function executeLeadQualification(ctx: AgentExecutionContext): Promise<Age
         ...(campaignId ? { campaignId } : {}),
         stage: 'enriched',
       },
-      take: 30,
+      take: 500,
     });
 
     // RESILIENCE: If no enriched leads but there are new leads, qualify them directly
@@ -1213,7 +1340,7 @@ async function executeLeadQualification(ctx: AgentExecutionContext): Promise<Age
           ...(campaignId ? { campaignId } : {}),
           stage: 'new',
         },
-        take: 30,
+        take: 500,
       });
       
       if (newLeads.length > 0) {
@@ -1400,7 +1527,7 @@ async function executeOutreachComposer(ctx: AgentExecutionContext): Promise<Agen
         stage: 'qualified',
         leadTier: { in: ['hot', 'warm'] },
       },
-      take: 15,
+      take: 500,
     });
 
     // RESILIENCE: If no hot/warm leads, include cold leads too
@@ -1411,7 +1538,7 @@ async function executeOutreachComposer(ctx: AgentExecutionContext): Promise<Agen
           stage: 'qualified',
           leadTier: 'cold',
         },
-        take: 15,
+        take: 500,
       });
       
       if (coldLeads.length > 0) {
@@ -2312,7 +2439,7 @@ export async function runFullPipelineLightweight(
 
     // Enrich leads using LLM (no external API calls)
     const leads = pipelineCampaignId
-      ? await db.lead.findMany({ where: { campaignId: pipelineCampaignId, stage: 'new' }, take: 20 })
+      ? await db.lead.findMany({ where: { campaignId: pipelineCampaignId, stage: 'new' }, take: 500 })
       : [];
 
     let enrichedCount = 0;
@@ -2401,7 +2528,7 @@ Return JSON with these fields:
     await db.agentTask.update({ where: { id: qualificationTask.id }, data: { status: 'running', startedAt: new Date(), progress: 10 } });
 
     const enrichedLeads = pipelineCampaignId
-      ? await db.lead.findMany({ where: { campaignId: pipelineCampaignId, stage: 'enriched' }, take: 20 })
+      ? await db.lead.findMany({ where: { campaignId: pipelineCampaignId, stage: 'enriched' }, take: 500 })
       : [];
 
     let qualifiedCount = 0;
@@ -2471,7 +2598,7 @@ Return JSON with these fields:
     await db.agentTask.update({ where: { id: outreachTask.id }, data: { status: 'running', startedAt: new Date(), progress: 10 } });
 
     const qualifiedLeads = pipelineCampaignId
-      ? await db.lead.findMany({ where: { campaignId: pipelineCampaignId, leadTier: { in: ['hot', 'warm'] } }, take: 10 })
+      ? await db.lead.findMany({ where: { campaignId: pipelineCampaignId, leadTier: { in: ['hot', 'warm'] } }, take: 500 })
       : [];
 
     let contactedCount = 0;
