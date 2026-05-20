@@ -15,7 +15,7 @@ import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment-view';
 import { useAppStore } from '@/lib/store';
 
-export default function AppPage() {
+export default function PlatformPage() {
   const { activeView } = useAppStore();
 
   const renderView = () => {

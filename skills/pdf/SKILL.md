@@ -3,7 +3,7 @@ name: pdf
 metadata:
   author: Z.AI
   version: "1.0"
-description: "Professional PDF toolkit with four production lines: (1) Report - structured documents via ReportLab (reports, proposals, contracts, white papers) (2) Creative - visual design via JSON Blueprint → design_engine.py → Playwright snapshot (posters, infographics, invitations, dashboards). The LLM acts as Art Director outputting ONLY JSON spatial blueprints; convert.blueprint compiles to pixel-perfect PDF. (3) Academic - scholarly work via LaTeX/Tectonic (papers, theses, math-heavy documents) (4) Process - manipulate existing PDFs (extract, merge, split, fill forms, convert) Auto-routes based on document type. Includes ATS/creative/academic resume sub-paths.
+description: Professional PDF toolkit with four production lines: (1) Report - structured documents via ReportLab (reports, proposals, contracts, white papers) (2) Creative - visual design via JSON Blueprint → design_engine.py → Playwright snapshot (posters, infographics, invitations, dashboards). The LLM acts as Art Director outputting ONLY JSON spatial blueprints; convert.blueprint compiles to pixel-perfect PDF. (3) Academic - scholarly work via LaTeX/Tectonic (papers, theses, math-heavy documents) (4) Process - manipulate existing PDFs (extract, merge, split, fill forms, convert) Auto-routes based on document type. Includes ATS/creative/academic resume sub-paths.
 license: Proprietary. LICENSE.txt has complete terms
 ---
 

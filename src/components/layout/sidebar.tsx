@@ -17,6 +17,7 @@ import {
   Calendar,
   MessageCircle,
   TrendingUp,
+  Database,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -32,6 +33,7 @@ const navItems: NavItem[] = [
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { view: 'campaigns', label: 'Campaigns', icon: Target },
   { view: 'leads', label: 'Leads', icon: Users },
+  { view: 'data-enrichment', label: 'Enrichment', icon: Database },
   { view: 'agents', label: 'Agents', icon: Bot },
   { view: 'setter', label: 'AI Setter', icon: Heart },
   { view: 'booking', label: 'Bookings', icon: Calendar },
