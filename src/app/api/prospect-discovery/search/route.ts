@@ -124,7 +124,7 @@ async function waitForLLMRateLimit() {
   lastLLMCallTime = Date.now();
 }
 
-async function callLLM(systemPrompt: string, userMessage: string, retries = 3): Promise<string> {
+async function callLLM(systemPrompt: string, userMessage: string, retries = 3): Promise<string | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       // Rate limit: wait before making the call
@@ -169,16 +169,19 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 3): 
       const errorName = error instanceof Error ? error.name : '';
 
       // Detect HTML response errors (API gateway returning HTML error pages instead of JSON)
+      // The z-ai-web-dev-sdk internally calls JSON.parse() on the API response.
+      // When the API gateway returns HTML (502 error page), JSON.parse throws SyntaxError.
       const isHtmlResponseError = (
-        (msg.includes('Unexpected token') && msg.includes('is not valid JSON') &&
-          (msg.includes('<html') || msg.includes('<!DOCTYPE') || msg.includes('"<html')))
-        || (errorName === 'SyntaxError' && (msg.includes('<') || msg.includes('html') || msg.includes('HTML')))
+        msg.includes('Unexpected token')
+        || (errorName === 'SyntaxError')
         || msg.includes('HTML instead of')
         || msg.includes('HTML error page')
         || msg.includes('invalid response structure')
+        || msg.includes('is not valid JSON')
+        || msg.includes('fetch failed')
       );
 
-      const isGateway502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('gateway error');
+      const isGateway502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('gateway error') || msg.includes('Service Unavailable');
       const isRateLimited = isHtmlResponseError || msg.includes('429') || msg.includes('Too many requests') || isGateway502;
 
       if (isRateLimited || isGateway502) {
@@ -200,20 +203,27 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 3): 
         continue;
       }
 
-      console.error('[callLLM] All retries exhausted:', msg.slice(0, 200));
-      throw new Error(`LLM call failed after ${retries + 1} attempts: ${msg.slice(0, 200)}`);
+      // IMPORTANT: Instead of throwing, return null so the pipeline can continue with partial data
+      console.error('[callLLM] All retries exhausted, returning null instead of throwing:', msg.slice(0, 200));
+      return null;
     }
   }
   return '';
 }
 
-async function callLLMForJSON<T>(systemPrompt: string, userMessage: string): Promise<T> {
+async function callLLMForJSON<T>(systemPrompt: string, userMessage: string): Promise<T | null> {
   const MAX_JSON_RETRIES = 1;
   let lastError: Error | null = null;
 
   for (let attempt = 0; attempt <= MAX_JSON_RETRIES; attempt++) {
     try {
       const response = await callLLM(systemPrompt, userMessage);
+
+      // If callLLM returned null (all retries exhausted), return null gracefully
+      if (response === null || response === undefined) {
+        console.warn('[callLLMForJSON] callLLM returned null — LLM was unavailable, skipping extraction');
+        return null;
+      }
 
       // Strategy 1: Find JSON in markdown code blocks
       const codeBlockMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
@@ -240,7 +250,9 @@ async function callLLMForJSON<T>(systemPrompt: string, userMessage: string): Pro
     }
   }
 
-  throw lastError || new Error('Could not extract JSON from LLM response');
+  // Return null instead of throwing — let the pipeline continue with partial data
+  console.warn('[callLLMForJSON] Could not extract JSON after all retries, returning null');
+  return null;
 }
 
 // ============================================================
@@ -300,9 +312,12 @@ Be precise. Only include information explicitly stated in the content.`,
 
         if (extracted) {
           safeMerge(prospect, extracted);
+          steps[steps.length - 1].status = 'completed';
+          steps[steps.length - 1].message = 'Extracted company data from web sources';
+        } else {
+          steps[steps.length - 1].status = 'completed';
+          steps[steps.length - 1].message = 'AI extraction temporarily unavailable — web data saved';
         }
-        steps[steps.length - 1].status = 'completed';
-        steps[steps.length - 1].message = 'Extracted company data from web sources';
       }
     } else {
       steps[steps.length - 1].status = 'completed';
@@ -489,9 +504,12 @@ Use null for anything not found.`, readResult.data.content.slice(0, 8000)), 45_0
           keyContactTitle: extracted.keyContactTitle || null,
           keyContactEmail: extracted.keyContactEmail || null,
         });
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Extracted data from webpage';
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'AI extraction temporarily unavailable — page data saved';
       }
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Extracted data from webpage';
 
       // Step 3: If company found, do deep research (45s timeout)
       if (prospect.companyName) {
@@ -798,6 +816,9 @@ function withTimeout<T>(fn: () => Promise<T>, ms: number, label: string): Promis
 }
 
 export async function POST(request: NextRequest) {
+  // Define steps outside try block so it's always accessible in catch
+  const steps: ResearchStep[] = [];
+
   try {
     const body = await request.json();
     const { query } = body as { query: string };
@@ -808,7 +829,6 @@ export async function POST(request: NextRequest) {
 
     const trimmedQuery = query.trim();
     const queryType = detectQueryType(trimmedQuery);
-    const steps: ResearchStep[] = [];
 
     // Initial classification step
     steps.push({
@@ -845,6 +865,8 @@ export async function POST(request: NextRequest) {
       steps.push({ step: 'timeout', status: 'failed', message: 'Research timed out — returning partial results' });
     }
 
+    // ALWAYS return success with whatever data we have (even if partial)
+    // This ensures the frontend never gets a non-JSON response
     return NextResponse.json({
       success: true,
       query: trimmedQuery,
@@ -853,40 +875,61 @@ export async function POST(request: NextRequest) {
       steps,
     });
   } catch (error) {
-    console.error('Prospect discovery error:', error);
+    console.error('[Prospect Discovery] Unhandled error:', error);
 
     // Detect specific error types for better error messages
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    const isGateway502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('gateway error') || msg.includes('HTML error') || msg.includes('invalid response structure');
+
+    // Check for HTML/gateway errors (SDK SyntaxError when API returns HTML)
+    const isHtmlOrGatewayError = (
+      msg.includes('Unexpected token')
+      || msg.includes('SyntaxError')
+      || msg.includes('is not valid JSON')
+      || msg.includes('502')
+      || msg.includes('Bad Gateway')
+      || msg.includes('gateway error')
+      || msg.includes('HTML error')
+      || msg.includes('HTML instead of')
+      || msg.includes('invalid response structure')
+    );
     const isRateLimitError = msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit');
 
-    if (isGateway502) {
-      // Return 503 Service Unavailable so the frontend can auto-retry
+    // IMPORTANT: Always return JSON, never let the server return HTML error pages
+    // This prevents the "Unexpected token '<'" SyntaxError in the browser
+    if (isHtmlOrGatewayError) {
       return NextResponse.json({
-        error: 'The AI service gateway is temporarily overloaded. This is usually resolved within a few seconds.',
+        success: false,
+        error: 'The AI service is temporarily busy. Your research was partially completed — please try again in a few seconds for full results.',
         partialSteps: steps,
         retryable: true,
+        query: '',
+        queryType: 'unknown',
+        prospect: null,
       }, { status: 503 });
     }
 
-    let userMessage = 'Failed to research prospect';
     if (isRateLimitError) {
-      userMessage = 'Too many requests — the AI service is rate limiting us. Please wait a moment and try again.';
-    }
-
-    // For non-502 errors, still try to return partial steps if we have them
-    if (steps.length > 0) {
       return NextResponse.json({
-        error: userMessage,
-        details: msg.slice(0, 500),
+        success: false,
+        error: 'Too many requests — please wait a moment and try again.',
         partialSteps: steps,
-        retryable: isRateLimitError,
-      }, { status: isRateLimitError ? 429 : 500 });
+        retryable: true,
+        query: '',
+        queryType: 'unknown',
+        prospect: null,
+      }, { status: 429 });
     }
 
+    // Generic error — still return JSON
     return NextResponse.json({
-      error: userMessage,
-      details: msg.slice(0, 500),
-    }, { status: isRateLimitError ? 429 : 500 });
+      success: false,
+      error: 'Research encountered an error. Please try again.',
+      details: msg.slice(0, 300),
+      partialSteps: steps,
+      retryable: true,
+      query: '',
+      queryType: 'unknown',
+      prospect: null,
+    }, { status: 500 });
   }
 }

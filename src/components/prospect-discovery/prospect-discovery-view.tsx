@@ -260,12 +260,11 @@ export function ProspectDiscoveryView() {
     setIsSearching(true);
     setCurrentSteps([]);
 
-    const MAX_ATTEMPTS = 2; // 1 initial + 1 auto-retry
+    const MAX_ATTEMPTS = 3; // 1 initial + 2 auto-retries
 
     for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
       try {
         // Call the search API - this is a long-running request (up to 5 min)
-        // Add a 5-minute timeout since the research pipeline can take a while
         const controller = new AbortController();
         const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 minutes
 
@@ -280,26 +279,35 @@ export function ProspectDiscoveryView() {
         setCurrentSteps(result.steps || []);
 
         // Add assistant message with results
+        // Handle both success and partial results
+        const hasProspectData = result.success && result.prospect;
         const assistantMsg: ChatMessage = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
-          content: result.success
-            ? `Found comprehensive data for "${result.query}" (${result.queryType}). Data completeness: ${result.prospect.dataCompleteness}%`
-            : `Could not find sufficient data for "${result.query}". Try a more specific query.`,
+          content: hasProspectData
+            ? `Found data for "${result.query}" (${result.queryType}). Data completeness: ${result.prospect.dataCompleteness}%`
+            : `Could not find sufficient data for "${result.query || userQuery}". Try a more specific query.`,
           timestamp: new Date(),
-          result: result.success ? result : undefined,
+          result: hasProspectData ? result : undefined,
         };
         setMessages(prev => [...prev, assistantMsg]);
         break; // Success — exit retry loop
 
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
-        const isRetryable = msg.includes('502') || msg.includes('503') || msg.includes('Server error') || msg.includes('gateway');
+        // Detect retryable errors: 502, 503, gateway, HTML responses, network errors, SyntaxError
+        const isRetryable = (
+          msg.includes('502') || msg.includes('503') || msg.includes('Server error')
+          || msg.includes('gateway') || msg.includes('overloaded') || msg.includes('unavailable')
+          || msg.includes('HTML') || msg.includes('not valid JSON') || msg.includes('Unexpected token')
+          || msg.includes('Network error') || msg.includes('fetch')
+        );
 
         if (isRetryable && attempt < MAX_ATTEMPTS - 1) {
-          // Show "Retrying..." message
-          setCurrentSteps([{ step: 'retry', status: 'running', message: 'Server temporarily busy — automatically retrying...' }]);
-          await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds
+          // Show "Retrying..." message with increasing delay
+          const retryDelay = (attempt + 1) * 5000; // 5s, 10s
+          setCurrentSteps([{ step: 'retry', status: 'running', message: `Server temporarily busy — retrying in ${retryDelay / 1000}s... (attempt ${attempt + 2}/${MAX_ATTEMPTS})` }]);
+          await new Promise(r => setTimeout(r, retryDelay));
           continue; // Retry
         }
 
