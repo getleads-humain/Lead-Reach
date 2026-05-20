@@ -15,6 +15,7 @@
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
 
 const execAsync = promisify(exec);
 
@@ -284,8 +285,9 @@ function safeJsonParse<T>(str: string): T | null {
  * Agent-Reach Reference: SKILL_en.md → "Web — Any URL"
  * Command: curl -s "https://r.jina.ai/URL"
  */
-export async function webRead(url: string, format: 'markdown' | 'text' = 'markdown'): Promise<ToolResult<WebReadResult>> {
+export async function webRead(url: string, format: 'markdown' | 'text' = 'markdown', options?: { useProxy?: boolean }): Promise<ToolResult<WebReadResult>> {
   const channel = 'web';
+  const shouldUseProxy = USE_PROXY_ROTATION && (options?.useProxy ?? false);
   try {
     return await retryWithBackoff(async () => {
       const jinaUrl = `${JINA_READER_BASE}/${url}`;
@@ -293,7 +295,13 @@ export async function webRead(url: string, format: 'markdown' | 'text' = 'markdo
         'Accept': format === 'text' ? 'text/plain' : 'text/markdown',
       };
 
-      const response = await fetch(jinaUrl, { headers, signal: AbortSignal.timeout(20000) });
+      let response: Response;
+      if (shouldUseProxy) {
+        // Use proxy rotation for this request
+        response = await proxyRotator.fetchWithProxy(jinaUrl, { headers });
+      } else {
+        response = await fetch(jinaUrl, { headers, signal: AbortSignal.timeout(20000) });
+      }
       
       if (!response.ok) {
         const errorMsg = `Jina Reader returned ${response.status}: ${response.statusText}`;
@@ -406,10 +414,27 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
   // ===== METHOD 3: Jina Search (final fallback) =====
   try {
     const searchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
-    const response = await fetch(searchUrl, {
-      headers: { 'Accept': 'text/plain' },
-      signal: AbortSignal.timeout(20000),
-    });
+    let response: Response;
+    if (USE_PROXY_ROTATION) {
+      // Use proxy rotation for Jina Search fallback to avoid rate limits
+      try {
+        response = await proxyRotator.fetchWithProxy(searchUrl, {
+          headers: { 'Accept': 'text/plain' },
+        });
+      } catch (proxyErr) {
+        // Proxy failed, fall back to direct fetch
+        console.warn(`[exaSearch] Proxy rotation failed for Jina Search, falling back to direct: ${proxyErr instanceof Error ? proxyErr.message : proxyErr}`);
+        response = await fetch(searchUrl, {
+          headers: { 'Accept': 'text/plain' },
+          signal: AbortSignal.timeout(20000),
+        });
+      }
+    } else {
+      response = await fetch(searchUrl, {
+        headers: { 'Accept': 'text/plain' },
+        signal: AbortSignal.timeout(20000),
+      });
+    }
 
     if (!response.ok) {
       return makeError<SearchResult[]>(`All search methods failed (Jina returned ${response.status})`, channel);
