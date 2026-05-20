@@ -76,3 +76,37 @@ Stage Summary:
 - The `callLLM()` is now as robust as the one in `agent-executor.ts`
 - Frontend has a retry button for failed searches
 - Tested and working end-to-end
+
+---
+Task ID: 11b
+Agent: Main
+Task: Fix intermittent HTTP 502 error in Prospect Discovery Pipeline (round 2)
+
+Work Log:
+- **route.ts changes:**
+  - Increased `callLLM` retries from 2 to 3 (total 4 attempts)
+  - Added specific 502/Bad Gateway detection with longer backoff: 6s, 12s, 18s for 502s vs 4s, 8s, 12s for 429s vs 2s for other errors
+  - Added `isGateway502` detection in the POST handler catch block
+  - When a 502/gateway error occurs, returns HTTP 503 with `{ error, partialSteps, retryable: true }` so the frontend can auto-retry
+  - For other errors, returns partial steps when available so user gets something useful
+- **agent-reach-bridge.ts changes:**
+  - Added `retryWithBackoff<T>()` utility function with 2 retries and specific backoff for 502 (5s, 10s) and 429 (3s, 6s) errors
+  - Wrapped `zai.functions.invoke('web_search', ...)` in `exaSearch()` with `retryWithBackoff`
+  - Wrapped `fetch(jinaUrl, ...)` in `webRead()` with `retryWithBackoff` — also throws on 502/503/429 status codes so retry logic catches them
+  - Increased `SDK_MIN_INTERVAL_MS` from 3000 to 4000 to further reduce 429/502 errors
+  - Added jitter (0-1000ms) to `waitForSdkRateLimit()` to avoid thundering herd effects
+- **prospect-discovery-view.tsx changes:**
+  - Added auto-retry loop in `handleSearch()` with MAX_ATTEMPTS=2 (1 initial + 1 auto-retry)
+  - Detects 502/503/Server error/gateway errors and automatically retries after 5-second delay
+  - Shows "Auto-Retry" step indicator with "Server temporarily busy — automatically retrying..." message during retry
+  - When all retries exhausted for retryable errors, shows friendlier message: "The AI service is temporarily overloaded. Please wait a few seconds and try again."
+  - Added 'retry' to the StepIndicator iconMap
+- Server recompiles without errors, all lint checks pass for modified files
+
+Stage Summary:
+- Backend now has 3 retries for LLM calls with 502-specific longer backoff (6s/12s/18s)
+- Backend returns 503 with retryable flag and partial steps on 502 errors
+- `exaSearch` and `webRead` now have 2 retries with backoff for 502/429 errors
+- SDK rate limit interval increased from 3s to 4s with jitter to prevent thundering herd
+- Frontend auto-retries once on 502/503 errors with "Auto-Retry" indicator
+- All changes are backward-compatible with existing functionality

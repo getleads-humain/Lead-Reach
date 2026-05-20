@@ -135,15 +135,44 @@ const PYTHON_TOOLKIT_PATH = '/home/z/my-project/agent-reach-toolkit';
 
 // Rate limiter for z-ai-web-dev-sdk calls (prevents 429 errors)
 let lastSdkCallTime = 0;
-const SDK_MIN_INTERVAL_MS = 3000; // Minimum 3s between SDK calls (increased to avoid 429)
+const SDK_MIN_INTERVAL_MS = 4000; // Minimum 4s between SDK calls (increased to avoid 429/502)
 
 async function waitForSdkRateLimit() {
   const now = Date.now();
   const elapsed = now - lastSdkCallTime;
   if (elapsed < SDK_MIN_INTERVAL_MS) {
-    await new Promise(r => setTimeout(r, SDK_MIN_INTERVAL_MS - elapsed));
+    // Add jitter to avoid thundering herd effects
+    const jitter = Math.random() * 1000;
+    await new Promise(r => setTimeout(r, SDK_MIN_INTERVAL_MS - elapsed + jitter));
   }
   lastSdkCallTime = Date.now();
+}
+
+// ============================================================
+// Retry with Backoff Utility
+// ============================================================
+
+/**
+ * Retry a function with exponential backoff, specifically designed for
+ * 502 Bad Gateway and 429 Too Many Requests errors.
+ */
+async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 2, label = ''): Promise<T> {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown';
+      const is502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('HTML');
+      if (attempt < maxRetries && (is502 || msg.includes('429'))) {
+        const backoff = is502 ? (attempt + 1) * 5000 : (attempt + 1) * 3000;
+        console.warn(`[retryWithBackoff] "${label}" attempt ${attempt + 1} failed (${msg.slice(0, 100)}). Retrying in ${backoff}ms...`);
+        await new Promise(r => setTimeout(r, backoff));
+        continue;
+      }
+      throw error;
+    }
+  }
+  throw new Error('Should not reach here');
 }
 
 // ============================================================
@@ -258,32 +287,39 @@ function safeJsonParse<T>(str: string): T | null {
 export async function webRead(url: string, format: 'markdown' | 'text' = 'markdown'): Promise<ToolResult<WebReadResult>> {
   const channel = 'web';
   try {
-    const jinaUrl = `${JINA_READER_BASE}/${url}`;
-    const headers: Record<string, string> = {
-      'Accept': format === 'text' ? 'text/plain' : 'text/markdown',
-    };
+    return await retryWithBackoff(async () => {
+      const jinaUrl = `${JINA_READER_BASE}/${url}`;
+      const headers: Record<string, string> = {
+        'Accept': format === 'text' ? 'text/plain' : 'text/markdown',
+      };
 
-    const response = await fetch(jinaUrl, { headers, signal: AbortSignal.timeout(20000) });
-    
-    if (!response.ok) {
-      return makeError<WebReadResult>(`Jina Reader returned ${response.status}: ${response.statusText}`, channel);
-    }
+      const response = await fetch(jinaUrl, { headers, signal: AbortSignal.timeout(20000) });
+      
+      if (!response.ok) {
+        const errorMsg = `Jina Reader returned ${response.status}: ${response.statusText}`;
+        // Throw for 502/503/429 so retryWithBackoff can catch and retry
+        if (response.status === 502 || response.status === 503 || response.status === 429) {
+          throw new Error(errorMsg);
+        }
+        return makeError<WebReadResult>(errorMsg, channel);
+      }
 
-    const content = await response.text();
-    const titleMatch = content.match(/^#\s+(.+)$/m);
-    const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
+      const content = await response.text();
+      const titleMatch = content.match(/^#\s+(.+)$/m);
+      const title = titleMatch ? titleMatch[1].trim() : new URL(url).hostname;
 
-    return makeResult<WebReadResult>(
-      {
-        url,
-        title,
-        content: content.slice(0, 50000), // Cap at 50k chars
-        wordCount: content.split(/\s+/).length,
-      },
-      channel,
-      'Jina Reader',
-      content.slice(0, 2000),
-    );
+      return makeResult<WebReadResult>(
+        {
+          url,
+          title,
+          content: content.slice(0, 50000), // Cap at 50k chars
+          wordCount: content.split(/\s+/).length,
+        },
+        channel,
+        'Jina Reader',
+        content.slice(0, 2000),
+      );
+    }, 2, `webRead(${url.slice(0, 60)})`);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     return makeError<WebReadResult>(`Web read failed: ${msg}`, channel);
@@ -316,13 +352,17 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
 
   // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
   try {
-    await waitForSdkRateLimit();
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
-    const searchResult = await zai.functions.invoke('web_search', {
-      query,
-      num: numResults,
-    });
+    const searchResult = await retryWithBackoff(async () => {
+      await waitForSdkRateLimit();
+      const ZAI = (await import('z-ai-web-dev-sdk')).default;
+      const zai = await ZAI.create();
+      return await zai.functions.invoke('web_search', {
+        query,
+        num: numResults,
+      });
+    }, 2, `exaSearch(web_search: ${query.slice(0, 40)})`);
+
+
 
     if (Array.isArray(searchResult) && searchResult.length > 0) {
       const results: SearchResult[] = searchResult.map((item: { url?: string; name?: string; snippet?: string; rank?: number; date?: string }) => ({

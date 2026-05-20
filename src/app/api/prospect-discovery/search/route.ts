@@ -124,7 +124,7 @@ async function waitForLLMRateLimit() {
   lastLLMCallTime = Date.now();
 }
 
-async function callLLM(systemPrompt: string, userMessage: string, retries = 2): Promise<string> {
+async function callLLM(systemPrompt: string, userMessage: string, retries = 3): Promise<string> {
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       // Rate limit: wait before making the call
@@ -178,17 +178,24 @@ async function callLLM(systemPrompt: string, userMessage: string, retries = 2): 
         || msg.includes('invalid response structure')
       );
 
-      const isRateLimited = isHtmlResponseError || msg.includes('429') || msg.includes('Too many requests');
+      const isGateway502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('gateway error');
+      const isRateLimited = isHtmlResponseError || msg.includes('429') || msg.includes('Too many requests') || isGateway502;
 
-      if (isRateLimited) {
-        console.warn(`[callLLM] Rate limited / gateway error on attempt ${attempt + 1}. ${attempt < retries ? `Retrying with backoff (${(attempt + 1) * 4000}ms)...` : 'All retries exhausted.'}`);
+      if (isRateLimited || isGateway502) {
+        console.warn(`[callLLM] Rate limited / gateway error on attempt ${attempt + 1}. ${attempt < retries ? `Retrying with backoff...` : 'All retries exhausted.'}`);
       } else {
         console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg.slice(0, 300)}`);
       }
 
       if (attempt < retries) {
-        // Exponential backoff — longer for rate-limit errors, shorter for other errors
-        const backoffMs = isRateLimited ? (attempt + 1) * 4000 : 2000;
+        // Exponential backoff — longer for 502/gateway errors, medium for rate-limit, shorter for other errors
+        let backoffMs = 2000;
+        if (isGateway502) {
+          backoffMs = (attempt + 1) * 6000; // 6s, 12s, 18s for 502s
+        } else if (isRateLimited) {
+          backoffMs = (attempt + 1) * 4000; // 4s, 8s, 12s for 429s
+        }
+        console.warn(`[callLLM] Waiting ${backoffMs}ms before retry ${attempt + 2}...`);
         await new Promise(resolve => setTimeout(resolve, backoffMs));
         continue;
       }
@@ -850,14 +857,31 @@ export async function POST(request: NextRequest) {
 
     // Detect specific error types for better error messages
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    const isGatewayError = msg.includes('502') || msg.includes('HTML error') || msg.includes('invalid response structure');
+    const isGateway502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('gateway error') || msg.includes('HTML error') || msg.includes('invalid response structure');
     const isRateLimitError = msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit');
 
+    if (isGateway502) {
+      // Return 503 Service Unavailable so the frontend can auto-retry
+      return NextResponse.json({
+        error: 'The AI service gateway is temporarily overloaded. This is usually resolved within a few seconds.',
+        partialSteps: steps,
+        retryable: true,
+      }, { status: 503 });
+    }
+
     let userMessage = 'Failed to research prospect';
-    if (isGatewayError) {
-      userMessage = 'The AI service is temporarily unavailable (gateway error). Please try again in a few seconds.';
-    } else if (isRateLimitError) {
+    if (isRateLimitError) {
       userMessage = 'Too many requests — the AI service is rate limiting us. Please wait a moment and try again.';
+    }
+
+    // For non-502 errors, still try to return partial steps if we have them
+    if (steps.length > 0) {
+      return NextResponse.json({
+        error: userMessage,
+        details: msg.slice(0, 500),
+        partialSteps: steps,
+        retryable: isRateLimitError,
+      }, { status: isRateLimitError ? 429 : 500 });
     }
 
     return NextResponse.json({

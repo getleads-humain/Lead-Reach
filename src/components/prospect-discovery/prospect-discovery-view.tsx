@@ -130,6 +130,7 @@ function StepIndicator({ step }: { step: ResearchStep }) {
     'news-research': 'News',
     'twitter-search': 'Twitter/X',
     'company-research': 'Company',
+    'retry': 'Auto-Retry',
   };
 
   const label = iconMap[step.step] || step.step;
@@ -259,46 +260,66 @@ export function ProspectDiscoveryView() {
     setIsSearching(true);
     setCurrentSteps([]);
 
-    try {
-      // Call the search API - this is a long-running request (up to 5 min)
-      // Add a 5-minute timeout since the research pipeline can take a while
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 minutes
+    const MAX_ATTEMPTS = 2; // 1 initial + 1 auto-retry
 
-      const result = await safeFetchJSON<SearchResult>('/api/prospect-discovery/search', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query: userQuery }),
-        signal: controller.signal,
-      });
-      clearTimeout(timeoutId);
+    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+      try {
+        // Call the search API - this is a long-running request (up to 5 min)
+        // Add a 5-minute timeout since the research pipeline can take a while
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 minutes
 
-      setCurrentSteps(result.steps || []);
+        const result = await safeFetchJSON<SearchResult>('/api/prospect-discovery/search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: userQuery }),
+          signal: controller.signal,
+        });
+        clearTimeout(timeoutId);
 
-      // Add assistant message with results
-      const assistantMsg: ChatMessage = {
-        id: `assistant-${Date.now()}`,
-        role: 'assistant',
-        content: result.success
-          ? `Found comprehensive data for "${result.query}" (${result.queryType}). Data completeness: ${result.prospect.dataCompleteness}%`
-          : `Could not find sufficient data for "${result.query}". Try a more specific query.`,
-        timestamp: new Date(),
-        result: result.success ? result : undefined,
-      };
-      setMessages(prev => [...prev, assistantMsg]);
-    } catch (error) {
-      const errorMsg: ChatMessage = {
-        id: `error-${Date.now()}`,
-        role: 'system',
-        content: `Research failed: ${error instanceof Error ? error.message : 'Unknown error'}. Please try again.`,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMsg]);
-    } finally {
-      setIsSearching(false);
-      setCurrentSteps([]);
-      inputRef.current?.focus();
+        setCurrentSteps(result.steps || []);
+
+        // Add assistant message with results
+        const assistantMsg: ChatMessage = {
+          id: `assistant-${Date.now()}`,
+          role: 'assistant',
+          content: result.success
+            ? `Found comprehensive data for "${result.query}" (${result.queryType}). Data completeness: ${result.prospect.dataCompleteness}%`
+            : `Could not find sufficient data for "${result.query}". Try a more specific query.`,
+          timestamp: new Date(),
+          result: result.success ? result : undefined,
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+        break; // Success — exit retry loop
+
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        const isRetryable = msg.includes('502') || msg.includes('503') || msg.includes('Server error') || msg.includes('gateway');
+
+        if (isRetryable && attempt < MAX_ATTEMPTS - 1) {
+          // Show "Retrying..." message
+          setCurrentSteps([{ step: 'retry', status: 'running', message: 'Server temporarily busy — automatically retrying...' }]);
+          await new Promise(r => setTimeout(r, 5000)); // Wait 5 seconds
+          continue; // Retry
+        }
+
+        // Non-retryable error or all retries exhausted
+        const errorMsg: ChatMessage = {
+          id: `error-${Date.now()}`,
+          role: 'system',
+          content: isRetryable
+            ? 'The AI service is temporarily overloaded. Please wait a few seconds and try again.'
+            : `Research failed: ${msg}. Please try again.`,
+          timestamp: new Date(),
+        };
+        setMessages(prev => [...prev, errorMsg]);
+        break;
+      }
     }
+
+    setIsSearching(false);
+    setCurrentSteps([]);
+    inputRef.current?.focus();
   };
 
   const handleConvertToLead = async (messageId: string, prospect: ProspectData) => {
