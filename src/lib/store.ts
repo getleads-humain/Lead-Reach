@@ -1,6 +1,6 @@
 import { create } from 'zustand';
-import type { ViewType, AgentInfo, Notification, AgentName } from './types';
-import { AGENT_DEFINITIONS } from './types';
+import type { ViewType, AgentInfo, Notification, AgentName, UserProfile, PortfolioItem } from './types';
+import { AGENT_DEFINITIONS, EMPTY_USER_PROFILE } from './types';
 
 interface AppState {
   activeView: ViewType;
@@ -10,6 +10,7 @@ interface AppState {
   sidebarCollapsed: boolean;
   agentStatuses: Record<AgentName, AgentInfo>;
   notifications: Notification[];
+  userProfile: UserProfile;
 
   setActiveView: (view: ViewType) => void;
   setSelectedCampaignId: (id: string | null) => void;
@@ -20,6 +21,10 @@ interface AppState {
   addNotification: (notification: Omit<Notification, 'id' | 'timestamp' | 'read'>) => void;
   markNotificationRead: (id: string) => void;
   clearNotifications: () => void;
+  setUserProfile: (profile: Partial<UserProfile>) => void;
+  addPortfolioItem: (item: PortfolioItem) => void;
+  removePortfolioItem: (id: string) => void;
+  updatePortfolioItem: (id: string, update: Partial<PortfolioItem>) => void;
 }
 
 const initialAgentStatuses: Record<AgentName, AgentInfo> = Object.fromEntries(
@@ -45,6 +50,7 @@ export const useAppStore = create<AppState>((set) => ({
   sidebarCollapsed: false,
   agentStatuses: initialAgentStatuses,
   notifications: [],
+  userProfile: EMPTY_USER_PROFILE,
 
   setActiveView: (view) => set({ activeView: view }),
   setSelectedCampaignId: (id) => set({ selectedCampaignId: id }),
@@ -77,4 +83,31 @@ export const useAppStore = create<AppState>((set) => ({
       ),
     })),
   clearNotifications: () => set({ notifications: [] }),
+  setUserProfile: (profile) =>
+    set((state) => ({
+      userProfile: { ...state.userProfile, ...profile },
+    })),
+  addPortfolioItem: (item) =>
+    set((state) => ({
+      userProfile: {
+        ...state.userProfile,
+        portfolioItems: [...state.userProfile.portfolioItems, item],
+      },
+    })),
+  removePortfolioItem: (id) =>
+    set((state) => ({
+      userProfile: {
+        ...state.userProfile,
+        portfolioItems: state.userProfile.portfolioItems.filter((i) => i.id !== id),
+      },
+    })),
+  updatePortfolioItem: (id, update) =>
+    set((state) => ({
+      userProfile: {
+        ...state.userProfile,
+        portfolioItems: state.userProfile.portfolioItems.map((i) =>
+          i.id === id ? { ...i, ...update } : i
+        ),
+      },
+    })),
 }));

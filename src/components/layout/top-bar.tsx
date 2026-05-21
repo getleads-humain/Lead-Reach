@@ -9,6 +9,7 @@ import {
   Bell,
   Sparkles,
   Send,
+  Fingerprint,
 } from 'lucide-react';
 import {
   Dialog,
@@ -19,7 +20,7 @@ import {
 import { safeFetchJSON } from '@/lib/utils';
 
 export function TopBar() {
-  const { notifications, sidebarCollapsed } = useAppStore();
+  const { notifications, sidebarCollapsed, setActiveView, userProfile } = useAppStore();
   const [searchOpen, setSearchOpen] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
@@ -82,6 +83,22 @@ export function TopBar() {
           >
             <Sparkles className="h-3.5 w-3.5" />
             <span className="hidden sm:inline text-xs">Ask AI</span>
+          </Button>
+
+          <Button
+            variant="outline"
+            size="sm"
+            className="group relative gap-2 border-violet-500/20 text-violet-400 hover:bg-violet-500/10 hover:text-violet-300 hover:border-violet-500/40 transition-all duration-300 overflow-hidden"
+            onClick={() => setActiveView('identity')}
+          >
+            <span className="absolute inset-0 bg-gradient-to-r from-violet-500/10 via-purple-500/10 to-cyan-500/10 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <Fingerprint className="h-3.5 w-3.5 relative z-10" />
+            <span className="hidden sm:inline text-xs relative z-10">
+              {userProfile.fullName ? 'My Identity' : 'Set Up Identity'}
+            </span>
+            {userProfile.fullName && (
+              <span className="absolute -right-0.5 -top-0.5 h-2 w-2 rounded-full bg-emerald-500 ring-1 ring-background" />
+            )}
           </Button>
 
           <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">

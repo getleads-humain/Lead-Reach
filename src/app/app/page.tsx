@@ -14,6 +14,7 @@ import { MessagingView } from '@/components/messaging/messaging-view';
 import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment-view';
 import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
+import { IdentityView } from '@/components/identity/identity-view';
 import { useAppStore } from '@/lib/store';
 
 export default function AppPage() {
@@ -45,6 +46,8 @@ export default function AppPage() {
         return <DataEnrichmentView />;
       case 'prospect-discovery':
         return <ProspectDiscoveryView />;
+      case 'identity':
+        return <IdentityView />;
       default:
         return <DashboardView />;
     }

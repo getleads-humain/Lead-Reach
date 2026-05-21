@@ -1,4 +1,4 @@
-export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports' | 'setter' | 'booking' | 'messaging' | 'analytics' | 'data-enrichment' | 'prospect-discovery';
+export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports' | 'setter' | 'booking' | 'messaging' | 'analytics' | 'data-enrichment' | 'prospect-discovery' | 'identity';
 
 export type CampaignStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type LeadTier = 'hot' | 'warm' | 'cold' | 'unqualified';
@@ -184,6 +184,65 @@ export const SUPPORTED_LANGUAGES = [
   { code: 'sv', name: 'Swedish' },
   { code: 'da', name: 'Danish' },
 ];
+
+export interface UserProfile {
+  // Personal Identity
+  fullName: string;
+  jobTitle: string;
+  email: string;
+  phone: string;
+  bio: string;
+  location: string;
+  avatarUrl: string;
+  socialLinks: {
+    linkedin: string;
+    twitter: string;
+    github: string;
+    website: string;
+  };
+
+  // Company
+  companyName: string;
+  companyRole: string;
+  companyIndustry: string;
+  companySize: string;
+  companyWebsite: string;
+  companyDescription: string;
+  companyLogoUrl: string;
+
+  // Portfolio
+  portfolioUrl: string;
+  portfolioItems: PortfolioItem[];
+}
+
+export interface PortfolioItem {
+  id: string;
+  title: string;
+  description: string;
+  url: string;
+  imageUrl: string;
+  category: string;
+}
+
+export const EMPTY_USER_PROFILE: UserProfile = {
+  fullName: '',
+  jobTitle: '',
+  email: '',
+  phone: '',
+  bio: '',
+  location: '',
+  avatarUrl: '',
+  socialLinks: { linkedin: '', twitter: '', github: '', website: '' },
+  companyName: '',
+  companyRole: '',
+  companyIndustry: '',
+  companySize: '',
+  companyWebsite: '',
+  companyDescription: '',
+  companyLogoUrl: '',
+  portfolioUrl: '',
+  portfolioItems: [],
+};
 
 export const AI_SETTER_METRICS = {
   humanSetterConversion: { min: 10, max: 20, unit: '%', label: 'Human Setter Avg' },
