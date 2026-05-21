@@ -1,6 +1,7 @@
 import { after } from 'next/server';
 import { NextRequest, NextResponse } from 'next/server';
 import { dispatchAndExecute, runFullPipeline } from '@/lib/agent-executor';
+import { callLLM, extractJSONFromString, MODEL_PRIMARY, MODEL_VISION } from '@/lib/llm';
 import type { AgentName } from '@/lib/types';
 
 /**
@@ -46,10 +47,8 @@ export async function POST(request: NextRequest) {
     }> = [];
 
     try {
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
-
-      const systemPrompt = `You are LeadReach AI, an intelligent lead generation assistant powered by Agent-Reach.
+      const llmResponse = await callLLM({
+        systemPrompt: `You are LeadReach AI, an intelligent lead generation assistant powered by Agent-Reach.
 Agent-Reach gives you real-time access to 17+ internet channels: Web (Jina Reader), Exa Search, LinkedIn, Twitter/X, YouTube, GitHub, Reddit, RSS, V2EX, Weibo, Xueqiu, and more.
 
 When the user asks you to find leads, research companies, or create campaigns, you MUST respond with a JSON execution plan.
@@ -74,32 +73,31 @@ Respond with JSON:
   "targetLocation": "detected location"
 }
 
-For general questions, respond naturally.`;
-
-      const result = await zai.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: message },
-        ],
+For general questions, respond naturally.`,
+        userMessage: message,
         temperature: 0.3,
+        model: MODEL_PRIMARY,
+        useFallback: true,
       });
 
-      // Validate the response is structured correctly (not HTML from gateway)
-      if (!result || !result.choices || !Array.isArray(result.choices)) {
-        throw new Error('LLM API returned an invalid response structure (possible HTML error page from API gateway)');
+      if (llmResponse === null) {
+        throw new Error('LLM call failed — both models returned null');
       }
 
-      responseText = result.choices?.[0]?.message?.content || '';
+      responseText = llmResponse;
 
       // Try to parse the plan from the response
       try {
-        const jsonMatch = responseText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          // Guard: Don't try to parse HTML as JSON
-          const candidate = jsonMatch[0].trim();
-          if (!candidate.startsWith('<') && !candidate.startsWith('<!DOCTYPE')) {
-            plan = JSON.parse(candidate);
-          }
+        const parsed = extractJSONFromString<{
+          intent: string;
+          agents: string[];
+          campaignName?: string;
+          targetIndustry?: string;
+          targetLocation?: string;
+          plan: string[];
+        }>(responseText);
+        if (parsed) {
+          plan = parsed;
         }
       } catch {
         // Not JSON, that's fine

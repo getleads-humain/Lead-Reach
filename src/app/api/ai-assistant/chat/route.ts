@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callLLM, MODEL_PRIMARY, MODEL_VISION } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -22,28 +23,27 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
+    // Build the combined prompt for the centralized LLM utility
+    const combinedSystem = systemPrompt || 'You are a helpful AI assistant.';
+    const lastUserMessage = messages.filter((m: { role: string }) => m.role === 'user').pop();
+    const userContent = lastUserMessage?.content || '';
 
-    const chatMessages = systemPrompt
-      ? [{ role: 'system', content: systemPrompt }, ...messages]
-      : messages;
-
-    const result = await zai.chat.completions.create({
-      messages: chatMessages,
+    const result = await callLLM({
+      systemPrompt: combinedSystem,
+      userMessage: userContent,
       temperature: 0.7,
+      model: MODEL_PRIMARY,
+      useFallback: true,
     });
 
-    if (!result || !result.choices || !Array.isArray(result.choices)) {
+    if (result === null) {
       return NextResponse.json(
-        { error: 'LLM API returned an invalid response structure' },
-        { status: 502 }
+        { error: 'AI service temporarily unavailable' },
+        { status: 503 }
       );
     }
 
-    const response = result.choices?.[0]?.message?.content || '';
-
-    return NextResponse.json({ response });
+    return NextResponse.json({ response: result, models: [MODEL_PRIMARY, MODEL_VISION] });
   } catch (error) {
     console.error('Error in AI chat endpoint:', error);
     return NextResponse.json(

@@ -88,148 +88,70 @@ export interface FullPipelineResult {
 }
 
 // ============================================================
-// LLM Integration via z-ai-web-dev-sdk
+// LLM Integration via z-ai-web-dev-sdk (glm-4.7-flash + glm-4.6v-flash)
 // ============================================================
+
+import { callLLM as centralizedCallLLM, callLLMForJSON as centralizedCallLLMForJSON, MODEL_PRIMARY, MODEL_VISION } from './llm';
 
 /**
  * Call the LLM to process/extract/analyze data.
- * This is used by every agent to turn raw web data into structured intelligence.
- * Retries once on timeout.
+ * Uses glm-4.7-flash (primary) with glm-4.6v-flash as fallback.
+ * Retries once on timeout, then falls back to the secondary model.
  */
-// Rate limiter: ensure we don't call the LLM too fast (avoids 429 errors)
-let lastLLMCallTime = 0;
-const LLM_MIN_INTERVAL_MS = 3000; // Minimum 3s between LLM calls (increased to avoid 429)
-
-async function waitForRateLimit() {
-  const now = Date.now();
-  const elapsed = now - lastLLMCallTime;
-  if (elapsed < LLM_MIN_INTERVAL_MS) {
-    await new Promise(r => setTimeout(r, LLM_MIN_INTERVAL_MS - elapsed));
-  }
-  lastLLMCallTime = Date.now();
-}
-
 export async function callLLM(systemPrompt: string, userMessage: string, retries = 1): Promise<string> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      // Rate limit: wait before making the call
-      await waitForRateLimit();
-      
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
-      
-      const result = await zai.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.3,
-        max_tokens: 4000,
-      });
+  const result = await centralizedCallLLM({
+    systemPrompt,
+    userMessage,
+    temperature: 0.3,
+    maxTokens: 4000,
+    model: MODEL_PRIMARY,
+    retriesPerModel: retries,
+    useFallback: true,
+  });
 
-      // Validate the response is structured correctly (not HTML/stray text)
-      if (!result || !result.choices || !Array.isArray(result.choices)) {
-        throw new Error('LLM returned an invalid response structure (possible HTML error page from API gateway)');
-      }
-
-      const content = result.choices[0]?.message?.content || '';
-      if (content.trim()) {
-        return content;
-      }
-      
-      if (attempt < retries) {
-        console.warn(`[callLLM] Empty response on attempt ${attempt + 1}, retrying...`);
-        continue;
-      }
-      return content;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      const errorName = error instanceof Error ? error.name : '';
-      
-      // Detect the specific "Unexpected token '<'" error that means HTML was returned instead of JSON
-      // This happens when the API gateway returns an HTML error page (rate limit, maintenance, 404, etc.)
-      // instead of the expected JSON response. The SDK's internal JSON.parse() throws this SyntaxError.
-      const isHtmlResponseError = (
-        // Standard detection: SDK's JSON.parse threw on HTML
-        (msg.includes('Unexpected token') && msg.includes('is not valid JSON') &&
-        (msg.includes('<html') || msg.includes('<!DOCTYPE') || msg.includes('"<html')))
-        // Also catch any SyntaxError from the SDK (likely HTML parsing)
-        || (errorName === 'SyntaxError' && (msg.includes('<') || msg.includes('html') || msg.includes('HTML')))
-        // Catch our own HTML detection messages
-        || msg.includes('HTML instead of JSON')
-        || msg.includes('HTML error page')
-        || msg.includes('invalid response structure')
-      );
-      
-      if (isHtmlResponseError || msg.includes('429') || msg.includes('Too many requests')) {
-        console.warn(`[callLLM] Rate limited on attempt ${attempt + 1}. ${attempt < retries ? `Retrying with backoff (${(attempt + 1) * 3000}ms)...` : 'All retries exhausted.'}`);
-      } else {
-        console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg.slice(0, 300)}`);
-      }
-      
-      if (attempt < retries) {
-        // Add exponential backoff for rate-limit-style errors
-        const isRateLimited = isHtmlResponseError || msg.includes('429') || msg.includes('Too many requests');
-        const backoffMs = isRateLimited ? (attempt + 1) * 3000 : 1000;
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
-        continue;
-      }
-      console.error('LLM call failed after retries:', error);
-      throw new Error(`LLM call failed after ${retries + 1} attempts: ${msg.slice(0, 200)}`);
-    }
+  if (result === null) {
+    throw new Error(`LLM call failed after all retries with ${MODEL_PRIMARY} + ${MODEL_VISION}`);
   }
-  return '';
+
+  return result;
 }
 
 /**
  * Robustly extract JSON from an LLM response.
- * 
+ * Uses glm-4.7-flash (primary) with glm-4.6v-flash as fallback.
+ *
  * Strategies (in order):
  * 1. Strip markdown code blocks (```json ... ```) then parse
  * 2. Find first JSON object/array in the response
  * 3. Parse the entire response as JSON
- * 4. Retry up to 2 times with a more explicit prompt
+ * 4. Retry with a more explicit prompt
  * 5. Return a safe default structure instead of crashing
  */
 export async function callLLMForJSON<T>(systemPrompt: string, userMessage: string, defaultValue?: T): Promise<T> {
-  const MAX_RETRIES = 1;
-  let lastError: Error | null = null;
+  try {
+    const result = await centralizedCallLLMForJSON<T>(systemPrompt, userMessage, {
+      temperature: 0.2,
+      maxTokens: 4000,
+      model: MODEL_PRIMARY,
+      retriesPerModel: 1,
+      useFallback: true,
+    });
 
-  for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    try {
-      const response = await callLLM(systemPrompt, userMessage);
-      const result = extractJSONFromString<T>(response);
-      if (result !== null) {
-        return result;
-      }
-      lastError = new Error(`Failed to extract JSON from LLM response`);
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
+    if (result !== null) {
+      return result;
     }
-
-    if (attempt < MAX_RETRIES) {
-      // Add emphasis on JSON format for retries
-      const retrySystemPrompt = systemPrompt + '\n\nIMPORTANT: You MUST respond with ONLY valid JSON. No markdown, no explanations, just raw JSON.';
-      try {
-        const response = await callLLM(retrySystemPrompt, userMessage);
-        const result = extractJSONFromString<T>(response);
-        if (result !== null) {
-          return result;
-        }
-      } catch (retryError) {
-        lastError = retryError instanceof Error ? retryError : new Error(String(retryError));
-      }
-    }
+  } catch (error) {
+    console.warn(`[callLLMForJSON] Error: ${error instanceof Error ? error.message : 'Unknown'}`);
   }
 
   // All retries exhausted — return default if provided
   if (defaultValue !== undefined) {
-    console.warn(`[callLLMForJSON] All retries exhausted, returning default value. Last error: ${lastError?.message}`);
+    console.warn(`[callLLMForJSON] All retries exhausted, returning default value`);
     return defaultValue;
   }
 
   // No default — throw
-  throw lastError || new Error('Failed to parse LLM response as JSON after all retries');
+  throw new Error('Failed to parse LLM response as JSON after all retries');
 }
 
 /**

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+import { callLLM, callLLMForJSON, MODEL_PRIMARY, MODEL_VISION } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -88,32 +89,21 @@ export async function POST(request: NextRequest) {
       allContent += `\n\n--- Source: ${read.title} (${read.url}) ---\n${read.content?.slice(0, 6000) || ''}`;
     }
 
-    // Step 3: LLM synthesis
+    // Step 3: LLM synthesis (glm-4.7-flash + glm-4.6v-flash)
     steps.push({
       step: 4,
       action: 'synthesize',
-      detail: 'Synthesizing findings using AI',
+      detail: `Synthesizing findings using AI (${MODEL_PRIMARY} + ${MODEL_VISION})`,
       timestamp: new Date().toISOString(),
     });
 
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
-
-    const synthesisResult = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a research analyst. Synthesize the following research findings into a comprehensive, well-structured analysis. Include key insights, trends, and actionable takeaways. Cite sources where appropriate.',
-        },
-        {
-          role: 'user',
-          content: `Research query: "${query}"\n\nResearch findings:\n${allContent.slice(0, 15000)}`,
-        },
-      ],
+    let findings = (await callLLM({
+      systemPrompt: 'You are a research analyst. Synthesize the following research findings into a comprehensive, well-structured analysis. Include key insights, trends, and actionable takeaways. Cite sources where appropriate.',
+      userMessage: `Research query: "${query}"\n\nResearch findings:\n${allContent.slice(0, 15000)}`,
       temperature: 0.3,
-    });
-
-    let findings = synthesisResult.choices?.[0]?.message?.content || 'Unable to synthesize findings.';
+      model: MODEL_PRIMARY,
+      useFallback: true,
+    })) || 'Unable to synthesize findings.';
 
     // Step 4: If deep, do a second round
     if (depth === 'deep') {
@@ -124,30 +114,11 @@ export async function POST(request: NextRequest) {
         timestamp: new Date().toISOString(),
       });
 
-      const followUpResult = await zai.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a research strategist. Based on the initial findings, suggest 2-3 specific follow-up search queries that would fill knowledge gaps. Return ONLY a JSON array of query strings.',
-          },
-          {
-            role: 'user',
-            content: `Original query: "${query}"\n\nInitial findings summary:\n${findings.slice(0, 4000)}`,
-          },
-        ],
-        temperature: 0.5,
-      });
-
-      let followUpQueries: string[] = [];
-      try {
-        const rawText = followUpResult.choices?.[0]?.message?.content || '[]';
-        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          followUpQueries = JSON.parse(jsonMatch[0]);
-        }
-      } catch {
-        // If parsing fails, just skip the follow-up
-      }
+      const followUpQueries = await callLLMForJSON<string[]>(
+        'You are a research strategist. Based on the initial findings, suggest 2-3 specific follow-up search queries that would fill knowledge gaps. Return ONLY a JSON array of query strings.',
+        `Original query: "${query}"\n\nInitial findings summary:\n${findings.slice(0, 4000)}`,
+        { temperature: 0.5, model: MODEL_PRIMARY, useFallback: true }
+      ) || [];
 
       // Execute follow-up searches
       for (const fq of followUpQueries.slice(0, 3)) {
@@ -174,25 +145,19 @@ export async function POST(request: NextRequest) {
       steps.push({
         step: steps.length + 1,
         action: 'final_synthesis',
-        detail: 'Producing final deep research synthesis',
+        detail: `Producing final deep research synthesis (${MODEL_PRIMARY} + ${MODEL_VISION})`,
         timestamp: new Date().toISOString(),
       });
 
-      const finalResult = await zai.chat.completions.create({
-        messages: [
-          {
-            role: 'system',
-            content: 'You are a senior research analyst. Produce a comprehensive, detailed research report based on all gathered information. Include executive summary, key findings, detailed analysis, and recommendations. Cite sources.',
-          },
-          {
-            role: 'user',
-            content: `Research query: "${query}"\n\nAll research content:\n${allContent.slice(0, 20000)}`,
-          },
-        ],
+      const finalFindings = await callLLM({
+        systemPrompt: 'You are a senior research analyst. Produce a comprehensive, detailed research report based on all gathered information. Include executive summary, key findings, detailed analysis, and recommendations. Cite sources.',
+        userMessage: `Research query: "${query}"\n\nAll research content:\n${allContent.slice(0, 20000)}`,
         temperature: 0.3,
+        model: MODEL_PRIMARY,
+        useFallback: true,
       });
 
-      findings = finalResult.choices?.[0]?.message?.content || findings;
+      if (finalFindings) findings = finalFindings;
     }
 
     return NextResponse.json({
@@ -201,6 +166,7 @@ export async function POST(request: NextRequest) {
       findings,
       sources: [...new Set(sources)],
       steps,
+      models: [MODEL_PRIMARY, MODEL_VISION],
     });
   } catch (error) {
     console.error('Error in deep research endpoint:', error);

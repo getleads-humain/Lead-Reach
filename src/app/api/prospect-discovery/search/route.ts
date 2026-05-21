@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead, exaSearch, linkedInSearchPeople, linkedInSearchCompanies, twitterSearch } from '@/lib/agent-reach-bridge';
+import { callLLMForJSON, MODEL_PRIMARY, MODEL_VISION, type LLMModel } from '@/lib/llm';
 
 // Set max duration for this API route to 5 minutes (production)
 export const maxDuration = 300;
@@ -108,155 +109,7 @@ function detectQueryType(query: string): QueryType {
 }
 
 // ============================================================
-// LLM Call Helper — Robust version with rate limiting, backoff, HTML detection
-// ============================================================
-
-// Rate limiter: ensure we don't call the LLM too fast (avoids 429 / 502 errors)
-let lastLLMCallTime = 0;
-const LLM_MIN_INTERVAL_MS = 3000; // Minimum 3s between LLM calls
-
-async function waitForLLMRateLimit() {
-  const now = Date.now();
-  const elapsed = now - lastLLMCallTime;
-  if (elapsed < LLM_MIN_INTERVAL_MS) {
-    await new Promise(r => setTimeout(r, LLM_MIN_INTERVAL_MS - elapsed));
-  }
-  lastLLMCallTime = Date.now();
-}
-
-async function callLLM(systemPrompt: string, userMessage: string, retries = 3): Promise<string | null> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      // Rate limit: wait before making the call
-      await waitForLLMRateLimit();
-
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
-
-      const completion = await zai.chat.completions.create({
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: userMessage },
-        ],
-        temperature: 0.3,
-        max_tokens: 4096,
-      });
-
-      // Validate the response is structured correctly (not HTML/stray text)
-      if (!completion || !completion.choices || !Array.isArray(completion.choices)) {
-        throw new Error('LLM returned an invalid response structure (possible HTML error page from API gateway)');
-      }
-
-      const content = completion.choices?.[0]?.message?.content || '';
-
-      // Detect HTML responses (API gateway error pages instead of real data)
-      const trimmed = content.trim();
-      if (trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<HTML')) {
-        throw new Error('LLM returned HTML instead of text (API gateway error page)');
-      }
-
-      if (trimmed) {
-        return content;
-      }
-
-      if (attempt < retries) {
-        console.warn(`[callLLM] Empty response on attempt ${attempt + 1}, retrying...`);
-        continue;
-      }
-      return content;
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      const errorName = error instanceof Error ? error.name : '';
-
-      // Detect HTML response errors (API gateway returning HTML error pages instead of JSON)
-      // The z-ai-web-dev-sdk internally calls JSON.parse() on the API response.
-      // When the API gateway returns HTML (502 error page), JSON.parse throws SyntaxError.
-      const isHtmlResponseError = (
-        msg.includes('Unexpected token')
-        || (errorName === 'SyntaxError')
-        || msg.includes('HTML instead of')
-        || msg.includes('HTML error page')
-        || msg.includes('invalid response structure')
-        || msg.includes('is not valid JSON')
-        || msg.includes('fetch failed')
-      );
-
-      const isGateway502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('gateway error') || msg.includes('Service Unavailable');
-      const isRateLimited = isHtmlResponseError || msg.includes('429') || msg.includes('Too many requests') || isGateway502;
-
-      if (isRateLimited || isGateway502) {
-        console.warn(`[callLLM] Rate limited / gateway error on attempt ${attempt + 1}. ${attempt < retries ? `Retrying with backoff...` : 'All retries exhausted.'}`);
-      } else {
-        console.warn(`[callLLM] Attempt ${attempt + 1} failed: ${msg.slice(0, 300)}`);
-      }
-
-      if (attempt < retries) {
-        // Exponential backoff — longer for 502/gateway errors, medium for rate-limit, shorter for other errors
-        let backoffMs = 2000;
-        if (isGateway502) {
-          backoffMs = (attempt + 1) * 6000; // 6s, 12s, 18s for 502s
-        } else if (isRateLimited) {
-          backoffMs = (attempt + 1) * 4000; // 4s, 8s, 12s for 429s
-        }
-        console.warn(`[callLLM] Waiting ${backoffMs}ms before retry ${attempt + 2}...`);
-        await new Promise(resolve => setTimeout(resolve, backoffMs));
-        continue;
-      }
-
-      // IMPORTANT: Instead of throwing, return null so the pipeline can continue with partial data
-      console.error('[callLLM] All retries exhausted, returning null instead of throwing:', msg.slice(0, 200));
-      return null;
-    }
-  }
-  return '';
-}
-
-async function callLLMForJSON<T>(systemPrompt: string, userMessage: string): Promise<T | null> {
-  const MAX_JSON_RETRIES = 1;
-  let lastError: Error | null = null;
-
-  for (let attempt = 0; attempt <= MAX_JSON_RETRIES; attempt++) {
-    try {
-      const response = await callLLM(systemPrompt, userMessage);
-
-      // If callLLM returned null (all retries exhausted), return null gracefully
-      if (response === null || response === undefined) {
-        console.warn('[callLLMForJSON] callLLM returned null — LLM was unavailable, skipping extraction');
-        return null;
-      }
-
-      // Strategy 1: Find JSON in markdown code blocks
-      const codeBlockMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
-      if (codeBlockMatch) {
-        try { return JSON.parse(codeBlockMatch[1]); } catch {}
-      }
-
-      // Strategy 2: Find first balanced { } or [ ]
-      const jsonMatch = response.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-      if (jsonMatch) {
-        try { return JSON.parse(jsonMatch[1]); } catch {}
-      }
-
-      // Strategy 3: Direct parse
-      try { return JSON.parse(response); } catch {}
-
-      lastError = new Error('Could not extract JSON from LLM response');
-    } catch (error) {
-      lastError = error instanceof Error ? error : new Error(String(error));
-    }
-
-    if (attempt < MAX_JSON_RETRIES) {
-      await new Promise(r => setTimeout(r, 2000));
-    }
-  }
-
-  // Return null instead of throwing — let the pipeline continue with partial data
-  console.warn('[callLLMForJSON] Could not extract JSON after all retries, returning null');
-  return null;
-}
-
-// ============================================================
-// Research Pipeline
+// Research Pipeline — uses centralized LLM utility (glm-4.7-flash + glm-4.6v-flash)
 // ============================================================
 
 async function researchCompany(companyName: string, steps: ResearchStep[]): Promise<ProspectData> {
@@ -873,6 +726,7 @@ export async function POST(request: NextRequest) {
       queryType,
       prospect,
       steps,
+      models: [MODEL_PRIMARY, MODEL_VISION],
     });
   } catch (error) {
     console.error('[Prospect Discovery] Unhandled error:', error);

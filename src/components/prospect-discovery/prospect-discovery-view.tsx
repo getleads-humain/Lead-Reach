@@ -103,6 +103,7 @@ interface SearchResult {
   queryType: string;
   prospect: ProspectData;
   steps: ResearchStep[];
+  models?: string[];
 }
 
 interface ChatMessage {
@@ -398,7 +399,7 @@ export function ProspectDiscoveryView() {
             Prospect Discovery
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Search by company name, website URL, or person name — our AI will research everything
+            Search by company name, website URL, or person name — powered by glm-4.7-flash + glm-4.6v-flash
           </p>
         </div>
       </div>
@@ -421,8 +422,8 @@ export function ProspectDiscoveryView() {
                 </div>
                 <h3 className="text-lg font-semibold text-foreground/90 mb-2">Discover Your Next Prospect</h3>
                 <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-                  Enter a company name, website URL, or person name below. Our AI agents will research the web, 
-                  LinkedIn, news, and social media to build a complete profile.
+                  Enter a company name, website URL, or person name below. Our dual-model AI (glm-4.7-flash + glm-4.6v-flash) will research the web,
+                  LinkedIn, news, and social media to build a complete prospect profile.
                 </p>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg w-full">
                   {[
@@ -504,6 +505,12 @@ export function ProspectDiscoveryView() {
                             <span className={`text-xs font-semibold ${completenessColor(msg.result.prospect.dataCompleteness)}`}>
                               {msg.result.prospect.dataCompleteness}% complete
                             </span>
+                            {msg.result.models && msg.result.models.length > 0 && (
+                              <Badge variant="outline" className="text-[8px] border-violet-500/20 text-violet-400 gap-1">
+                                <Sparkles className="h-2.5 w-2.5" />
+                                {msg.result.models.join(' + ')}
+                              </Badge>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -786,7 +793,7 @@ export function ProspectDiscoveryView() {
             </Button>
           </div>
           <p className="text-[9px] text-muted-foreground/40 mt-1.5 text-center">
-            Our AI agents search the web, LinkedIn, news, and social media to build complete prospect profiles
+            Powered by glm-4.7-flash + glm-4.6v-flash — AI agents search the web, LinkedIn, news, and social media
           </p>
         </div>
       </div>

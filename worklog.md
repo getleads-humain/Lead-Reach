@@ -138,3 +138,51 @@ Stage Summary:
 - Button positioned exactly between Ask AI (emerald) and Bell icon
 - Full profile management: personal info, company, portfolio with items CRUD
 - All changes compile and build successfully
+---
+Task ID: 2
+Agent: Main Agent
+Task: Fix Prospect Discovery AI chat to use exactly glm-4.7-flash and glm-4.6v-flash models
+
+Work Log:
+- Explored all Prospect Discovery related files: search route, frontend view, agent-reach-bridge, agent-executor, AI routes
+- Found 3 duplicate callLLM implementations across the codebase with no explicit model names
+- Created centralized LLM utility at src/lib/llm.ts with:
+  - MODEL_PRIMARY = 'glm-4.7-flash' (fast, high-quality text generation)
+  - MODEL_VISION = 'glm-4.6v-flash' (vision-capable, text fallback)
+  - Shared rate limiter (2s between calls)
+  - SDK singleton (lazy init, reuse across calls)
+  - callLLM() with automatic model fallback (tries primary, falls back to secondary)
+  - callLLMForJSON() with multi-strategy JSON extraction
+  - extractJSONFromString() pure utility
+- Updated src/app/api/prospect-discovery/search/route.ts:
+  - Removed local callLLM/callLLMForJSON (140+ lines of duplicate code)
+  - Now imports from @/lib/llm
+  - Added models field to API response
+- Updated src/lib/agent-executor.ts:
+  - Replaced local callLLM/callLLMForJSON with thin wrappers around centralized module
+  - Preserves existing function signatures for backward compatibility
+  - All existing callers (20+ callLLMForJSON calls) work unchanged
+- Updated src/app/api/ai/route.ts:
+  - Replaced direct SDK callLLM with centralized callLLM + extractJSONFromString
+- Updated src/app/api/ai-assistant/chat/route.ts:
+  - Replaced direct SDK call with centralized callLLM
+  - Added models field to response
+- Updated src/app/api/ai-assistant/deep-research/route.ts:
+  - Replaced 3 direct SDK chat.completions.create calls with centralized callLLM/callLLMForJSON
+  - Added models field to response
+- Updated src/components/prospect-discovery/prospect-discovery-view.tsx:
+  - Added models field to SearchResult interface
+  - Shows model badge (glm-4.7-flash + glm-4.6v-flash) in result header
+  - Updated header subtitle to mention model names
+  - Updated empty state description
+  - Updated footer text
+- Build verified successfully with no errors
+
+Stage Summary:
+- All LLM calls across the entire application now use exactly two models: glm-4.7-flash (primary) and glm-4.6v-flash (fallback)
+- Automatic model fallback: if primary fails, secondary is tried automatically
+- Centralized rate limiting prevents 429 errors
+- Shared SDK instance for efficiency
+- Frontend displays which models are being used
+- Removed 140+ lines of duplicate LLM code from search route
+- Build passes successfully
