@@ -1,12 +1,11 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   Telescope,
@@ -37,123 +36,114 @@ import {
   FileText,
   Star,
   RefreshCw,
+  Target,
+  Brain,
+  MessageSquare,
+  Send,
+  Lightbulb,
+  TrendingUp,
+  Shield,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { safeFetchJSON } from '@/lib/utils';
+import type {
+  AgentPersona,
+  AgentMessage,
+  AgentThinking,
+  AgentAction,
+  ProspectResult,
+  ICPResult,
+  OutreachResult,
+  MarketResult,
+  ScoreResult,
+  ConversationContext,
+  SuggestedAction,
+} from '@/lib/prospect-agent/types';
+import { PERSONA_META } from '@/lib/prospect-agent/types';
 
 // ============================================================
-// Types
+// Icon mapping for dynamic icon rendering
 // ============================================================
 
-interface ResearchStep {
-  step: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
-  message: string;
-}
-
-interface ProspectData {
-  queryType: string;
-  query: string;
-  companyName: string | null;
-  legalName: string | null;
-  website: string | null;
-  industry: string | null;
-  subIndustry: string | null;
-  description: string | null;
-  hqAddress: string | null;
-  city: string | null;
-  stateProvince: string | null;
-  country: string | null;
-  postalCode: string | null;
-  phoneMain: string | null;
-  generalEmail: string | null;
-  supportEmail: string | null;
-  ceoName: string | null;
-  ceoEmail: string | null;
-  keyContactName: string | null;
-  keyContactTitle: string | null;
-  keyContactEmail: string | null;
-  employeeCount: string | null;
-  revenueEstimate: string | null;
-  foundingYear: string | null;
-  ownershipType: string | null;
-  linkedinUrl: string | null;
-  twitterHandle: string | null;
-  facebookPage: string | null;
-  techStack: string[];
-  boardMembers: string[];
-  recentNews: string[];
-  productsServices: string[];
-  partners: string[];
-  fundingInfo: string | null;
-  personName: string | null;
-  personTitle: string | null;
-  personCompany: string | null;
-  personEmail: string | null;
-  personPhone: string | null;
-  personLinkedin: string | null;
-  personBio: string | null;
-  sources: string[];
-  dataCompleteness: number;
-}
-
-interface SearchResult {
-  success: boolean;
-  query: string;
-  queryType: string;
-  prospect: ProspectData;
-  steps: ResearchStep[];
-  models?: string[];
-}
-
-interface ChatMessage {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: Date;
-  result?: SearchResult;
-  converted?: boolean;
-  leadId?: string;
-}
+const ICON_MAP: Record<string, React.ElementType> = {
+  Plus, Star, Mail, Search, Building2, Target, User, Globe,
+  Telescope, Sparkles, Zap, Users, BarChart3, Briefcase,
+};
 
 // ============================================================
 // Helper Components
 // ============================================================
 
-function StepIndicator({ step }: { step: ResearchStep }) {
-  const iconMap: Record<string, string> = {
-    'classify': 'Identifying',
-    'web-search': 'Searching',
-    'web-read': 'Reading',
-    'llm-extract': 'Analyzing',
-    'linkedin-search': 'LinkedIn',
-    'deep-research': 'Deep Dive',
-    'news-research': 'News',
-    'twitter-search': 'Twitter/X',
-    'company-research': 'Company',
-    'retry': 'Auto-Retry',
+function PersonaBadge({ persona, size = 'sm' }: { persona: AgentPersona; size?: 'sm' | 'lg' }) {
+  const meta = PERSONA_META[persona];
+  const colorMap: Record<string, string> = {
+    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+    cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+    violet: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+    rose: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+    sky: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+    indigo: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
   };
-
-  const label = iconMap[step.step] || step.step;
+  const colorClass = colorMap[meta.color] || colorMap.emerald;
+  const sizeClass = size === 'lg' ? 'text-xs px-2.5 py-1' : 'text-[9px] px-1.5 py-0.5';
 
   return (
-    <div className="flex items-center gap-2 py-1.5 px-3 rounded-lg bg-secondary/20 text-xs">
-      {step.status === 'running' && (
-        <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
+    <Badge variant="outline" className={`${colorClass} ${sizeClass} font-medium gap-1`}>
+      <span>{meta.emoji}</span>
+      <span>{meta.name}</span>
+    </Badge>
+  );
+}
+
+function ThinkingIndicator({ thinking }: { thinking: AgentThinking }) {
+  const [expanded, setExpanded] = useState(false);
+  const meta = PERSONA_META[thinking.persona];
+
+  return (
+    <div className="rounded-lg border border-border/30 bg-secondary/10 overflow-hidden">
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center justify-between px-3 py-2 hover:bg-secondary/20 transition-colors"
+      >
+        <div className="flex items-center gap-2">
+          <Brain className="h-3.5 w-3.5 text-violet-400" />
+          <span className="text-[10px] font-medium text-violet-400">Agent Thinking</span>
+          <PersonaBadge persona={thinking.persona} />
+          <span className="text-[9px] text-muted-foreground/50">
+            {Math.round(thinking.confidence * 100)}% confidence
+          </span>
+        </div>
+        {expanded ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+      </button>
+      {expanded && (
+        <div className="px-3 py-2 space-y-2 border-t border-border/20">
+          <p className="text-[10px] text-muted-foreground/70">{thinking.reasoning}</p>
+          <div className="space-y-1">
+            {thinking.plan.map((step, i) => (
+              <div key={i} className="flex items-center gap-1.5">
+                <div className="h-1 w-1 rounded-full bg-violet-400/50" />
+                <span className="text-[9px] text-muted-foreground/60">{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
       )}
-      {step.status === 'completed' && (
-        <CheckCircle2 className="h-3 w-3 text-emerald-400" />
-      )}
-      {step.status === 'failed' && (
-        <AlertCircle className="h-3 w-3 text-red-400" />
-      )}
-      {step.status === 'pending' && (
-        <div className="h-3 w-3 rounded-full border border-muted-foreground/30" />
-      )}
-      <span className={step.status === 'running' ? 'text-cyan-400 font-medium' : step.status === 'completed' ? 'text-emerald-400' : step.status === 'failed' ? 'text-red-400' : 'text-muted-foreground'}>
-        {label}
+    </div>
+  );
+}
+
+function ActionStepIndicator({ action }: { action: AgentAction }) {
+  return (
+    <div className="flex items-center gap-2 py-1 px-2.5 rounded-lg bg-secondary/20 text-xs">
+      {action.status === 'running' && <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />}
+      {action.status === 'completed' && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
+      {action.status === 'failed' && <AlertCircle className="h-3 w-3 text-red-400" />}
+      {action.status === 'pending' && <div className="h-3 w-3 rounded-full border border-muted-foreground/30" />}
+      <span className={action.status === 'running' ? 'text-cyan-400 font-medium' : action.status === 'completed' ? 'text-emerald-400' : 'text-muted-foreground'}>
+        {action.label}
       </span>
-      <span className="text-muted-foreground/70 ml-1">{step.message}</span>
+      <span className="text-muted-foreground/60 text-[10px]">{action.message}</span>
     </div>
   );
 }
@@ -181,10 +171,7 @@ function SectionCard({ title, icon: Icon, children, defaultOpen = true }: { titl
   const [open, setOpen] = useState(defaultOpen);
   return (
     <div className="rounded-lg border border-border/30 overflow-hidden">
-      <button
-        onClick={() => setOpen(!open)}
-        className="w-full flex items-center justify-between px-3 py-2 bg-secondary/20 hover:bg-secondary/30 transition-colors"
-      >
+      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2 bg-secondary/20 hover:bg-secondary/30 transition-colors">
         <div className="flex items-center gap-2">
           <Icon className="h-3.5 w-3.5 text-muted-foreground" />
           <span className="text-xs font-medium text-foreground/80">{title}</span>
@@ -215,123 +202,488 @@ function TagList({ items, color = 'cyan' }: { items: string[]; color?: string })
   );
 }
 
+function SuggestedActionButtons({ actions, onAction }: { actions: SuggestedAction[]; onAction: (prompt: string) => void }) {
+  if (!actions || actions.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-2 mt-2">
+      {actions.map((action, i) => {
+        const Icon = ICON_MAP[action.icon] || Sparkles;
+        return (
+          <Button
+            key={i}
+            variant="outline"
+            size="sm"
+            className="text-[10px] h-7 gap-1.5 border-border/40 hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-400 transition-colors"
+            onClick={() => onAction(action.prompt)}
+          >
+            <Icon className="h-3 w-3" />
+            {action.label}
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// Prospect Data Card
+// ============================================================
+
+function ProspectDataCard({
+  prospect,
+  messageId,
+  converted,
+  leadId,
+  onConvert,
+  onViewLeads,
+}: {
+  prospect: ProspectResult;
+  messageId: string;
+  converted?: boolean;
+  leadId?: string;
+  onConvert: (msgId: string, p: ProspectResult) => void;
+  onViewLeads: () => void;
+}) {
+  const completenessColor = (pct: number) => {
+    if (pct >= 70) return 'text-emerald-400';
+    if (pct >= 40) return 'text-amber-400';
+    return 'text-red-400';
+  };
+  const completenessBarColor = (pct: number) => {
+    if (pct >= 70) return '[&>div]:bg-emerald-400';
+    if (pct >= 40) return '[&>div]:bg-amber-400';
+    return '[&>div]:bg-red-400';
+  };
+
+  return (
+    <Card className="border-border/30 ml-9">
+      <CardContent className="p-4 space-y-3">
+        {prospect.companyName && (
+          <div className="flex items-start justify-between">
+            <div>
+              <h4 className="text-base font-bold text-foreground/90">{prospect.companyName}</h4>
+              {prospect.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{prospect.description}</p>}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <Progress value={prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(prospect.dataCompleteness)}`} />
+              <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
+            </div>
+          </div>
+        )}
+
+        {prospect.personName && !prospect.companyName && (
+          <div className="flex items-start justify-between">
+            <div>
+              <h4 className="text-base font-bold text-foreground/90">{prospect.personName}</h4>
+              {prospect.personTitle && <p className="text-xs text-cyan-400">{prospect.personTitle}</p>}
+              {prospect.personBio && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{prospect.personBio}</p>}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <Progress value={prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(prospect.dataCompleteness)}`} />
+              <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
+            </div>
+          </div>
+        )}
+
+        {prospect.personName && prospect.companyName && (
+          <div className="rounded-md bg-cyan-500/5 border border-cyan-500/10 p-2.5">
+            <div className="flex items-center gap-2 mb-1">
+              <User className="h-3.5 w-3.5 text-cyan-400" />
+              <span className="text-xs font-medium text-cyan-400">Key Person</span>
+            </div>
+            <p className="text-xs font-medium text-foreground/90">{prospect.personName}</p>
+            {prospect.personTitle && <p className="text-[10px] text-muted-foreground">{prospect.personTitle}</p>}
+            {prospect.personEmail && <p className="text-[10px] text-cyan-400">{prospect.personEmail}</p>}
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          <SectionCard title="Contact Information" icon={Mail}>
+            <DataField icon={Mail} label="Email" value={prospect.generalEmail} href={prospect.generalEmail ? `mailto:${prospect.generalEmail}` : null} />
+            <DataField icon={Mail} label="Support" value={prospect.supportEmail} href={prospect.supportEmail ? `mailto:${prospect.supportEmail}` : null} />
+            <DataField icon={Phone} label="Phone" value={prospect.phoneMain} href={prospect.phoneMain ? `tel:${prospect.phoneMain}` : null} />
+            <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
+          </SectionCard>
+          <SectionCard title="Location" icon={MapPin}>
+            <DataField icon={MapPin} label="Address" value={prospect.hqAddress} />
+            <DataField icon={MapPin} label="City" value={prospect.city} />
+            <DataField icon={MapPin} label="State" value={prospect.stateProvince} />
+            <DataField icon={MapPin} label="Country" value={prospect.country} />
+          </SectionCard>
+          <SectionCard title="Firmographics" icon={BarChart3}>
+            <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
+            <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
+            <DataField icon={Calendar} label="Founded" value={prospect.foundingYear} />
+            <DataField icon={Building2} label="Industry" value={prospect.industry} />
+          </SectionCard>
+          <SectionCard title="Key People" icon={Users}>
+            <DataField icon={Star} label="CEO" value={prospect.ceoName} />
+            <DataField icon={Mail} label="CEO Email" value={prospect.ceoEmail} href={prospect.ceoEmail ? `mailto:${prospect.ceoEmail}` : null} />
+            <DataField icon={User} label="Key Contact" value={prospect.keyContactName ? `${prospect.keyContactName}${prospect.keyContactTitle ? ` (${prospect.keyContactTitle})` : ''}` : null} />
+            <DataField icon={Mail} label="Contact Email" value={prospect.keyContactEmail} href={prospect.keyContactEmail ? `mailto:${prospect.keyContactEmail}` : null} />
+          </SectionCard>
+          <SectionCard title="Digital Presence" icon={Globe}>
+            <DataField icon={Linkedin} label="LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
+            <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
+            <DataField icon={Globe} label="Facebook" value={prospect.facebookPage} href={prospect.facebookPage} />
+          </SectionCard>
+          <SectionCard title="Products & Services" icon={FileText} defaultOpen={(prospect.productsServices?.length || 0) > 0}>
+            <TagList items={prospect.productsServices || []} color="emerald" />
+            {prospect.techStack?.length > 0 && (
+              <div className="mt-2">
+                <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
+                <TagList items={prospect.techStack} color="violet" />
+              </div>
+            )}
+            <DataField icon={DollarSign} label="Funding" value={prospect.fundingInfo} />
+          </SectionCard>
+        </div>
+
+        {prospect.boardMembers?.length > 0 && (
+          <SectionCard title="Board Members & Leadership" icon={Users} defaultOpen={false}>
+            <TagList items={prospect.boardMembers} color="amber" />
+          </SectionCard>
+        )}
+
+        {prospect.recentNews?.length > 0 && (
+          <SectionCard title="Recent News & Activity" icon={FileText} defaultOpen={false}>
+            {prospect.recentNews.map((news, i) => (
+              <div key={i} className="flex items-start gap-2 py-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                <p className="text-xs text-muted-foreground">{news}</p>
+              </div>
+            ))}
+          </SectionCard>
+        )}
+
+        {prospect.sources?.length > 0 && (
+          <div className="flex items-center gap-1 flex-wrap">
+            <span className="text-[9px] text-muted-foreground/50">Sources:</span>
+            {prospect.sources.slice(0, 5).map((src, i) => (
+              <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="text-[9px] text-cyan-400/70 hover:text-cyan-400 truncate max-w-[150px]">
+                {src.replace(/^https?:\/\//, '').split('/')[0]}
+              </a>
+            ))}
+            {prospect.sources.length > 5 && <span className="text-[9px] text-muted-foreground/50">+{prospect.sources.length - 5} more</span>}
+          </div>
+        )}
+
+        <div className="flex items-center gap-2 pt-2">
+          {converted ? (
+            <div className="flex items-center gap-2 text-emerald-400">
+              <CheckCircle2 className="h-4 w-4" />
+              <span className="text-xs font-medium">Added to Leads</span>
+              <Button variant="ghost" size="sm" className="text-[10px] text-muted-foreground hover:text-foreground gap-1 h-6" onClick={onViewLeads}>
+                View in Leads <ArrowRight className="h-3 w-3" />
+              </Button>
+            </div>
+          ) : (
+            <Button onClick={() => onConvert(messageId, prospect)} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all text-xs h-8">
+              <Plus className="h-3.5 w-3.5" />Add to Leads
+            </Button>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
+// ICP Data Card
+// ============================================================
+
+function ICPDataCard({ icp }: { icp: ICPResult }) {
+  return (
+    <Card className="border-amber-500/20 ml-9">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Target className="h-4 w-4 text-amber-400" />
+          <h4 className="text-sm font-bold text-foreground/90">{icp.name}</h4>
+        </div>
+        {icp.description && <p className="text-xs text-muted-foreground">{icp.description}</p>}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+          {icp.firmographic.industries.length > 0 && (
+            <SectionCard title="Industries" icon={Briefcase}>
+              <TagList items={icp.firmographic.industries} color="emerald" />
+            </SectionCard>
+          )}
+          {icp.firmographic.companySizes.length > 0 && (
+            <SectionCard title="Company Sizes" icon={Users}>
+              <TagList items={icp.firmographic.companySizes} color="cyan" />
+            </SectionCard>
+          )}
+          {icp.firmographic.locations.length > 0 && (
+            <SectionCard title="Locations" icon={MapPin}>
+              <TagList items={icp.firmographic.locations} color="violet" />
+            </SectionCard>
+          )}
+          {icp.technographic.requiredTech.length > 0 && (
+            <SectionCard title="Required Tech" icon={Zap}>
+              <TagList items={icp.technographic.requiredTech} color="amber" />
+            </SectionCard>
+          )}
+          {icp.psychographic.challenges.length > 0 && (
+            <SectionCard title="Challenges" icon={AlertCircle}>
+              <TagList items={icp.psychographic.challenges} color="rose" />
+            </SectionCard>
+          )}
+          {icp.behavioral.buyingSignals.length > 0 && (
+            <SectionCard title="Buying Signals" icon={TrendingUp}>
+              <TagList items={icp.behavioral.buyingSignals} color="emerald" />
+            </SectionCard>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
+// Market Analysis Card
+// ============================================================
+
+function MarketDataCard({ market }: { market: MarketResult }) {
+  return (
+    <Card className="border-violet-500/20 ml-9">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <TrendingUp className="h-4 w-4 text-violet-400" />
+          <h4 className="text-sm font-bold text-foreground/90">Market Analysis: {market.query}</h4>
+        </div>
+        {market.summary && <p className="text-xs text-muted-foreground">{market.summary}</p>}
+        {market.keyFindings.length > 0 && (
+          <SectionCard title="Key Findings" icon={Lightbulb}>
+            {market.keyFindings.map((f, i) => (
+              <div key={i} className="flex items-start gap-2 py-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-violet-400 mt-1.5 shrink-0" />
+                <p className="text-xs text-foreground/80">{f}</p>
+              </div>
+            ))}
+          </SectionCard>
+        )}
+        {market.competitors.length > 0 && (
+          <SectionCard title="Competitors" icon={Shield} defaultOpen={false}>
+            {market.competitors.map((c, i) => (
+              <div key={i} className="py-1.5 border-b border-border/20 last:border-0">
+                <p className="text-xs font-medium text-foreground/90">{c.name}</p>
+                {c.description && <p className="text-[10px] text-muted-foreground">{c.description}</p>}
+                {c.strengths.length > 0 && <TagList items={c.strengths} color="emerald" />}
+              </div>
+            ))}
+          </SectionCard>
+        )}
+        {market.trends.length > 0 && (
+          <SectionCard title="Trends" icon={TrendingUp} defaultOpen={false}>
+            {market.trends.map((t, i) => (
+              <div key={i} className="flex items-start gap-2 py-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
+                <p className="text-xs text-foreground/80">{t}</p>
+              </div>
+            ))}
+          </SectionCard>
+        )}
+        {market.opportunities.length > 0 && (
+          <SectionCard title="Opportunities" icon={Lightbulb} defaultOpen={false}>
+            {market.opportunities.map((o, i) => (
+              <div key={i} className="flex items-start gap-2 py-1">
+                <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 mt-1.5 shrink-0" />
+                <p className="text-xs text-foreground/80">{o}</p>
+              </div>
+            ))}
+          </SectionCard>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
+// Score Data Card
+// ============================================================
+
+function ScoreDataCard({ score }: { score: ScoreResult }) {
+  const tierColor: Record<string, string> = { ideal: 'text-emerald-400', strong: 'text-cyan-400', moderate: 'text-amber-400', weak: 'text-orange-400', poor: 'text-red-400' };
+  return (
+    <Card className="border-rose-500/20 ml-9">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Shield className="h-4 w-4 text-rose-400" />
+            <h4 className="text-sm font-bold text-foreground/90">Lead Score</h4>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className={`text-lg font-bold ${tierColor[score.tier] || 'text-foreground'}`}>{score.overallScore}</span>
+            <Badge variant="outline" className={`text-[9px] ${tierColor[score.tier]}`}>{score.tier}</Badge>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-2">
+          {Object.entries(score.dimensions).map(([key, dim]) => (
+            <div key={key} className="rounded-lg border border-border/30 p-2">
+              <div className="flex items-center justify-between mb-1">
+                <span className="text-[9px] text-muted-foreground capitalize">{key}</span>
+                <span className="text-xs font-medium text-foreground/80">{dim.score}</span>
+              </div>
+              <Progress value={dim.score} className="h-1 bg-secondary/40 [&>div]:bg-violet-400" />
+              <p className="text-[9px] text-muted-foreground/60 mt-1 line-clamp-2">{dim.reasoning}</p>
+            </div>
+          ))}
+        </div>
+        {score.recommendation && (
+          <div className="rounded-lg bg-secondary/20 p-2.5">
+            <p className="text-xs text-foreground/80">{score.recommendation}</p>
+          </div>
+        )}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
+// Outreach Data Card
+// ============================================================
+
+function OutreachDataCard({ outreach }: { outreach: OutreachResult }) {
+  return (
+    <Card className="border-sky-500/20 ml-9">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Mail className="h-4 w-4 text-sky-400" />
+          <h4 className="text-sm font-bold text-foreground/90 capitalize">{outreach.channel} Outreach</h4>
+          <Badge variant="outline" className="text-[9px] border-sky-500/20 text-sky-400">{outreach.tone}</Badge>
+        </div>
+        {outreach.subject && (
+          <div>
+            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Subject</span>
+            <p className="text-sm font-medium text-foreground/90">{outreach.subject}</p>
+          </div>
+        )}
+        <div>
+          <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Message</span>
+          <div className="rounded-lg bg-secondary/20 p-3 mt-1">
+            <p className="text-xs text-foreground/80 whitespace-pre-wrap">{outreach.body}</p>
+          </div>
+        </div>
+        {outreach.personalizationHooks?.length > 0 && (
+          <div>
+            <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Personalization Hooks</span>
+            <TagList items={outreach.personalizationHooks} color="sky" />
+          </div>
+        )}
+        <div>
+          <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Call to Action</span>
+          <p className="text-xs text-foreground/80">{outreach.cta}</p>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
 // ============================================================
 // Main Component
 // ============================================================
 
 export function ProspectDiscoveryView() {
-  const { setActiveView, setSelectedCampaignId } = useAppStore();
+  const { setActiveView } = useAppStore();
   const [query, setQuery] = useState('');
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [isSearching, setIsSearching] = useState(false);
-  const [currentSteps, setCurrentSteps] = useState<ResearchStep[]>([]);
+  const [context, setContext] = useState<ConversationContext>({
+    recentProspects: [],
+    activeICP: null,
+    lastIntent: null,
+    lastPersona: null,
+    userPreferences: {},
+  });
+  const [suggestedActions, setSuggestedActions] = useState<SuggestedAction[]>([]);
+  const [showThinking, setShowThinking] = useState(true);
+  const [saveNotification, setSaveNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const pollingRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Auto-scroll to bottom on new messages
+  // Auto-scroll
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
-  }, [messages, currentSteps]);
+  }, [messages, isSearching]);
 
   // Focus input on mount
   useEffect(() => {
     inputRef.current?.focus();
-    return () => {
-      if (pollingRef.current) clearInterval(pollingRef.current);
-    };
   }, []);
 
-  const handleSearch = async () => {
-    if (!query.trim() || isSearching) return;
+  // Auto-hide notification
+  useEffect(() => {
+    if (saveNotification) {
+      const t = setTimeout(() => setSaveNotification(null), 4000);
+      return () => clearTimeout(t);
+    }
+  }, [saveNotification]);
 
-    const userQuery = query.trim();
+  const handleSendMessage = useCallback(async (messageText?: string) => {
+    const text = (messageText || query).trim();
+    if (!text || isSearching) return;
     setQuery('');
 
     // Add user message
-    const userMsg: ChatMessage = {
+    const userMsg: AgentMessage = {
       id: `user-${Date.now()}`,
       role: 'user',
-      content: userQuery,
+      content: text,
       timestamp: new Date(),
     };
     setMessages(prev => [...prev, userMsg]);
     setIsSearching(true);
-    setCurrentSteps([]);
 
-    const MAX_ATTEMPTS = 3; // 1 initial + 2 auto-retries
+    try {
+      const result = await safeFetchJSON<{
+        success: boolean;
+        message: AgentMessage;
+        updatedContext: ConversationContext;
+        suggestedActions: SuggestedAction[];
+        error?: string;
+      }>('/api/prospect-discovery/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: text,
+          conversationHistory: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+          context,
+        }),
+      });
 
-    for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-      try {
-        // Call the search API - this is a long-running request (up to 5 min)
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 300_000); // 5 minutes
-
-        const result = await safeFetchJSON<SearchResult>('/api/prospect-discovery/search', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ query: userQuery }),
-          signal: controller.signal,
-        });
-        clearTimeout(timeoutId);
-
-        setCurrentSteps(result.steps || []);
-
-        // Add assistant message with results
-        // Handle both success and partial results
-        const hasProspectData = result.success && result.prospect;
-        const assistantMsg: ChatMessage = {
-          id: `assistant-${Date.now()}`,
-          role: 'assistant',
-          content: hasProspectData
-            ? `Found data for "${result.query}" (${result.queryType}). Data completeness: ${result.prospect.dataCompleteness}%`
-            : `Could not find sufficient data for "${result.query || userQuery}". Try a more specific query.`,
-          timestamp: new Date(),
-          result: hasProspectData ? result : undefined,
-        };
-        setMessages(prev => [...prev, assistantMsg]);
-        break; // Success — exit retry loop
-
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        // Detect retryable errors: 502, 503, gateway, HTML responses, network errors, SyntaxError
-        const isRetryable = (
-          msg.includes('502') || msg.includes('503') || msg.includes('Server error')
-          || msg.includes('gateway') || msg.includes('overloaded') || msg.includes('unavailable')
-          || msg.includes('HTML') || msg.includes('not valid JSON') || msg.includes('Unexpected token')
-          || msg.includes('Network error') || msg.includes('fetch')
-        );
-
-        if (isRetryable && attempt < MAX_ATTEMPTS - 1) {
-          // Show "Retrying..." message with increasing delay
-          const retryDelay = (attempt + 1) * 5000; // 5s, 10s
-          setCurrentSteps([{ step: 'retry', status: 'running', message: `Server temporarily busy — retrying in ${retryDelay / 1000}s... (attempt ${attempt + 2}/${MAX_ATTEMPTS})` }]);
-          await new Promise(r => setTimeout(r, retryDelay));
-          continue; // Retry
-        }
-
-        // Non-retryable error or all retries exhausted
-        const errorMsg: ChatMessage = {
+      if (result.success && result.message) {
+        setMessages(prev => [...prev, result.message]);
+        setContext(result.updatedContext);
+        setSuggestedActions(result.suggestedActions || []);
+      } else {
+        // Agent returned an error message
+        const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
           role: 'system',
-          content: isRetryable
-            ? 'The AI service is temporarily overloaded. Please wait a few seconds and try again.'
-            : `Research failed: ${msg}. Please try again.`,
+          content: result.error || 'The agent encountered an error. Please try again.',
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, errorMsg]);
-        break;
       }
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      const errorMsg: AgentMessage = {
+        id: `error-${Date.now()}`,
+        role: 'system',
+        content: msg.includes('503') || msg.includes('overloaded')
+          ? 'The AI service is temporarily busy. Please try again in a few seconds.'
+          : `Agent error: ${msg}`,
+        timestamp: new Date(),
+      };
+      setMessages(prev => [...prev, errorMsg]);
     }
 
     setIsSearching(false);
-    setCurrentSteps([]);
     inputRef.current?.focus();
-  };
+  }, [query, isSearching, messages, context]);
 
-  const handleConvertToLead = async (messageId: string, prospect: ProspectData) => {
+  const handleConvertToLead = async (messageId: string, prospect: ProspectResult) => {
     try {
       const result = await safeFetchJSON<{ success: boolean; leadId: string; campaignId: string; message: string; error?: string }>('/api/prospect-discovery/convert', {
         method: 'POST',
@@ -340,60 +692,27 @@ export function ProspectDiscoveryView() {
       });
 
       if (result.success) {
-        setMessages(prev => prev.map(m =>
-          m.id === messageId
-            ? { ...m, converted: true, leadId: result.leadId }
-            : m
-        ));
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, converted: true, leadId: result.leadId } : m));
         setSaveNotification({ type: 'success', message: 'Prospect converted to lead successfully!' });
       } else if (result.error === 'Lead already exists') {
-        // Mark as converted since it already exists
-        setMessages(prev => prev.map(m =>
-          m.id === messageId
-            ? { ...m, converted: true, leadId: result.leadId }
-            : m
-        ));
+        setMessages(prev => prev.map(m => m.id === messageId ? { ...m, converted: true, leadId: result.leadId } : m));
         setSaveNotification({ type: 'success', message: 'Lead already exists in your pipeline.' });
       }
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('Error converting to lead:', msg);
-      setSaveNotification({ type: 'error', message: `Failed to convert prospect: ${msg}` });
+      setSaveNotification({ type: 'error', message: `Failed to convert: ${msg}` });
     }
   };
 
-  // Retry a failed search
-  const handleRetry = (originalQuery: string) => {
-    setQuery(originalQuery);
-    setTimeout(() => handleSearch(), 100);
+  const handleSuggestedAction = (prompt: string) => {
+    handleSendMessage(prompt);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
-      handleSearch();
+      handleSendMessage();
     }
-  };
-
-  const queryTypeIcon = (type: string) => {
-    switch (type) {
-      case 'company': return <Building2 className="h-4 w-4 text-emerald-400" />;
-      case 'person': return <User className="h-4 w-4 text-cyan-400" />;
-      case 'url': return <Globe className="h-4 w-4 text-violet-400" />;
-      default: return <Search className="h-4 w-4 text-muted-foreground" />;
-    }
-  };
-
-  const completenessColor = (pct: number) => {
-    if (pct >= 70) return 'text-emerald-400';
-    if (pct >= 40) return 'text-amber-400';
-    return 'text-red-400';
-  };
-
-  const completenessBarColor = (pct: number) => {
-    if (pct >= 70) return '[&>div]:bg-emerald-400';
-    if (pct >= 40) return '[&>div]:bg-amber-400';
-    return '[&>div]:bg-red-400';
   };
 
   // ============================================================
@@ -410,20 +729,37 @@ export function ProspectDiscoveryView() {
             Prospect Discovery
           </h2>
           <p className="text-sm text-muted-foreground mt-1">
-            Search by company name, website URL, or person name — powered by glm-4.7-flash + glm-4.6v-flash
+            Your AI agent researches companies, people, markets & composes outreach — all in one conversation
           </p>
+        </div>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="ghost"
+            size="sm"
+            className={`text-[10px] gap-1 ${showThinking ? 'text-violet-400' : 'text-muted-foreground'}`}
+            onClick={() => setShowThinking(!showThinking)}
+          >
+            <Brain className="h-3.5 w-3.5" />
+            Thinking Mode
+          </Button>
         </div>
       </div>
 
+      {/* Notification Toast */}
+      {saveNotification && (
+        <div className={`mb-2 rounded-lg px-3 py-2 text-xs font-medium ${saveNotification.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+          {saveNotification.message}
+        </div>
+      )}
+
       {/* Chat Area */}
       <div className="flex-1 min-h-0 rounded-xl border border-border/30 bg-card/50 overflow-hidden flex flex-col">
-        {/* Messages */}
         <ScrollArea className="flex-1 min-h-0" ref={scrollRef}>
           <div className="p-4 space-y-4">
+            {/* Empty State */}
             {messages.length === 0 && !isSearching && (
-              /* Empty State */
-              <div className="flex flex-col items-center justify-center py-16 px-4">
-                <div className="relative mb-6">
+              <div className="flex flex-col items-center justify-center py-12 px-4">
+                <div className="relative mb-5">
                   <div className="h-20 w-20 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center border border-emerald-500/20">
                     <Telescope className="h-10 w-10 text-emerald-400" />
                   </div>
@@ -431,25 +767,29 @@ export function ProspectDiscoveryView() {
                     <Sparkles className="h-4 w-4 text-white" />
                   </div>
                 </div>
-                <h3 className="text-lg font-semibold text-foreground/90 mb-2">Discover Your Next Prospect</h3>
-                <p className="text-sm text-muted-foreground text-center max-w-md mb-6">
-                  Enter a company name, website URL, or person name below. Our dual-model AI (glm-4.7-flash + glm-4.6v-flash) will research the web,
-                  LinkedIn, news, and social media to build a complete prospect profile.
+                <h3 className="text-lg font-semibold text-foreground/90 mb-2">Your AI Agent is Ready</h3>
+                <p className="text-sm text-muted-foreground text-center max-w-md mb-5">
+                  I can research companies, find people, analyze markets, build ICPs, score leads, and compose outreach — all through natural conversation.
                 </p>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 max-w-lg w-full">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 max-w-2xl w-full">
                   {[
-                    { icon: Building2, label: 'Company Name', example: 'Farm to Cafeteria Canada', color: 'emerald' },
-                    { icon: Globe, label: 'Website URL', example: 'https://farmtocafeteriacanada.ca', color: 'violet' },
-                    { icon: User, label: 'Person Name', example: 'Suhail Nanji', color: 'cyan' },
+                    { emoji: '🔍', label: 'Research a Company', example: 'Tell me about Stripe', color: 'emerald' },
+                    { emoji: '🐕', label: 'Find a Person', example: 'Find Patrick Collison', color: 'cyan' },
+                    { emoji: '📊', label: 'Analyze a Market', example: 'SaaS market trends in 2026', color: 'violet' },
+                    { emoji: '🏗️', label: 'Build an ICP', example: 'Build an ICP for B2B SaaS', color: 'amber' },
+                    { emoji: '⚖️', label: 'Score a Lead', example: 'Is Stripe a good lead for us?', color: 'rose' },
+                    { emoji: '✍️', label: 'Compose Outreach', example: 'Write an email to Stripe', color: 'sky' },
+                    { emoji: '🧠', label: 'Competitive Analysis', example: 'HubSpot vs Salesforce', color: 'indigo' },
+                    { emoji: '🔗', label: 'Analyze a Website', example: 'https://stripe.com', color: 'emerald' },
                   ].map((item) => (
                     <button
                       key={item.label}
-                      onClick={() => setQuery(item.example)}
-                      className="flex flex-col items-center gap-2 p-3 rounded-lg border border-border/30 bg-secondary/10 hover:bg-secondary/20 transition-colors cursor-pointer"
+                      onClick={() => handleSendMessage(item.example)}
+                      className="flex flex-col items-center gap-1.5 p-3 rounded-lg border border-border/30 bg-secondary/10 hover:bg-secondary/20 transition-colors cursor-pointer text-left"
                     >
-                      <item.icon className={`h-5 w-5 text-${item.color}-400`} />
+                      <span className="text-lg">{item.emoji}</span>
                       <span className="text-[10px] font-medium text-foreground/70">{item.label}</span>
-                      <span className="text-[9px] text-muted-foreground text-center">{item.example}</span>
+                      <span className="text-[8px] text-muted-foreground/60 text-center">{item.example}</span>
                     </button>
                   ))}
                 </div>
@@ -459,7 +799,7 @@ export function ProspectDiscoveryView() {
             {/* Message List */}
             {messages.map((msg) => (
               <div key={msg.id} className="space-y-3">
-                {/* User Query Bubble */}
+                {/* User Message */}
                 {msg.role === 'user' && (
                   <div className="flex justify-end">
                     <div className="max-w-md rounded-2xl rounded-br-md bg-emerald-500/15 border border-emerald-500/20 px-4 py-2.5">
@@ -474,259 +814,73 @@ export function ProspectDiscoveryView() {
                   <div className="flex justify-center">
                     <div className="rounded-lg bg-red-500/10 border border-red-500/20 px-4 py-2.5 max-w-md">
                       <p className="text-xs text-red-400">{msg.content}</p>
-                      {/* Find the user query that preceded this error */}
-                      {(() => {
-                        const msgIndex = messages.indexOf(msg);
-                        const prevUserMsg = messages.slice(0, msgIndex).reverse().find(m => m.role === 'user');
-                        if (prevUserMsg) {
-                          return (
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              className="text-[10px] text-red-300 hover:text-red-200 hover:bg-red-500/10 gap-1 h-6 mt-2"
-                              onClick={() => handleRetry(prevUserMsg.content)}
-                            >
-                              <RefreshCw className="h-3 w-3" />
-                              Retry search
-                            </Button>
-                          );
-                        }
-                        return null;
-                      })()}
                     </div>
                   </div>
                 )}
 
-                {/* Assistant Result */}
-                {msg.role === 'assistant' && msg.result && (
+                {/* Agent Response */}
+                {msg.role === 'assistant' && (
                   <div className="flex justify-start">
                     <div className="max-w-3xl w-full space-y-3">
-                      {/* Status Header */}
+                      {/* Agent Header */}
                       <div className="flex items-center gap-2">
                         <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center border border-emerald-500/20">
                           <Sparkles className="h-3.5 w-3.5 text-emerald-400" />
                         </div>
-                        <div>
-                          <span className="text-xs font-medium text-foreground/80">Prospect Discovery AI</span>
-                          <div className="flex items-center gap-2">
-                            {queryTypeIcon(msg.result.queryType)}
-                            <Badge variant="outline" className="text-[9px] border-border/30">
-                              {msg.result.queryType}
-                            </Badge>
-                            <span className={`text-xs font-semibold ${completenessColor(msg.result.prospect.dataCompleteness)}`}>
-                              {msg.result.prospect.dataCompleteness}% complete
-                            </span>
-                            {msg.result.models && msg.result.models.length > 0 && (
-                              <Badge variant="outline" className="text-[8px] border-violet-500/20 text-violet-400 gap-1">
-                                <Sparkles className="h-2.5 w-2.5" />
-                                {msg.result.models.join(' + ')}
-                              </Badge>
-                            )}
-                          </div>
+                        <div className="flex items-center gap-2">
+                          <PersonaBadge persona={msg.persona || 'navigator'} size="lg" />
+                          <span className="text-[9px] text-muted-foreground/50">
+                            {msg.timestamp.toLocaleTimeString()}
+                          </span>
                         </div>
                       </div>
 
-                      {/* Research Steps */}
-                      <div className="space-y-1 ml-9">
-                        {(msg.result.steps || []).map((step, i) => (
-                          <StepIndicator key={i} step={step} />
-                        ))}
-                      </div>
+                      {/* Thinking Indicator */}
+                      {showThinking && msg.thinking && (
+                        <div className="ml-9">
+                          <ThinkingIndicator thinking={msg.thinking} />
+                        </div>
+                      )}
 
-                      {/* Main Data Card */}
-                      <Card className="border-border/30 ml-9">
-                        <CardContent className="p-4 space-y-3">
-                          {/* Company / Person Header */}
-                          {msg.result.prospect.companyName && (
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <h4 className="text-base font-bold text-foreground/90">{msg.result.prospect.companyName}</h4>
-                                {msg.result.prospect.legalName && msg.result.prospect.legalName !== msg.result.prospect.companyName && (
-                                  <p className="text-[10px] text-muted-foreground">Legal: {msg.result.prospect.legalName}</p>
-                                )}
-                                {msg.result.prospect.description && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{msg.result.prospect.description}</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0 ml-3">
-                                <Progress value={msg.result.prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(msg.result.prospect.dataCompleteness)}`} />
-                                <span className={`text-xs font-bold ${completenessColor(msg.result.prospect.dataCompleteness)}`}>
-                                  {msg.result.prospect.dataCompleteness}%
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                      {/* Action Steps */}
+                      {msg.actions && msg.actions.length > 0 && (
+                        <div className="space-y-1 ml-9">
+                          {msg.actions.map((action, i) => (
+                            <ActionStepIndicator key={i} action={action} />
+                          ))}
+                        </div>
+                      )}
 
-                          {/* Person Header (if person query) */}
-                          {msg.result.prospect.personName && !msg.result.prospect.companyName && (
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <h4 className="text-base font-bold text-foreground/90">{msg.result.prospect.personName}</h4>
-                                {msg.result.prospect.personTitle && (
-                                  <p className="text-xs text-cyan-400">{msg.result.prospect.personTitle}</p>
-                                )}
-                                {msg.result.prospect.personBio && (
-                                  <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{msg.result.prospect.personBio}</p>
-                                )}
-                              </div>
-                              <div className="flex items-center gap-2 shrink-0 ml-3">
-                                <Progress value={msg.result.prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(msg.result.prospect.dataCompleteness)}`} />
-                                <span className={`text-xs font-bold ${completenessColor(msg.result.prospect.dataCompleteness)}`}>
-                                  {msg.result.prospect.dataCompleteness}%
-                                </span>
-                              </div>
-                            </div>
-                          )}
+                      {/* Conversational Response */}
+                      {msg.content && (
+                        <div className="ml-9 rounded-2xl rounded-bl-md bg-secondary/20 border border-border/30 px-4 py-3">
+                          <p className="text-sm text-foreground/85 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        </div>
+                      )}
 
-                          {/* Person associated with company */}
-                          {msg.result.prospect.personName && msg.result.prospect.companyName && (
-                            <div className="rounded-md bg-cyan-500/5 border border-cyan-500/10 p-2.5">
-                              <div className="flex items-center gap-2 mb-1">
-                                <User className="h-3.5 w-3.5 text-cyan-400" />
-                                <span className="text-xs font-medium text-cyan-400">Key Person</span>
-                              </div>
-                              <div className="space-y-0.5">
-                                <p className="text-xs font-medium text-foreground/90">{msg.result.prospect.personName}</p>
-                                {msg.result.prospect.personTitle && <p className="text-[10px] text-muted-foreground">{msg.result.prospect.personTitle}</p>}
-                                {msg.result.prospect.personEmail && <p className="text-[10px] text-cyan-400">{msg.result.prospect.personEmail}</p>}
-                                {msg.result.prospect.personPhone && <p className="text-[10px] text-muted-foreground">{msg.result.prospect.personPhone}</p>}
-                              </div>
-                            </div>
-                          )}
+                      {/* Prospect Data Card */}
+                      {msg.prospectData && (
+                        <ProspectDataCard
+                          prospect={msg.prospectData}
+                          messageId={msg.id}
+                          converted={msg.converted}
+                          leadId={msg.leadId}
+                          onConvert={handleConvertToLead}
+                          onViewLeads={() => setActiveView('leads')}
+                        />
+                      )}
 
-                          {/* Data Sections Grid */}
-                          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-                            {/* Contact Info */}
-                            <SectionCard title="Contact Information" icon={Mail}>
-                              <DataField icon={Mail} label="General Email" value={msg.result.prospect.generalEmail} href={msg.result.prospect.generalEmail ? `mailto:${msg.result.prospect.generalEmail}` : null} />
-                              <DataField icon={Mail} label="Support Email" value={msg.result.prospect.supportEmail} href={msg.result.prospect.supportEmail ? `mailto:${msg.result.prospect.supportEmail}` : null} />
-                              <DataField icon={Phone} label="Phone" value={msg.result.prospect.phoneMain} href={msg.result.prospect.phoneMain ? `tel:${msg.result.prospect.phoneMain}` : null} />
-                              <DataField icon={Globe} label="Website" value={msg.result.prospect.website} href={msg.result.prospect.website} />
-                            </SectionCard>
+                      {/* ICP Data Card */}
+                      {msg.icpData && <ICPDataCard icp={msg.icpData} />}
 
-                            {/* Location */}
-                            <SectionCard title="Location" icon={MapPin}>
-                              <DataField icon={MapPin} label="Address" value={msg.result.prospect.hqAddress} />
-                              <DataField icon={MapPin} label="City" value={msg.result.prospect.city} />
-                              <DataField icon={MapPin} label="State/Province" value={msg.result.prospect.stateProvince} />
-                              <DataField icon={MapPin} label="Country" value={msg.result.prospect.country} />
-                            </SectionCard>
+                      {/* Market Data Card */}
+                      {msg.marketData && <MarketDataCard market={msg.marketData} />}
 
-                            {/* Firmographics */}
-                            <SectionCard title="Firmographics" icon={BarChart3}>
-                              <DataField icon={Users} label="Employees" value={msg.result.prospect.employeeCount} />
-                              <DataField icon={DollarSign} label="Revenue" value={msg.result.prospect.revenueEstimate} />
-                              <DataField icon={Calendar} label="Founded" value={msg.result.prospect.foundingYear} />
-                              <DataField icon={Building2} label="Ownership" value={msg.result.prospect.ownershipType} />
-                              <DataField icon={Briefcase} label="Industry" value={msg.result.prospect.industry} />
-                              <DataField icon={Briefcase} label="Sub-Industry" value={msg.result.prospect.subIndustry} />
-                            </SectionCard>
+                      {/* Score Data Card */}
+                      {msg.scoreData && <ScoreDataCard score={msg.scoreData} />}
 
-                            {/* Key People */}
-                            <SectionCard title="Key People" icon={Users}>
-                              <DataField icon={Star} label="CEO" value={msg.result.prospect.ceoName} />
-                              <DataField icon={Mail} label="CEO Email" value={msg.result.prospect.ceoEmail} href={msg.result.prospect.ceoEmail ? `mailto:${msg.result.prospect.ceoEmail}` : null} />
-                              <DataField icon={User} label="Key Contact" value={msg.result.prospect.keyContactName ? `${msg.result.prospect.keyContactName}${msg.result.prospect.keyContactTitle ? ` (${msg.result.prospect.keyContactTitle})` : ''}` : null} />
-                              <DataField icon={Mail} label="Contact Email" value={msg.result.prospect.keyContactEmail} href={msg.result.prospect.keyContactEmail ? `mailto:${msg.result.prospect.keyContactEmail}` : null} />
-                            </SectionCard>
-
-                            {/* Digital Presence */}
-                            <SectionCard title="Digital Presence" icon={Globe}>
-                              <DataField icon={Linkedin} label="LinkedIn" value={msg.result.prospect.linkedinUrl} href={msg.result.prospect.linkedinUrl} />
-                              <DataField icon={Twitter} label="Twitter/X" value={msg.result.prospect.twitterHandle} />
-                              <DataField icon={Globe} label="Facebook" value={msg.result.prospect.facebookPage} href={msg.result.prospect.facebookPage} />
-                              {msg.result.prospect.personLinkedin && (
-                                <DataField icon={Linkedin} label="Person LinkedIn" value={msg.result.prospect.personLinkedin} href={msg.result.prospect.personLinkedin} />
-                              )}
-                            </SectionCard>
-
-                            {/* Products & Services */}
-                            <SectionCard title="Products & Services" icon={FileText} defaultOpen={msg.result.prospect.productsServices.length > 0}>
-                              <TagList items={msg.result.prospect.productsServices || []} color="emerald" />
-                              {msg.result.prospect.techStack && msg.result.prospect.techStack.length > 0 && (
-                                <div className="mt-2">
-                                  <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
-                                  <TagList items={msg.result.prospect.techStack} color="violet" />
-                                </div>
-                              )}
-                              {msg.result.prospect.fundingInfo && (
-                                <DataField icon={DollarSign} label="Funding" value={msg.result.prospect.fundingInfo} />
-                              )}
-                            </SectionCard>
-                          </div>
-
-                          {/* Board Members */}
-                          {msg.result.prospect.boardMembers && msg.result.prospect.boardMembers.length > 0 && (
-                            <SectionCard title="Board Members & Leadership" icon={Users} defaultOpen={false}>
-                              <TagList items={msg.result.prospect.boardMembers} color="amber" />
-                            </SectionCard>
-                          )}
-
-                          {/* Recent News */}
-                          {msg.result.prospect.recentNews && msg.result.prospect.recentNews.length > 0 && (
-                            <SectionCard title="Recent News & Activity" icon={FileText} defaultOpen={false}>
-                              {msg.result.prospect.recentNews.map((news, i) => (
-                                <div key={i} className="flex items-start gap-2 py-1">
-                                  <div className="h-1.5 w-1.5 rounded-full bg-amber-400 mt-1.5 shrink-0" />
-                                  <p className="text-xs text-muted-foreground">{news}</p>
-                                </div>
-                              ))}
-                            </SectionCard>
-                          )}
-
-                          {/* Sources */}
-                          {msg.result.prospect.sources && msg.result.prospect.sources.length > 0 && (
-                            <div className="flex items-center gap-1 flex-wrap">
-                              <span className="text-[9px] text-muted-foreground/50">Sources:</span>
-                              {msg.result.prospect.sources.slice(0, 5).map((src, i) => (
-                                <a key={i} href={src} target="_blank" rel="noopener noreferrer" className="text-[9px] text-cyan-400/70 hover:text-cyan-400 truncate max-w-[150px]">
-                                  {src.replace(/^https?:\/\//, '').split('/')[0]}
-                                </a>
-                              ))}
-                              {msg.result.prospect.sources.length > 5 && (
-                                <span className="text-[9px] text-muted-foreground/50">+{msg.result.prospect.sources.length - 5} more</span>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Action Buttons */}
-                          <div className="flex items-center gap-2 pt-2">
-                            {msg.converted ? (
-                              <div className="flex items-center gap-2 text-emerald-400">
-                                <CheckCircle2 className="h-4 w-4" />
-                                <span className="text-xs font-medium">Added to Leads</span>
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="text-[10px] text-muted-foreground hover:text-foreground gap-1 h-6"
-                                  onClick={() => {
-                                    setActiveView('leads');
-                                  }}
-                                >
-                                  View in Leads <ArrowRight className="h-3 w-3" />
-                                </Button>
-                              </div>
-                            ) : (
-                              <Button
-                                onClick={() => handleConvertToLead(msg.id, msg.result!.prospect)}
-                                className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all text-xs h-8"
-                              >
-                                <Plus className="h-3.5 w-3.5" />
-                                Add to Leads
-                              </Button>
-                            )}
-                          </div>
-                        </CardContent>
-                      </Card>
-                    </div>
-                  </div>
-                )}
-
-                {/* Assistant text-only message */}
-                {msg.role === 'assistant' && !msg.result && (
-                  <div className="flex justify-start">
-                    <div className="max-w-md rounded-2xl rounded-bl-md bg-secondary/20 border border-border/30 px-4 py-2.5">
-                      <p className="text-sm text-foreground/80">{msg.content}</p>
+                      {/* Outreach Data Card */}
+                      {msg.outreachData && <OutreachDataCard outreach={msg.outreachData} />}
                     </div>
                   </div>
                 )}
@@ -741,28 +895,28 @@ export function ProspectDiscoveryView() {
                     <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 flex items-center justify-center border border-emerald-500/20">
                       <Loader2 className="h-3.5 w-3.5 animate-spin text-emerald-400" />
                     </div>
-                    <span className="text-xs font-medium text-foreground/80">Researching...</span>
+                    <span className="text-xs font-medium text-foreground/80">Agent is working...</span>
                   </div>
                   <div className="rounded-2xl rounded-bl-md bg-secondary/20 border border-border/30 px-4 py-3">
                     <div className="flex items-center gap-2 mb-3">
-                      <Zap className="h-3.5 w-3.5 text-emerald-400 animate-pulse" />
-                      <span className="text-xs text-emerald-400 font-medium">AI agents are researching your query</span>
+                      <Brain className="h-3.5 w-3.5 text-violet-400 animate-pulse" />
+                      <span className="text-xs text-violet-400 font-medium">AI agent is processing your request</span>
                     </div>
                     <div className="space-y-1.5">
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />
-                        <span className="text-xs text-muted-foreground">Searching web, LinkedIn, social media...</span>
+                        <span className="text-xs text-muted-foreground">Classifying intent & selecting specialist...</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-3 w-3 animate-spin text-violet-400" style={{ animationDelay: '0.5s' }} />
-                        <span className="text-xs text-muted-foreground">Extracting data with AI...</span>
+                        <span className="text-xs text-muted-foreground">Searching multiple channels in parallel...</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <Loader2 className="h-3 w-3 animate-spin text-amber-400" style={{ animationDelay: '1s' }} />
-                        <span className="text-xs text-muted-foreground">Building comprehensive profile...</span>
+                        <span className="text-xs text-muted-foreground">Generating intelligent response...</span>
                       </div>
                     </div>
-                    <p className="text-[10px] text-muted-foreground/50 mt-3">This may take 30-60 seconds for complete research</p>
+                    <p className="text-[10px] text-muted-foreground/50 mt-3">This may take 30-90 seconds for complete research</p>
                   </div>
                 </div>
               </div>
@@ -770,14 +924,38 @@ export function ProspectDiscoveryView() {
           </div>
         </ScrollArea>
 
+        {/* Suggested Actions Bar */}
+        {suggestedActions.length > 0 && !isSearching && (
+          <div className="border-t border-border/20 px-4 py-2 bg-card/60">
+            <div className="flex items-center gap-2 overflow-x-auto">
+              <span className="text-[9px] text-muted-foreground/50 shrink-0">Next:</span>
+              {suggestedActions.map((action, i) => {
+                const Icon = ICON_MAP[action.icon] || Sparkles;
+                return (
+                  <Button
+                    key={i}
+                    variant="ghost"
+                    size="sm"
+                    className="text-[10px] h-6 gap-1 text-muted-foreground hover:text-emerald-400 shrink-0"
+                    onClick={() => handleSuggestedAction(action.prompt)}
+                  >
+                    <Icon className="h-3 w-3" />
+                    {action.label}
+                  </Button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Input Bar */}
         <div className="border-t border-border/30 p-3 bg-card/80">
           <div className="flex items-center gap-2">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
+              <MessageSquare className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground/50" />
               <Input
                 ref={inputRef}
-                placeholder="Enter company name, website URL, or person name..."
+                placeholder="Ask anything — research companies, find people, analyze markets, build ICPs..."
                 value={query}
                 onChange={(e) => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
@@ -786,25 +964,19 @@ export function ProspectDiscoveryView() {
               />
             </div>
             <Button
-              onClick={handleSearch}
+              onClick={() => handleSendMessage()}
               disabled={!query.trim() || isSearching}
               className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all h-11 px-6"
             >
               {isSearching ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Researching...
-                </>
+                <><Loader2 className="h-4 w-4 animate-spin" />Working...</>
               ) : (
-                <>
-                  <Telescope className="h-4 w-4" />
-                  Discover
-                </>
+                <><Send className="h-4 w-4" />Send</>
               )}
             </Button>
           </div>
           <p className="text-[9px] text-muted-foreground/40 mt-1.5 text-center">
-            Powered by glm-4.7-flash + glm-4.6v-flash — AI agents search the web, LinkedIn, news, and social media
+            Powered by 7 specialist AI agents — Scout, Hound, Analyst, Architect, Judge, Scribe & Navigator
           </p>
         </div>
       </div>
