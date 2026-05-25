@@ -1,11 +1,77 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+// ============================================================
+// Type Coercion Helpers
+// ============================================================
+
+/**
+ * Convert a value to a string suitable for a Prisma String? field.
+ * Handles: numbers → string, arrays → comma-joined string,
+ * null/undefined → null, empty string → null.
+ */
+function toStringOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (typeof value === 'string') return value.trim() || null;
+  if (typeof value === 'number') return String(value);
+  if (typeof value === 'boolean') return String(value);
+  if (Array.isArray(value)) return value.length > 0 ? value.join(', ') : null;
+  return String(value);
+}
+
+/**
+ * Convert a value to an integer suitable for a Prisma Int field.
+ * Handles: strings → parsed int, null/undefined → fallback, NaN → fallback.
+ */
+function toIntOrFallback(value: unknown, fallback: number = 0): number {
+  if (value === null || value === undefined) return fallback;
+  if (typeof value === 'number') return Math.round(value) || fallback;
+  if (typeof value === 'string') {
+    const parsed = parseInt(value, 10);
+    return isNaN(parsed) ? fallback : parsed;
+  }
+  return fallback;
+}
+
+/**
+ * Convert a value to a JSON string suitable for a Prisma String? field
+ * that stores JSON arrays. Handles: arrays → JSON.stringify,
+ * comma-separated strings → parsed array → JSON.stringify,
+ * null/undefined/empty → null.
+ */
+function toJsonArrayOrNull(value: unknown): string | null {
+  if (value === null || value === undefined) return null;
+  if (Array.isArray(value)) return value.length > 0 ? JSON.stringify(value) : null;
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+    // Try parsing as JSON array first
+    try {
+      const parsed = JSON.parse(trimmed);
+      if (Array.isArray(parsed)) return parsed.length > 0 ? JSON.stringify(parsed) : null;
+    } catch {
+      // Not JSON — treat as comma-separated
+    }
+    // Treat as comma-separated string
+    const items = trimmed.split(',').map(s => s.trim()).filter(Boolean);
+    return items.length > 0 ? JSON.stringify(items) : null;
+  }
+  return null;
+}
+
+// ============================================================
+// API Route Handler
+// ============================================================
+
 /**
  * POST /api/prospect-discovery/convert
  *
  * Converts a discovered prospect into a Lead in the database.
  * Creates a "Prospect Discovery" campaign if one doesn't exist.
+ *
+ * Handles type coercion robustly — the LLM may return numbers
+ * where strings are expected, comma-separated strings where arrays
+ * are expected, etc. All values are sanitized before reaching Prisma.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -31,8 +97,8 @@ export async function POST(request: NextRequest) {
             name: 'Prospect Discovery',
             description: 'Leads discovered through the Prospect Discovery portal',
             status: 'active',
-            targetIndustry: (prospect.industry as string) || 'Various',
-            targetLocation: [prospect.city, prospect.country].filter(Boolean).join(', ') || 'Global',
+            targetIndustry: toStringOrNull(prospect.industry) || 'Various',
+            targetLocation: [prospect.city, prospect.country].filter(v => v != null && String(v).trim()).map(v => String(v)).join(', ') || 'Global',
           },
         });
       }
@@ -40,7 +106,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Check for duplicate lead (same company name + same campaign)
-    const companyName = (prospect.companyName as string) || (prospect.personCompany as string) || 'Unknown Company';
+    const companyName = toStringOrNull(prospect.companyName) || toStringOrNull(prospect.personCompany) || 'Unknown Company';
     const existingLead = await db.lead.findFirst({
       where: {
         campaignId,
@@ -57,48 +123,86 @@ export async function POST(request: NextRequest) {
       }, { status: 409 });
     }
 
-    // Create the lead
+    // Compute data completeness score — coerce to int safely
+    const completenessScore = toIntOrFallback(prospect.dataCompleteness, 0);
+
+    // Build notes from extra fields that don't map directly to Lead columns
+    const notesParts: string[] = [];
+    if (prospect.personBio) notesParts.push(`Bio: ${prospect.personBio}`);
+    if (prospect.description) notesParts.push(`Company Description: ${prospect.description}`);
+
+    // Board members — handle both array and comma-separated string
+    const boardMembers = Array.isArray(prospect.boardMembers)
+      ? (prospect.boardMembers as string[]).filter(Boolean)
+      : typeof prospect.boardMembers === 'string'
+        ? (prospect.boardMembers as string).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+    if (boardMembers.length > 0) notesParts.push(`Board Members: ${boardMembers.join(', ')}`);
+
+    // Products/Services — handle both array and comma-separated string
+    const productsServices = Array.isArray(prospect.productsServices)
+      ? (prospect.productsServices as string[]).filter(Boolean)
+      : typeof prospect.productsServices === 'string'
+        ? (prospect.productsServices as string).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+    if (productsServices.length > 0) notesParts.push(`Products/Services: ${productsServices.join(', ')}`);
+
+    // Recent news — handle both array and string
+    const recentNews = Array.isArray(prospect.recentNews)
+      ? (prospect.recentNews as string[]).filter(Boolean)
+      : typeof prospect.recentNews === 'string'
+        ? (prospect.recentNews as string).split(';').map(s => s.trim()).filter(Boolean)
+        : [];
+    if (recentNews.length > 0) notesParts.push(`Recent News: ${recentNews.join('; ')}`);
+
+    // Partners — handle both array and string
+    const partners = Array.isArray(prospect.partners)
+      ? (prospect.partners as string[]).filter(Boolean)
+      : typeof prospect.partners === 'string'
+        ? (prospect.partners as string).split(',').map(s => s.trim()).filter(Boolean)
+        : [];
+    if (partners.length > 0) notesParts.push(`Partners: ${partners.join(', ')}`);
+
+    if (prospect.fundingInfo) notesParts.push(`Funding: ${prospect.fundingInfo}`);
+    if (prospect.personPhone) notesParts.push(`Person Phone: ${prospect.personPhone}`);
+    if (prospect.personLinkedin) notesParts.push(`Person LinkedIn: ${prospect.personLinkedin}`);
+
+    // Create the lead with fully type-coerced data
     const lead = await db.lead.create({
       data: {
         campaignId,
         companyName,
-        legalName: (prospect.legalName as string) || null,
-        website: (prospect.website as string) || null,
-        industry: (prospect.industry as string) || null,
-        subIndustry: (prospect.subIndustry as string) || null,
-        hqAddress: (prospect.hqAddress as string) || null,
-        city: (prospect.city as string) || null,
-        stateProvince: (prospect.stateProvince as string) || null,
-        country: (prospect.country as string) || null,
-        postalCode: (prospect.postalCode as string) || null,
-        phoneMain: (prospect.phoneMain as string) || null,
-        generalEmail: (prospect.generalEmail as string) || null,
-        supportEmail: (prospect.supportEmail as string) || null,
-        ceoName: (prospect.ceoName as string) || null,
-        ceoEmail: (prospect.ceoEmail as string) || null,
-        keyContactName: (prospect.keyContactName as string) || (prospect.personName as string) || null,
-        keyContactTitle: (prospect.keyContactTitle as string) || (prospect.personTitle as string) || null,
-        keyContactEmail: (prospect.keyContactEmail as string) || (prospect.personEmail as string) || null,
-        employeeCount: (prospect.employeeCount as string) || null,
-        revenueEstimate: (prospect.revenueEstimate as string) || null,
-        foundingYear: (prospect.foundingYear as string) || null,
-        ownershipType: (prospect.ownershipType as string) || null,
-        linkedinUrl: (prospect.linkedinUrl as string) || null,
-        twitterHandle: (prospect.twitterHandle as string) || null,
-        facebookPage: (prospect.facebookPage as string) || null,
-        techStack: Array.isArray(prospect.techStack) ? JSON.stringify(prospect.techStack) : null,
-        sources: Array.isArray(prospect.sources) ? JSON.stringify(prospect.sources) : null,
+        legalName: toStringOrNull(prospect.legalName),
+        website: toStringOrNull(prospect.website),
+        industry: toStringOrNull(prospect.industry),
+        subIndustry: toStringOrNull(prospect.subIndustry),
+        hqAddress: toStringOrNull(prospect.hqAddress),
+        city: toStringOrNull(prospect.city),
+        stateProvince: toStringOrNull(prospect.stateProvince),
+        country: toStringOrNull(prospect.country),
+        postalCode: toStringOrNull(prospect.postalCode),
+        phoneMain: toStringOrNull(prospect.phoneMain),
+        generalEmail: toStringOrNull(prospect.generalEmail),
+        supportEmail: toStringOrNull(prospect.supportEmail),
+        ceoName: toStringOrNull(prospect.ceoName),
+        ceoEmail: toStringOrNull(prospect.ceoEmail),
+        keyContactName: toStringOrNull(prospect.keyContactName) || toStringOrNull(prospect.personName),
+        keyContactTitle: toStringOrNull(prospect.keyContactTitle) || toStringOrNull(prospect.personTitle),
+        keyContactEmail: toStringOrNull(prospect.keyContactEmail) || toStringOrNull(prospect.personEmail),
+        employeeCount: toStringOrNull(prospect.employeeCount),
+        revenueEstimate: toStringOrNull(prospect.revenueEstimate),
+        foundingYear: toStringOrNull(prospect.foundingYear),
+        ownershipType: toStringOrNull(prospect.ownershipType),
+        linkedinUrl: toStringOrNull(prospect.linkedinUrl),
+        twitterHandle: toStringOrNull(prospect.twitterHandle),
+        facebookPage: toStringOrNull(prospect.facebookPage),
+        techStack: toJsonArrayOrNull(prospect.techStack),
+        sources: toJsonArrayOrNull(prospect.sources),
         stage: 'enriched',
-        leadScore: (prospect.dataCompleteness as number) || 0,
-        leadTier: ((prospect.dataCompleteness as number) || 0) >= 60 ? 'warm' : 'cold',
-        dataCompleteness: (prospect.dataCompleteness as number) || 0,
-        notes: [
-          prospect.personBio ? `Bio: ${prospect.personBio}` : null,
-          prospect.description ? `Company Description: ${prospect.description}` : null,
-          Array.isArray(prospect.boardMembers) && prospect.boardMembers.length > 0 ? `Board Members: ${(prospect.boardMembers as string[]).join(', ')}` : null,
-          Array.isArray(prospect.productsServices) && prospect.productsServices.length > 0 ? `Products/Services: ${(prospect.productsServices as string[]).join(', ')}` : null,
-          prospect.fundingInfo ? `Funding: ${prospect.fundingInfo}` : null,
-        ].filter(Boolean).join('\n') || null,
+        leadScore: completenessScore,
+        leadTier: completenessScore >= 60 ? 'warm' : 'cold',
+        dataCompleteness: completenessScore,
+        notes: notesParts.join('\n') || null,
       },
     });
 
@@ -119,9 +223,10 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('Error converting prospect to lead:', error);
+    const message = error instanceof Error ? error.message : 'Unknown error';
     return NextResponse.json({
       error: 'Failed to convert prospect',
-      details: error instanceof Error ? error.message : 'Unknown error',
+      details: message,
     }, { status: 500 });
   }
 }

@@ -333,7 +333,7 @@ export function ProspectDiscoveryView() {
 
   const handleConvertToLead = async (messageId: string, prospect: ProspectData) => {
     try {
-      const result = await safeFetchJSON<{ success: boolean; leadId: string; campaignId: string; message: string }>('/api/prospect-discovery/convert', {
+      const result = await safeFetchJSON<{ success: boolean; leadId: string; campaignId: string; message: string; error?: string }>('/api/prospect-discovery/convert', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ prospect }),
@@ -345,9 +345,20 @@ export function ProspectDiscoveryView() {
             ? { ...m, converted: true, leadId: result.leadId }
             : m
         ));
+        setSaveNotification({ type: 'success', message: 'Prospect converted to lead successfully!' });
+      } else if (result.error === 'Lead already exists') {
+        // Mark as converted since it already exists
+        setMessages(prev => prev.map(m =>
+          m.id === messageId
+            ? { ...m, converted: true, leadId: result.leadId }
+            : m
+        ));
+        setSaveNotification({ type: 'success', message: 'Lead already exists in your pipeline.' });
       }
     } catch (error) {
-      console.error('Error converting to lead:', error);
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('Error converting to lead:', msg);
+      setSaveNotification({ type: 'error', message: `Failed to convert prospect: ${msg}` });
     }
   };
 
