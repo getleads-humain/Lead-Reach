@@ -19,6 +19,16 @@ node_modules
 
 # production
 /build
+/dist/
+
+# database (contains runtime data, not source)
+/db/
+
+# downloads (generated files)
+/download/
+
+# upload (user-uploaded files)
+/upload/
 
 # misc
 .DS_Store
@@ -30,12 +40,11 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
+# env files (contains secrets — never commit)
 .env*
 
 # vercel
 .vercel
-
 
 # typescript
 *.tsbuildinfo
@@ -46,9 +55,31 @@ local-*
 *.log
 dev.log
 dev.out.log
+server.log
+
+# temp / scratch
 test
 prompt
+tmp/
+temp/
 
-server.log
-# Skills directory
+# Skills directory (internal tooling)
 /skills/
+
+# Agent context (session data)
+/agent-ctx/
+
+# Worklog (session data)
+worklog.md
+
+# Mini services runtime
+mini-services/*/node_modules/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+Thumbs.db
