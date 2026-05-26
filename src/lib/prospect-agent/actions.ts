@@ -844,11 +844,64 @@ export async function generateConversationResponse(
         context,
       ),
       userMessage: 'Generate your conversational response based on the action results above.',
-      retriesPerModel: 1,
+      retriesPerModel: 2, // Increased from 1 to 2 for better resilience
     });
-    return response || 'I completed my research but had trouble generating a summary. Please check the detailed results above.';
+    if (response) return response;
+
+    // LLM returned null — generate a simple response from the action results
+    return buildFallbackResponse(intent, actionResults);
   } catch {
-    return 'I completed my research. Please check the detailed results above.';
+    return buildFallbackResponse(intent, actionResults);
+  }
+}
+
+/**
+ * Build a simple fallback response when the LLM is unavailable.
+ * Extracts key data from the action results to provide a useful response
+ * even without AI-generated prose.
+ */
+function buildFallbackResponse(intent: UserIntent, actionResults: string): string {
+  try {
+    const data = JSON.parse(actionResults);
+
+    switch (intent) {
+      case 'research_company':
+      case 'research_url': {
+        const company = data.company || data.companyName || 'the company';
+        const industry = data.industry || '';
+        const employees = data.employees || data.employeeCount || '';
+        const website = data.website || '';
+        const email = data.email || data.generalEmail || '';
+        const ceo = data.ceo || data.ceoName || '';
+        const parts = [`Here's what I found about **${company}**:`];
+        if (industry) parts.push(`- **Industry:** ${industry}`);
+        if (employees) parts.push(`- **Employees:** ${employees}`);
+        if (website) parts.push(`- **Website:** ${website}`);
+        if (email) parts.push(`- **Email:** ${email}`);
+        if (ceo) parts.push(`- **CEO:** ${ceo}`);
+        parts.push('\n*I had limited AI processing — try again for a more detailed analysis.*');
+        return parts.join('\n');
+      }
+      case 'research_person': {
+        const person = data.person || data.personName || 'the person';
+        const title = data.title || data.personTitle || '';
+        const company = data.company || data.personCompany || '';
+        const parts = [`Here's what I found about **${person}**:`];
+        if (title) parts.push(`- **Title:** ${title}`);
+        if (company) parts.push(`- **Company:** ${company}`);
+        parts.push('\n*I had limited AI processing — try again for a more detailed profile.*');
+        return parts.join('\n');
+      }
+      case 'score_lead': {
+        const score = data.overallScore || 'N/A';
+        const tier = data.tier || 'unknown';
+        return `**Lead Score: ${score}/100** (${tier} tier)\n\n*I had limited AI processing — try again for detailed scoring.*`;
+      }
+      default:
+        return 'I completed my research but had trouble generating a detailed summary. Please check the results above or try again.';
+    }
+  } catch {
+    return 'I completed my research but had trouble generating a summary. Please try again for a more detailed response.';
   }
 }
 

@@ -27,20 +27,33 @@ export const LLM_MODELS = [MODEL_PRIMARY, MODEL_VISION] as const;
 export type LLMModel = typeof LLM_MODELS[number];
 
 // ============================================================
-// Rate Limiter (shared across all callers)
+// Unified Rate Limiter (shared across ALL z-ai-web-dev-sdk calls)
 // ============================================================
 
+// IMPORTANT: Both callLLM (chat.completions.create) and agent-reach-bridge
+// (functions.invoke) go through the same z-ai-web-dev-sdk gateway.
+// A single shared rate limiter prevents concurrent bursts that cause 502s.
+
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 2000; // 2s between calls (conservative for both models)
+const MIN_INTERVAL_MS = 2500; // 2.5s between calls — balances throughput vs 502 risk
+const JITTER_MS = 800; // Random jitter to avoid thundering herd
 
 async function waitForRateLimit() {
   const now = Date.now();
   const elapsed = now - lastCallTime;
-  if (elapsed < MIN_INTERVAL_MS) {
-    await new Promise(r => setTimeout(r, MIN_INTERVAL_MS - elapsed));
+  const waitTime = MIN_INTERVAL_MS - elapsed + Math.random() * JITTER_MS;
+  if (waitTime > 0) {
+    await new Promise(r => setTimeout(r, waitTime));
   }
   lastCallTime = Date.now();
 }
+
+/**
+ * Exported so agent-reach-bridge.ts can share the same rate limiter.
+ * This prevents LLM calls and search calls from firing simultaneously
+ * and overwhelming the shared z-ai-web-dev-sdk gateway.
+ */
+export { waitForRateLimit };
 
 // ============================================================
 // SDK Singleton (lazy init, reuse across calls)
@@ -121,7 +134,7 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     temperature = 0.3,
     maxTokens = 4096,
     model = MODEL_PRIMARY,
-    retriesPerModel = 2,
+    retriesPerModel = 3, // Increased from 2 to 3 for better 502 resilience
     useFallback = true,
   } = options;
 
@@ -183,12 +196,12 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         }
 
         if (attempt < retriesPerModel) {
-          // Exponential backoff
+          // Exponential backoff with jitter for 502/gateway errors
           let backoffMs = 2000;
-          if (isGatewayErr) backoffMs = (attempt + 1) * 5000; // 5s, 10s
-          else if (isRateErr) backoffMs = (attempt + 1) * 3000; // 3s, 6s
+          if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000; // 4-6s, 8-10s, 12-14s
+          else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3-4s, 6-7s, 9-10s
 
-          console.warn(`[callLLM] Waiting ${backoffMs}ms before retry ${attempt + 2} on ${currentModel}...`);
+          console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
           continue;
         }

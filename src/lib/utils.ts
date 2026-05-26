@@ -34,11 +34,28 @@ export async function safeFetchJSON<T = unknown>(url: string | URL | Request, in
         const json = JSON.parse(text);
         errorDetail += `: ${json.error || json.message || json.details || text.slice(0, 200)}`;
       } else {
-        // It's an HTML error page — don't include the HTML in the error message
-        errorDetail += response.status === 404 ? ': Endpoint not found' : ': Server error';
+        // It's an HTML error page — provide a user-friendly message
+        // 502 = Bad Gateway (upstream proxy/LLM gateway overloaded)
+        // 503 = Service Unavailable (server overloaded or in maintenance)
+        // 504 = Gateway Timeout (upstream server took too long)
+        if (response.status === 502) {
+          errorDetail += ': The AI service is temporarily busy (Bad Gateway). Please try again.';
+        } else if (response.status === 503) {
+          errorDetail += ': The server is temporarily overloaded. Please try again.';
+        } else if (response.status === 504) {
+          errorDetail += ': The request timed out. Please try again with a simpler query.';
+        } else if (response.status === 404) {
+          errorDetail += ': Endpoint not found';
+        } else {
+          errorDetail += ': Server error';
+        }
       }
     } catch {
-      errorDetail += ': Server error';
+      if (response.status === 502 || response.status === 503 || response.status === 504) {
+        errorDetail += ': The AI service is temporarily unavailable. Please try again.';
+      } else {
+        errorDetail += ': Server error';
+      }
     }
     throw new Error(errorDetail);
   }

@@ -50,6 +50,67 @@ export async function processAgentMessage(
 }> {
   const startTime = Date.now();
 
+  try {
+    return await processAgentMessageInner(userMessage, context, forceIntent, startTime);
+  } catch (error) {
+    // Top-level safety net: never let an unhandled error escape.
+    // This ensures the chat route always gets a valid result to return.
+    console.error('[AgentLoop] FATAL: Unhandled error in processAgentMessage:', error);
+
+    const fallbackContext: ConversationContext = context || {
+      recentProspects: [],
+      activeICP: null,
+      lastIntent: null,
+      lastPersona: null,
+      userPreferences: {},
+    };
+
+    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+    const isGatewayError = errorMsg.includes('502') || errorMsg.includes('Bad Gateway')
+      || errorMsg.includes('HTML instead') || errorMsg.includes('gateway error');
+
+    return {
+      message: {
+        id: `agent-fallback-${Date.now()}`,
+        role: 'assistant',
+        content: isGatewayError
+          ? "I'm having trouble connecting to the AI service right now. The servers may be temporarily overloaded. Please try again in a few seconds — your message will be processed freshly."
+          : `I encountered an unexpected error while processing your request. Please try again or rephrase your question.\n\nError: ${errorMsg.slice(0, 150)}`,
+        timestamp: new Date(),
+        persona: 'navigator',
+        thinking: {
+          persona: 'navigator',
+          intent: 'converse',
+          reasoning: `Fallback handler: ${errorMsg.slice(0, 100)}`,
+          plan: ['Error recovery'],
+          confidence: 0.1,
+        },
+        actions: [{ type: 'converse', label: 'Error', status: 'failed', message: errorMsg.slice(0, 100) }],
+      },
+      updatedContext: fallbackContext,
+      suggestedActions: [
+        { label: 'Try Again', prompt: userMessage, icon: 'RefreshCw' },
+        { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
+      ],
+    };
+  }
+}
+
+/**
+ * Inner implementation of processAgentMessage — all logic lives here
+ * so the outer wrapper can catch any unhandled errors.
+ */
+async function processAgentMessageInner(
+  userMessage: string,
+  context: ConversationContext | undefined,
+  forceIntent: UserIntent | undefined,
+  startTime: number,
+): Promise<{
+  message: AgentMessage;
+  updatedContext: ConversationContext;
+  suggestedActions: SuggestedAction[];
+}> {
+
   // Step 1: Classify intent
   let classification: IntentClassification;
   if (forceIntent) {

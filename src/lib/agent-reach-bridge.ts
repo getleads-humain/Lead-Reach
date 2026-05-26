@@ -16,6 +16,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
+import { waitForRateLimit } from '@/lib/llm'; // Unified rate limiter — shared with LLM calls
 
 const execAsync = promisify(exec);
 
@@ -134,20 +135,9 @@ const JINA_READER_BASE = 'https://r.jina.ai';
 const EXEC_TIMEOUT = 30000; // 30 seconds for CLI commands
 const PYTHON_TOOLKIT_PATH = '/home/z/my-project/agent-reach-toolkit';
 
-// Rate limiter for z-ai-web-dev-sdk calls (prevents 429 errors)
-let lastSdkCallTime = 0;
-const SDK_MIN_INTERVAL_MS = 4000; // Minimum 4s between SDK calls (increased to avoid 429/502)
-
-async function waitForSdkRateLimit() {
-  const now = Date.now();
-  const elapsed = now - lastSdkCallTime;
-  if (elapsed < SDK_MIN_INTERVAL_MS) {
-    // Add jitter to avoid thundering herd effects
-    const jitter = Math.random() * 1000;
-    await new Promise(r => setTimeout(r, SDK_MIN_INTERVAL_MS - elapsed + jitter));
-  }
-  lastSdkCallTime = Date.now();
-}
+// NOTE: The SDK rate limiter is now unified with the LLM rate limiter
+// in llm.ts (waitForRateLimit). All z-ai-web-dev-sdk calls share the
+// same rate limiter to prevent concurrent bursts that cause 502 errors.
 
 // ============================================================
 // Retry with Backoff Utility
@@ -361,7 +351,7 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
   // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
   try {
     const searchResult = await retryWithBackoff(async () => {
-      await waitForSdkRateLimit();
+      await waitForRateLimit(); // Unified rate limiter (shared with LLM calls)
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
       const zai = await ZAI.create();
       return await zai.functions.invoke('web_search', {
@@ -1945,7 +1935,7 @@ export async function discoverBusinesses(
 
       for (let page = 0; page < maxPages; page++) {
         try {
-          await waitForSdkRateLimit();
+          await waitForRateLimit(); // Unified rate limiter (shared with LLM calls)
           const searchResult = await zai.functions.invoke('web_search', {
             query: page === 0 ? searchQuery : `${searchQuery} page ${page + 1}`,
             num: 50,

@@ -651,48 +651,84 @@ export function ProspectDiscoveryView() {
     setMessages(prev => [...prev, userMsg]);
     setIsSearching(true);
 
-    try {
-      const result = await safeFetchJSON<{
-        success: boolean;
-        message: AgentMessage;
-        updatedContext: ConversationContext;
-        suggestedActions: SuggestedAction[];
-        error?: string;
-      }>('/api/prospect-discovery/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          message: text,
-          conversationHistory: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
-          context,
-        }),
-      });
+    // Retry logic for transient 502/503 errors
+    const MAX_RETRIES = 2;
+    let lastError: string | null = null;
 
-      if (result.success && result.message) {
-        setMessages(prev => [...prev, result.message]);
-        setContext(result.updatedContext);
-        setSuggestedActions(result.suggestedActions || []);
-      } else {
-        // Agent returned an error message
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        const result = await safeFetchJSON<{
+          success: boolean;
+          message: AgentMessage;
+          updatedContext: ConversationContext;
+          suggestedActions: SuggestedAction[];
+          error?: string;
+          retryable?: boolean;
+        }>('/api/prospect-discovery/chat', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: text,
+            conversationHistory: messages.slice(-10).map(m => ({ role: m.role, content: m.content })),
+            context,
+          }),
+        });
+
+        if (result.success && result.message) {
+          setMessages(prev => [...prev, result.message]);
+          setContext(result.updatedContext);
+          setSuggestedActions(result.suggestedActions || []);
+          lastError = null;
+          break; // Success — exit retry loop
+        } else {
+          // Agent returned a structured error
+          const isRetryable = result.retryable || false;
+          if (isRetryable && attempt < MAX_RETRIES) {
+            // Wait before retrying
+            const backoff = (attempt + 1) * 3000;
+            console.warn(`[ProspectDiscovery] Retryable error, waiting ${backoff}ms before retry ${attempt + 1}...`);
+            await new Promise(r => setTimeout(r, backoff));
+            lastError = result.error || 'Retryable error';
+            continue;
+          }
+          // Non-retryable or exhausted retries — show error
+          const errorMsg: AgentMessage = {
+            id: `error-${Date.now()}`,
+            role: 'system',
+            content: result.error || 'The agent encountered an error. Please try again.',
+            timestamp: new Date(),
+          };
+          setMessages(prev => [...prev, errorMsg]);
+          lastError = null;
+          break;
+        }
+      } catch (error) {
+        const msg = error instanceof Error ? error.message : 'Unknown error';
+        const isTransientError = msg.includes('502') || msg.includes('503') || msg.includes('overloaded')
+          || msg.includes('Bad Gateway') || msg.includes('busy') || msg.includes('Server error');
+
+        if (isTransientError && attempt < MAX_RETRIES) {
+          // Wait before retrying
+          const backoff = (attempt + 1) * 4000;
+          console.warn(`[ProspectDiscovery] Transient error (${msg.slice(0, 80)}), waiting ${backoff}ms before retry ${attempt + 1}...`);
+          await new Promise(r => setTimeout(r, backoff));
+          lastError = msg;
+          continue;
+        }
+
+        // Non-transient or exhausted retries — show error
         const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
           role: 'system',
-          content: result.error || 'The agent encountered an error. Please try again.',
+          content: isTransientError
+            ? 'The AI service is temporarily busy. Please try again in a few seconds.'
+            : `Agent error: ${msg}`,
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, errorMsg]);
+        lastError = null;
+        break;
       }
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      const errorMsg: AgentMessage = {
-        id: `error-${Date.now()}`,
-        role: 'system',
-        content: msg.includes('503') || msg.includes('overloaded')
-          ? 'The AI service is temporarily busy. Please try again in a few seconds.'
-          : `Agent error: ${msg}`,
-        timestamp: new Date(),
-      };
-      setMessages(prev => [...prev, errorMsg]);
     }
 
     setIsSearching(false);
