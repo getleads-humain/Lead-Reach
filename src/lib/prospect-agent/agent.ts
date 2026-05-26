@@ -462,10 +462,13 @@ function extractBuyingSignals(prospect: ProspectResult): string[] {
 }
 
 /**
- * Categorize company size from employee count string.
+ * Categorize company size from employee count (string or number from LLM).
  */
-function categorizeCompanySize(employeeCount: string): string | null {
-  const match = employeeCount.match(/(\d+)/);
+function categorizeCompanySize(employeeCount: string | number | null | undefined): string | null {
+  if (employeeCount === null || employeeCount === undefined) return null;
+  // LLM may return a number instead of a string
+  const str = String(employeeCount);
+  const match = str.match(/(\d+)/);
   if (!match) return null;
   const n = parseInt(match[1], 10);
   if (n < 10) return 'Micro (1-9)';

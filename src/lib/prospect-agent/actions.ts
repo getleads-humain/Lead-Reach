@@ -329,17 +329,17 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
               45_000, 'Person company LLM',
             );
             if (companyData) {
-              if (companyData.companyName && !prospect.companyName) prospect.companyName = companyData.companyName;
-              if (companyData.website && !prospect.website) prospect.website = companyData.website;
-              if (companyData.industry && !prospect.industry) prospect.industry = companyData.industry;
-              if (companyData.city && !prospect.city) prospect.city = companyData.city;
-              if (companyData.country && !prospect.country) prospect.country = companyData.country;
-              if (companyData.phoneMain && !prospect.phoneMain) prospect.phoneMain = companyData.phoneMain;
-              if (companyData.generalEmail && !prospect.generalEmail) prospect.generalEmail = companyData.generalEmail;
-              if (companyData.employeeCount && !prospect.employeeCount) prospect.employeeCount = companyData.employeeCount;
-              if (companyData.revenueEstimate && !prospect.revenueEstimate) prospect.revenueEstimate = companyData.revenueEstimate;
-              if (companyData.linkedinUrl && !prospect.linkedinUrl) prospect.linkedinUrl = companyData.linkedinUrl;
-              if (companyData.twitterHandle && !prospect.twitterHandle) prospect.twitterHandle = companyData.twitterHandle;
+              if (companyData.companyName && !prospect.companyName) prospect.companyName = String(companyData.companyName);
+              if (companyData.website && !prospect.website) prospect.website = String(companyData.website);
+              if (companyData.industry && !prospect.industry) prospect.industry = String(companyData.industry);
+              if (companyData.city && !prospect.city) prospect.city = String(companyData.city);
+              if (companyData.country && !prospect.country) prospect.country = String(companyData.country);
+              if (companyData.phoneMain && !prospect.phoneMain) prospect.phoneMain = String(companyData.phoneMain);
+              if (companyData.generalEmail && !prospect.generalEmail) prospect.generalEmail = String(companyData.generalEmail);
+              if (companyData.employeeCount && !prospect.employeeCount) prospect.employeeCount = String(companyData.employeeCount);
+              if (companyData.revenueEstimate && !prospect.revenueEstimate) prospect.revenueEstimate = String(companyData.revenueEstimate);
+              if (companyData.linkedinUrl && !prospect.linkedinUrl) prospect.linkedinUrl = String(companyData.linkedinUrl);
+              if (companyData.twitterHandle && !prospect.twitterHandle) prospect.twitterHandle = String(companyData.twitterHandle);
             }
           }
         }
@@ -891,15 +891,28 @@ function calculateCompleteness(p: ProspectResult): number {
 
 function safeMerge(target: ProspectResult, source: Partial<ProspectResult>): void {
   const arrayKeys = new Set(['techStack', 'boardMembers', 'recentNews', 'productsServices', 'partners', 'sources']);
+  // Fields where LLM may return a number but we need a string
+  const stringKeys = new Set([
+    'employeeCount', 'revenueEstimate', 'foundingYear', 'dataCompleteness',
+  ]);
+  const targetAny = target as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue;
     if (arrayKeys.has(key)) {
       if (Array.isArray(value) && value.length > 0) {
-        (target as unknown as Record<string, unknown>)[key] = value;
+        targetAny[key] = value;
       }
+    } else if (stringKeys.has(key) && typeof value === 'number') {
+      // LLM returned a number where we need a string
+      targetAny[key] = String(value);
     } else {
       if (value !== null && value !== '') {
-        (target as unknown as Record<string, unknown>)[key] = value;
+        // Also convert numbers to strings for any string-type fields
+        if (typeof value === 'number' && !arrayKeys.has(key)) {
+          targetAny[key] = String(value);
+        } else {
+          targetAny[key] = value;
+        }
       }
     }
   }

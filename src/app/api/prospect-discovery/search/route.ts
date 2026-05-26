@@ -385,8 +385,8 @@ Use null for anything not found.`, deepRead.data.content.slice(0, 6000)), 45_000
                 if (deepData) {
                   // Merge deep data, don't overwrite existing non-null values
                   for (const [key, value] of Object.entries(deepData)) {
-                    if (value !== null && value !== undefined && (prospect as Record<string, unknown>)[key] === null) {
-                      (prospect as Record<string, unknown>)[key] = value;
+                    if (value !== null && value !== undefined && (prospect as unknown as Record<string, unknown>)[key] === null) {
+                      (prospect as unknown as Record<string, unknown>)[key] = value;
                     }
                   }
                 }
@@ -570,8 +570,8 @@ Use null for anything not found.`, readResult.data.content.slice(0, 4000)), 45_0
     );
     if (twResult && twResult.success && twResult.data.length > 0) {
       const tweet = twResult.data[0];
-      if ((tweet as Record<string, unknown>).username && !prospect.twitterHandle) prospect.twitterHandle = `@${(tweet as Record<string, unknown>).username}`;
-      sources.push(`twitter:${(tweet as Record<string, unknown>).url || personName}`);
+      if ((tweet as unknown as Record<string, unknown>).username && !prospect.twitterHandle) prospect.twitterHandle = `@${(tweet as unknown as Record<string, unknown>).username}`;
+      sources.push(`twitter:${(tweet as unknown as Record<string, unknown>).url || personName}`);
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'Found Twitter profile';
     } else {
@@ -631,17 +631,18 @@ function calculateCompleteness(p: ProspectData): number {
  */
 function safeMerge(target: ProspectData, source: Partial<ProspectData>): void {
   const arrayKeys = new Set(['techStack', 'boardMembers', 'recentNews', 'productsServices', 'partners', 'sources']);
+  const targetAny = target as unknown as Record<string, unknown>;
   for (const [key, value] of Object.entries(source)) {
     if (value === undefined) continue;
     if (arrayKeys.has(key)) {
       // Only overwrite array fields if the new value is a non-empty array
       if (Array.isArray(value) && value.length > 0) {
-        (target as Record<string, unknown>)[key] = value;
+        targetAny[key] = value;
       }
     } else {
       // Only overwrite non-null existing values if the new value is non-null
       if (value !== null && value !== '') {
-        (target as Record<string, unknown>)[key] = value;
+        targetAny[key] = value;
       }
     }
   }
