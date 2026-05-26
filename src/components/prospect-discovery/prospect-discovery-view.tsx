@@ -71,6 +71,22 @@ const ICON_MAP: Record<string, React.ElementType> = {
 };
 
 // ============================================================
+// Safe timestamp formatter — handles both Date objects and
+// ISO strings that arrive via JSON serialization
+// ============================================================
+
+function safeFormatTime(timestamp: Date | string | number | undefined | null): string {
+  try {
+    if (!timestamp) return '';
+    const d = timestamp instanceof Date ? timestamp : new Date(timestamp);
+    if (isNaN(d.getTime())) return '';
+    return d.toLocaleTimeString();
+  } catch {
+    return '';
+  }
+}
+
+// ============================================================
 // Helper Components
 // ============================================================
 
@@ -804,7 +820,7 @@ export function ProspectDiscoveryView() {
                   <div className="flex justify-end">
                     <div className="max-w-md rounded-2xl rounded-br-md bg-emerald-500/15 border border-emerald-500/20 px-4 py-2.5">
                       <p className="text-sm text-foreground/90">{msg.content}</p>
-                      <p className="text-[9px] text-muted-foreground/50 mt-1">{msg.timestamp.toLocaleTimeString()}</p>
+                      <p className="text-[9px] text-muted-foreground/50 mt-1">{safeFormatTime(msg.timestamp)}</p>
                     </div>
                   </div>
                 )}
@@ -830,7 +846,7 @@ export function ProspectDiscoveryView() {
                         <div className="flex items-center gap-2">
                           <PersonaBadge persona={msg.persona || 'navigator'} size="lg" />
                           <span className="text-[9px] text-muted-foreground/50">
-                            {msg.timestamp.toLocaleTimeString()}
+                            {safeFormatTime(msg.timestamp)}
                           </span>
                         </div>
                       </div>
