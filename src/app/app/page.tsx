@@ -15,6 +15,7 @@ import { AnalyticsView } from '@/components/analytics/analytics-view';
 import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment-view';
 import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
 import { IdentityView } from '@/components/identity/identity-view';
+import { ICPView } from '@/components/icp/icp-view';
 import { useAppStore } from '@/lib/store';
 
 export default function AppPage() {
@@ -48,6 +49,8 @@ export default function AppPage() {
         return <ProspectDiscoveryView />;
       case 'identity':
         return <IdentityView />;
+      case 'icp':
+        return <ICPView />;
       default:
         return <DashboardView />;
     }

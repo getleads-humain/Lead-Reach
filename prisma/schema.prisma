@@ -308,6 +308,55 @@ model ABTest {
   updatedAt DateTime @updatedAt
 }
 
+model ICPProfile {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+
+  // Firmographic
+  industries     String?  // JSON array
+  companySizes   String?  // JSON array
+  locations      String?  // JSON array
+  revenueRange   String?
+
+  // Technographic
+  requiredTech            String?  // JSON array
+  preferredTech           String?  // JSON array
+  techSophisticationLevel String   @default("medium")
+  digitalMaturityScore    Int      @default(50)
+
+  // Psychographic
+  values       String?  // JSON array
+  challenges   String?  // JSON array
+  goals        String?  // JSON array
+  cultureTypes String?  // JSON array
+
+  // Behavioral
+  buyingSignals      String?  // JSON array
+  engagementPatterns String?  // JSON array
+
+  // Situational
+  triggerEvents     String?  // JSON array
+  expansionSignals  String?  // JSON array
+  complianceNeeds   String?  // JSON array
+
+  // Economic
+  budgetRange          String?
+  decisionTimeline     String?
+  priceSensitivity     String   @default("medium")
+  lifetimeValuePotential String @default("medium")
+
+  // Full criteria JSON for flexibility
+  criteria     String?  // Full JSON of ICP criteria
+
+  // Stats
+  leadsScored  Int      @default(0)
+  avgFitScore  Float    @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model FollowUpSequence {
   id          String   @id @default(cuid())
   name        String
