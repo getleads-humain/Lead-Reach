@@ -38,7 +38,7 @@ export type LLMModel = typeof LLM_MODELS[number];
 // Prevents more than MAX_CONCURRENT LLM calls from running at once.
 // This is the FIRST line of defense against 502 Bad Gateway errors.
 
-const MAX_CONCURRENT = 2;
+const MAX_CONCURRENT = 4; // Increased from 2 — the SDK gateway handles more concurrent requests now
 let activeCalls = 0;
 const waitingQueue: Array<() => void> = [];
 
@@ -73,8 +73,8 @@ function releaseSlot(): void {
 // A single shared rate limiter prevents concurrent bursts that cause 502s.
 
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 3000; // 3s between calls — increased from 2.5s for better 502 resilience
-const JITTER_MS = 1000; // Random jitter to avoid thundering herd (increased from 800ms)
+const MIN_INTERVAL_MS = 1200; // Reduced from 3000ms — the gateway handles faster requests; 1.2s is sufficient spacing
+const JITTER_MS = 600; // Random jitter to avoid thundering herd
 
 async function waitForRateLimit() {
   const now = Date.now();
@@ -166,11 +166,12 @@ export interface LLMCallOptions {
  * Call the LLM with automatic model fallback.
  *
  * Strategy:
- * 1. Acquire a concurrency slot (max 2 simultaneous calls)
- * 2. Wait for rate limiter (3s + jitter between calls)
+ * 1. Acquire a concurrency slot (max 4 simultaneous calls)
+ * 2. Wait for rate limiter (1.2s + jitter between calls)
  * 3. Try the primary model (glm-4.7-flash) with retries
  * 4. If all retries fail, try the secondary model (glm-4.6v-flash)
  * 5. Returns null if both models fail (graceful degradation)
+ * 6. Each individual call has a 30s timeout to prevent hangs
  */
 export async function callLLM(options: LLMCallOptions): Promise<string | null> {
   const {
@@ -199,15 +200,21 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
           await waitForRateLimit();
 
           const zai = await getSDK();
-          const completion = await zai.chat.completions.create({
-            model: currentModel,
-            messages: [
-              { role: 'system', content: systemPrompt },
-              { role: 'user', content: userMessage },
-            ],
-            temperature,
-            max_tokens: maxTokens,
-          });
+          // Add per-call timeout (30s) to prevent hanging on gateway errors
+          const completion = await Promise.race([
+            zai.chat.completions.create({
+              model: currentModel,
+              messages: [
+                { role: 'system', content: systemPrompt },
+                { role: 'user', content: userMessage },
+              ],
+              temperature,
+              max_tokens: maxTokens,
+            }),
+            new Promise<never>((_, reject) =>
+              setTimeout(() => reject(new Error('LLM call timed out after 30s')), 30_000)
+            ),
+          ]);
 
           // Validate response structure
           if (!completion || !completion.choices || !Array.isArray(completion.choices)) {
@@ -246,9 +253,9 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
           if (attempt < retriesPerModel) {
             // Exponential backoff with jitter for 502/gateway errors
-            let backoffMs = 2000;
-            if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000; // 4-6s, 8-10s, 12-14s
-            else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3-4s, 6-7s, 9-10s
+            let backoffMs = 1500;
+            if (isGatewayErr) backoffMs = (attempt + 1) * 2500 + Math.random() * 1500; // 2.5-4s, 5-6.5s, 7.5-9s
+            else if (isRateErr) backoffMs = (attempt + 1) * 2000 + Math.random() * 800; // 2-2.8s, 4-4.8s, 6-6.8s
 
             console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));

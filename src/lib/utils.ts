@@ -26,36 +26,51 @@ export async function safeFetchJSON<T = unknown>(url: string | URL | Request, in
 
   // Check if the response status indicates an error
   if (!response.ok) {
-    let errorDetail = `HTTP ${response.status}`;
+    // For 502/503/504 — try to parse the body as JSON first,
+    // because our API routes now return structured error objects even on failure.
+    // Only fall back to generic messages if the body isn't JSON.
+    let errorDetail = '';
     try {
       const text = await response.text();
-      // Try to extract JSON error message from the response
-      if (text.startsWith('{')) {
-        const json = JSON.parse(text);
-        errorDetail += `: ${json.error || json.message || json.details || text.slice(0, 200)}`;
-      } else {
-        // It's an HTML error page — provide a user-friendly message
-        // 502 = Bad Gateway (upstream proxy/LLM gateway overloaded)
-        // 503 = Service Unavailable (server overloaded or in maintenance)
-        // 504 = Gateway Timeout (upstream server took too long)
-        if (response.status === 502) {
-          errorDetail += ': The AI service is temporarily busy (Bad Gateway). Please try again.';
-        } else if (response.status === 503) {
-          errorDetail += ': The server is temporarily overloaded. Please try again.';
-        } else if (response.status === 504) {
-          errorDetail += ': The request timed out. Please try again with a simpler query.';
-        } else if (response.status === 404) {
-          errorDetail += ': Endpoint not found';
-        } else {
-          errorDetail += ': Server error';
+      if (text.trim().startsWith('{')) {
+        // Our API returned a JSON error — extract the message
+        try {
+          const json = JSON.parse(text);
+          // If the JSON has a 'message' field with content, use it directly
+          // (our chat routes return full agent messages even on gateway errors)
+          if (json.message?.content) {
+            // This is a structured agent response — return it as the error
+            throw Object.assign(new Error('RETRYABLE_JSON_RESPONSE'), { jsonBody: json });
+          }
+          errorDetail = json.error || json.message || json.details || `HTTP ${response.status}`;
+        } catch (parseErr) {
+          if (parseErr instanceof Error && parseErr.message === 'RETRYABLE_JSON_RESPONSE') {
+            throw parseErr; // Re-throw the special case
+          }
+          errorDetail = `HTTP ${response.status}: ${text.slice(0, 200)}`;
         }
-      }
-    } catch {
-      if (response.status === 502 || response.status === 503 || response.status === 504) {
-        errorDetail += ': The AI service is temporarily unavailable. Please try again.';
+      } else if (text.trim().startsWith('<') || text.trim().startsWith('<!DOCTYPE')) {
+        // HTML error page from a reverse proxy (nginx, CloudFront, etc.)
+        // These are the WORST case — we can't extract useful info.
+        // Provide a friendly message and mark as retryable.
+        if (response.status === 502) {
+          errorDetail = 'The AI service is temporarily busy. Please try again in a few seconds.';
+        } else if (response.status === 503) {
+          errorDetail = 'The server is temporarily overloaded. Please try again shortly.';
+        } else if (response.status === 504) {
+          errorDetail = 'The request timed out. Please try again with a simpler query.';
+        } else {
+          errorDetail = `Server returned error (${response.status}). Please try again.`;
+        }
       } else {
-        errorDetail += ': Server error';
+        errorDetail = `HTTP ${response.status}: ${text.slice(0, 200)}`;
       }
+    } catch (specialErr) {
+      if (specialErr instanceof Error && specialErr.message === 'RETRYABLE_JSON_RESPONSE' && 'jsonBody' in specialErr) {
+        // Return the JSON body as if it was a successful response
+        return (specialErr as unknown as { jsonBody: T }).jsonBody;
+      }
+      errorDetail = `HTTP ${response.status}: Service unavailable. Please try again.`;
     }
     throw new Error(errorDetail);
   }

@@ -705,25 +705,27 @@ export function ProspectDiscoveryView() {
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
         const isTransientError = msg.includes('502') || msg.includes('503') || msg.includes('overloaded')
-          || msg.includes('Bad Gateway') || msg.includes('busy') || msg.includes('Server error');
+          || msg.includes('Bad Gateway') || msg.includes('busy') || msg.includes('Server error')
+          || msg.includes('temporarily') || msg.includes('unavailable') || msg.includes('timed out');
 
         if (isTransientError && attempt < MAX_RETRIES) {
           // Wait before retrying
-          const backoff = (attempt + 1) * 4000;
+          const backoff = (attempt + 1) * 2500;
           console.warn(`[ProspectDiscovery] Transient error (${msg.slice(0, 80)}), waiting ${backoff}ms before retry ${attempt + 1}...`);
           await new Promise(r => setTimeout(r, backoff));
           lastError = msg;
           continue;
         }
 
-        // Non-transient or exhausted retries — show error
+        // Non-transient or exhausted retries — show friendly error
         const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
-          role: 'system',
+          role: 'assistant',
           content: isTransientError
-            ? 'The AI service is temporarily busy. Please try again in a few seconds.'
-            : `Agent error: ${msg}`,
+            ? "I'm having trouble connecting to the AI service right now. Please try again in a few seconds — your message will be processed freshly."
+            : `I encountered an error: ${msg.slice(0, 150)}. Please try again or rephrase your question.`,
           timestamp: new Date(),
+          persona: 'navigator',
         };
         setMessages(prev => [...prev, errorMsg]);
         lastError = null;

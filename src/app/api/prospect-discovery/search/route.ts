@@ -749,8 +749,9 @@ export async function POST(request: NextRequest) {
     );
     const isRateLimitError = msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit');
 
-    // IMPORTANT: Always return JSON, never let the server return HTML error pages
-    // This prevents the "Unexpected token '<'" SyntaxError in the browser
+    // IMPORTANT: Always return HTTP 200 with JSON, never let the server return HTML error pages
+    // or use 503/502/429 status codes — the reverse proxy intercepts those and returns
+    // its own error page, which the frontend can't parse as JSON.
     if (isHtmlOrGatewayError) {
       return NextResponse.json({
         success: false,
@@ -760,7 +761,7 @@ export async function POST(request: NextRequest) {
         query: '',
         queryType: 'unknown',
         prospect: null,
-      }, { status: 503 });
+      });
     }
 
     if (isRateLimitError) {
@@ -772,10 +773,10 @@ export async function POST(request: NextRequest) {
         query: '',
         queryType: 'unknown',
         prospect: null,
-      }, { status: 429 });
+      });
     }
 
-    // Generic error — still return JSON
+    // Generic error — still return HTTP 200 with JSON
     return NextResponse.json({
       success: false,
       error: 'Research encountered an error. Please try again.',
@@ -785,6 +786,6 @@ export async function POST(request: NextRequest) {
       query: '',
       queryType: 'unknown',
       prospect: null,
-    }, { status: 500 });
+    });
   }
 }

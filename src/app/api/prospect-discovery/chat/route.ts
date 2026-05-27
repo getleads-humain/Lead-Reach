@@ -118,18 +118,59 @@ export async function POST(request: NextRequest) {
       || msg.includes('rate limit')
     );
 
+    // IMPORTANT: Always return HTTP 200 with success:false for gateway/rate errors.
+    // Returning 503/502 causes the reverse proxy to return its own error page,
+    // which the frontend can't parse as JSON — leading to the "HTTP 502" user error.
     if (isHtmlOrGatewayError || isRateLimitError) {
       return NextResponse.json({
-        success: false,
-        error: 'The AI service is temporarily busy. Please try again in a few seconds.',
+        success: true, // Return success so the UI can display the message
+        message: {
+          id: `agent-retry-${Date.now()}`,
+          role: 'assistant',
+          content: "I'm having trouble connecting to the AI service right now. The servers may be temporarily busy. Please try again in a few seconds — your message will be processed freshly.",
+          timestamp: new Date().toISOString(),
+          persona: 'navigator',
+          thinking: {
+            persona: 'navigator',
+            intent: 'converse',
+            reasoning: 'AI service temporarily busy — gateway/rate error',
+            plan: ['Retry in a few seconds'],
+            confidence: 0.3,
+          },
+          actions: [{ type: 'converse', label: 'Retry', status: 'failed', message: 'AI service busy' }],
+        },
+        updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
+        suggestedActions: [
+          { label: 'Try Again', prompt: message?.trim() || 'Hello', icon: 'RefreshCw' },
+          { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
+        ],
         retryable: true,
-      }, { status: 503 });
+      });
     }
 
+    // For non-gateway errors, still return 200 with error info
     return NextResponse.json({
-      success: false,
-      error: 'The agent encountered an error. Please try again.',
-      details: msg.slice(0, 300),
-    }, { status: 500 });
+      success: true,
+      message: {
+        id: `agent-error-${Date.now()}`,
+        role: 'assistant',
+        content: `I encountered an error processing your request. Please try again or rephrase your question.`,
+        timestamp: new Date().toISOString(),
+        persona: 'navigator',
+        thinking: {
+          persona: 'navigator',
+          intent: 'converse',
+          reasoning: `Error: ${msg.slice(0, 100)}`,
+          plan: ['Error recovery'],
+          confidence: 0.1,
+        },
+        actions: [{ type: 'converse', label: 'Error', status: 'failed', message: msg.slice(0, 100) }],
+      },
+      updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
+      suggestedActions: [
+        { label: 'Try Again', prompt: message?.trim() || 'Hello', icon: 'RefreshCw' },
+        { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
+      ],
+    });
   }
 }
