@@ -7,6 +7,7 @@ import { Zap, Menu, X, Github, Twitter, Linkedin } from 'lucide-react';
 
 const NAV_LINKS = [
   { href: '/#features', label: 'Features' },
+  { href: '/#pricing', label: 'Pricing' },
   { href: '/agent', label: 'Agents' },
   { href: '/blog', label: 'Blog' },
   { href: '/faq', label: 'FAQ' },

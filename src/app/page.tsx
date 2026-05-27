@@ -38,6 +38,7 @@ import {
   Cog,
   Reply,
   MessageCircle,
+  Building2,
 } from 'lucide-react';
 
 const TRUSTED_COMPANIES = [
@@ -84,64 +85,165 @@ const FEATURES = [
   },
 ];
 
-const PRICING_TIERS = [
+// ============================================================
+// Pricing — Dual-track: B2B & B2C
+// ============================================================
+
+type PricingTrack = 'b2b' | 'b2c';
+
+interface PricingTier {
+  name: string;
+  price: string;
+  period: string;
+  description: string;
+  features: string[];
+  cta: string;
+  highlighted: boolean;
+  badge?: string;
+}
+
+const B2B_PRICING: PricingTier[] = [
   {
-    name: 'Starter',
-    price: '$97',
+    name: 'Scout',
+    price: '$149',
     period: '/mo',
-    description: 'Perfect for solo coaches and consultants getting started with AI setting.',
+    description: 'For solo founders and small sales teams starting with AI-powered lead generation.',
     features: [
-      '2 AI Setters',
-      '500 leads/month',
-      'SMS + Email channels',
-      'Basic qualification',
-      'Calendar booking',
-      'Standard follow-ups',
-      '1 language',
+      '3 AI Agents (Discovery, Enrichment, Scoring)',
+      '1,000 leads/month',
+      '5 research channels (Web, LinkedIn, Exa, GitHub, Reddit)',
+      'ICP builder & lead scoring',
+      'Basic data enrichment',
+      'Email outreach composer',
+      '1 user seat',
+      'Standard support',
     ],
     cta: 'Start Free Trial',
     highlighted: false,
   },
   {
-    name: 'Professional',
-    price: '$297',
+    name: 'Command',
+    price: '$399',
     period: '/mo',
-    description: 'For agencies and teams that need the full power of AI setting.',
+    description: 'For growing B2B teams that need the full power of autonomous lead generation.',
     features: [
-      'Unlimited AI Setters',
+      '8 AI Agents (full workforce)',
       '10,000+ leads/month',
-      'All channels (SMS, WhatsApp, IG, FB)',
-      'Advanced qualification & scoring',
-      'Conversational booking',
-      'Custom follow-up sequences',
-      '17+ languages',
+      'All 17+ research channels',
+      'Advanced ICP & multi-dimensional scoring',
+      'Deep enrichment with firmographics & technographics',
+      'Multi-step outreach sequences (email + LinkedIn)',
+      'Pipeline management & stage automation',
+      'Competitive intelligence agent',
+      '5 user seats',
+      'GHL & CRM integrations',
       'A/B split testing',
-      'GHL CRM integration',
-      'Custom AI tasks',
-      '5 sub-accounts',
+      'Priority support',
     ],
     cta: 'Start Free Trial',
     highlighted: true,
+    badge: 'Most Popular',
   },
   {
     name: 'Enterprise',
     price: 'Custom',
     period: '',
-    description: 'For large agencies with custom requirements and high-volume needs.',
+    description: 'For large B2B organizations with complex sales cycles and high-volume pipeline needs.',
     features: [
-      'Unlimited everything',
-      'Unlimited sub-accounts',
-      'Custom integrations',
-      'Dedicated success manager',
-      'SLA guarantee',
-      'Custom AI training',
+      'Unlimited AI Agents & leads',
+      'Custom research channels & data sources',
+      'Custom AI model training on your ICP',
+      'Advanced workflow orchestration',
       'White-label option',
-      'Priority support',
+      'Unlimited user seats',
+      'Dedicated success manager',
+      'SLA guarantee (99.9% uptime)',
+      'Custom integrations & API access',
+      'On-premise deployment option',
     ],
     cta: 'Contact Sales',
     highlighted: false,
   },
 ];
+
+const B2C_PRICING: PricingTier[] = [
+  {
+    name: 'Setter',
+    price: '$97',
+    period: '/mo',
+    description: 'For solo coaches and consultants getting started with AI-powered appointment setting.',
+    features: [
+      '2 AI Setters',
+      '500 leads/month',
+      'SMS + Email channels',
+      'Basic lead qualification',
+      'Conversational calendar booking',
+      'Standard follow-up sequences',
+      '1 language',
+      '1 user seat',
+    ],
+    cta: 'Start Free Trial',
+    highlighted: false,
+  },
+  {
+    name: 'Closer',
+    price: '$297',
+    period: '/mo',
+    description: 'For agencies and teams that need the full power of AI setting across every channel.',
+    features: [
+      'Unlimited AI Setters',
+      '10,000+ leads/month',
+      'All channels (SMS, WhatsApp, IG, FB, Email)',
+      'Advanced qualification & scoring',
+      'Conversational booking with real-time sync',
+      'Custom follow-up sequences & nurture',
+      '17+ languages',
+      'A/B split testing',
+      'GHL CRM integration',
+      'Custom AI tasks',
+      '5 sub-accounts',
+      'Priority support',
+    ],
+    cta: 'Start Free Trial',
+    highlighted: true,
+    badge: 'Most Popular',
+  },
+  {
+    name: 'Agency',
+    price: 'Custom',
+    period: '',
+    description: 'For large agencies with custom requirements, high-volume needs, and multi-brand management.',
+    features: [
+      'Unlimited AI Setters & leads',
+      'Unlimited sub-accounts',
+      'White-label platform option',
+      'Custom integrations & API access',
+      'Dedicated success manager',
+      'SLA guarantee',
+      'Custom AI training on your scripts',
+      'Multi-brand management',
+      'Bulk operations & import',
+      'Priority 24/7 support',
+    ],
+    cta: 'Contact Sales',
+    highlighted: false,
+  },
+];
+
+const PRICING_TRACK_INFO: Record<PricingTrack, { label: string; sublabel: string; icon: typeof Building2; color: string }> = {
+  b2b: {
+    label: 'B2B — Lead Generation',
+    sublabel: 'Discover, enrich, qualify, and engage B2B prospects with autonomous AI agents across 17+ channels.',
+    icon: Building2,
+    color: '#10B981',
+  },
+  b2c: {
+    label: 'B2C — AI Setting',
+    sublabel: 'AI setters that qualify, book, and follow up with your B2C leads on autopilot — 30-40% conversion rates.',
+    icon: Users,
+    color: '#3B82F6',
+  },
+};
 
 const TESTIMONIALS = [
   {
@@ -176,6 +278,10 @@ const AGENT_PREVIEW = [
 ];
 
 export default function LandingPage() {
+  const [pricingTrack, setPricingTrack] = React.useState<PricingTrack>('b2b');
+
+  const currentPricing = pricingTrack === 'b2b' ? B2B_PRICING : B2C_PRICING;
+  const trackInfo = PRICING_TRACK_INFO[pricingTrack];
   return (
     <MarketingLayout>
       {/* Spline 3D Interactive Background — fixed, centered, stays visible during scroll */}
@@ -194,7 +300,7 @@ export default function LandingPage() {
           <div className="text-center max-w-4xl mx-auto">
             <Badge className="mb-6 bg-emerald-500/10 text-emerald-400 border-emerald-500/20 hover:bg-emerald-500/15">
               <Sparkles className="h-3 w-3 mr-1" />
-              The #1 AI Setter for Agencies, Coaches &amp; Consultants
+              The #1 AI Platform for B2B Lead Generation &amp; B2C AI Setting
             </Badge>
 
             <h1 className="text-4xl sm:text-5xl lg:text-7xl font-bold text-foreground leading-tight tracking-tight">
@@ -203,7 +309,7 @@ export default function LandingPage() {
             </h1>
 
             <p className="mt-6 text-lg sm:text-xl text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-              Outperform human setters. 30-40% conversion vs 10-20%. 10,000+ leads/day. $97/mo vs $2,000/mo. Deploy AI setters that qualify, book, and follow up on autopilot.
+              B2B lead generation with AI agents. B2C appointment setting with AI setters. Discover, enrich, qualify, and book — all on autopilot. Starting at $97/mo.
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
@@ -370,8 +476,8 @@ export default function LandingPage() {
                     <ArrowDown className="h-4 w-4 text-cyan-400" />
                   </div>
                   <div>
-                    <div className="text-sm text-muted-foreground">Unlimited AI setters</div>
-                    <div className="text-2xl font-bold text-cyan-400">$97-297/mo</div>
+                    <div className="text-sm text-muted-foreground">Unlimited AI setters/agents</div>
+                    <div className="text-2xl font-bold text-cyan-400">$97-399/mo</div>
                   </div>
                 </div>
               </CardContent>
@@ -586,30 +692,72 @@ export default function LandingPage() {
       {/* Pricing Section */}
       <section id="pricing" className="py-20 lg:py-28 border-t border-border/20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="text-center max-w-2xl mx-auto mb-16">
+          <div className="text-center max-w-2xl mx-auto mb-12">
             <Badge variant="outline" className="mb-4 border-emerald-500/20 text-emerald-400">
               Pricing
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Simple, transparent <span className="text-gradient">pricing</span>
+              Specialized pricing for <span className="text-gradient">every business</span>
             </h2>
             <p className="mt-4 text-muted-foreground">
-              Start free, scale as you grow. No hidden fees, no long-term contracts.
+              Whether you&apos;re closing B2B enterprise deals or booking B2C appointments, we have a plan designed for your workflow.
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 max-w-5xl mx-auto">
-            {PRICING_TIERS.map((tier, i) => (
-              <Card
-                key={i}
-                className={`card-premium border-border/30 bg-card/50 relative ${
-                  tier.highlighted ? 'border-emerald-500/30 ring-1 ring-emerald-500/20' : ''
+          {/* B2B / B2C Toggle */}
+          <div className="flex items-center justify-center mb-12">
+            <div className="inline-flex items-center rounded-xl border border-border/40 bg-card/60 p-1.5 gap-1">
+              <button
+                onClick={() => setPricingTrack('b2b')}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  pricingTrack === 'b2b'
+                    ? 'bg-emerald-500 text-black shadow-lg shadow-emerald-500/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
                 }`}
               >
-                {tier.highlighted && (
+                <Building2 className="h-4 w-4" />
+                B2B — Lead Generation
+              </button>
+              <button
+                onClick={() => setPricingTrack('b2c')}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                  pricingTrack === 'b2c'
+                    ? 'bg-blue-500 text-black shadow-lg shadow-blue-500/20'
+                    : 'text-muted-foreground hover:text-foreground hover:bg-secondary/50'
+                }`}
+              >
+                <Users className="h-4 w-4" />
+                B2C — AI Setting
+              </button>
+            </div>
+          </div>
+
+          {/* Track Description */}
+          <div className="text-center mb-10 max-w-xl mx-auto">
+            <p className="text-sm text-muted-foreground leading-relaxed">{trackInfo.sublabel}</p>
+          </div>
+
+          {/* Pricing Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 max-w-5xl mx-auto">
+            {currentPricing.map((tier, i) => (
+              <Card
+                key={`${pricingTrack}-${i}`}
+                className={`card-premium border-border/30 bg-card/50 relative transition-all duration-300 ${
+                  tier.highlighted
+                    ? pricingTrack === 'b2b'
+                      ? 'border-emerald-500/30 ring-1 ring-emerald-500/20'
+                      : 'border-blue-500/30 ring-1 ring-blue-500/20'
+                    : ''
+                }`}
+              >
+                {tier.badge && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-emerald-500 text-black border-0 font-semibold">
-                      Most Popular
+                    <Badge className={`border-0 font-semibold ${
+                      pricingTrack === 'b2b'
+                        ? 'bg-emerald-500 text-black'
+                        : 'bg-blue-500 text-black'
+                    }`}>
+                      {tier.badge}
                     </Badge>
                   </div>
                 )}
@@ -624,7 +772,9 @@ export default function LandingPage() {
                   <ul className="mt-6 space-y-3">
                     {tier.features.map((feature) => (
                       <li key={feature} className="flex items-start gap-2 text-sm">
-                        <Check className="h-4 w-4 text-emerald-400 mt-0.5 shrink-0" />
+                        <Check className={`h-4 w-4 mt-0.5 shrink-0 ${
+                          pricingTrack === 'b2b' ? 'text-emerald-400' : 'text-blue-400'
+                        }`} />
                         <span className="text-muted-foreground">{feature}</span>
                       </li>
                     ))}
@@ -634,7 +784,9 @@ export default function LandingPage() {
                     <Button
                       className={`w-full font-semibold transition-all duration-200 ${
                         tier.highlighted
-                          ? 'bg-emerald-500 hover:bg-emerald-400 text-black glow-emerald-sm'
+                          ? pricingTrack === 'b2b'
+                            ? 'bg-emerald-500 hover:bg-emerald-400 text-black glow-emerald-sm'
+                            : 'bg-blue-500 hover:bg-blue-400 text-black'
                           : 'bg-secondary hover:bg-secondary/80 text-foreground'
                       }`}
                     >
@@ -644,6 +796,25 @@ export default function LandingPage() {
                 </CardContent>
               </Card>
             ))}
+          </div>
+
+          {/* Comparison CTA */}
+          <div className="mt-12 text-center">
+            <p className="text-sm text-muted-foreground mb-4">
+              Not sure which plan is right for you? We&apos;ll help you choose.
+            </p>
+            <div className="flex items-center justify-center gap-4">
+              <Link href="/app">
+                <Button variant="outline" className="border-border/50 text-foreground hover:bg-secondary/50">
+                  Compare All Features
+                </Button>
+              </Link>
+              <a href="mailto:sales@leadreach.ai">
+                <Button variant="outline" className="border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400">
+                  Talk to Sales
+                </Button>
+              </a>
+            </div>
           </div>
         </div>
       </section>
