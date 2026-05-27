@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -60,10 +60,12 @@ export async function POST(request: NextRequest) {
           // Web search failed, continue with LLM only
         }
 
-        // Use LLM to fill in missing fields
-        const prompt = `You are a B2B data enrichment specialist. Fill in the missing fields for this company based on available data.
+        // Use centralized callLLMForJSON with rate limiting, retries, and model fallback
+        const systemPrompt = `You are a B2B data enrichment specialist. Fill in the missing fields for this company based on available data. Respond ONLY with a JSON object containing the filled fields. Use null for fields you cannot determine.
+Available fields: industry, subIndustry, website, hqAddress, city, stateProvince, country, postalCode, phoneMain, generalEmail, ceoName, keyContactName, keyContactTitle, employeeCount, revenueEstimate, foundingYear, ownershipType, linkedinUrl, techStack
+Example: {"industry": "Technology", "employeeCount": "51-200"}`;
 
-COMPANY: ${lead.companyName}
+        const userMessage = `COMPANY: ${lead.companyName}
 INDUSTRY: ${lead.industry || 'Unknown'}
 WEBSITE: ${lead.website || 'Unknown'}
 CITY: ${lead.city || 'Unknown'}
@@ -73,22 +75,14 @@ WEB RESEARCH DATA:
 ${webData || 'No web data available'}
 
 FIELDS TO FILL (only fill fields that are missing or empty):
-${fieldsToEnrich.join(', ')}
-
-Available fields: industry, subIndustry, website, hqAddress, city, stateProvince, country, postalCode, phoneMain, generalEmail, ceoName, keyContactName, keyContactTitle, employeeCount, revenueEstimate, foundingYear, ownershipType, linkedinUrl, techStack
-
-Respond ONLY with a JSON object containing the filled fields. Use null for fields you cannot determine.
-Example: {"industry": "Technology", "employeeCount": "51-200"}`;
+${fieldsToEnrich.join(', ')}`;
 
         try {
-          const zai = await ZAI.create();
-          const llmResult = await zai.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
+          const enrichedData = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
+            temperature: 0.2,
+            retriesPerModel: 2,
+            useFallback: true,
           });
-
-          const content = llmResult.choices?.[0]?.message?.content || '';
-          const jsonMatch = content.match(/\{[\s\S]*\}/);
-          const enrichedData = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
 
           // Update the lead with enriched data
           const updateData: Record<string, unknown> = {
@@ -97,12 +91,14 @@ Example: {"industry": "Technology", "employeeCount": "51-200"}`;
           };
 
           const fieldsEnriched: string[] = [];
-          for (const [key, value] of Object.entries(enrichedData)) {
-            if (value !== null && value !== undefined && value !== '') {
-              const currentVal = (lead as Record<string, unknown>)[key];
-              if (!currentVal || currentVal === '' || currentVal === null) {
-                updateData[key] = value;
-                fieldsEnriched.push(key);
+          if (enrichedData) {
+            for (const [key, value] of Object.entries(enrichedData)) {
+              if (value !== null && value !== undefined && value !== '') {
+                const currentVal = (lead as Record<string, unknown>)[key];
+                if (!currentVal || currentVal === '' || currentVal === null) {
+                  updateData[key] = value;
+                  fieldsEnriched.push(key);
+                }
               }
             }
           }

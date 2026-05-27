@@ -3,10 +3,12 @@
  * 
  * Generate pipeline reports, score distributions,
  * campaign performance metrics, AI insights, and action items.
+ * 
+ * Uses centralized callLLMForJSON for rate limiting, retries, and model fallback.
  */
 
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -351,9 +353,10 @@ export async function generateCampaignPerformance(campaignId: string): Promise<C
  * Generate AI-powered insights from pipeline data
  */
 export async function generateAIInsights(data: PipelineReport): Promise<AIInsight[]> {
-  const prompt = `You are an expert B2B sales analyst. Generate actionable insights from this pipeline data.
+  const systemPrompt = `You are an expert B2B sales analyst. Generate actionable insights from pipeline data.
+Return ONLY a JSON array.`;
 
-PIPELINE DATA:
+  const userMessage = `PIPELINE DATA:
 - Total Leads: ${data.summary.totalLeads}
 - Hot: ${data.summary.hotLeads}, Warm: ${data.summary.warmLeads}, Cold: ${data.summary.coldLeads}, Unqualified: ${data.summary.unqualifiedLeads}
 - Average Score: ${data.summary.averageScore}
@@ -368,26 +371,26 @@ Generate 4-6 insights as JSON array:
   "description": "Detailed description with specific data points",
   "impact": "high|medium|low",
   "actionRequired": true|false
-}]
-
-Return ONLY the JSON array.`;
+}]`;
 
   try {
-    const zai = await ZAI.create();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<Array<Record<string, unknown>>>(systemPrompt, userMessage, {
+      temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
 
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-    return Array.isArray(parsed) ? parsed.map((p: Record<string, unknown>) => ({
-      type: (['opportunity', 'risk', 'trend', 'recommendation'].includes(p.type as string) ? p.type : 'recommendation') as AIInsight['type'],
-      title: (p.title as string) || 'Insight',
-      description: (p.description as string) || '',
-      impact: (['high', 'medium', 'low'].includes(p.impact as string) ? p.impact : 'medium') as AIInsight['impact'],
-      actionRequired: typeof p.actionRequired === 'boolean' ? p.actionRequired : false,
-    })) : getDefaultInsights(data);
+    if (parsed && Array.isArray(parsed)) {
+      return parsed.map((p) => ({
+        type: (['opportunity', 'risk', 'trend', 'recommendation'].includes(p.type as string) ? p.type : 'recommendation') as AIInsight['type'],
+        title: (p.title as string) || 'Insight',
+        description: (p.description as string) || '',
+        impact: (['high', 'medium', 'low'].includes(p.impact as string) ? p.impact : 'medium') as AIInsight['impact'],
+        actionRequired: typeof p.actionRequired === 'boolean' ? p.actionRequired : false,
+      }));
+    }
+
+    return getDefaultInsights(data);
   } catch {
     return getDefaultInsights(data);
   }

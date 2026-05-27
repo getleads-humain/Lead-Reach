@@ -3,9 +3,11 @@
  * 
  * Handles sales objections using LLM with 15 objection categories
  * and 3 response frameworks.
+ * 
+ * Uses centralized callLLMForJSON for rate limiting, retries, and model fallback.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -108,9 +110,16 @@ export async function handleObjection(
   const categoryDesc = OBJECTION_DESCRIPTIONS[context.objectionCategory];
   const frameworkTemplate = FRAMEWORK_TEMPLATES[context.responseFramework];
 
-  const prompt = `You are an expert B2B sales coach. Generate a response to a sales objection.
+  const systemPrompt = `You are an expert B2B sales coach. Generate a response to a sales objection.
 
-OBJECTION: "${objection}"
+Rules:
+- Be empathetic, never dismissive
+- Use specific, concrete language
+- Include social proof where possible
+- End with a question that advances the conversation
+- Return ONLY valid JSON`;
+
+  const userMessage = `OBJECTION: "${objection}"
 CATEGORY: ${context.objectionCategory} — ${categoryDesc}
 
 PROSPECT CONTEXT:
@@ -128,39 +137,23 @@ Generate a response as JSON:
   "keyPoints": ["Point 1", "Point 2", "Point 3"],
   "followUpQuestions": ["Question 1", "Question 2"],
   "confidence": 0.85
-}
-
-Rules:
-- Be empathetic, never dismissive
-- Use specific, concrete language
-- Include social proof where possible
-- End with a question that advances the conversation
-- Return ONLY valid JSON`;
+}`;
 
   try {
-    const zai = await ZAI.create();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
+      temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    
-    let parsed: Record<string, unknown>;
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      parsed = {};
-    }
 
     return {
       category: context.objectionCategory,
       framework: context.responseFramework,
       objection,
-      response: (parsed.response as string) || getDefaultResponse(context),
-      keyPoints: Array.isArray(parsed.keyPoints) ? (parsed.keyPoints as string[]) : getDefaultKeyPoints(context.objectionCategory),
-      followUpQuestions: Array.isArray(parsed.followUpQuestions) ? (parsed.followUpQuestions as string[]) : ['Can you tell me more about that?'],
-      confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 0.7,
+      response: (parsed?.response as string) || getDefaultResponse(context),
+      keyPoints: parsed && Array.isArray(parsed.keyPoints) ? (parsed.keyPoints as string[]) : getDefaultKeyPoints(context.objectionCategory),
+      followUpQuestions: parsed && Array.isArray(parsed.followUpQuestions) ? (parsed.followUpQuestions as string[]) : ['Can you tell me more about that?'],
+      confidence: parsed && typeof parsed.confidence === 'number' ? parsed.confidence : 0.7,
     };
   } catch (error) {
     console.warn('[ObjectionHandler] LLM failed, using defaults:', error);

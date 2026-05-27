@@ -1,10 +1,11 @@
 /**
  * Competitive Intelligence Module
  * 
- * Analyze competitive landscape and generate battle cards using LLM.
+ * Analyzes competitive landscape and generates battle cards using LLM.
+ * Uses centralized callLLMForJSON for rate limiting, retries, and model fallback.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
 
 // ============================================================
@@ -89,9 +90,9 @@ export async function analyzeCompetitiveLandscape(
     // Search failed, continue with LLM only
   }
 
-  const prompt = `You are an expert competitive intelligence analyst. Analyze the competitive landscape for:
+  const systemPrompt = `You are an expert competitive intelligence analyst. Analyze the competitive landscape and return a comprehensive analysis as JSON. Return ONLY valid JSON.`;
 
-COMPANY: ${company}
+  const userMessage = `COMPANY: ${company}
 INDUSTRY: ${industry}
 
 ${searchData ? `WEB RESEARCH DATA:\n${searchData}\n\n` : ''}Generate a comprehensive competitive analysis as JSON:
@@ -117,25 +118,20 @@ ${searchData ? `WEB RESEARCH DATA:\n${searchData}\n\n` : ''}Generate a comprehen
   "opportunities": ["Opportunity 1", "Opportunity 2"],
   "threats": ["Threat 1", "Threat 2"],
   "marketTrends": ["Trend 1", "Trend 2"]
-}
-
-Return ONLY valid JSON.`;
+}`;
 
   try {
-    const zai = await ZAI.create();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
+      temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
 
     return {
       company,
       industry,
-      marketPosition: parsed.marketPosition || { segment: industry, rank: 'Emerging', marketShare: 'Unknown' },
-      competitors: Array.isArray(parsed.competitors) ? parsed.competitors.map((c: Record<string, unknown>) => ({
+      marketPosition: (parsed?.marketPosition as CompetitiveLandscape['marketPosition']) || { segment: industry, rank: 'Emerging', marketShare: 'Unknown' },
+      competitors: parsed && Array.isArray(parsed.competitors) ? parsed.competitors.map((c: Record<string, unknown>) => ({
         name: (c.name as string) || 'Unknown',
         description: (c.description as string) || '',
         strengths: Array.isArray(c.strengths) ? (c.strengths as string[]) : [],
@@ -144,11 +140,11 @@ Return ONLY valid JSON.`;
         pricing: (c.pricing as string) || 'Unknown',
         keyDifferentiator: (c.keyDifferentiator as string) || 'Unknown',
       })) : [],
-      strengths: Array.isArray(parsed.strengths) ? (parsed.strengths as string[]) : [],
-      weaknesses: Array.isArray(parsed.weaknesses) ? (parsed.weaknesses as string[]) : [],
-      opportunities: Array.isArray(parsed.opportunities) ? (parsed.opportunities as string[]) : [],
-      threats: Array.isArray(parsed.threats) ? (parsed.threats as string[]) : [],
-      marketTrends: Array.isArray(parsed.marketTrends) ? (parsed.marketTrends as string[]) : [],
+      strengths: parsed && Array.isArray(parsed.strengths) ? (parsed.strengths as string[]) : [],
+      weaknesses: parsed && Array.isArray(parsed.weaknesses) ? (parsed.weaknesses as string[]) : [],
+      opportunities: parsed && Array.isArray(parsed.opportunities) ? (parsed.opportunities as string[]) : [],
+      threats: parsed && Array.isArray(parsed.threats) ? (parsed.threats as string[]) : [],
+      marketTrends: parsed && Array.isArray(parsed.marketTrends) ? (parsed.marketTrends as string[]) : [],
       analyzedAt: new Date().toISOString(),
     };
   } catch (error) {
@@ -190,9 +186,9 @@ export async function generateBattleCard(
     // Search failed
   }
 
-  const prompt = `You are an expert sales enablement strategist. Create a detailed battle card.
+  const systemPrompt = `You are an expert sales enablement strategist. Create a detailed battle card. Include 6-8 features in the feature matrix and 4-6 common objections. Return ONLY valid JSON.`;
 
-YOUR COMPANY: ${company}
+  const userMessage = `YOUR COMPANY: ${company}
 COMPETITOR: ${competitor}
 
 ${competitorData ? `COMPETITOR RESEARCH DATA:\n${competitorData}\n\n` : ''}Generate a battle card as JSON:
@@ -224,34 +220,28 @@ ${competitorData ? `COMPETITOR RESEARCH DATA:\n${competitorData}\n\n` : ''}Gener
     "competitorPosition": "Competitor pricing position",
     "valueMessage": "Value proposition message"
   }
-}
-
-Include 6-8 features in the feature matrix and 4-6 common objections.
-Return ONLY valid JSON.`;
+}`;
 
   try {
-    const zai = await ZAI.create();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
+      temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
 
     return {
       yourCompany: company,
       competitor,
       date: new Date().toISOString(),
-      overview: (parsed.overview as string) || `Competitive comparison: ${company} vs ${competitor}`,
-      featureMatrix: Array.isArray(parsed.featureMatrix) ? (parsed.featureMatrix as Record<string, string>[]).map((f) => ({
+      overview: (parsed?.overview as string) || `Competitive comparison: ${company} vs ${competitor}`,
+      featureMatrix: parsed && Array.isArray(parsed.featureMatrix) ? (parsed.featureMatrix as Record<string, string>[]).map((f) => ({
         feature: f.feature || 'Unknown',
         you: f.you || 'Unknown',
         competitor: f.competitor || 'Unknown',
         advantage: (['you', 'competitor', 'neutral'].includes(f.advantage) ? f.advantage : 'neutral') as 'you' | 'competitor' | 'neutral',
       })) : [],
-      displacementStrategy: parsed.displacementStrategy ? {
-        approach: (parsed.displacementStrategy as Record<string, unknown>).approach as string || 'Focus on unique value proposition',
+      displacementStrategy: parsed?.displacementStrategy ? {
+        approach: ((parsed.displacementStrategy as Record<string, unknown>).approach as string) || 'Focus on unique value proposition',
         keyMessages: Array.isArray((parsed.displacementStrategy as Record<string, unknown>).keyMessages) ? (parsed.displacementStrategy as Record<string, unknown>).keyMessages as string[] : [],
         caseStudyAngles: Array.isArray((parsed.displacementStrategy as Record<string, unknown>).caseStudyAngles) ? (parsed.displacementStrategy as Record<string, unknown>).caseStudyAngles as string[] : [],
         riskMitigations: Array.isArray((parsed.displacementStrategy as Record<string, unknown>).riskMitigations) ? (parsed.displacementStrategy as Record<string, unknown>).riskMitigations as string[] : [],
@@ -261,15 +251,15 @@ Return ONLY valid JSON.`;
         caseStudyAngles: ['ROI improvement', 'Time to value', 'Customer satisfaction'],
         riskMitigations: ['Pilot program', 'Money-back guarantee', 'Gradual migration'],
       },
-      commonObjections: Array.isArray(parsed.commonObjections) ? (parsed.commonObjections as Record<string, string>[]).map((o) => ({
+      commonObjections: parsed && Array.isArray(parsed.commonObjections) ? (parsed.commonObjections as Record<string, string>[]).map((o) => ({
         objection: o.objection || '',
         response: o.response || '',
       })) : [],
-      winThemes: Array.isArray(parsed.winThemes) ? (parsed.winThemes as string[]) : ['Superior product', 'Better customer support', 'Proven track record'],
-      pricingComparison: parsed.pricingComparison ? {
-        yourPosition: (parsed.pricingComparison as Record<string, string>).yourPosition || 'Competitive',
-        competitorPosition: (parsed.pricingComparison as Record<string, string>).competitorPosition || 'Market rate',
-        valueMessage: (parsed.pricingComparison as Record<string, string>).valueMessage || 'Higher value for investment',
+      winThemes: parsed && Array.isArray(parsed.winThemes) ? (parsed.winThemes as string[]) : ['Superior product', 'Better customer support', 'Proven track record'],
+      pricingComparison: parsed?.pricingComparison ? {
+        yourPosition: ((parsed.pricingComparison as Record<string, string>).yourPosition) || 'Competitive',
+        competitorPosition: ((parsed.pricingComparison as Record<string, string>).competitorPosition) || 'Market rate',
+        valueMessage: ((parsed.pricingComparison as Record<string, string>).valueMessage) || 'Higher value for investment',
       } : {
         yourPosition: 'Competitive pricing with superior value',
         competitorPosition: 'Market rate',

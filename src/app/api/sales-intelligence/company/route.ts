@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+import { callLLMForJSON, callLLM } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -76,15 +77,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // Step 3: Use LLM to analyze and synthesize
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
-
-    const analysisResult = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: `You are a sales intelligence analyst. Analyze the provided company information and return a JSON object with the following structure:
+    // Step 3: Use centralized callLLMForJSON with rate limiting, retries, and model fallback
+    // Call 1: Company analysis
+    let company: ProspectData = { companyName };
+    try {
+      const companyAnalysis = await callLLMForJSON<ProspectData>(
+        `You are a sales intelligence analyst. Analyze the provided company information and return a JSON object with the following structure:
 {
   "companyName": "string",
   "website": "string or null",
@@ -98,64 +96,45 @@ export async function POST(request: NextRequest) {
   "techStack": ["string"]
 }
 Return ONLY valid JSON.`,
-        },
+        `Company: "${companyName}"\n\nResearch content:\n${companyContent.slice(0, 12000)}`,
         {
-          role: 'user',
-          content: `Company: "${companyName}"\n\nResearch content:\n${companyContent.slice(0, 12000)}`,
-        },
-      ],
-      temperature: 0.2,
-    });
-
-    let company: ProspectData = { companyName };
-    try {
-      const rawText = analysisResult.choices?.[0]?.message?.content || '';
-      const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-      if (jsonMatch) {
-        company = JSON.parse(jsonMatch[0]);
+          temperature: 0.2,
+          retriesPerModel: 2,
+          useFallback: true,
+        }
+      );
+      if (companyAnalysis) {
+        company = companyAnalysis;
       }
     } catch {
       // Fallback to basic company data
     }
 
-    // Step 4: Competitive analysis
-    const compAnalysisResult = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a competitive intelligence analyst. Provide a brief competitive analysis based on the provided information. Focus on market position, strengths, weaknesses, and competitive threats. Be concise but insightful.',
-        },
-        {
-          role: 'user',
-          content: `Company: "${companyName}"\nCompany data: ${JSON.stringify(company).slice(0, 2000)}\n\nCompetitive landscape:\n${competitiveContent.slice(0, 8000)}`,
-        },
-      ],
+    // Call 2: Competitive analysis
+    const competitiveAnalysis = await callLLM({
+      systemPrompt: 'You are a competitive intelligence analyst. Provide a brief competitive analysis based on the provided information. Focus on market position, strengths, weaknesses, and competitive threats. Be concise but insightful.',
+      userMessage: `Company: "${companyName}"\nCompany data: ${JSON.stringify(company).slice(0, 2000)}\n\nCompetitive landscape:\n${competitiveContent.slice(0, 8000)}`,
       temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
 
-    const competitiveAnalysis = compAnalysisResult.choices?.[0]?.message?.content || 'Competitive analysis unavailable.';
+    const competitiveAnalysisText = competitiveAnalysis || 'Competitive analysis unavailable.';
 
-    // Step 5: Identify opportunities
-    const oppResult = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: 'You are a sales strategist. Based on the company information and competitive analysis, identify 3-5 specific sales opportunities or angles. Return ONLY a JSON array of strings, each describing a specific opportunity.',
-        },
-        {
-          role: 'user',
-          content: `Company: "${companyName}"\nCompany data: ${JSON.stringify(company).slice(0, 2000)}\nCompetitive analysis: ${competitiveAnalysis.slice(0, 3000)}`,
-        },
-      ],
-      temperature: 0.4,
-    });
-
+    // Call 3: Identify opportunities
     let opportunities: string[] = [];
     try {
-      const rawOppText = oppResult.choices?.[0]?.message?.content || '[]';
-      const oppMatch = rawOppText.match(/\[[\s\S]*\]/);
-      if (oppMatch) {
-        opportunities = JSON.parse(oppMatch[0]);
+      const oppResult = await callLLMForJSON<string[]>(
+        'You are a sales strategist. Based on the company information and competitive analysis, identify 3-5 specific sales opportunities or angles. Return ONLY a JSON array of strings, each describing a specific opportunity.',
+        `Company: "${companyName}"\nCompany data: ${JSON.stringify(company).slice(0, 2000)}\nCompetitive analysis: ${competitiveAnalysisText.slice(0, 3000)}`,
+        {
+          temperature: 0.4,
+          retriesPerModel: 2,
+          useFallback: true,
+        }
+      );
+      if (oppResult && Array.isArray(oppResult)) {
+        opportunities = oppResult;
       }
     } catch {
       opportunities = ['Unable to identify specific opportunities'];
@@ -163,7 +142,7 @@ Return ONLY valid JSON.`,
 
     return NextResponse.json({
       company,
-      competitiveAnalysis,
+      competitiveAnalysis: competitiveAnalysisText,
       opportunities,
     });
   } catch (error) {

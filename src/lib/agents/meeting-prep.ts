@@ -2,9 +2,10 @@
  * Meeting Preparation Module
  * 
  * Generate comprehensive 11-section meeting briefings using LLM.
+ * Uses centralized callLLMForJSON for rate limiting, retries, and model fallback.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
 
 // ============================================================
@@ -73,9 +74,9 @@ export async function generateMeetingPrep(
     // Web research failed, continue with LLM only
   }
 
-  const prompt = `You are an expert B2B sales strategist preparing a comprehensive meeting briefing.
+  const systemPrompt = `You are an expert B2B sales strategist preparing a comprehensive meeting briefing. Be specific and actionable. Reference real data where possible. Return ONLY valid JSON.`;
 
-COMPANY: ${input.companyName}
+  const userMessage = `COMPANY: ${input.companyName}
 CONTACT: ${input.contactName || 'Unknown'}
 CONTACT TITLE: ${input.contactTitle || 'Unknown'}
 INDUSTRY: ${input.industry || 'Unknown'}
@@ -101,21 +102,16 @@ Generate a comprehensive 11-section meeting briefing as JSON:
     "talkingPoints": ["Point 1", "Point 2", "Point 3", "Point 4", "Point 5"],
     "nextStepsTemplate": "Suggested follow-up email template after the meeting"
   }
-}
-
-Be specific and actionable. Reference real data where possible.
-Return ONLY valid JSON.`;
+}`;
 
   try {
-    const zai = await ZAI.create();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<{ sections: Record<string, unknown> }>(systemPrompt, userMessage, {
+      temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
 
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    const sections = (parsed.sections as Record<string, unknown>) || {};
+    const sections = parsed?.sections || {};
 
     return {
       companyName: input.companyName,

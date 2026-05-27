@@ -7,6 +7,11 @@
  *
  * All LLM calls in the application should go through this module
  * to ensure consistent model usage, rate limiting, and error handling.
+ *
+ * PROTECTION LAYERS (3-tier defense against 502 Bad Gateway):
+ *   1. Concurrency limiter — max 2 simultaneous LLM calls
+ *   2. Rate limiter — minimum 3s between calls + jitter
+ *   3. Retry + fallback — 3 retries per model, then switch to secondary model
  */
 
 import type ZAISdk from 'z-ai-web-dev-sdk';
@@ -27,6 +32,39 @@ export const LLM_MODELS = [MODEL_PRIMARY, MODEL_VISION] as const;
 export type LLMModel = typeof LLM_MODELS[number];
 
 // ============================================================
+// Concurrency Limiter (max simultaneous LLM calls)
+// ============================================================
+
+// Prevents more than MAX_CONCURRENT LLM calls from running at once.
+// This is the FIRST line of defense against 502 Bad Gateway errors.
+
+const MAX_CONCURRENT = 2;
+let activeCalls = 0;
+const waitingQueue: Array<() => void> = [];
+
+async function acquireSlot(): Promise<void> {
+  if (activeCalls < MAX_CONCURRENT) {
+    activeCalls++;
+    return;
+  }
+  // Wait until a slot opens up
+  return new Promise<void>((resolve) => {
+    waitingQueue.push(() => {
+      activeCalls++;
+      resolve();
+    });
+  });
+}
+
+function releaseSlot(): void {
+  activeCalls = Math.max(0, activeCalls - 1);
+  if (waitingQueue.length > 0) {
+    const next = waitingQueue.shift();
+    if (next) next();
+  }
+}
+
+// ============================================================
 // Unified Rate Limiter (shared across ALL z-ai-web-dev-sdk calls)
 // ============================================================
 
@@ -35,8 +73,8 @@ export type LLMModel = typeof LLM_MODELS[number];
 // A single shared rate limiter prevents concurrent bursts that cause 502s.
 
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 2500; // 2.5s between calls — balances throughput vs 502 risk
-const JITTER_MS = 800; // Random jitter to avoid thundering herd
+const MIN_INTERVAL_MS = 3000; // 3s between calls — increased from 2.5s for better 502 resilience
+const JITTER_MS = 1000; // Random jitter to avoid thundering herd (increased from 800ms)
 
 async function waitForRateLimit() {
   const now = Date.now();
@@ -61,7 +99,12 @@ export { waitForRateLimit };
 
 let zaiInstance: InstanceType<typeof ZAISdk> | null = null;
 
-async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
+/**
+ * Get the shared SDK singleton instance.
+ * Exported so agent-reach-bridge.ts can reuse the same instance
+ * instead of creating new ZAI.create() instances on every call.
+ */
+export async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
   if (!zaiInstance) {
     const ZAI = (await import('z-ai-web-dev-sdk')).default;
     zaiInstance = await ZAI.create();
@@ -99,7 +142,7 @@ function isRateLimitError(msg: string): boolean {
 }
 
 // ============================================================
-// Core LLM Call — with model fallback and retry
+// Core LLM Call — with concurrency, model fallback and retry
 // ============================================================
 
 export interface LLMCallOptions {
@@ -113,7 +156,7 @@ export interface LLMCallOptions {
   maxTokens?: number;
   /** Preferred model (defaults to MODEL_PRIMARY) */
   model?: LLMModel;
-  /** Number of retries per model before falling back, default 2 */
+  /** Number of retries per model before falling back, default 3 */
   retriesPerModel?: number;
   /** Whether to fall back to the other model on failure, default true */
   useFallback?: boolean;
@@ -123,9 +166,11 @@ export interface LLMCallOptions {
  * Call the LLM with automatic model fallback.
  *
  * Strategy:
- * 1. Try the primary model (glm-4.7-flash) with retries
- * 2. If all retries fail, try the secondary model (glm-4.6v-flash)
- * 3. Returns null if both models fail (graceful degradation)
+ * 1. Acquire a concurrency slot (max 2 simultaneous calls)
+ * 2. Wait for rate limiter (3s + jitter between calls)
+ * 3. Try the primary model (glm-4.7-flash) with retries
+ * 4. If all retries fail, try the secondary model (glm-4.6v-flash)
+ * 5. Returns null if both models fail (graceful degradation)
  */
 export async function callLLM(options: LLMCallOptions): Promise<string | null> {
   const {
@@ -134,87 +179,95 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     temperature = 0.3,
     maxTokens = 4096,
     model = MODEL_PRIMARY,
-    retriesPerModel = 3, // Increased from 2 to 3 for better 502 resilience
+    retriesPerModel = 3,
     useFallback = true,
   } = options;
 
-  const modelsToTry: LLMModel[] = [model];
-  if (useFallback) {
-    const fallback = model === MODEL_PRIMARY ? MODEL_VISION : MODEL_PRIMARY;
-    if (!modelsToTry.includes(fallback)) modelsToTry.push(fallback);
-  }
+  // Acquire concurrency slot
+  await acquireSlot();
 
-  for (const currentModel of modelsToTry) {
-    for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
-      try {
-        await waitForRateLimit();
+  try {
+    const modelsToTry: LLMModel[] = [model];
+    if (useFallback) {
+      const fallback = model === MODEL_PRIMARY ? MODEL_VISION : MODEL_PRIMARY;
+      if (!modelsToTry.includes(fallback)) modelsToTry.push(fallback);
+    }
 
-        const zai = await getSDK();
-        const completion = await zai.chat.completions.create({
-          model: currentModel,
-          messages: [
-            { role: 'system', content: systemPrompt },
-            { role: 'user', content: userMessage },
-          ],
-          temperature,
-          max_tokens: maxTokens,
-        });
+    for (const currentModel of modelsToTry) {
+      for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
+        try {
+          await waitForRateLimit();
 
-        // Validate response structure
-        if (!completion || !completion.choices || !Array.isArray(completion.choices)) {
-          throw new Error('LLM returned invalid response structure (possible gateway error)');
+          const zai = await getSDK();
+          const completion = await zai.chat.completions.create({
+            model: currentModel,
+            messages: [
+              { role: 'system', content: systemPrompt },
+              { role: 'user', content: userMessage },
+            ],
+            temperature,
+            max_tokens: maxTokens,
+          });
+
+          // Validate response structure
+          if (!completion || !completion.choices || !Array.isArray(completion.choices)) {
+            throw new Error('LLM returned invalid response structure (possible gateway error)');
+          }
+
+          const content = completion.choices?.[0]?.message?.content || '';
+
+          // Detect HTML in response
+          if (isHtmlContent(content)) {
+            throw new Error('LLM returned HTML instead of text (API gateway error page)');
+          }
+
+          if (content.trim()) {
+            console.log(`[callLLM] Success with ${currentModel} on attempt ${attempt + 1}`);
+            return content;
+          }
+
+          // Empty response — retry
+          if (attempt < retriesPerModel) {
+            console.warn(`[callLLM] Empty response from ${currentModel}, attempt ${attempt + 1}, retrying...`);
+            continue;
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Unknown error';
+          const errorName = error instanceof Error ? error.name : '';
+
+          const isGatewayErr = isHtmlOrGatewayError(msg, errorName);
+          const isRateErr = isRateLimitError(msg);
+
+          if (isGatewayErr || isRateErr) {
+            console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: gateway/rate error — ${msg.slice(0, 150)}`);
+          } else {
+            console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1} failed: ${msg.slice(0, 200)}`);
+          }
+
+          if (attempt < retriesPerModel) {
+            // Exponential backoff with jitter for 502/gateway errors
+            let backoffMs = 2000;
+            if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000; // 4-6s, 8-10s, 12-14s
+            else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3-4s, 6-7s, 9-10s
+
+            console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
+            await new Promise(resolve => setTimeout(resolve, backoffMs));
+            continue;
+          }
+
+          // This model exhausted its retries — log and try next model
+          console.warn(`[callLLM] ${currentModel} exhausted all ${retriesPerModel + 1} attempts, ${useFallback ? 'trying fallback model...' : 'giving up.'}`);
         }
-
-        const content = completion.choices?.[0]?.message?.content || '';
-
-        // Detect HTML in response
-        if (isHtmlContent(content)) {
-          throw new Error('LLM returned HTML instead of text (API gateway error page)');
-        }
-
-        if (content.trim()) {
-          console.log(`[callLLM] Success with ${currentModel} on attempt ${attempt + 1}`);
-          return content;
-        }
-
-        // Empty response — retry
-        if (attempt < retriesPerModel) {
-          console.warn(`[callLLM] Empty response from ${currentModel}, attempt ${attempt + 1}, retrying...`);
-          continue;
-        }
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        const errorName = error instanceof Error ? error.name : '';
-
-        const isGatewayErr = isHtmlOrGatewayError(msg, errorName);
-        const isRateErr = isRateLimitError(msg);
-
-        if (isGatewayErr || isRateErr) {
-          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: gateway/rate error — ${msg.slice(0, 150)}`);
-        } else {
-          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1} failed: ${msg.slice(0, 200)}`);
-        }
-
-        if (attempt < retriesPerModel) {
-          // Exponential backoff with jitter for 502/gateway errors
-          let backoffMs = 2000;
-          if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000; // 4-6s, 8-10s, 12-14s
-          else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3-4s, 6-7s, 9-10s
-
-          console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
-          await new Promise(resolve => setTimeout(resolve, backoffMs));
-          continue;
-        }
-
-        // This model exhausted its retries — log and try next model
-        console.warn(`[callLLM] ${currentModel} exhausted all ${retriesPerModel + 1} attempts, ${useFallback ? 'trying fallback model...' : 'giving up.'}`);
       }
     }
-  }
 
-  // Both models failed
-  console.error('[callLLM] All models failed, returning null for graceful degradation');
-  return null;
+    // Both models failed
+    console.error('[callLLM] All models failed, returning null for graceful degradation');
+    return null;
+  } finally {
+    // Always release the concurrency slot
+    releaseSlot();
+  }
 }
 
 // ============================================================

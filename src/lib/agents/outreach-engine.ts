@@ -3,9 +3,11 @@
  * 
  * Generates personalized outreach sequences using LLM.
  * Supports multiple frameworks and sequence types.
+ * 
+ * Uses centralized callLLMForJSON for rate limiting, retries, and model fallback.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -95,9 +97,17 @@ export async function generateOutreachSequence(input: OutreachInput): Promise<Ou
   const frameworkDesc = FRAMEWORK_DESCRIPTIONS[input.framework];
   const typeGuidance = SEQUENCE_TYPE_GUIDANCE[input.sequenceType];
 
-  const prompt = `You are an expert B2B sales outreach strategist. Generate a personalized outreach sequence.
+  const systemPrompt = `You are an expert B2B sales outreach strategist. Generate a personalized outreach sequence.
 
-LEAD INFORMATION:
+Rules:
+- Each message must be highly personalized to ${input.companyName}
+- Keep emails under 150 words
+- Include specific references to the company/industry
+- End with a clear, low-friction call to action
+- Vary channels (email, linkedin) across steps
+- Return ONLY valid JSON, no markdown`;
+
+  const userMessage = `LEAD INFORMATION:
 - Name: ${input.leadName}
 - Title: ${input.leadTitle || 'Not specified'}
 - Company: ${input.companyName}
@@ -127,34 +137,16 @@ Generate a complete outreach sequence as JSON with this exact structure:
   ],
   "overallStrategy": "2-3 sentence strategy summary",
   "keyMessaging": ["Key message 1", "Key message 2", "Key message 3"]
-}
-
-Rules:
-- Each message must be highly personalized to ${input.companyName}
-- Keep emails under 150 words
-- Include specific references to the company/industry
-- End with a clear, low-friction call to action
-- Vary channels (email, linkedin) across steps
-- Return ONLY valid JSON, no markdown`;
+}`;
 
   try {
-    const zai = await ZAI.create();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
+      temperature: 0.3,
+      retriesPerModel: 2,
+      useFallback: true,
     });
 
-    const content = result.choices?.[0]?.message?.content || '';
-    
-    // Extract JSON from response
-    let parsed: Record<string, unknown>;
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      parsed = {};
-    }
-
-    const steps = Array.isArray(parsed.steps) ? parsed.steps.map((step: Record<string, unknown>, i: number) => ({
+    const steps = parsed && Array.isArray(parsed.steps) ? parsed.steps.map((step: Record<string, unknown>, i: number) => ({
       stepNumber: (step.stepNumber as number) || i + 1,
       channel: (['email', 'linkedin', 'phone'].includes(step.channel as string) ? step.channel : 'email') as 'email' | 'linkedin' | 'phone',
       type: (step.type as string) || 'cold_email',
@@ -170,8 +162,8 @@ Rules:
       leadName: input.leadName,
       companyName: input.companyName,
       steps,
-      overallStrategy: (parsed.overallStrategy as string) || `Outreach to ${input.companyName} using ${input.framework} framework`,
-      keyMessaging: Array.isArray(parsed.keyMessaging) ? (parsed.keyMessaging as string[]) : ['Personalize based on company research'],
+      overallStrategy: (parsed?.overallStrategy as string) || `Outreach to ${input.companyName} using ${input.framework} framework`,
+      keyMessaging: parsed && Array.isArray(parsed.keyMessaging) ? (parsed.keyMessaging as string[]) : ['Personalize based on company research'],
       generatedAt: new Date().toISOString(),
     };
   } catch (error) {

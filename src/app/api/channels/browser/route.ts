@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
+import { callLLM, callLLMForJSON } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -38,12 +39,11 @@ export async function POST(request: NextRequest) {
           );
         }
 
-        // Use LLM to extract structured data
+        // Use centralized callLLMForJSON with rate limiting, retries, and model fallback
         try {
-          const ZAI = (await import('z-ai-web-dev-sdk')).default;
-          const zai = await ZAI.create();
+          const systemPrompt = 'You are a precise data extraction assistant. Always respond with valid JSON only.';
 
-          const extractPrompt = `You are a data extraction assistant. Extract the following information from the web page content.
+          const userPrompt = `You are a data extraction assistant. Extract the following information from the web page content.
 ${selectors ? `Focus on these selectors/fields: ${selectors.join(', ')}` : 'Extract key information like company name, contact details, addresses, phone numbers, and emails.'}
 
 Page content:
@@ -51,15 +51,32 @@ ${readResult.data.content?.slice(0, 8000) || ''}
 
 Return a JSON object with the extracted data. Only include fields that were found in the content.`;
 
-          const llmResult = await zai.chat.completions.create({
-            messages: [
-              { role: 'system', content: 'You are a precise data extraction assistant. Always respond with valid JSON only.' },
-              { role: 'user', content: extractPrompt },
-            ],
+          const extracted = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userPrompt, {
             temperature: 0.1,
+            retriesPerModel: 2,
+            useFallback: true,
           });
 
-          const extractedText = llmResult.choices?.[0]?.message?.content || '';
+          // If JSON extraction failed, try raw text and return it
+          if (!extracted) {
+            const extractedText = await callLLM({
+              systemPrompt,
+              userMessage: userPrompt,
+              temperature: 0.1,
+              retriesPerModel: 2,
+              useFallback: true,
+            });
+
+            return NextResponse.json({
+              success: true,
+              data: {
+                content: readResult.data.content,
+                title: readResult.data.title,
+                wordCount: readResult.data.wordCount,
+                extracted: extractedText || '',
+              },
+            });
+          }
 
           return NextResponse.json({
             success: true,
@@ -67,7 +84,7 @@ Return a JSON object with the extracted data. Only include fields that were foun
               content: readResult.data.content,
               title: readResult.data.title,
               wordCount: readResult.data.wordCount,
-              extracted: extractedText,
+              extracted: JSON.stringify(extracted),
             },
           });
         } catch (llmError) {

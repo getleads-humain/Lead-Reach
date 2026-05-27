@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+import { callLLMForJSON } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -67,36 +68,24 @@ export async function POST(request: NextRequest) {
 
       const readResults = await Promise.all(readPromises);
 
-      // Use LLM to extract structured business data from content
+      // Use centralized callLLMForJSON with rate limiting, retries, and model fallback
+      const combinedContent = readResults
+        .filter((r): r is NonNullable<typeof r> => r !== null)
+        .map((r) => `--- ${r.title} (${r.url}) ---\n${r.content?.slice(0, 3000) || ''}`)
+        .join('\n\n');
+
+      if (!combinedContent) continue;
+
       try {
-        const ZAI = (await import('z-ai-web-dev-sdk')).default;
-        const zai = await ZAI.create();
+        const systemPrompt = `You are a business data extraction assistant. Extract business listings from the provided web content. For each business found, provide: name, phone (if available), email (if available), address (if available), and website URL. Return ONLY a JSON array of objects with these fields: name, phone, email, address, url. If a field is not found, omit it or set to null. Only include real businesses, not ads or navigation elements.`;
 
-        const combinedContent = readResults
-          .filter((r): r is NonNullable<typeof r> => r !== null)
-          .map((r) => `--- ${r.title} (${r.url}) ---\n${r.content?.slice(0, 3000) || ''}`)
-          .join('\n\n');
-
-        if (!combinedContent) continue;
-
-        const extractResult = await zai.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: `You are a business data extraction assistant. Extract business listings from the provided web content. For each business found, provide: name, phone (if available), email (if available), address (if available), and website URL. Return ONLY a JSON array of objects with these fields: name, phone, email, address, url. If a field is not found, omit it or set to null. Only include real businesses, not ads or navigation elements.`,
-            },
-            {
-              role: 'user',
-              content: `Extract ${keyword} businesses in ${location} from:\n\n${combinedContent.slice(0, 10000)}`,
-            },
-          ],
+        const extracted = await callLLMForJSON<GeneratedLead[]>(systemPrompt, `Extract ${keyword} businesses in ${location} from:\n\n${combinedContent.slice(0, 10000)}`, {
           temperature: 0.1,
+          retriesPerModel: 2,
+          useFallback: true,
         });
 
-        const rawText = extractResult.choices?.[0]?.message?.content || '[]';
-        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const extracted: GeneratedLead[] = JSON.parse(jsonMatch[0]);
+        if (extracted && Array.isArray(extracted)) {
           for (const lead of extracted) {
             if (lead.name && !seenNames.has(lead.name.toLowerCase())) {
               seenNames.add(lead.name.toLowerCase());

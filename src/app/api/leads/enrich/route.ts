@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-import ZAI from 'z-ai-web-dev-sdk';
+import { callLLMForJSON } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -47,9 +47,9 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ message: 'Lead already has all fields filled', fieldsEnriched: [] });
     }
 
-    const prompt = `You are a B2B data enrichment specialist. Fill in the missing fields for this company.
+    const systemPrompt = `You are a B2B data enrichment specialist. Fill in the missing fields for a company based on available data. Respond ONLY with a JSON object containing the filled fields. Use null for fields you cannot determine.`;
 
-COMPANY: ${lead.companyName}
+    const userMessage = `COMPANY: ${lead.companyName}
 INDUSTRY: ${lead.industry || 'Unknown'}
 WEBSITE: ${lead.website || 'Unknown'}
 CITY: ${lead.city || 'Unknown'}
@@ -59,19 +59,14 @@ WEB RESEARCH DATA:
 ${webData || 'No web data available'}
 
 FIELDS TO FILL:
-${emptyFields.join(', ')}
-
-Respond ONLY with a JSON object containing the filled fields. Use null for fields you cannot determine.`;
+${emptyFields.join(', ')}`;
 
     try {
-      const zai = await ZAI.create();
-      const llmResult = await zai.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
+      const enrichedData = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
+        temperature: 0.2,
+        retriesPerModel: 2,
+        useFallback: true,
       });
-
-      const content = llmResult.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const enrichedData = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
 
       const updateData: Record<string, unknown> = {
         enrichedAt: new Date(),
@@ -79,10 +74,12 @@ Respond ONLY with a JSON object containing the filled fields. Use null for field
       };
 
       const fieldsEnriched: string[] = [];
-      for (const [key, value] of Object.entries(enrichedData)) {
-        if (value !== null && value !== undefined && value !== '') {
-          updateData[key] = value;
-          fieldsEnriched.push(key);
+      if (enrichedData) {
+        for (const [key, value] of Object.entries(enrichedData)) {
+          if (value !== null && value !== undefined && value !== '') {
+            updateData[key] = value;
+            fieldsEnriched.push(key);
+          }
         }
       }
 

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
+import { callLLMForJSON } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,32 +44,17 @@ export async function POST(request: NextRequest) {
 
     if (extractSchema && typeof extractSchema === 'object' && Object.keys(extractSchema).length > 0) {
       try {
-        const ZAI = (await import('z-ai-web-dev-sdk')).default;
-        const zai = await ZAI.create();
-
         const schemaDescription = Object.entries(extractSchema)
           .map(([key, description]) => `"${key}": ${description}`)
           .join(', ');
 
-        const extractResult = await zai.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: `You are a data extraction assistant. Extract structured data from the provided web page content according to the given schema. Return ONLY a valid JSON object matching the schema. If a field cannot be found, set it to null.`,
-            },
-            {
-              role: 'user',
-              content: `Extract the following fields from this page:\n${schemaDescription}\n\nPage content:\n${content.slice(0, 10000)}`,
-            },
-          ],
-          temperature: 0.1,
-        });
+        const systemPrompt = `You are a data extraction assistant. Extract structured data from the provided web page content according to the given schema. Return ONLY a valid JSON object matching the schema. If a field cannot be found, set it to null.`;
 
-        const rawText = extractResult.choices?.[0]?.message?.content || '';
-        const jsonMatch = rawText.match(/\{[\s\S]*\}/);
-        if (jsonMatch) {
-          extracted = JSON.parse(jsonMatch[0]);
-        }
+        extracted = await callLLMForJSON<Record<string, unknown>>(systemPrompt, `Extract the following fields from this page:\n${schemaDescription}\n\nPage content:\n${content.slice(0, 10000)}`, {
+          temperature: 0.1,
+          retriesPerModel: 2,
+          useFallback: true,
+        }) ?? undefined;
       } catch (llmError) {
         console.error('LLM extraction failed:', llmError);
         // Return without extracted data
