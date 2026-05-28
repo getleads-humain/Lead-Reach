@@ -2,14 +2,28 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
+import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
+import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from '@/components/ui/dropdown-menu';
 import {
   Bell,
   Sparkles,
   Send,
   Fingerprint,
+  LogOut,
+  Settings,
+  User,
+  Crown,
 } from 'lucide-react';
 import {
   Dialog,
@@ -18,15 +32,27 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { safeFetchJSON } from '@/lib/utils';
+import Link from 'next/link';
 
 export function TopBar() {
-  const { notifications, sidebarCollapsed, setActiveView, userProfile } = useAppStore();
+  const { notifications, userProfile, setActiveView } = useAppStore();
+  const { user, profile, signOut } = useAuth();
   const [searchOpen, setSearchOpen] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
 
   const unreadCount = notifications.filter((n) => !n.read).length;
+
+  // Use auth profile name, fallback to userProfile from store, fallback to email
+  const displayName = profile?.full_name || userProfile.fullName || user?.email?.split('@')[0] || 'User';
+  const initials = displayName
+    .split(' ')
+    .map((n) => n[0])
+    .join('')
+    .toUpperCase()
+    .slice(0, 2);
+  const planTier = profile?.plan_tier || 'scout';
 
   const handleAiSubmit = async () => {
     if (!aiQuery.trim()) return;
@@ -51,10 +77,6 @@ export function TopBar() {
               targetLocation: data.plan.targetLocation,
             }),
           });
-
-          // Note: /api/ai already executes tasks via dispatchAndExecute().
-          // We do NOT re-create tasks here to avoid duplicates.
-          // The pipeline already ran server-side.
         }
       }
     } catch (error) {
@@ -72,6 +94,11 @@ export function TopBar() {
           <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
             Agentic Lead Generation
           </h2>
+          {user && (
+            <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 text-[10px] px-1.5 py-0">
+              {planTier.toUpperCase()}
+            </Badge>
+          )}
         </div>
 
         <div className="flex items-center gap-2">
@@ -109,6 +136,52 @@ export function TopBar() {
               </Badge>
             )}
           </Button>
+
+          {/* User Menu */}
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="relative h-8 w-8 rounded-full">
+                <Avatar className="h-8 w-8">
+                  <AvatarFallback className="bg-emerald-500/10 text-emerald-400 text-xs font-semibold border border-emerald-500/20">
+                    {initials}
+                  </AvatarFallback>
+                </Avatar>
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent className="w-56 bg-card border-border/60" align="end" forceMount>
+              <DropdownMenuLabel className="font-normal">
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium leading-none text-foreground">{displayName}</p>
+                  <p className="text-xs leading-none text-muted-foreground">
+                    {user?.email}
+                  </p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem asChild className="cursor-pointer">
+                <Link href="/settings" className="flex items-center">
+                  <Settings className="mr-2 h-4 w-4" />
+                  <span>Settings</span>
+                </Link>
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => setActiveView('identity')} className="cursor-pointer">
+                <User className="mr-2 h-4 w-4" />
+                <span>Profile</span>
+              </DropdownMenuItem>
+              <DropdownMenuItem className="cursor-pointer">
+                <Crown className="mr-2 h-4 w-4 text-emerald-400" />
+                <span>Upgrade Plan</span>
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={signOut}
+                className="cursor-pointer text-red-400 focus:text-red-400 focus:bg-red-500/5"
+              >
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Sign out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       </header>
 

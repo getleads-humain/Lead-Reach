@@ -48,9 +48,14 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
 
             {/* CTA + Mobile Menu */}
             <div className="flex items-center gap-3">
-              <Link href="/app">
+              <Link href="/login" className="hidden sm:inline-flex">
+                <Button variant="ghost" className="text-muted-foreground hover:text-foreground transition-colors">
+                  Sign In
+                </Button>
+              </Link>
+              <Link href="/signup">
                 <Button className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all duration-200 glow-emerald-sm">
-                  Launch Platform
+                  Get Started Free
                 </Button>
               </Link>
               <Button
@@ -78,11 +83,18 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
                 </Link>
               ))}
               <Link
-                href="/app"
+                href="/login"
+                className="block px-3 py-2 text-sm text-muted-foreground hover:text-foreground transition-colors"
+                onClick={() => setMobileMenuOpen(false)}
+              >
+                Sign In
+              </Link>
+              <Link
+                href="/signup"
                 className="block px-3 py-2 text-sm text-emerald-400 font-medium hover:text-emerald-300 transition-colors"
                 onClick={() => setMobileMenuOpen(false)}
               >
-                Launch Platform &rarr;
+                Get Started Free &rarr;
               </Link>
             </div>
           )}

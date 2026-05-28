@@ -8,21 +8,68 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ─── Auth-Linked Models ────────────────────────────────────────────────────
+
+model Profile {
+  id               String    @id // UUID from auth.users
+  email            String
+  fullName         String?   @map("full_name")
+  avatarUrl        String?   @map("avatar_url")
+  companyName      String?   @map("company_name")
+  jobTitle         String?   @map("job_title")
+  phone            String?
+  industry         String?
+  companySize      String?   @map("company_size")
+  website          String?
+  location         String?
+  bio              String?
+  onboardingComplete Boolean  @default(false) @map("onboarding_complete")
+  onboardingStep   Int       @default(0) @map("onboarding_step")
+  plan             String    @default("free")
+  planTier         String    @default("scout") @map("plan_tier")
+  stripeCustomerId String?   @map("stripe_customer_id")
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  userSettings     UserSettings?
+
+  @@map("profiles")
+}
+
+model UserSettings {
+  id                    String   @id // UUID from auth.users
+  preferences           Json     @default("{}")
+  notificationSettings  Json     @default("{\"email_notifications\":true,\"push_notifications\":true,\"campaign_alerts\":true,\"lead_alerts\":true,\"weekly_report\":true}")
+  dashboardLayout       Json     @default("{}")
+  sidebarCollapsed      Boolean  @default(false)
+  theme                 String   @default("dark")
+  language              String   @default("en")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  profile               Profile  @relation(fields: [id], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+// ─── Application Models ────────────────────────────────────────────────────
+
 model Campaign {
   id                String      @id @default(cuid())
+  userId            String?     @map("user_id")
   name              String
   description       String?
   status            String      @default("active") // active, paused, completed, archived
-  targetIndustry    String?
-  targetLocation    String?
-  targetCompanySize String?
-  targetCriteria    String? // JSON string of ICP criteria
-  leadsFound        Int         @default(0)
-  leadsQualified    Int         @default(0)
-  leadsContacted    Int         @default(0)
-  leadsResponded    Int         @default(0)
-  createdAt         DateTime    @default(now())
-  updatedAt         DateTime    @updatedAt
+  targetIndustry    String?     @map("target_industry")
+  targetLocation    String?     @map("target_location")
+  targetCompanySize String?     @map("target_company_size")
+  targetCriteria    String?     @map("target_criteria") // JSON string of ICP criteria
+  leadsFound        Int         @default(0) @map("leads_found")
+  leadsQualified    Int         @default(0) @map("leads_qualified")
+  leadsContacted    Int         @default(0) @map("leads_contacted")
+  leadsResponded    Int         @default(0) @map("leads_responded")
+  createdAt         DateTime    @default(now()) @map("created_at")
+  updatedAt         DateTime    @updatedAt @map("updated_at")
   leads             Lead[]
   tasks             AgentTask[]
 
@@ -31,74 +78,75 @@ model Campaign {
 
 model Lead {
   id         String   @id @default(cuid())
-  campaignId String
+  userId     String?  @map("user_id")
+  campaignId String   @map("campaign_id")
   campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
 
   // Company Info
-  companyName String
-  legalName   String?
+  companyName String @map("company_name")
+  legalName   String? @map("legal_name")
   website     String?
   industry    String?
-  subIndustry String?
-  sicCode     String?
-  naicsCode   String?
+  subIndustry String? @map("sub_industry")
+  sicCode     String? @map("sic_code")
+  naicsCode   String? @map("naics_code")
 
   // Location
-  hqAddress     String?
+  hqAddress     String?  @map("hq_address")
   city          String?
-  stateProvince String?
+  stateProvince String?  @map("state_province")
   country       String?
-  postalCode    String?
+  postalCode    String?  @map("postal_code")
 
   // Contact Info
-  phoneMain    String?
-  phoneDirect  String?
-  generalEmail String?
-  supportEmail String?
+  phoneMain    String?  @map("phone_main")
+  phoneDirect  String?  @map("phone_direct")
+  generalEmail String?  @map("general_email")
+  supportEmail String?  @map("support_email")
 
   // Key People
-  ceoName         String?
-  ceoEmail        String?
-  keyContactName  String?
-  keyContactTitle String?
-  keyContactEmail String?
+  ceoName         String? @map("ceo_name")
+  ceoEmail        String? @map("ceo_email")
+  keyContactName  String? @map("key_contact_name")
+  keyContactTitle String? @map("key_contact_title")
+  keyContactEmail String? @map("key_contact_email")
 
   // Firmographics
-  employeeCount   String?
-  revenueEstimate String?
-  foundingYear    String?
-  ownershipType   String?
+  employeeCount   String? @map("employee_count")
+  revenueEstimate String? @map("revenue_estimate")
+  foundingYear    String? @map("founding_year")
+  ownershipType   String? @map("ownership_type")
 
   // Digital
-  linkedinUrl   String?
-  twitterHandle String?
-  facebookPage  String?
-  techStack     String? // JSON array
+  linkedinUrl   String?  @map("linkedin_url")
+  twitterHandle String?  @map("twitter_handle")
+  facebookPage  String?  @map("facebook_page")
+  techStack     String?  @map("tech_stack") // JSON array
 
   // Qualification
-  leadScore         Int    @default(0)
-  leadTier          String @default("unqualified") // hot, warm, cold, unqualified
-  firmographicScore Int    @default(0)
-  intentScore       Int    @default(0)
-  reachabilityScore Int    @default(0)
-  strategicScore    Int    @default(0)
-  dataCompleteness  Int    @default(0)
+  leadScore         Int    @default(0) @map("lead_score")
+  leadTier          String @default("unqualified") @map("lead_tier") // hot, warm, cold, unqualified
+  firmographicScore Int    @default(0) @map("firmographic_score")
+  intentScore       Int    @default(0) @map("intent_score")
+  reachabilityScore Int    @default(0) @map("reachability_score")
+  strategicScore    Int    @default(0) @map("strategic_score")
+  dataCompleteness  Int    @default(0) @map("data_completeness")
 
   // Pipeline
   stage           String    @default("new") // new, enriched, qualified, contacted, engaged, negotiating, closed_won, closed_lost, nurture
-  lastContactDate DateTime?
-  nextFollowUp    DateTime?
+  lastContactDate DateTime?  @map("last_contact_date")
+  nextFollowUp    DateTime?  @map("next_follow_up")
   notes           String?
 
   // Discovery
-  sources      String? // JSON array of discovery sources
-  discoveredAt DateTime  @default(now())
-  enrichedAt   DateTime?
-  qualifiedAt  DateTime?
-  contactedAt  DateTime?
+  sources      String?   // JSON array of discovery sources
+  discoveredAt DateTime  @default(now()) @map("discovered_at")
+  enrichedAt   DateTime?  @map("enriched_at")
+  qualifiedAt  DateTime?  @map("qualified_at")
+  contactedAt  DateTime?  @map("contacted_at")
 
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  createdAt DateTime   @default(now()) @map("created_at")
+  updatedAt DateTime   @updatedAt @map("updated_at")
   outreach  Outreach[]
 
   @@map("leads")
@@ -106,31 +154,33 @@ model Lead {
 
 model Outreach {
   id     String @id @default(cuid())
-  leadId String
-  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+  userId String? @map("user_id")
+  leadId String  @map("lead_id")
+  lead   Lead    @relation(fields: [leadId], references: [id], onDelete: Cascade)
 
-  channel   String // email, linkedin, phone
-  type      String // cold_email, warm_intro, connection_request, follow_up_1, follow_up_2, break_up
+  channel   String  // email, linkedin, phone
+  type      String  // cold_email, warm_intro, connection_request, follow_up_1, follow_up_2, break_up
   subject   String?
   body      String
   status    String    @default("draft") // draft, sent, delivered, opened, replied, bounced, failed
-  sentAt    DateTime?
-  openedAt  DateTime?
-  repliedAt DateTime?
+  sentAt    DateTime?  @map("sent_at")
+  openedAt  DateTime?  @map("opened_at")
+  repliedAt DateTime?  @map("replied_at")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("outreach")
 }
 
 model AgentTask {
   id         String    @id @default(cuid())
-  campaignId String?
+  userId     String?   @map("user_id")
+  campaignId String?   @map("campaign_id")
   campaign   Campaign? @relation(fields: [campaignId], references: [id])
 
-  agentName String // orchestrator, prospect-discovery, data-enrichment, web-research, lead-qualification, outreach-composer, pipeline-manager, report-generator
-  taskType  String // search, enrich, qualify, outreach, report, coordinate
+  agentName String @map("agent_name") // orchestrator, prospect-discovery, data-enrichment, web-research, lead-qualification, outreach-composer, pipeline-manager, report-generator
+  taskType  String @map("task_type") // search, enrich, qualify, outreach, report, coordinate
   status    String  @default("pending") // pending, running, completed, failed, cancelled
   priority  Int     @default(5) // 1-10, 10 highest
   input     String? // JSON string of task input
@@ -138,10 +188,10 @@ model AgentTask {
   error     String?
   progress  Int     @default(0) // 0-100
 
-  startedAt   DateTime?
-  completedAt DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  startedAt   DateTime?  @map("started_at")
+  completedAt DateTime?  @map("completed_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("agent_tasks")
 }
@@ -149,57 +199,58 @@ model AgentTask {
 model AgentReachChannel {
   id          String    @id @default(cuid())
   name        String    @unique
-  displayName String
+  displayName String    @map("display_name")
   description String?
   status      String    @default("unknown") // ok, warn, off, error, unknown
   tier        Int       @default(0) // 0=zero-config, 1=needs-key, 2=needs-setup
-  backend     String? // e.g. "Jina Reader", "Exa via mcporter"
+  backend     String?   // e.g. "Jina Reader", "Exa via mcporter"
   message     String?
-  lastChecked DateTime?
-  createdAt   DateTime  @default(now())
-  updatedAt   DateTime  @updatedAt
+  lastChecked DateTime?  @map("last_checked")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
 
   @@map("agent_reach_channels") // web, exa_search, linkedin, twitter, youtube, github, reddit, etc.
 }
 
 model AISetter {
   id          String  @id @default(cuid())
+  userId      String? @map("user_id")
   name        String
   description String?
   status      String  @default("active") // active, paused, training
   avatar      String? // emoji or icon name
 
   // Qualification Criteria
-  qualificationRules String? // JSON: { mustHave: [], niceToHave: [], disqualify: [] }
+  qualificationRules String? @map("qualification_rules") // JSON: { mustHave: [], niceToHave: [], disqualify: [] }
 
   // Performance
-  conversationsHandled Int   @default(0)
-  leadsQualified       Int   @default(0)
-  leadsBooked          Int   @default(0)
-  conversionRate       Float @default(0) // percentage
-  avgResponseTime      Int   @default(0) // seconds
+  conversationsHandled Int   @default(0) @map("conversations_handled")
+  leadsQualified       Int   @default(0) @map("leads_qualified")
+  leadsBooked          Int   @default(0) @map("leads_booked")
+  conversionRate       Float @default(0) @map("conversion_rate") // percentage
+  avgResponseTime      Int   @default(0) @map("avg_response_time") // seconds
 
   // Configuration
   language        String  @default("en") // supports 17+ languages
   channels        String? // JSON array: ["sms","whatsapp","instagram","messenger","email"]
-  calendarLink    String? // booking calendar URL
-  followUpEnabled Boolean @default(true)
-  followUpDelay   Int     @default(3600) // seconds before first follow-up
-  maxFollowUps    Int     @default(5)
+  calendarLink    String? @map("calendar_link") // booking calendar URL
+  followUpEnabled Boolean @default(true) @map("follow_up_enabled")
+  followUpDelay   Int     @default(3600) @map("follow_up_delay") // seconds before first follow-up
+  maxFollowUps    Int     @default(5) @map("max_follow_ups")
 
   // GHL Integration
-  ghlIntegrationId String? // GoHighLevel integration ID
+  ghlIntegrationId String? @map("ghl_integration_id") // GoHighLevel integration ID
 
   // A/B Testing
-  activeVariant   String? // "A" or "B"
-  variantAMessage String? // JSON: greeting, qualification_prompt, booking_prompt
-  variantBMessage String? // JSON: greeting, qualification_prompt, booking_prompt
+  activeVariant   String? @map("active_variant") // "A" or "B"
+  variantAMessage String? @map("variant_a_message") // JSON: greeting, qualification_prompt, booking_prompt
+  variantBMessage String? @map("variant_b_message") // JSON: greeting, qualification_prompt, booking_prompt
 
-  subAccountId String?
-  subAccount   SubAccount? @relation(fields: [subAccountId], references: [id])
+  subAccountId String?      @map("sub_account_id")
+  subAccount   SubAccount?  @relation(fields: [subAccountId], references: [id])
 
-  createdAt     DateTime             @default(now())
-  updatedAt     DateTime             @updatedAt
+  createdAt     DateTime             @default(now()) @map("created_at")
+  updatedAt     DateTime             @updatedAt @map("updated_at")
   conversations SetterConversation[]
 
   @@map("ai_setters")
@@ -207,69 +258,71 @@ model AISetter {
 
 model SetterConversation {
   id       String   @id @default(cuid())
-  setterId String
+  userId   String?  @map("user_id")
+  setterId String   @map("setter_id")
   setter   AISetter @relation(fields: [setterId], references: [id], onDelete: Cascade)
 
-  leadName    String
-  leadChannel String // sms, whatsapp, instagram, messenger, email
-  leadPhone   String?
-  leadEmail   String?
+  leadName    String  @map("lead_name")
+  leadChannel String  @map("lead_channel") // sms, whatsapp, instagram, messenger, email
+  leadPhone   String? @map("lead_phone")
+  leadEmail   String? @map("lead_email")
 
   status   String @default("active") // active, qualified, disqualified, booked, lost
   language String @default("en")
 
   // Conversation flow
   messages   String? // JSON array of {role, content, timestamp}
-  painPoints String? // JSON array of identified pain points
+  painPoints String? @map("pain_points") // JSON array of identified pain points
   objections String? // JSON array of objections raised
 
   // Qualification
-  qualificationScore   Int     @default(0) // 0-100
-  qualificationAnswers String? // JSON: {question: answer}
+  qualificationScore   Int     @default(0) @map("qualification_score") // 0-100
+  qualificationAnswers String? @map("qualification_answers") // JSON: {question: answer}
 
   // Booking
-  bookedAppointment Boolean   @default(false)
-  bookedAt          DateTime?
-  appointmentDate   DateTime?
-  appointmentNotes  String?
+  bookedAppointment Boolean   @default(false) @map("booked_appointment")
+  bookedAt          DateTime? @map("booked_at")
+  appointmentDate   DateTime? @map("appointment_date")
+  appointmentNotes  String?   @map("appointment_notes")
 
   // Follow-up
-  followUpCount  Int       @default(0)
-  lastFollowUpAt DateTime?
-  nextFollowUpAt DateTime?
+  followUpCount  Int       @default(0) @map("follow_up_count")
+  lastFollowUpAt DateTime?  @map("last_follow_up_at")
+  nextFollowUpAt DateTime?  @map("next_follow_up_at")
 
   // A/B
   variant String? // "A" or "B"
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("setter_conversations")
 }
 
 model SubAccount {
   id          String  @id @default(cuid())
+  userId      String? @map("user_id")
   name        String
   description String?
   status      String  @default("active") // active, suspended
 
   // Client info
-  clientName  String?
-  clientEmail String?
+  clientName  String? @map("client_name")
+  clientEmail String? @map("client_email")
   industry    String?
 
   // Limits
-  maxSetters   Int @default(5)
-  maxLeads     Int @default(1000)
-  currentLeads Int @default(0)
+  maxSetters   Int @default(5) @map("max_setters")
+  maxLeads     Int @default(1000) @map("max_leads")
+  currentLeads Int @default(0) @map("current_leads")
 
   // Usage stats
-  totalConversations Int @default(0)
-  totalBookings      Int @default(0)
-  totalQualified     Int @default(0)
+  totalConversations Int @default(0) @map("total_conversations")
+  totalBookings      Int @default(0) @map("total_bookings")
+  totalQualified     Int @default(0) @map("total_qualified")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   setters     AISetter[]
   customTasks CustomAITask[]
@@ -279,6 +332,7 @@ model SubAccount {
 
 model CustomAITask {
   id          String  @id @default(cuid())
+  userId      String? @map("user_id")
   name        String
   description String?
   type        String // update_crm, add_tag, trigger_workflow, segment_email, custom
@@ -289,113 +343,116 @@ model CustomAITask {
   actions String? // JSON array: [{type, config}]
 
   // Stats
-  executionsCount Int       @default(0)
-  lastExecutedAt  DateTime?
+  executionsCount Int       @default(0) @map("executions_count")
+  lastExecutedAt  DateTime? @map("last_executed_at")
 
-  subAccountId String?
+  subAccountId String?     @map("sub_account_id")
   subAccount   SubAccount? @relation(fields: [subAccountId], references: [id])
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("custom_ai_tasks")
 }
 
 model ABTest {
   id          String  @id @default(cuid())
+  userId      String? @map("user_id")
   name        String
   description String?
   status      String  @default("running") // running, completed, paused
 
-  variantAName String @default("Variant A")
-  variantBName String @default("Variant B")
+  variantAName String @default("Variant A") @map("variant_a_name")
+  variantBName String @default("Variant B") @map("variant_b_name")
 
   // Metrics
-  variantAImpressions    Int   @default(0)
-  variantBImpressions    Int   @default(0)
-  variantAConversions    Int   @default(0)
-  variantBConversions    Int   @default(0)
-  variantAConversionRate Float @default(0)
-  variantBConversionRate Float @default(0)
+  variantAImpressions    Int   @default(0) @map("variant_a_impressions")
+  variantBImpressions    Int   @default(0) @map("variant_b_impressions")
+  variantAConversions    Int   @default(0) @map("variant_a_conversions")
+  variantBConversions    Int   @default(0) @map("variant_b_conversions")
+  variantAConversionRate Float @default(0) @map("variant_a_conversion_rate")
+  variantBConversionRate Float @default(0) @map("variant_b_conversion_rate")
 
   winner String? // "A" or "B" or null
 
-  startDate DateTime  @default(now())
-  endDate   DateTime?
+  startDate DateTime  @default(now()) @map("start_date")
+  endDate   DateTime? @map("end_date")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("ab_tests")
 }
 
 model ICPProfile {
   id          String  @id @default(cuid())
+  userId      String? @map("user_id")
   name        String
   description String?
 
   // Firmographic
   industries   String? // JSON array
-  companySizes String? // JSON array
+  companySizes String? @map("company_sizes") // JSON array
   locations    String? // JSON array
-  revenueRange String?
+  revenueRange String? @map("revenue_range")
 
   // Technographic
-  requiredTech            String? // JSON array
-  preferredTech           String? // JSON array
-  techSophisticationLevel String  @default("medium")
-  digitalMaturityScore    Int     @default(50)
+  requiredTech            String? @map("required_tech") // JSON array
+  preferredTech           String? @map("preferred_tech") // JSON array
+  techSophisticationLevel String  @default("medium") @map("tech_sophistication_level")
+  digitalMaturityScore    Int     @default(50) @map("digital_maturity_score")
 
   // Psychographic
   values       String? // JSON array
   challenges   String? // JSON array
   goals        String? // JSON array
-  cultureTypes String? // JSON array
+  cultureTypes String? @map("culture_types") // JSON array
 
   // Behavioral
-  buyingSignals      String? // JSON array
-  engagementPatterns String? // JSON array
+  buyingSignals      String? @map("buying_signals") // JSON array
+  engagementPatterns String? @map("engagement_patterns") // JSON array
 
   // Situational
-  triggerEvents    String? // JSON array
-  expansionSignals String? // JSON array
-  complianceNeeds  String? // JSON array
+  triggerEvents    String? @map("trigger_events") // JSON array
+  expansionSignals String? @map("expansion_signals") // JSON array
+  complianceNeeds  String? @map("compliance_needs") // JSON array
 
   // Economic
-  budgetRange            String?
-  decisionTimeline       String?
-  priceSensitivity       String  @default("medium")
-  lifetimeValuePotential String  @default("medium")
+  budgetRange            String? @map("budget_range")
+  decisionTimeline       String? @map("decision_timeline")
+  priceSensitivity       String  @default("medium") @map("price_sensitivity")
+  lifetimeValuePotential String  @default("medium") @map("lifetime_value_potential")
 
   // Full criteria JSON for flexibility
   criteria String? // Full JSON of ICP criteria
 
   // Stats
-  leadsScored Int   @default(0)
-  avgFitScore Float @default(0)
+  leadsScored Int   @default(0) @map("leads_scored")
+  avgFitScore Float @default(0) @map("avg_fit_score")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("icp_profiles")
 }
 
 model FollowUpSequence {
   id          String  @id @default(cuid())
+  userId      String? @map("user_id")
   name        String
   description String?
   status      String  @default("active")
 
-  steps      String // JSON array: [{delay, channel, message_template}]
-  totalSteps Int    @default(0)
+  steps      String @map("steps") // JSON array: [{delay, channel, message_template}]
+  totalSteps Int    @default(0) @map("total_steps")
 
   // Stats
-  enrolledCount  Int   @default(0)
-  completedCount Int   @default(0)
-  responseRate   Float @default(0)
+  enrolledCount  Int   @default(0) @map("enrolled_count")
+  completedCount Int   @default(0) @map("completed_count")
+  responseRate   Float @default(0) @map("response_rate")
 
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
 
   @@map("follow_up_sequences")
 }

@@ -313,7 +313,7 @@ export default function LandingPage() {
             </p>
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link href="/app">
+              <Link href="/signup">
                 <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-8 h-12">
                   Start Free Trial
                   <ArrowRight className="ml-2 h-4 w-4" />
