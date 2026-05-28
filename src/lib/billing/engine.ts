@@ -466,31 +466,45 @@ export async function createSubscription(data: {
 // ============================================================
 
 export async function getBillingDashboardStats() {
-  const [
-    totalB2B,
-    totalB2C,
-    activeSubscriptions,
-    mrr,
-    consumptionSpend,
-    recentEvents,
-    planDistribution,
-  ] = await Promise.all([
-    db.subscription.count({ where: { clientType: 'b2b', status: 'active' } }),
-    db.subscription.count({ where: { clientType: 'b2c', status: 'active' } }),
-    db.subscription.count({ where: { status: 'active' } }),
-    db.subscription.aggregate({ where: { clientType: 'b2b', status: 'active' }, _sum: { totalBilled: true } }),
-    db.subscription.aggregate({ where: { clientType: 'b2c', status: 'active' }, _sum: { currentSpend: true } }),
-    db.billingEvent.findMany({ take: 10, orderBy: { createdAt: 'desc' }, include: { subscription: { include: { plan: true } } } }),
-    db.subscription.groupBy({ by: ['planId'], _count: true, where: { status: 'active' } }),
-  ]);
+  try {
+    const [
+      totalB2B,
+      totalB2C,
+      activeSubscriptions,
+      mrr,
+      consumptionSpend,
+      recentEvents,
+      planDistribution,
+    ] = await Promise.all([
+      db.subscription.count({ where: { clientType: 'b2b', status: 'active' } }),
+      db.subscription.count({ where: { clientType: 'b2c', status: 'active' } }),
+      db.subscription.count({ where: { status: 'active' } }),
+      db.subscription.aggregate({ where: { clientType: 'b2b', status: 'active' }, _sum: { totalBilled: true } }),
+      db.subscription.aggregate({ where: { clientType: 'b2c', status: 'active' }, _sum: { currentSpend: true } }),
+      db.billingEvent.findMany({ take: 10, orderBy: { createdAt: 'desc' }, include: { subscription: { include: { plan: true } } } }),
+      db.subscription.groupBy({ by: ['planId'], _count: true, where: { status: 'active' } }),
+    ]);
 
-  return {
-    totalB2B,
-    totalB2C,
-    activeSubscriptions,
-    mrr: mrr._sum.totalBilled || 0,
-    consumptionSpend: consumptionSpend._sum.currentSpend || 0,
-    recentEvents,
-    planDistribution,
-  };
+    return {
+      totalB2B,
+      totalB2C,
+      activeSubscriptions,
+      mrr: mrr._sum.totalBilled || 0,
+      consumptionSpend: consumptionSpend._sum.currentSpend || 0,
+      recentEvents,
+      planDistribution,
+    };
+  } catch (error) {
+    // Tables may not exist yet (need migration 005_billing_tables.sql)
+    console.warn('[Billing] Dashboard stats unavailable — tables may not exist yet:', error instanceof Error ? error.message : error);
+    return {
+      totalB2B: 0,
+      totalB2C: 0,
+      activeSubscriptions: 0,
+      mrr: 0,
+      consumptionSpend: 0,
+      recentEvents: [],
+      planDistribution: [],
+    };
+  }
 }
