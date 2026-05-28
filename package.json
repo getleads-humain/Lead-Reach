@@ -4,7 +4,7 @@
   "private": true,
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
-    "build": "npx tsc src/lib/workers/pipeline-worker.ts src/lib/agent-executor.ts src/lib/agent-reach-bridge.ts src/lib/db.ts src/lib/utils.ts src/lib/types.ts --outDir dist/lib --esModuleInterop --module commonjs --target ES2020 --skipLibCheck --resolveJsonModule && next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/ && cp -r dist .next/standalone/",
+    "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
     "start": "DATABASE_URL=file:./db/custom.db NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
     "start:detached": "DATABASE_URL=file:./db/custom.db NODE_ENV=production setsid node .next/standalone/server.js > /tmp/next-prod.log 2>&1 &",
     "lint": "eslint .",
