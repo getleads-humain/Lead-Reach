@@ -1,0 +1,45 @@
+# ============================================================
+# LeadReach — Supabase CLI Configuration
+# ============================================================
+# This file configures the Supabase CLI for local development
+# and remote project linking.
+#
+# Usage:
+#   supabase login
+#   supabase link --project-ref ssaskkftdpidfwvpgdwl
+#   supabase db push
+# ============================================================
+
+[api]
+enabled = true
+port = 54321
+schemas = ["public"]
+extra_search_path = ["public"]
+
+[api.tls]
+enabled = false
+
+[db]
+port = 54322
+
+[db.seed]
+enabled = true
+
+[studio]
+enabled = true
+port = 54323
+
+[auth]
+enabled = true
+site_url = "http://localhost:3000"
+
+[auth.email]
+enable_signup = true
+double_confirm_changes = true
+enable_confirmations = false
+
+[storage]
+enabled = true
+
+[realtime]
+enabled = true

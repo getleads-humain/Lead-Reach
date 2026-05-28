@@ -8,10 +8,14 @@
     "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
     "start:detached": "NODE_ENV=production setsid node .next/standalone/server.js > /tmp/next-prod.log 2>&1 &",
     "lint": "eslint .",
-    "db:push": "prisma db push",
+    "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "db:reset": "prisma migrate reset"
+    "db:reset": "prisma migrate reset",
+    "db:seed": "node scripts/migrate-supabase.js",
+    "db:verify": "node scripts/migrate-supabase.js --verify",
+    "supabase:migrate": "node scripts/migrate-supabase.js",
+    "supabase:verify": "node scripts/migrate-supabase.js --verify"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",
@@ -52,7 +56,6 @@
     "@tanstack/react-query": "^5.82.0",
     "@tanstack/react-table": "^8.21.3",
     "@types/papaparse": "^5.5.2",
-    "better-sqlite3": "^12.10.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",

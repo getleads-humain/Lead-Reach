@@ -73,7 +73,10 @@ if [ -f "./next-service-dist/server.js" ]; then
         exit 1
     fi
 
-    echo "🗄️  Database: Supabase PostgreSQL ($DATABASE_URL)"
+    # DIRECT_URL for Prisma migrations (defaults to DATABASE_URL if not set)
+    export DIRECT_URL="${DIRECT_URL:-$DATABASE_URL}"
+
+    echo "🗄️  Database: Supabase PostgreSQL"
     
     # 后台启动 Next.js
     bun server.js &
