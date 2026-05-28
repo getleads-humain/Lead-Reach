@@ -21,7 +21,11 @@ CREATE EXTENSION IF NOT EXISTS "pgcrypto";
 -- ─── 2. CUID GENERATION FUNCTION ────────────────────────────────────────────
 
 CREATE OR REPLACE FUNCTION gen_cuid()
-RETURNS TEXT AS $$
+RETURNS TEXT
+LANGUAGE plpgsql
+VOLATILE
+SET search_path = public
+AS $$
 DECLARE
   base36_chars TEXT := '0123456789abcdefghijklmnopqrstuvwxyz';
   timestamp_part TEXT := '';
@@ -53,17 +57,20 @@ BEGIN
   random_part := lower(SUBSTRING(random_part FROM 1 FOR 13));
   RETURN 'c' || timestamp_part || counter_part || random_part;
 END;
-$$ LANGUAGE plpgsql VOLATILE;
+$$;
 
 -- ─── 3. AUTO-UPDATE updated_at TRIGGER FUNCTION ─────────────────────────────
 
 CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = public
+AS $$
 BEGIN
   NEW.updated_at = now();
   RETURN NEW;
 END;
-$$ LANGUAGE plpgsql;
+$$;
 
 -- ─── 4. TABLES ──────────────────────────────────────────────────────────────
 
