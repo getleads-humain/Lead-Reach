@@ -1,0 +1,9 @@
+{
+	"id": "EAaArVRs5qV39C9",
+	"json": "{\"id\":\"EAaArVRs5qV39C9\",\"url\":\"https://example.com\",\"loadedUrl\":\"https://example.com/\",\"uniqueKey\":\"https://example.com\",\"method\":\"GET\",\"noRetry\":false,\"retryCount\":0,\"errorMessages\":[],\"headers\":{},\"userData\":{},\"handledAt\":\"2026-05-19T13:48:06.509Z\"}",
+	"method": "GET",
+	"orderNo": null,
+	"retryCount": 0,
+	"uniqueKey": "https://example.com",
+	"url": "https://example.com"
+}
