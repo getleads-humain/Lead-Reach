@@ -1,50 +1,96 @@
 'use client';
 
-import React, { useState } from 'react';
+/**
+ * LeadReach — Login Page
+ * ========================
+ * Premium login page with email/password and OAuth (Google, GitHub).
+ * After successful login, redirects to /onboarding or /portal
+ * based on the user's onboarding status.
+ */
+
+import React, { useState, Suspense } from 'react';
 import Link from 'next/link';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Zap, Mail, Lock, Eye, EyeOff, Chrome, Github, ArrowRight } from 'lucide-react';
+import { Zap, Mail, Lock, Eye, EyeOff, Chrome, Github, ArrowRight, AlertCircle, Loader2 } from 'lucide-react';
 
-export default function LoginPage() {
-  const { signIn, signInWithGoogle, signInWithGitHub } = useAuth();
+function LoginForm() {
+  const { signIn, signInWithGoogle, signInWithGitHub, profile } = useAuth();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const redirectedFrom = searchParams.get('redirectedFrom') || '/portal';
+  const errorParam = searchParams.get('error');
+
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
+  const handleRedirect = () => {
+    // Check if user has completed onboarding
+    const onboardingDone = document.cookie.includes('lr_onboarding_done=true');
+    if (onboardingDone || profile?.onboarding_complete) {
+      router.push(redirectedFrom);
+    } else {
+      router.push('/onboarding');
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError(null);
     setLoading(true);
-    const { error: err } = await signIn(email, password);
-    if (err) {
-      setError(err);
+    try {
+      const { error: err } = await signIn(email, password);
+      if (err) {
+        setError(err);
+        setLoading(false);
+      } else {
+        // Small delay to let auth state propagate
+        setTimeout(() => {
+          handleRedirect();
+        }, 300);
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Sign in failed');
       setLoading(false);
-    } else {
-      window.location.href = '/portal';
     }
   };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    const { error: err } = await signInWithGoogle();
-    if (err) {
-      setError(err);
+    setError(null);
+    try {
+      const { error: err } = await signInWithGoogle();
+      if (err) {
+        setError(err);
+        setLoading(false);
+      }
+      // OAuth redirects automatically
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Google sign in failed');
       setLoading(false);
     }
   };
 
   const handleGitHubSignIn = async () => {
     setLoading(true);
-    const { error: err } = await signInWithGitHub();
-    if (err) {
-      setError(err);
+    setError(null);
+    try {
+      const { error: err } = await signInWithGitHub();
+      if (err) {
+        setError(err);
+        setLoading(false);
+      }
+      // OAuth redirects automatically
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'GitHub sign in failed');
       setLoading(false);
     }
   };
@@ -78,6 +124,18 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            {/* Error from redirect */}
+            {errorParam && (
+              <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400 flex items-start gap-2">
+                <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                <span>
+                  {errorParam === 'auth_callback_failed'
+                    ? 'Authentication failed. Please try again.'
+                    : errorParam}
+                </span>
+              </div>
+            )}
+
             {/* OAuth Buttons */}
             <div className="grid grid-cols-2 gap-3">
               <Button
@@ -124,6 +182,7 @@ export default function LoginPage() {
                     className="pl-10 bg-secondary/30 border-border/50 focus:border-emerald-500/30"
                     required
                     autoComplete="email"
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -146,6 +205,7 @@ export default function LoginPage() {
                     className="pl-10 pr-10 bg-secondary/30 border-border/50 focus:border-emerald-500/30"
                     required
                     autoComplete="current-password"
+                    disabled={loading}
                   />
                   <button
                     type="button"
@@ -158,8 +218,9 @@ export default function LoginPage() {
               </div>
 
               {error && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
-                  {error}
+                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
 
@@ -196,5 +257,29 @@ export default function LoginPage() {
         </p>
       </div>
     </div>
+  );
+}
+
+function LoginLoading() {
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-background noise-bg">
+      <div className="flex flex-col items-center gap-4">
+        <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald animate-pulse">
+          <Zap className="h-6 w-6 text-black" />
+        </div>
+        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading...
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<LoginLoading />}>
+      <LoginForm />
+    </Suspense>
   );
 }

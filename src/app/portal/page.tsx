@@ -48,6 +48,13 @@ export default function PortalPage() {
     }
   }, [hydrated, authLoading, user, router]);
 
+  // Redirect to onboarding if not complete
+  useEffect(() => {
+    if (hydrated && !authLoading && user && profile && !profile.onboarding_complete) {
+      router.push('/onboarding');
+    }
+  }, [hydrated, authLoading, user, profile, router]);
+
   // Show loading while auth state resolves
   if (authLoading || !hydrated) {
     return (
@@ -65,7 +72,7 @@ export default function PortalPage() {
     );
   }
 
-  if (!user) return null;
+  if (!user || !profile) return null;
 
   const renderView = () => {
     switch (activeView) {

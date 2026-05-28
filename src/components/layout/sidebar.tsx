@@ -22,6 +22,7 @@ import {
   Telescope,
   Crosshair,
   Settings,
+  LogOut,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -53,7 +54,7 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const { activeView, setActiveView, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
-  const { user, profile } = useAuth();
+  const { user, profile, signOut } = useAuth();
 
   const displayName = profile?.full_name || user?.email?.split('@')[0] || 'User';
   const initials = displayName
@@ -174,6 +175,15 @@ export function Sidebar() {
               <div className="text-xs font-medium text-sidebar-foreground truncate">{displayName}</div>
               <div className="text-[10px] text-sidebar-foreground/40 truncate">{profile?.plan_tier || 'Free'}</div>
             </div>
+            <Button
+              variant="ghost"
+              size="sm"
+              className="h-6 w-6 p-0 text-sidebar-foreground/40 hover:text-red-400 hover:bg-red-500/10"
+              onClick={() => signOut()}
+              title="Sign out"
+            >
+              <LogOut className="h-3.5 w-3.5" />
+            </Button>
           </div>
         )}
 

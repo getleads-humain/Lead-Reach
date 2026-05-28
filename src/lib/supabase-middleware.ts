@@ -3,6 +3,12 @@
  * ========================================
  * Used in middleware.ts to refresh auth sessions on every request.
  * This ensures the session is always fresh and avoids stale tokens.
+ *
+ * Route protection logic:
+ * - /portal, /onboarding, /settings → require authentication
+ * - /app → public demo (no auth required)
+ * - /login, /signup, /forgot-password → redirect to portal if already logged in
+ * - /portal → redirect to /onboarding if onboarding not complete
  */
 
 import { createServerClient } from '@supabase/ssr'
@@ -44,12 +50,16 @@ export async function updateSession(request: NextRequest) {
   } = await supabase.auth.getUser()
 
   // ── Protected routes ──────────────────────────────────────────────────
-  // /portal, /onboarding, and /app require authentication
+  // /portal, /onboarding, and /settings require authentication
   const isPortalRoute = request.nextUrl.pathname.startsWith('/portal')
   const isOnboardingRoute = request.nextUrl.pathname.startsWith('/onboarding')
+  const isSettingsRoute = request.nextUrl.pathname.startsWith('/settings')
   const isAppRoute = request.nextUrl.pathname.startsWith('/app')
 
-  if ((isPortalRoute || isOnboardingRoute || isAppRoute) && !user) {
+  // /app is public demo — no auth required
+  const requiresAuth = isPortalRoute || isOnboardingRoute || isSettingsRoute
+
+  if (requiresAuth && !user) {
     // No user, redirect to login
     const url = request.nextUrl.clone()
     url.pathname = '/login'
@@ -58,15 +68,16 @@ export async function updateSession(request: NextRequest) {
   }
 
   // ── Auth pages redirect ───────────────────────────────────────────────
-  // If user is logged in, redirect auth pages to portal
+  // If user is logged in, redirect auth pages based on onboarding status
   const isAuthPage =
     request.nextUrl.pathname.startsWith('/login') ||
     request.nextUrl.pathname.startsWith('/signup') ||
     request.nextUrl.pathname.startsWith('/forgot-password')
 
   if (isAuthPage && user) {
+    const onboardingDone = request.cookies.get('lr_onboarding_done')?.value
     const url = request.nextUrl.clone()
-    url.pathname = '/portal'
+    url.pathname = onboardingDone === 'true' ? '/portal' : '/onboarding'
     return NextResponse.redirect(url)
   }
 
@@ -74,10 +85,8 @@ export async function updateSession(request: NextRequest) {
   // If user is authenticated but hasn't completed onboarding,
   // redirect to onboarding (except if already on onboarding page)
   if (user && isPortalRoute) {
-    // We'll do a lightweight check via the profile onboarding_complete flag
-    // For middleware, we check a cookie to avoid DB calls on every request
     const onboardingDone = request.cookies.get('lr_onboarding_done')?.value
-    if (onboardingDone !== 'true' && !isOnboardingRoute) {
+    if (onboardingDone !== 'true') {
       const url = request.nextUrl.clone()
       url.pathname = '/onboarding'
       return NextResponse.redirect(url)

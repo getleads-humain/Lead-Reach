@@ -1,5 +1,12 @@
 'use client';
 
+/**
+ * LeadReach — Sign Up Page
+ * ==========================
+ * Premium signup page with email/password and OAuth (Google, GitHub).
+ * After successful signup, redirects to onboarding or shows email confirmation.
+ */
+
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useAuth } from '@/components/auth/auth-provider';
@@ -8,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
-import { Zap, Mail, Lock, Eye, EyeOff, Chrome, Github, ArrowRight, User, CheckCircle2 } from 'lucide-react';
+import { Zap, Mail, Lock, Eye, EyeOff, Chrome, Github, ArrowRight, User, CheckCircle2, AlertCircle } from 'lucide-react';
 
 export default function SignupPage() {
   const { signUp, signInWithGoogle, signInWithGitHub } = useAuth();
@@ -24,38 +31,63 @@ export default function SignupPage() {
     e.preventDefault();
     setError(null);
 
+    if (!fullName.trim()) {
+      setError('Please enter your full name');
+      return;
+    }
+
     if (password.length < 8) {
       setError('Password must be at least 8 characters');
       return;
     }
 
     setLoading(true);
-    const { error: err, needsConfirmation } = await signUp(email, password, fullName);
-    if (err) {
-      setError(err);
+    try {
+      const { error: err, needsConfirmation } = await signUp(email, password, fullName);
+      if (err) {
+        setError(err);
+        setLoading(false);
+      } else if (needsConfirmation) {
+        setSuccess(true);
+        setLoading(false);
+      } else {
+        // Direct signup (no email confirmation required) — redirect to onboarding
+        window.location.href = '/onboarding';
+      }
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Sign up failed');
       setLoading(false);
-    } else if (needsConfirmation) {
-      setSuccess(true);
-      setLoading(false);
-    } else {
-      window.location.href = '/onboarding';
     }
   };
 
   const handleGoogleSignIn = async () => {
     setLoading(true);
-    const { error: err } = await signInWithGoogle();
-    if (err) {
-      setError(err);
+    setError(null);
+    try {
+      const { error: err } = await signInWithGoogle();
+      if (err) {
+        setError(err);
+        setLoading(false);
+      }
+      // OAuth redirects automatically
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Google sign in failed');
       setLoading(false);
     }
   };
 
   const handleGitHubSignIn = async () => {
     setLoading(true);
-    const { error: err } = await signInWithGitHub();
-    if (err) {
-      setError(err);
+    setError(null);
+    try {
+      const { error: err } = await signInWithGitHub();
+      if (err) {
+        setError(err);
+        setLoading(false);
+      }
+      // OAuth redirects automatically
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'GitHub sign in failed');
       setLoading(false);
     }
   };
@@ -161,6 +193,7 @@ export default function SignupPage() {
                     className="pl-10 bg-secondary/30 border-border/50 focus:border-emerald-500/30"
                     required
                     autoComplete="name"
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -178,6 +211,7 @@ export default function SignupPage() {
                     className="pl-10 bg-secondary/30 border-border/50 focus:border-emerald-500/30"
                     required
                     autoComplete="email"
+                    disabled={loading}
                   />
                 </div>
               </div>
@@ -196,6 +230,7 @@ export default function SignupPage() {
                     required
                     autoComplete="new-password"
                     minLength={8}
+                    disabled={loading}
                   />
                   <button
                     type="button"
@@ -211,8 +246,9 @@ export default function SignupPage() {
               </div>
 
               {error && (
-                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
-                  {error}
+                <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400 flex items-start gap-2">
+                  <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+                  <span>{error}</span>
                 </div>
               )}
 
