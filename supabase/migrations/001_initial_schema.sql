@@ -539,9 +539,7 @@ INSERT INTO agent_reach_channels (name, display_name, description, status, tier,
 ON CONFLICT (name) DO NOTHING;
 
 -- ─── 11. REALTIME SUBSCRIPTIONS ─────────────────────────────────────────────
+-- Use SET TABLE to replace the publication's table list entirely (idempotent).
+-- This avoids "already member of publication" errors on re-runs.
 
-ALTER PUBLICATION supabase_realtime ADD TABLE campaigns;
-ALTER PUBLICATION supabase_realtime ADD TABLE leads;
-ALTER PUBLICATION supabase_realtime ADD TABLE agent_tasks;
-ALTER PUBLICATION supabase_realtime ADD TABLE outreach;
-ALTER PUBLICATION supabase_realtime ADD TABLE setter_conversations;
+ALTER PUBLICATION supabase_realtime SET TABLE campaigns, leads, agent_tasks, outreach, setter_conversations;
