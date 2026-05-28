@@ -3,374 +3,399 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:../db/custom.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL")
 }
 
 model Campaign {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  status      String   @default("active") // active, paused, completed, archived
-  targetIndustry String?
-  targetLocation String?
+  id                String      @id @default(cuid())
+  name              String
+  description       String?
+  status            String      @default("active") // active, paused, completed, archived
+  targetIndustry    String?
+  targetLocation    String?
   targetCompanySize String?
-  targetCriteria String? // JSON string of ICP criteria
-  leadsFound  Int      @default(0)
-  leadsQualified Int   @default(0)
-  leadsContacted Int   @default(0)
-  leadsResponded Int   @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  leads       Lead[]
-  tasks       AgentTask[]
+  targetCriteria    String? // JSON string of ICP criteria
+  leadsFound        Int         @default(0)
+  leadsQualified    Int         @default(0)
+  leadsContacted    Int         @default(0)
+  leadsResponded    Int         @default(0)
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+  leads             Lead[]
+  tasks             AgentTask[]
+
+  @@map("campaigns")
 }
 
 model Lead {
-  id            String   @id @default(cuid())
-  campaignId    String
-  campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  
+  id         String   @id @default(cuid())
+  campaignId String
+  campaign   Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
   // Company Info
-  companyName   String
-  legalName     String?
-  website       String?
-  industry      String?
-  subIndustry   String?
-  sicCode       String?
-  naicsCode     String?
-  
+  companyName String
+  legalName   String?
+  website     String?
+  industry    String?
+  subIndustry String?
+  sicCode     String?
+  naicsCode   String?
+
   // Location
   hqAddress     String?
   city          String?
   stateProvince String?
   country       String?
   postalCode    String?
-  
+
   // Contact Info
-  phoneMain     String?
-  phoneDirect   String?
-  generalEmail  String?
-  supportEmail  String?
-  
+  phoneMain    String?
+  phoneDirect  String?
+  generalEmail String?
+  supportEmail String?
+
   // Key People
-  ceoName       String?
-  ceoEmail      String?
+  ceoName         String?
+  ceoEmail        String?
   keyContactName  String?
   keyContactTitle String?
-  keyContactEmail  String?
-  
+  keyContactEmail String?
+
   // Firmographics
-  employeeCount String?
+  employeeCount   String?
   revenueEstimate String?
-  foundingYear  String?
-  ownershipType String?
-  
+  foundingYear    String?
+  ownershipType   String?
+
   // Digital
   linkedinUrl   String?
   twitterHandle String?
   facebookPage  String?
   techStack     String? // JSON array
-  
+
   // Qualification
-  leadScore     Int      @default(0)
-  leadTier      String   @default("unqualified") // hot, warm, cold, unqualified
-  firmographicScore Int  @default(0)
-  intentScore   Int      @default(0)
-  reachabilityScore Int @default(0)
-  strategicScore Int     @default(0)
-  dataCompleteness Int  @default(0)
-  
+  leadScore         Int    @default(0)
+  leadTier          String @default("unqualified") // hot, warm, cold, unqualified
+  firmographicScore Int    @default(0)
+  intentScore       Int    @default(0)
+  reachabilityScore Int    @default(0)
+  strategicScore    Int    @default(0)
+  dataCompleteness  Int    @default(0)
+
   // Pipeline
-  stage         String   @default("new") // new, enriched, qualified, contacted, engaged, negotiating, closed_won, closed_lost, nurture
+  stage           String    @default("new") // new, enriched, qualified, contacted, engaged, negotiating, closed_won, closed_lost, nurture
   lastContactDate DateTime?
-  nextFollowUp  DateTime?
-  notes         String?
-  
+  nextFollowUp    DateTime?
+  notes           String?
+
   // Discovery
-  sources       String?  // JSON array of discovery sources
-  discoveredAt  DateTime @default(now())
-  enrichedAt    DateTime?
-  qualifiedAt   DateTime?
-  contactedAt   DateTime?
-  
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  outreach      Outreach[]
+  sources      String? // JSON array of discovery sources
+  discoveredAt DateTime  @default(now())
+  enrichedAt   DateTime?
+  qualifiedAt  DateTime?
+  contactedAt  DateTime?
+
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  outreach  Outreach[]
+
+  @@map("leads")
 }
 
 model Outreach {
-  id          String   @id @default(cuid())
-  leadId      String
-  lead        Lead     @relation(fields: [leadId], references: [id], onDelete: Cascade)
-  
-  channel     String   // email, linkedin, phone
-  type        String   // cold_email, warm_intro, connection_request, follow_up_1, follow_up_2, break_up
-  subject     String?
-  body        String
-  status      String   @default("draft") // draft, sent, delivered, opened, replied, bounced, failed
-  sentAt      DateTime?
-  openedAt    DateTime?
-  repliedAt   DateTime?
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id     String @id @default(cuid())
+  leadId String
+  lead   Lead   @relation(fields: [leadId], references: [id], onDelete: Cascade)
+
+  channel   String // email, linkedin, phone
+  type      String // cold_email, warm_intro, connection_request, follow_up_1, follow_up_2, break_up
+  subject   String?
+  body      String
+  status    String    @default("draft") // draft, sent, delivered, opened, replied, bounced, failed
+  sentAt    DateTime?
+  openedAt  DateTime?
+  repliedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("outreach")
 }
 
 model AgentTask {
-  id          String   @id @default(cuid())
-  campaignId  String?
-  campaign    Campaign? @relation(fields: [campaignId], references: [id])
-  
-  agentName   String   // orchestrator, prospect-discovery, data-enrichment, web-research, lead-qualification, outreach-composer, pipeline-manager, report-generator
-  taskType    String   // search, enrich, qualify, outreach, report, coordinate
-  status      String   @default("pending") // pending, running, completed, failed, cancelled
-  priority    Int      @default(5) // 1-10, 10 highest
-  input       String?  // JSON string of task input
-  output      String?  // JSON string of task output
-  error       String?
-  progress    Int      @default(0) // 0-100
-  
+  id         String    @id @default(cuid())
+  campaignId String?
+  campaign   Campaign? @relation(fields: [campaignId], references: [id])
+
+  agentName String // orchestrator, prospect-discovery, data-enrichment, web-research, lead-qualification, outreach-composer, pipeline-manager, report-generator
+  taskType  String // search, enrich, qualify, outreach, report, coordinate
+  status    String  @default("pending") // pending, running, completed, failed, cancelled
+  priority  Int     @default(5) // 1-10, 10 highest
+  input     String? // JSON string of task input
+  output    String? // JSON string of task output
+  error     String?
+  progress  Int     @default(0) // 0-100
+
   startedAt   DateTime?
   completedAt DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("agent_tasks")
 }
 
 model AgentReachChannel {
-  id          String   @id @default(cuid())
-  name        String   @unique // web, exa_search, linkedin, twitter, youtube, github, reddit, etc.
+  id          String    @id @default(cuid())
+  name        String    @unique
   displayName String
   description String?
-  status      String   @default("unknown") // ok, warn, off, error, unknown
-  tier        Int      @default(0) // 0=zero-config, 1=needs-key, 2=needs-setup
-  backend     String?  // e.g. "Jina Reader", "Exa via mcporter"
+  status      String    @default("unknown") // ok, warn, off, error, unknown
+  tier        Int       @default(0) // 0=zero-config, 1=needs-key, 2=needs-setup
+  backend     String? // e.g. "Jina Reader", "Exa via mcporter"
   message     String?
   lastChecked DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@map("agent_reach_channels") // web, exa_search, linkedin, twitter, youtube, github, reddit, etc.
 }
 
 model AISetter {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  status      String   @default("active") // active, paused, training
-  avatar      String?  // emoji or icon name
-  
+  status      String  @default("active") // active, paused, training
+  avatar      String? // emoji or icon name
+
   // Qualification Criteria
   qualificationRules String? // JSON: { mustHave: [], niceToHave: [], disqualify: [] }
-  
+
   // Performance
-  conversationsHandled Int    @default(0)
-  leadsQualified      Int    @default(0)
-  leadsBooked         Int    @default(0)
-  conversionRate      Float  @default(0) // percentage
-  avgResponseTime     Int    @default(0) // seconds
-  
+  conversationsHandled Int   @default(0)
+  leadsQualified       Int   @default(0)
+  leadsBooked          Int   @default(0)
+  conversionRate       Float @default(0) // percentage
+  avgResponseTime      Int   @default(0) // seconds
+
   // Configuration
-  language     String   @default("en") // supports 17+ languages
-  channels     String?  // JSON array: ["sms","whatsapp","instagram","messenger","email"]
-  calendarLink String?  // booking calendar URL
+  language        String  @default("en") // supports 17+ languages
+  channels        String? // JSON array: ["sms","whatsapp","instagram","messenger","email"]
+  calendarLink    String? // booking calendar URL
   followUpEnabled Boolean @default(true)
-  followUpDelay    Int    @default(3600) // seconds before first follow-up
-  maxFollowUps     Int    @default(5)
-  
+  followUpDelay   Int     @default(3600) // seconds before first follow-up
+  maxFollowUps    Int     @default(5)
+
   // GHL Integration
-  ghlIntegrationId String?  // GoHighLevel integration ID
-  
+  ghlIntegrationId String? // GoHighLevel integration ID
+
   // A/B Testing
   activeVariant   String? // "A" or "B"
   variantAMessage String? // JSON: greeting, qualification_prompt, booking_prompt
   variantBMessage String? // JSON: greeting, qualification_prompt, booking_prompt
-  
+
   subAccountId String?
   subAccount   SubAccount? @relation(fields: [subAccountId], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt     DateTime             @default(now())
+  updatedAt     DateTime             @updatedAt
   conversations SetterConversation[]
+
+  @@map("ai_setters")
 }
 
 model SetterConversation {
-  id          String   @id @default(cuid())
-  setterId    String
-  setter      AISetter @relation(fields: [setterId], references: [id], onDelete: Cascade)
-  
+  id       String   @id @default(cuid())
+  setterId String
+  setter   AISetter @relation(fields: [setterId], references: [id], onDelete: Cascade)
+
   leadName    String
-  leadChannel String   // sms, whatsapp, instagram, messenger, email
+  leadChannel String // sms, whatsapp, instagram, messenger, email
   leadPhone   String?
   leadEmail   String?
-  
-  status      String   @default("active") // active, qualified, disqualified, booked, lost
-  language    String   @default("en")
-  
+
+  status   String @default("active") // active, qualified, disqualified, booked, lost
+  language String @default("en")
+
   // Conversation flow
-  messages    String?  // JSON array of {role, content, timestamp}
-  painPoints  String?  // JSON array of identified pain points
-  objections  String?  // JSON array of objections raised
-  
+  messages   String? // JSON array of {role, content, timestamp}
+  painPoints String? // JSON array of identified pain points
+  objections String? // JSON array of objections raised
+
   // Qualification
-  qualificationScore Int  @default(0) // 0-100
+  qualificationScore   Int     @default(0) // 0-100
   qualificationAnswers String? // JSON: {question: answer}
-  
+
   // Booking
-  bookedAppointment Boolean @default(false)
+  bookedAppointment Boolean   @default(false)
   bookedAt          DateTime?
   appointmentDate   DateTime?
   appointmentNotes  String?
-  
+
   // Follow-up
-  followUpCount    Int      @default(0)
-  lastFollowUpAt   DateTime?
-  nextFollowUpAt   DateTime?
-  
+  followUpCount  Int       @default(0)
+  lastFollowUpAt DateTime?
+  nextFollowUpAt DateTime?
+
   // A/B
   variant String? // "A" or "B"
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("setter_conversations")
 }
 
 model SubAccount {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  status      String   @default("active") // active, suspended
-  
+  status      String  @default("active") // active, suspended
+
   // Client info
   clientName  String?
   clientEmail String?
   industry    String?
-  
+
   // Limits
-  maxSetters  Int      @default(5)
-  maxLeads    Int      @default(1000)
-  currentLeads Int     @default(0)
-  
+  maxSetters   Int @default(5)
+  maxLeads     Int @default(1000)
+  currentLeads Int @default(0)
+
   // Usage stats
   totalConversations Int @default(0)
   totalBookings      Int @default(0)
   totalQualified     Int @default(0)
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
   setters     AISetter[]
   customTasks CustomAITask[]
+
+  @@map("sub_accounts")
 }
 
 model CustomAITask {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  type        String   // update_crm, add_tag, trigger_workflow, segment_email, custom
-  status      String   @default("active") // active, paused
-  
+  type        String // update_crm, add_tag, trigger_workflow, segment_email, custom
+  status      String  @default("active") // active, paused
+
   // Configuration
-  trigger     String?  // JSON: {event, conditions}
-  actions     String?  // JSON array: [{type, config}]
-  
+  trigger String? // JSON: {event, conditions}
+  actions String? // JSON array: [{type, config}]
+
   // Stats
-  executionsCount Int  @default(0)
+  executionsCount Int       @default(0)
   lastExecutedAt  DateTime?
-  
+
   subAccountId String?
   subAccount   SubAccount? @relation(fields: [subAccountId], references: [id])
-  
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("custom_ai_tasks")
 }
 
 model ABTest {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  status      String   @default("running") // running, completed, paused
-  
-  variantAName String  @default("Variant A")
-  variantBName String  @default("Variant B")
-  
+  status      String  @default("running") // running, completed, paused
+
+  variantAName String @default("Variant A")
+  variantBName String @default("Variant B")
+
   // Metrics
-  variantAImpressions Int @default(0)
-  variantBImpressions Int @default(0)
-  variantAConversions Int @default(0)
-  variantBConversions Int @default(0)
+  variantAImpressions    Int   @default(0)
+  variantBImpressions    Int   @default(0)
+  variantAConversions    Int   @default(0)
+  variantBConversions    Int   @default(0)
   variantAConversionRate Float @default(0)
   variantBConversionRate Float @default(0)
-  
+
   winner String? // "A" or "B" or null
-  
-  startDate DateTime @default(now())
+
+  startDate DateTime  @default(now())
   endDate   DateTime?
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("ab_tests")
 }
 
 model ICPProfile {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
 
   // Firmographic
-  industries     String?  // JSON array
-  companySizes   String?  // JSON array
-  locations      String?  // JSON array
-  revenueRange   String?
+  industries   String? // JSON array
+  companySizes String? // JSON array
+  locations    String? // JSON array
+  revenueRange String?
 
   // Technographic
-  requiredTech            String?  // JSON array
-  preferredTech           String?  // JSON array
-  techSophisticationLevel String   @default("medium")
-  digitalMaturityScore    Int      @default(50)
+  requiredTech            String? // JSON array
+  preferredTech           String? // JSON array
+  techSophisticationLevel String  @default("medium")
+  digitalMaturityScore    Int     @default(50)
 
   // Psychographic
-  values       String?  // JSON array
-  challenges   String?  // JSON array
-  goals        String?  // JSON array
-  cultureTypes String?  // JSON array
+  values       String? // JSON array
+  challenges   String? // JSON array
+  goals        String? // JSON array
+  cultureTypes String? // JSON array
 
   // Behavioral
-  buyingSignals      String?  // JSON array
-  engagementPatterns String?  // JSON array
+  buyingSignals      String? // JSON array
+  engagementPatterns String? // JSON array
 
   // Situational
-  triggerEvents     String?  // JSON array
-  expansionSignals  String?  // JSON array
-  complianceNeeds   String?  // JSON array
+  triggerEvents    String? // JSON array
+  expansionSignals String? // JSON array
+  complianceNeeds  String? // JSON array
 
   // Economic
-  budgetRange          String?
-  decisionTimeline     String?
-  priceSensitivity     String   @default("medium")
-  lifetimeValuePotential String @default("medium")
+  budgetRange            String?
+  decisionTimeline       String?
+  priceSensitivity       String  @default("medium")
+  lifetimeValuePotential String  @default("medium")
 
   // Full criteria JSON for flexibility
-  criteria     String?  // Full JSON of ICP criteria
+  criteria String? // Full JSON of ICP criteria
 
   // Stats
-  leadsScored  Int      @default(0)
-  avgFitScore  Float    @default(0)
+  leadsScored Int   @default(0)
+  avgFitScore Float @default(0)
 
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("icp_profiles")
 }
 
 model FollowUpSequence {
-  id          String   @id @default(cuid())
+  id          String  @id @default(cuid())
   name        String
   description String?
-  status      String   @default("active")
-  
-  steps       String   // JSON array: [{delay, channel, message_template}]
-  totalSteps  Int      @default(0)
-  
+  status      String  @default("active")
+
+  steps      String // JSON array: [{delay, channel, message_template}]
+  totalSteps Int    @default(0)
+
   // Stats
-  enrolledCount  Int @default(0)
-  completedCount Int @default(0)
+  enrolledCount  Int   @default(0)
+  completedCount Int   @default(0)
   responseRate   Float @default(0)
-  
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  @@map("follow_up_sequences")
 }
