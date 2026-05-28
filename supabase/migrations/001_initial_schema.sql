@@ -1,30 +1,24 @@
 -- ============================================================================
--- LeadReach AI — Supabase Complete Migration Script
+-- LeadReach AI — Supabase Complete Migration Script (v2 — Fixed)
 -- ============================================================================
 -- Project: ssaskkftdpidfwvpgdwl
 -- Generated: 2026-05-29
 -- Purpose: One-script full deployment of all tables, indexes, triggers, RLS,
 --          and seed data for the LeadReach B2B lead generation platform.
+--          Fully idempotent — safe to re-run after partial failure.
 --
 -- USAGE:
---   Option A — Supabase Dashboard: Copy this entire script into the SQL Editor
---              at https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
---              and click "Run".
---
---   Option B — CLI: supabase db push --db-url "postgresql://postgres:...@..."
---
---   Option C — Node runner: node scripts/migrate-supabase.js
+--   Copy this entire script into the Supabase Dashboard SQL Editor at
+--   https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
+--   and click "Run".
 -- ============================================================================
 
 -- ─── 1. EXTENSIONS ──────────────────────────────────────────────────────────
 
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
 CREATE EXTENSION IF NOT EXISTS "pgcrypto";
-CREATE EXTENSION IF NOT EXISTS "pg_net" SCHEMA extensions;  -- for Supabase Edge Functions
 
 -- ─── 2. CUID GENERATION FUNCTION ────────────────────────────────────────────
--- Prisma uses CUIDs as default IDs. This function replicates the same format
--- so that any direct SQL inserts also produce compatible IDs.
 
 CREATE OR REPLACE FUNCTION gen_cuid()
 RETURNS TEXT AS $$
@@ -96,8 +90,6 @@ COMMENT ON TABLE campaigns IS 'Marketing/sales campaigns that define target crit
 CREATE TABLE IF NOT EXISTS leads (
   id                  TEXT PRIMARY KEY DEFAULT gen_cuid(),
   campaign_id         TEXT NOT NULL REFERENCES campaigns(id) ON DELETE CASCADE,
-
-  -- Company Info
   company_name        TEXT NOT NULL,
   legal_name          TEXT,
   website             TEXT,
@@ -105,40 +97,28 @@ CREATE TABLE IF NOT EXISTS leads (
   sub_industry        TEXT,
   sic_code            TEXT,
   naics_code          TEXT,
-
-  -- Location
   hq_address          TEXT,
   city                TEXT,
   state_province      TEXT,
   country             TEXT,
   postal_code         TEXT,
-
-  -- Contact Info
   phone_main          TEXT,
   phone_direct        TEXT,
   general_email       TEXT,
   support_email       TEXT,
-
-  -- Key People
   ceo_name            TEXT,
   ceo_email           TEXT,
   key_contact_name    TEXT,
   key_contact_title   TEXT,
   key_contact_email   TEXT,
-
-  -- Firmographics
   employee_count      TEXT,
   revenue_estimate    TEXT,
   founding_year       TEXT,
   ownership_type      TEXT,
-
-  -- Digital
   linkedin_url        TEXT,
   twitter_handle      TEXT,
   facebook_page       TEXT,
   tech_stack          TEXT,
-
-  -- Qualification
   lead_score          INTEGER NOT NULL DEFAULT 0,
   lead_tier           TEXT NOT NULL DEFAULT 'unqualified',
   firmographic_score  INTEGER NOT NULL DEFAULT 0,
@@ -146,20 +126,15 @@ CREATE TABLE IF NOT EXISTS leads (
   reachability_score  INTEGER NOT NULL DEFAULT 0,
   strategic_score     INTEGER NOT NULL DEFAULT 0,
   data_completeness   INTEGER NOT NULL DEFAULT 0,
-
-  -- Pipeline
   stage               TEXT NOT NULL DEFAULT 'new',
   last_contact_date   TIMESTAMPTZ,
   next_follow_up      TIMESTAMPTZ,
   notes               TEXT,
-
-  -- Discovery
   sources             TEXT,
   discovered_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   enriched_at         TIMESTAMPTZ,
   qualified_at        TIMESTAMPTZ,
   contacted_at        TIMESTAMPTZ,
-
   created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -417,24 +392,44 @@ CREATE INDEX IF NOT EXISTS idx_leads_campaign_tier ON leads(campaign_id, lead_ti
 CREATE INDEX IF NOT EXISTS idx_agent_tasks_status_agent ON agent_tasks(status, agent_name);
 
 -- ─── 6. AUTO-UPDATE TRIGGERS ────────────────────────────────────────────────
+-- NOTE: "CREATE TRIGGER IF NOT EXISTS" is NOT supported in Supabase PostgreSQL.
+-- We use DROP TRIGGER IF EXISTS + CREATE TRIGGER instead (idempotent pattern).
 
-DO $$
-DECLARE
-  t TEXT;
-BEGIN
-  FOR t IN SELECT table_name FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-  LOOP
-    EXECUTE format(
-      'CREATE TRIGGER IF NOT EXISTS trg_%s_updated_at
-       BEFORE UPDATE ON %I
-       FOR EACH ROW
-       EXECUTE FUNCTION update_updated_at_column()',
-      t, t
-    );
-  END LOOP;
-END;
-$$;
+DROP TRIGGER IF EXISTS trg_campaigns_updated_at ON campaigns;
+CREATE TRIGGER trg_campaigns_updated_at BEFORE UPDATE ON campaigns FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_leads_updated_at ON leads;
+CREATE TRIGGER trg_leads_updated_at BEFORE UPDATE ON leads FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_outreach_updated_at ON outreach;
+CREATE TRIGGER trg_outreach_updated_at BEFORE UPDATE ON outreach FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_agent_tasks_updated_at ON agent_tasks;
+CREATE TRIGGER trg_agent_tasks_updated_at BEFORE UPDATE ON agent_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_agent_reach_channels_updated_at ON agent_reach_channels;
+CREATE TRIGGER trg_agent_reach_channels_updated_at BEFORE UPDATE ON agent_reach_channels FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_sub_accounts_updated_at ON sub_accounts;
+CREATE TRIGGER trg_sub_accounts_updated_at BEFORE UPDATE ON sub_accounts FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_ai_setters_updated_at ON ai_setters;
+CREATE TRIGGER trg_ai_setters_updated_at BEFORE UPDATE ON ai_setters FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_setter_conversations_updated_at ON setter_conversations;
+CREATE TRIGGER trg_setter_conversations_updated_at BEFORE UPDATE ON setter_conversations FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_custom_ai_tasks_updated_at ON custom_ai_tasks;
+CREATE TRIGGER trg_custom_ai_tasks_updated_at BEFORE UPDATE ON custom_ai_tasks FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_ab_tests_updated_at ON ab_tests;
+CREATE TRIGGER trg_ab_tests_updated_at BEFORE UPDATE ON ab_tests FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_icp_profiles_updated_at ON icp_profiles;
+CREATE TRIGGER trg_icp_profiles_updated_at BEFORE UPDATE ON icp_profiles FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+
+DROP TRIGGER IF EXISTS trg_follow_up_sequences_updated_at ON follow_up_sequences;
+CREATE TRIGGER trg_follow_up_sequences_updated_at BEFORE UPDATE ON follow_up_sequences FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
 
 -- ─── 7. ROW LEVEL SECURITY ─────────────────────────────────────────────────
 
@@ -452,42 +447,81 @@ ALTER TABLE icp_profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE follow_up_sequences ENABLE ROW LEVEL SECURITY;
 
 -- ─── 8. SERVICE ROLE POLICIES (full CRUD — used by backend/API routes) ─────
+-- DROP first for idempotency, then CREATE
 
-DO $$
-DECLARE
-  t TEXT;
-BEGIN
-  FOR t IN SELECT table_name FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-  LOOP
-    EXECUTE format(
-      'CREATE POLICY "service_role_all_%s" ON %I
-       FOR ALL TO service_role
-       USING (true) WITH CHECK (true)',
-      t, t
-    );
-  END LOOP;
-END;
-$$;
+DROP POLICY IF EXISTS "service_role_all_campaigns" ON campaigns;
+CREATE POLICY "service_role_all_campaigns" ON campaigns FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_leads" ON leads;
+CREATE POLICY "service_role_all_leads" ON leads FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_outreach" ON outreach;
+CREATE POLICY "service_role_all_outreach" ON outreach FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_agent_tasks" ON agent_tasks;
+CREATE POLICY "service_role_all_agent_tasks" ON agent_tasks FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_agent_reach_channels" ON agent_reach_channels;
+CREATE POLICY "service_role_all_agent_reach_channels" ON agent_reach_channels FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_sub_accounts" ON sub_accounts;
+CREATE POLICY "service_role_all_sub_accounts" ON sub_accounts FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_ai_setters" ON ai_setters;
+CREATE POLICY "service_role_all_ai_setters" ON ai_setters FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_setter_conversations" ON setter_conversations;
+CREATE POLICY "service_role_all_setter_conversations" ON setter_conversations FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_custom_ai_tasks" ON custom_ai_tasks;
+CREATE POLICY "service_role_all_custom_ai_tasks" ON custom_ai_tasks FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_ab_tests" ON ab_tests;
+CREATE POLICY "service_role_all_ab_tests" ON ab_tests FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_icp_profiles" ON icp_profiles;
+CREATE POLICY "service_role_all_icp_profiles" ON icp_profiles FOR ALL TO service_role USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "service_role_all_follow_up_sequences" ON follow_up_sequences;
+CREATE POLICY "service_role_all_follow_up_sequences" ON follow_up_sequences FOR ALL TO service_role USING (true) WITH CHECK (true);
 
 -- ─── 9. ANON KEY POLICIES (read-only — used by frontend if needed) ─────────
 
-DO $$
-DECLARE
-  t TEXT;
-BEGIN
-  FOR t IN SELECT table_name FROM information_schema.tables
-           WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
-  LOOP
-    EXECUTE format(
-      'CREATE POLICY "anon_read_%s" ON %I
-       FOR SELECT TO anon
-       USING (true)',
-      t, t
-    );
-  END LOOP;
-END;
-$$;
+DROP POLICY IF EXISTS "anon_read_campaigns" ON campaigns;
+CREATE POLICY "anon_read_campaigns" ON campaigns FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_leads" ON leads;
+CREATE POLICY "anon_read_leads" ON leads FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_outreach" ON outreach;
+CREATE POLICY "anon_read_outreach" ON outreach FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_agent_tasks" ON agent_tasks;
+CREATE POLICY "anon_read_agent_tasks" ON agent_tasks FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_agent_reach_channels" ON agent_reach_channels;
+CREATE POLICY "anon_read_agent_reach_channels" ON agent_reach_channels FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_sub_accounts" ON sub_accounts;
+CREATE POLICY "anon_read_sub_accounts" ON sub_accounts FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_ai_setters" ON ai_setters;
+CREATE POLICY "anon_read_ai_setters" ON ai_setters FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_setter_conversations" ON setter_conversations;
+CREATE POLICY "anon_read_setter_conversations" ON setter_conversations FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_custom_ai_tasks" ON custom_ai_tasks;
+CREATE POLICY "anon_read_custom_ai_tasks" ON custom_ai_tasks FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_ab_tests" ON ab_tests;
+CREATE POLICY "anon_read_ab_tests" ON ab_tests FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_icp_profiles" ON icp_profiles;
+CREATE POLICY "anon_read_icp_profiles" ON icp_profiles FOR SELECT TO anon USING (true);
+
+DROP POLICY IF EXISTS "anon_read_follow_up_sequences" ON follow_up_sequences;
+CREATE POLICY "anon_read_follow_up_sequences" ON follow_up_sequences FOR SELECT TO anon USING (true);
 
 -- ─── 10. SEED DATA — Default Agent Reach Channels ──────────────────────────
 
@@ -505,20 +539,9 @@ INSERT INTO agent_reach_channels (name, display_name, description, status, tier,
 ON CONFLICT (name) DO NOTHING;
 
 -- ─── 11. REALTIME SUBSCRIPTIONS ─────────────────────────────────────────────
--- Enable realtime for tables that benefit from live updates
 
 ALTER PUBLICATION supabase_realtime ADD TABLE campaigns;
 ALTER PUBLICATION supabase_realtime ADD TABLE leads;
 ALTER PUBLICATION supabase_realtime ADD TABLE agent_tasks;
 ALTER PUBLICATION supabase_realtime ADD TABLE outreach;
 ALTER PUBLICATION supabase_realtime ADD TABLE setter_conversations;
-
--- ─── 12. VERIFICATION QUERY ────────────────────────────────────────────────
--- Run this after migration to confirm all tables exist
-
--- SELECT table_name,
---        (SELECT count(*) FROM information_schema.columns
---         WHERE table_schema = 'public' AND columns.table_name = tables.table_name) as column_count
--- FROM information_schema.tables
--- WHERE table_schema = 'public' AND table_type = 'BASE TABLE'
--- ORDER BY table_name;
