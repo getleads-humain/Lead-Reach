@@ -14,21 +14,21 @@ export async function GET() {
     // Parse JSON fields back into arrays
     const parsed = profiles.map((p) => ({
       ...p,
-      industries: safeParseJSON<string[]>(p.industries) || [],
-      companySizes: safeParseJSON<string[]>(p.companySizes) || [],
-      locations: safeParseJSON<string[]>(p.locations) || [],
-      requiredTech: safeParseJSON<string[]>(p.requiredTech) || [],
-      preferredTech: safeParseJSON<string[]>(p.preferredTech) || [],
-      values: safeParseJSON<string[]>(p.values) || [],
-      challenges: safeParseJSON<string[]>(p.challenges) || [],
-      goals: safeParseJSON<string[]>(p.goals) || [],
-      cultureTypes: safeParseJSON<string[]>(p.cultureTypes) || [],
-      buyingSignals: safeParseJSON<string[]>(p.buyingSignals) || [],
-      engagementPatterns: safeParseJSON<string[]>(p.engagementPatterns) || [],
-      triggerEvents: safeParseJSON<string[]>(p.triggerEvents) || [],
-      expansionSignals: safeParseJSON<string[]>(p.expansionSignals) || [],
-      complianceNeeds: safeParseJSON<string[]>(p.complianceNeeds) || [],
-      criteria: safeParseJSON<Record<string, unknown>>(p.criteria) || {},
+      industries: ensureArray<string>(p.industries),
+      companySizes: ensureArray<string>(p.companySizes),
+      locations: ensureArray<string>(p.locations),
+      requiredTech: ensureArray<string>(p.requiredTech),
+      preferredTech: ensureArray<string>(p.preferredTech),
+      values: ensureArray<string>(p.values),
+      challenges: ensureArray<string>(p.challenges),
+      goals: ensureArray<string>(p.goals),
+      cultureTypes: ensureArray<string>(p.cultureTypes),
+      buyingSignals: ensureArray<string>(p.buyingSignals),
+      engagementPatterns: ensureArray<string>(p.engagementPatterns),
+      triggerEvents: ensureArray<string>(p.triggerEvents),
+      expansionSignals: ensureArray<string>(p.expansionSignals),
+      complianceNeeds: ensureArray<string>(p.complianceNeeds),
+      criteria: ensureObject(p.criteria),
     }));
 
     return NextResponse.json({ profiles: parsed });
@@ -127,11 +127,18 @@ export async function POST(request: NextRequest) {
 // Helpers
 // ============================================================
 
-function safeParseJSON<T>(value: string | null | undefined): T | null {
-  if (!value) return null;
-  try {
-    return JSON.parse(value) as T;
-  } catch {
-    return null;
+function ensureArray<T>(value: unknown): T[] {
+  if (Array.isArray(value)) return value as T[];
+  if (typeof value === 'string') {
+    try { const parsed = JSON.parse(value); return Array.isArray(parsed) ? parsed : []; } catch { return []; }
   }
+  return [];
+}
+
+function ensureObject<T extends Record<string, unknown>>(value: unknown): T {
+  if (value && typeof value === 'object' && !Array.isArray(value)) return value as T;
+  if (typeof value === 'string') {
+    try { return JSON.parse(value) as T; } catch { return {} as T; }
+  }
+  return {} as T;
 }

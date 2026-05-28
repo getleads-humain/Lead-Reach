@@ -1062,52 +1062,54 @@ export function ICPView() {
             </ScrollArea>
           ) : (
             /* ========== Empty State ========== */
-            <div className="flex-1 flex items-center justify-center">
-              <div className="text-center px-8">
-                <div className="relative mb-5 mx-auto w-fit">
-                  <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 flex items-center justify-center border border-amber-500/20">
-                    <Crosshair className="h-12 w-12 text-amber-400" />
+            <ScrollArea className="flex-1">
+              <div className="p-4 flex items-center justify-center min-h-full">
+                <div className="text-center px-8">
+                  <div className="relative mb-5 mx-auto w-fit">
+                    <div className="h-24 w-24 rounded-2xl bg-gradient-to-br from-amber-500/10 to-orange-500/10 flex items-center justify-center border border-amber-500/20">
+                      <Crosshair className="h-12 w-12 text-amber-400" />
+                    </div>
                   </div>
+                  <h3 className="text-xl font-bold text-foreground/90 mb-2">Ideal Customer Profiles</h3>
+                  <p className="text-sm text-muted-foreground max-w-md mx-auto mb-5">
+                    Define your perfect customer across 6 dimensions: firmographic, technographic, psychographic, behavioral, situational, and economic. Use AI to build and refine profiles, then score leads against them.
+                  </p>
+                  <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto mb-6">
+                    {[
+                      { icon: Building2, label: 'Firmographic', desc: 'Industry, size, location', color: 'emerald' },
+                      { icon: Zap, label: 'Technographic', desc: 'Tech stack, maturity', color: 'amber' },
+                      { icon: Target, label: 'Psychographic', desc: 'Values, challenges', color: 'violet' },
+                      { icon: TrendingUp, label: 'Behavioral', desc: 'Buying signals, engagement', color: 'cyan' },
+                      { icon: AlertCircle, label: 'Situational', desc: 'Triggers, expansion', color: 'rose' },
+                      { icon: DollarSign, label: 'Economic', desc: 'Budget, LTV potential', color: 'sky' },
+                    ].map((dim) => {
+                      const Icon = dim.icon;
+                      const colorMap: Record<string, string> = {
+                        emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
+                        amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
+                        violet: 'text-violet-400 bg-violet-500/10 border-violet-500/20',
+                        cyan: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
+                        rose: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
+                        sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
+                      };
+                      return (
+                        <div key={dim.label} className={`rounded-lg border p-3 text-center ${colorMap[dim.color]}`}>
+                          <Icon className="h-5 w-5 mx-auto mb-1.5" />
+                          <p className="text-[10px] font-medium">{dim.label}</p>
+                          <p className="text-[8px] opacity-60">{dim.desc}</p>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <Button
+                    className="bg-amber-500 hover:bg-amber-400 text-black font-semibold gap-2"
+                    onClick={handleStartBuilder}
+                  >
+                    <Sparkles className="h-4 w-4" /> Build Your First ICP
+                  </Button>
                 </div>
-                <h3 className="text-xl font-bold text-foreground/90 mb-2">Ideal Customer Profiles</h3>
-                <p className="text-sm text-muted-foreground max-w-md mx-auto mb-5">
-                  Define your perfect customer across 6 dimensions: firmographic, technographic, psychographic, behavioral, situational, and economic. Use AI to build and refine profiles, then score leads against them.
-                </p>
-                <div className="grid grid-cols-3 gap-3 max-w-lg mx-auto mb-6">
-                  {[
-                    { icon: Building2, label: 'Firmographic', desc: 'Industry, size, location', color: 'emerald' },
-                    { icon: Zap, label: 'Technographic', desc: 'Tech stack, maturity', color: 'amber' },
-                    { icon: Target, label: 'Psychographic', desc: 'Values, challenges', color: 'violet' },
-                    { icon: TrendingUp, label: 'Behavioral', desc: 'Buying signals, engagement', color: 'cyan' },
-                    { icon: AlertCircle, label: 'Situational', desc: 'Triggers, expansion', color: 'rose' },
-                    { icon: DollarSign, label: 'Economic', desc: 'Budget, LTV potential', color: 'sky' },
-                  ].map((dim) => {
-                    const Icon = dim.icon;
-                    const colorMap: Record<string, string> = {
-                      emerald: 'text-emerald-400 bg-emerald-500/10 border-emerald-500/20',
-                      amber: 'text-amber-400 bg-amber-500/10 border-amber-500/20',
-                      violet: 'text-violet-400 bg-violet-500/10 border-violet-500/20',
-                      cyan: 'text-cyan-400 bg-cyan-500/10 border-cyan-500/20',
-                      rose: 'text-rose-400 bg-rose-500/10 border-rose-500/20',
-                      sky: 'text-sky-400 bg-sky-500/10 border-sky-500/20',
-                    };
-                    return (
-                      <div key={dim.label} className={`rounded-lg border p-3 text-center ${colorMap[dim.color]}`}>
-                        <Icon className="h-5 w-5 mx-auto mb-1.5" />
-                        <p className="text-[10px] font-medium">{dim.label}</p>
-                        <p className="text-[8px] opacity-60">{dim.desc}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-                <Button
-                  className="bg-amber-500 hover:bg-amber-400 text-black font-semibold gap-2"
-                  onClick={handleStartBuilder}
-                >
-                  <Sparkles className="h-4 w-4" /> Build Your First ICP
-                </Button>
               </div>
-            </div>
+            </ScrollArea>
           )}
         </div>
       </div>
