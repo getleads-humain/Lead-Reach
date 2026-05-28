@@ -272,11 +272,31 @@ function transformDataToDb(data: DataInput): DataInput {
   return result
 }
 
+// ── Column name suffixes that indicate a date/timestamp field ─────────────
+// Prisma convention: fields ending in "At" (createdAt, updatedAt, startedAt)
+// or "Date" (appointmentDate, lastContactDate) are timestamps.
+const DATE_FIELD_SUFFIXES = ['_at', '_date']
+
+// ── Check if a snake_case column name looks like a date field ───────────────
+function isDateColumn(snakeKey: string): boolean {
+  return DATE_FIELD_SUFFIXES.some(suffix => snakeKey.endsWith(suffix))
+}
+
 // ── Convert a Supabase row (snake_case) back to Prisma format (camelCase) ─
+// Also converts ISO date strings to Date objects for date columns,
+// so that code like `row.createdAt.toISOString()` works as expected.
 function transformRowFromDb(row: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {}
   for (const [key, value] of Object.entries(row)) {
-    result[toCamelCase(key)] = value
+    const camelKey = toCamelCase(key)
+    // Auto-convert date strings to Date objects for date/timestamp columns
+    if (isDateColumn(key) && typeof value === 'string' && value.length > 0) {
+      const parsed = new Date(value)
+      // Only assign if it's a valid date (not NaN)
+      result[camelKey] = isNaN(parsed.getTime()) ? value : parsed
+    } else {
+      result[camelKey] = value
+    }
   }
   return result
 }

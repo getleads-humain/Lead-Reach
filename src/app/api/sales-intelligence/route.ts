@@ -88,7 +88,7 @@ export async function GET() {
         return {
           type,
           description,
-          timestamp: l.updatedAt.toISOString(),
+          timestamp: typeof l.updatedAt === 'string' ? l.updatedAt : l.updatedAt?.toISOString?.() ?? null,
         };
       });
 

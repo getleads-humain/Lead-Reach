@@ -29,8 +29,8 @@ export async function GET(request: NextRequest) {
         campaignId: report.campaignId,
         status: report.status,
         source: report.source,
-        createdAt: report.createdAt.toISOString(),
-        updatedAt: report.updatedAt.toISOString(),
+        createdAt: typeof report.createdAt === 'string' ? report.createdAt : report.createdAt?.toISOString?.() ?? null,
+        updatedAt: typeof report.updatedAt === 'string' ? report.updatedAt : report.updatedAt?.toISOString?.() ?? null,
       })),
     });
   } catch (error) {

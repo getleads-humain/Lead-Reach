@@ -75,11 +75,20 @@ export async function GET(
           // Ignore parse errors
         }
 
+        // Supabase returns dates as ISO strings, not Date objects.
+        // Ensure we always return a string (or null), never a Date.
+        const ensureISOString = (v: unknown): string | null => {
+          if (!v) return null;
+          if (typeof v === 'string') return v;
+          if (v instanceof Date) return v.toISOString();
+          return String(v);
+        };
+
         stages[stageName] = {
           status: latestTask.status,
           progress: latestTask.progress,
-          startedAt: latestTask.startedAt?.toISOString() || null,
-          completedAt: latestTask.completedAt?.toISOString() || null,
+          startedAt: ensureISOString(latestTask.startedAt),
+          completedAt: ensureISOString(latestTask.completedAt),
           error: latestTask.error || null,
           result: parsedOutput || undefined,
         };
