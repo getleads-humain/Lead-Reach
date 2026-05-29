@@ -252,10 +252,12 @@ export default function FAQPage() {
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
                 </Link>
-                <Button size="lg" variant="outline" className="border-border/50 text-foreground hover:bg-secondary/50">
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Contact Support
-                </Button>
+                <Link href="/support">
+                  <Button size="lg" variant="outline" className="border-border/50 text-foreground hover:bg-secondary/50">
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Contact Support
+                  </Button>
+                </Link>
               </div>
             </div>
           </div>
