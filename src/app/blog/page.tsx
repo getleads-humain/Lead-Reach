@@ -2,6 +2,7 @@
 
 import React, { useState } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import { MarketingLayout } from '@/components/marketing/marketing-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
@@ -16,151 +17,39 @@ import {
   Sparkles,
   Mail,
   Tag,
+  Calendar,
 } from 'lucide-react';
-
-type BlogCategory = 'All' | 'AI Agents' | 'Lead Generation' | 'Sales Intelligence' | 'Tutorials';
-
-interface BlogPost {
-  id: string;
-  title: string;
-  excerpt: string;
-  category: BlogCategory;
-  date: string;
-  readTime: string;
-  author: string;
-  authorRole: string;
-  gradient: string;
-}
-
-const CATEGORIES: BlogCategory[] = ['All', 'AI Agents', 'Lead Generation', 'Sales Intelligence', 'Tutorials'];
-
-const BLOG_POSTS: BlogPost[] = [
-  {
-    id: '1',
-    title: 'How Autonomous AI Agents Are Revolutionizing B2B Lead Generation',
-    excerpt: 'Discover how multi-agent systems are replacing traditional SDR teams with always-on, intelligent lead research and outreach that scales without limits.',
-    category: 'AI Agents',
-    date: 'Jan 15, 2026',
-    readTime: '8 min read',
-    author: 'Sarah Chen',
-    authorRole: 'VP of Product',
-    gradient: 'from-emerald-500/20 to-cyan-500/20',
-  },
-  {
-    id: '2',
-    title: 'The Complete Guide to Multi-Channel Lead Research in 2026',
-    excerpt: 'Learn why the most successful sales teams research prospects across LinkedIn, GitHub, Twitter, Reddit, and 13+ other channels simultaneously.',
-    category: 'Lead Generation',
-    date: 'Jan 12, 2026',
-    readTime: '12 min read',
-    author: 'Marcus Rodriguez',
-    authorRole: 'Head of Growth',
-    gradient: 'from-violet-500/20 to-pink-500/20',
-  },
-  {
-    id: '3',
-    title: 'Building an Ideal Customer Profile That AI Agents Actually Use',
-    excerpt: 'Your ICP is only as good as how well your AI agents can interpret it. Here is how to define criteria that machines and humans both understand.',
-    category: 'Lead Generation',
-    date: 'Jan 8, 2026',
-    readTime: '6 min read',
-    author: 'Aisha Patel',
-    authorRole: 'CEO',
-    gradient: 'from-amber-500/20 to-orange-500/20',
-  },
-  {
-    id: '4',
-    title: 'Agent-Reach: How We Give AI Agents Internet Access Across 17+ Channels',
-    excerpt: 'A deep technical dive into our Agent-Reach architecture that provides zero-config web reading, semantic search, and social media data access.',
-    category: 'AI Agents',
-    date: 'Jan 5, 2026',
-    readTime: '15 min read',
-    author: 'James Kim',
-    authorRole: 'CTO',
-    gradient: 'from-cyan-500/20 to-blue-500/20',
-  },
-  {
-    id: '5',
-    title: 'Lead Scoring in the Age of AI: Moving Beyond Manual Qualification',
-    excerpt: 'Manual lead scoring is dead. Learn how AI-driven qualification uses real-time signals, behavioral patterns, and firmographic matching to prioritize leads.',
-    category: 'Sales Intelligence',
-    date: 'Dec 28, 2025',
-    readTime: '7 min read',
-    author: 'Elena Torres',
-    authorRole: 'Data Science Lead',
-    gradient: 'from-rose-500/20 to-red-500/20',
-  },
-  {
-    id: '6',
-    title: 'Getting Started with LeadReach AI: A Step-by-Step Tutorial',
-    excerpt: 'From signup to your first batch of qualified leads. This comprehensive tutorial walks you through setting up your ICP, deploying agents, and reviewing results.',
-    category: 'Tutorials',
-    date: 'Dec 22, 2025',
-    readTime: '10 min read',
-    author: 'David Park',
-    authorRole: 'Customer Success',
-    gradient: 'from-emerald-500/20 to-teal-500/20',
-  },
-  {
-    id: '7',
-    title: 'Why Personalized Outreach Outperforms Templates by 300%',
-    excerpt: 'We analyzed 50,000 outreach messages and found that AI-personalized emails had 3x the reply rate. Here is what makes the difference.',
-    category: 'Sales Intelligence',
-    date: 'Dec 18, 2025',
-    readTime: '9 min read',
-    author: 'Sarah Chen',
-    authorRole: 'VP of Product',
-    gradient: 'from-indigo-500/20 to-violet-500/20',
-  },
-  {
-    id: '8',
-    title: 'The Orchestrator Agent: How 8 AI Agents Work Together',
-    excerpt: 'Behind the scenes of our multi-agent architecture. Learn how the Orchestrator coordinates discovery, enrichment, qualification, and outreach in perfect harmony.',
-    category: 'AI Agents',
-    date: 'Dec 14, 2025',
-    readTime: '11 min read',
-    author: 'James Kim',
-    authorRole: 'CTO',
-    gradient: 'from-purple-500/20 to-fuchsia-500/20',
-  },
-  {
-    id: '9',
-    title: 'Setting Up Automated Follow-Up Sequences That Convert',
-    excerpt: 'Most deals are won in the follow-up. Learn how to configure AI-driven sequences that adapt timing, channel, and messaging based on engagement signals.',
-    category: 'Tutorials',
-    date: 'Dec 10, 2025',
-    readTime: '8 min read',
-    author: 'David Park',
-    authorRole: 'Customer Success',
-    gradient: 'from-sky-500/20 to-cyan-500/20',
-  },
-];
-
-const POPULAR_TAGS = [
-  'AI Agents', 'Lead Scoring', 'Outreach', 'B2B Sales', 'Multi-Channel',
-  'Automation', 'ICP', 'Data Enrichment', 'Pipeline', 'Agent-Reach',
-  'Prospecting', 'Personalization',
-];
-
-const CATEGORY_COLORS: Record<string, string> = {
-  'AI Agents': 'bg-violet-500/10 text-violet-400 border-violet-500/20',
-  'Lead Generation': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-  'Sales Intelligence': 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
-  'Tutorials': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-};
+import {
+  BLOG_POSTS,
+  CATEGORIES,
+  POPULAR_TAGS,
+  CATEGORY_COLORS,
+  type BlogCategory,
+} from '@/lib/blog-data';
 
 export default function BlogPage() {
   const [activeCategory, setActiveCategory] = useState<BlogCategory>('All');
   const [searchQuery, setSearchQuery] = useState('');
+  const [activeTag, setActiveTag] = useState<string | null>(null);
 
   const filteredPosts = BLOG_POSTS.filter((post) => {
     const matchesCategory = activeCategory === 'All' || post.category === activeCategory;
     const matchesSearch =
       !searchQuery ||
       post.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      post.excerpt.toLowerCase().includes(searchQuery.toLowerCase());
-    return matchesCategory && matchesSearch;
+      post.excerpt.toLowerCase().includes(searchQuery.toLowerCase()) ||
+      post.tags.some(t => t.toLowerCase().includes(searchQuery.toLowerCase()));
+    const matchesTag = !activeTag || post.tags.includes(activeTag);
+    return matchesCategory && matchesSearch && matchesTag;
   });
+
+  const handleTagClick = (tag: string) => {
+    if (activeTag === tag) {
+      setActiveTag(null);
+    } else {
+      setActiveTag(tag);
+    }
+  };
 
   return (
     <MarketingLayout>
@@ -213,6 +102,14 @@ export default function BlogPage() {
               ))}
             </div>
           </div>
+          {activeTag && (
+            <div className="mt-3 flex items-center gap-2 text-xs text-muted-foreground">
+              <span>Filtered by tag:</span>
+              <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 cursor-pointer" onClick={() => setActiveTag(null)}>
+                {activeTag} ×
+              </Badge>
+            </div>
+          )}
         </div>
       </section>
 
@@ -224,41 +121,64 @@ export default function BlogPage() {
             <div className="lg:col-span-2">
               {filteredPosts.length === 0 ? (
                 <div className="text-center py-16">
+                  <BookOpen className="h-12 w-12 text-muted-foreground/30 mx-auto mb-4" />
                   <p className="text-muted-foreground">No articles found matching your criteria.</p>
+                  <Button
+                    variant="outline"
+                    className="mt-4"
+                    onClick={() => { setActiveCategory('All'); setSearchQuery(''); setActiveTag(null); }}
+                  >
+                    Clear filters
+                  </Button>
                 </div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {filteredPosts.map((post) => (
-                    <Card key={post.id} className="card-premium border-border/30 bg-card/50 group cursor-pointer">
-                      {/* Gradient Image Placeholder */}
-                      <div className={`h-40 rounded-t-xl bg-gradient-to-br ${post.gradient} flex items-center justify-center`}>
-                        <BookOpen className="h-8 w-8 text-foreground/20" />
-                      </div>
-                      <CardContent className="p-5">
-                        <Badge variant="outline" className={`text-[10px] mb-3 ${CATEGORY_COLORS[post.category] || ''}`}>
-                          {post.category}
-                        </Badge>
-                        <h3 className="text-sm font-semibold text-foreground mb-2 line-clamp-2 group-hover:text-emerald-400 transition-colors">
-                          {post.title}
-                        </h3>
-                        <p className="text-xs text-muted-foreground line-clamp-3 mb-4">
-                          {post.excerpt}
-                        </p>
-                        <div className="flex items-center justify-between text-xs text-muted-foreground">
-                          <div className="flex items-center gap-1">
-                            <Clock className="h-3 w-3" />
-                            {post.readTime}
-                          </div>
-                          <div className="flex items-center gap-1">
-                            <User className="h-3 w-3" />
-                            {post.author}
-                          </div>
+                    <Link key={post.id} href={`/blog/${post.slug}`} className="group">
+                      <Card className="card-premium border-border/30 bg-card/50 h-full overflow-hidden transition-all duration-300 group-hover:border-emerald-500/20 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
+                        {/* Hero Image */}
+                        <div className={`h-40 overflow-hidden relative`}>
+                          <Image
+                            src={post.heroImage}
+                            alt={post.title}
+                            width={600}
+                            height={340}
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                          />
+                          <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+                          <Badge variant="outline" className={`absolute top-3 left-3 text-[10px] ${CATEGORY_COLORS[post.category] || ''}`}>
+                            {post.category}
+                          </Badge>
                         </div>
-                        <div className="mt-3 text-xs text-muted-foreground">
-                          {post.date}
-                        </div>
-                      </CardContent>
-                    </Card>
+                        <CardContent className="p-5">
+                          <h3 className="text-sm font-semibold text-foreground mb-2 line-clamp-2 group-hover:text-emerald-400 transition-colors">
+                            {post.title}
+                          </h3>
+                          <p className="text-xs text-muted-foreground line-clamp-3 mb-4">
+                            {post.excerpt}
+                          </p>
+                          <div className="flex items-center justify-between text-xs text-muted-foreground">
+                            <div className="flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              {post.readTime}
+                            </div>
+                            <div className="flex items-center gap-1">
+                              <User className="h-3 w-3" />
+                              {post.author}
+                            </div>
+                          </div>
+                          <div className="mt-3 flex items-center justify-between">
+                            <div className="flex items-center gap-1 text-xs text-muted-foreground">
+                              <Calendar className="h-3 w-3" />
+                              {post.date}
+                            </div>
+                            <span className="text-xs text-emerald-400 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                              Read more <ArrowRight className="h-3 w-3" />
+                            </span>
+                          </div>
+                        </CardContent>
+                      </Card>
+                    </Link>
                   ))}
                 </div>
               )}
@@ -278,7 +198,12 @@ export default function BlogPage() {
                       <Badge
                         key={tag}
                         variant="outline"
-                        className="text-[10px] border-border/30 text-muted-foreground hover:text-foreground hover:border-emerald-500/20 cursor-pointer transition-colors"
+                        className={`text-[10px] cursor-pointer transition-colors ${
+                          activeTag === tag
+                            ? 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10'
+                            : 'border-border/30 text-muted-foreground hover:text-foreground hover:border-emerald-500/20'
+                        }`}
+                        onClick={() => handleTagClick(tag)}
                       >
                         {tag}
                       </Badge>
@@ -325,6 +250,24 @@ export default function BlogPage() {
                       &rarr; Launch Platform
                     </Link>
                   </div>
+                </CardContent>
+              </Card>
+
+              {/* Featured Post */}
+              <Card className="border-emerald-500/20 bg-emerald-500/5">
+                <CardContent className="p-5">
+                  <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 text-[10px] mb-3">Featured</Badge>
+                  <h4 className="text-sm font-semibold text-foreground mb-2 line-clamp-2">
+                    {BLOG_POSTS[0].title}
+                  </h4>
+                  <p className="text-xs text-muted-foreground line-clamp-3 mb-3">
+                    {BLOG_POSTS[0].excerpt}
+                  </p>
+                  <Link href={`/blog/${BLOG_POSTS[0].slug}`}>
+                    <Button variant="outline" size="sm" className="text-xs border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10">
+                      Read Article <ArrowRight className="ml-1 h-3 w-3" />
+                    </Button>
+                  </Link>
                 </CardContent>
               </Card>
             </div>
