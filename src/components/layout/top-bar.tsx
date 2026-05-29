@@ -2,6 +2,8 @@
 
 import React, { useState } from 'react';
 import { useAppStore } from '@/lib/store';
+import { useAuth } from '@/components/auth/auth-provider';
+import { usePlanAccess } from '@/hooks/use-plan-access';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +12,8 @@ import {
   Sparkles,
   Send,
   Fingerprint,
+  Crown,
+  Clock,
 } from 'lucide-react';
 import {
   Dialog,
@@ -18,14 +22,19 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { safeFetchJSON } from '@/lib/utils';
+import { getPlanById } from '@/lib/plans';
+import Link from 'next/link';
 
 export function TopBar() {
   const { notifications, sidebarCollapsed, setActiveView, userProfile } = useAppStore();
+  const { profile } = useAuth();
+  const { currentPlanId, isFreePlan, isTrial } = usePlanAccess();
   const [searchOpen, setSearchOpen] = useState(false);
   const [aiQuery, setAiQuery] = useState('');
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResponse, setAiResponse] = useState('');
 
+  const currentPlan = getPlanById(currentPlanId);
   const unreadCount = notifications.filter((n) => !n.read).length;
 
   const handleAiSubmit = async () => {
@@ -51,10 +60,6 @@ export function TopBar() {
               targetLocation: data.plan.targetLocation,
             }),
           });
-
-          // Note: /api/ai already executes tasks via dispatchAndExecute().
-          // We do NOT re-create tasks here to avoid duplicates.
-          // The pipeline already ran server-side.
         }
       }
     } catch (error) {
@@ -75,6 +80,27 @@ export function TopBar() {
         </div>
 
         <div className="flex items-center gap-2">
+          {/* Plan Badge */}
+          <Link href="/pricing">
+            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg border border-border/30 bg-secondary/20 hover:bg-secondary/30 hover:border-border/50 transition-all cursor-pointer">
+              <Crown className={`h-3.5 w-3.5 ${isFreePlan ? 'text-muted-foreground' : 'text-emerald-400'}`} />
+              <span className={`text-[11px] font-medium hidden sm:inline ${isFreePlan ? 'text-muted-foreground' : 'text-emerald-400'}`}>
+                {currentPlan?.displayName || 'Free'}
+              </span>
+              {isTrial && (
+                <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20 text-[9px] px-1 py-0 h-3.5">
+                  <Clock className="h-2.5 w-2.5 mr-0.5" />
+                  Trial
+                </Badge>
+              )}
+              {isFreePlan && (
+                <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] px-1 py-0 h-3.5">
+                  Upgrade
+                </Badge>
+              )}
+            </div>
+          </Link>
+
           <Button
             variant="outline"
             size="sm"

@@ -17,11 +17,35 @@ import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-
 import { IdentityView } from '@/components/identity/identity-view';
 import { ICPView } from '@/components/icp/icp-view';
 import { useAppStore } from '@/lib/store';
+import { usePlanAccess, type ViewType } from '@/hooks/use-plan-access';
+import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
+
+/** Map views to the plan required to access them */
+const VIEW_UPGRADE_MAP: Record<string, { feature: string; requiredPlanId: string }> = {
+  'agents': { feature: 'AI Agents', requiredPlanId: 'command' },
+  'setter': { feature: 'AI Setter', requiredPlanId: 'command' },
+  'booking': { feature: 'Bookings', requiredPlanId: 'command' },
+  'messaging': { feature: 'Messaging', requiredPlanId: 'command' },
+  'analytics': { feature: 'Analytics', requiredPlanId: 'command' },
+};
 
 export default function AppPage() {
   const { activeView } = useAppStore();
+  const { canAccess } = usePlanAccess();
 
   const renderView = () => {
+    // Check if the user has access to this view
+    const upgradeInfo = VIEW_UPGRADE_MAP[activeView];
+    if (upgradeInfo && !canAccess(activeView as ViewType)) {
+      return (
+        <UpgradePrompt
+          feature={upgradeInfo.feature}
+          requiredPlanId={upgradeInfo.requiredPlanId}
+          asOverlay
+        />
+      );
+    }
+
     switch (activeView) {
       case 'dashboard':
         return <DashboardView />;

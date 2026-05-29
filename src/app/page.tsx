@@ -86,60 +86,58 @@ const FEATURES = [
 
 const PRICING_TIERS = [
   {
-    name: 'Starter',
-    price: '$97',
+    name: 'Scout',
+    price: '$149',
     period: '/mo',
-    description: 'Perfect for solo coaches and consultants getting started with AI setting.',
+    description: 'For solo founders and small teams starting their outbound journey.',
     features: [
-      '2 AI Setters',
-      '500 leads/month',
-      'SMS + Email channels',
-      'Basic qualification',
-      'Calendar booking',
-      'Standard follow-ups',
-      '1 language',
+      '3 AI Agents',
+      '1,000 leads/month',
+      '5 research channels',
+      'ICP Builder & Lead Scoring',
+      'Basic Enrichment',
+      'Email Outreach',
+      '1 user seat',
     ],
     cta: 'Start Free Trial',
     highlighted: false,
+    track: 'b2b' as const,
   },
   {
-    name: 'Professional',
-    price: '$297',
+    name: 'Command',
+    price: '$399',
     period: '/mo',
-    description: 'For agencies and teams that need the full power of AI setting.',
+    description: 'For growing teams scaling outbound with AI-powered automation.',
     features: [
-      'Unlimited AI Setters',
+      '8 AI Agents',
       '10,000+ leads/month',
-      'All channels (SMS, WhatsApp, IG, FB)',
-      'Advanced qualification & scoring',
-      'Conversational booking',
-      'Custom follow-up sequences',
-      '17+ languages',
-      'A/B split testing',
-      'GHL CRM integration',
-      'Custom AI tasks',
-      '5 sub-accounts',
+      'All 17+ channels',
+      'Advanced ICP & multi-dimensional scoring',
+      'Deep enrichment & Competitive intel',
+      'Multi-step outreach (email + LinkedIn)',
+      '5 user seats & A/B testing',
     ],
     cta: 'Start Free Trial',
     highlighted: true,
+    track: 'b2b' as const,
   },
   {
     name: 'Enterprise',
     price: 'Custom',
     period: '',
-    description: 'For large agencies with custom requirements and high-volume needs.',
+    description: 'For enterprises requiring unlimited scale, custom agents, and dedicated support.',
     features: [
-      'Unlimited everything',
-      'Unlimited sub-accounts',
-      'Custom integrations',
-      'Dedicated success manager',
-      'SLA guarantee',
-      'Custom AI training',
-      'White-label option',
-      'Priority support',
+      'Unlimited AI Agents & leads',
+      'Custom channels & data sources',
+      'Custom AI model training',
+      'Advanced workflow orchestration',
+      'White-label & Unlimited seats',
+      'Dedicated CSM + SLA (99.9%)',
+      'Custom integrations & API',
     ],
     cta: 'Contact Sales',
     highlighted: false,
+    track: 'b2b' as const,
   },
 ];
 
@@ -630,7 +628,7 @@ export default function LandingPage() {
                     ))}
                   </ul>
 
-                  <Link href="/app" className="block mt-8">
+                  <Link href="/pricing" className="block mt-8">
                     <Button
                       className={`w-full font-semibold transition-all duration-200 ${
                         tier.highlighted
