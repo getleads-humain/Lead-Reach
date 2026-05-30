@@ -704,8 +704,11 @@ export function ProspectDiscoveryView() {
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
-        const isTransientError = msg.includes('502') || msg.includes('503') || msg.includes('overloaded')
-          || msg.includes('Bad Gateway') || msg.includes('busy') || msg.includes('Server error');
+        // Only treat genuine LLM gateway errors as transient (not search failures)
+        const isTransientError = (
+          (msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('503'))
+          && !msg.includes('search') && !msg.includes('DuckDuckGo')
+        ) || msg.includes('429') || msg.includes('Too many requests');
 
         if (isTransientError && attempt < MAX_RETRIES) {
           // Wait before retrying
@@ -716,13 +719,13 @@ export function ProspectDiscoveryView() {
           continue;
         }
 
-        // Non-transient or exhausted retries — show error
+        // Non-transient or exhausted retries — show helpful error
         const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
           role: 'system',
           content: isTransientError
             ? 'The AI service is temporarily busy. Please try again in a few seconds.'
-            : `Agent error: ${msg}`,
+            : "I encountered an issue processing your request. Please try again or rephrase your question. You can ask me to research a company, find a person, analyze a market, build an ICP, score a lead, or compose outreach.",
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, errorMsg]);

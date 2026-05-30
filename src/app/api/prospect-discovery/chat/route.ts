@@ -101,24 +101,21 @@ export async function POST(request: NextRequest) {
 
     const msg = error instanceof Error ? error.message : 'Unknown error';
 
-    // Detect specific error types for better error messages
-    const isHtmlOrGatewayError = (
-      msg.includes('Unexpected token')
-      || msg.includes('SyntaxError')
-      || msg.includes('is not valid JSON')
-      || msg.includes('502')
-      || msg.includes('Bad Gateway')
-      || msg.includes('gateway error')
-      || msg.includes('HTML instead')
+    // Detect GENUINE gateway errors only — not false positives from search failures
+    // A genuine gateway error means the LLM API itself is down or overloaded
+    const isGenuineGatewayError = (
+      (msg.includes('502') || msg.includes('Bad Gateway'))
+      && !msg.includes('search') && !msg.includes('exaSearch') && !msg.includes('DuckDuckGo')
+    ) || (
+      msg.includes('503') || msg.includes('Service Unavailable')
     );
 
     const isRateLimitError = (
       msg.includes('429')
       || msg.includes('Too many requests')
-      || msg.includes('rate limit')
     );
 
-    if (isHtmlOrGatewayError || isRateLimitError) {
+    if (isGenuineGatewayError || isRateLimitError) {
       return NextResponse.json({
         success: false,
         error: 'The AI service is temporarily busy. Please try again in a few seconds.',
@@ -126,10 +123,31 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
+    // For all other errors (search failures, JSON parse errors, etc.),
+    // return a more helpful message and a 200 status so the front-end
+    // can display it as a normal agent message rather than an error
     return NextResponse.json({
-      success: false,
-      error: 'The agent encountered an error. Please try again.',
-      details: msg.slice(0, 300),
-    }, { status: 500 });
+      success: true,
+      message: {
+        id: `agent-error-${Date.now()}`,
+        role: 'assistant',
+        content: "I encountered an issue while processing your request. This might be a temporary problem with one of my data sources. Let me try a simpler approach.\n\nYou can try:\n• **Be more specific** — e.g., \"Research Stripe\" instead of a long query\n• **Ask a different question** — I can help with company research, person search, ICP building, lead scoring, and outreach composition\n• **Try again** — the issue may be temporary",
+        timestamp: new Date().toISOString(),
+        persona: 'navigator',
+        thinking: {
+          persona: 'navigator',
+          intent: 'converse',
+          reasoning: `Error handler: ${msg.slice(0, 80)}`,
+          plan: ['Error recovery'],
+          confidence: 0.3,
+        },
+        actions: [],
+      },
+      updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
+      suggestedActions: [
+        { label: 'Try Again', prompt: message.trim(), icon: 'RefreshCw' },
+        { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
+      ],
+    });
   }
 }

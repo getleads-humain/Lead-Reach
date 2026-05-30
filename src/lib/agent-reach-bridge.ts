@@ -339,28 +339,91 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
  * AI-powered web search using multiple sources with smart fallback.
  * 
  * Pipeline (tries each in order until one returns results):
- * 1. z-ai-web-dev-sdk web_search (MOST RELIABLE — always available)
- * 2. mcporter Exa (if available)
- * 3. Jina Search (s.jina.ai)
- * 
- * Agent-Reach Reference: SKILL_en.md → "Web Search (Exa)"
+ * 1. DuckDuckGo HTML via Jina Reader (MOST RELIABLE — zero config, no API key)
+ * 2. z-ai-web-dev-sdk web_search (if gateway supports functions.invoke)
+ * 3. mcporter Exa (if available)
+ * 4. Jina Search API (requires API key)
  */
 export async function exaSearch(query: string, numResults = 25): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
 
-  // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
+  // ===== METHOD 1: DuckDuckGo HTML Search via Jina Reader (Primary — zero config, always works) =====
+  try {
+    const ddgUrl = `https://r.jina.ai/https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const response = await fetch(ddgUrl, {
+      headers: { 'Accept': 'text/markdown' },
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (response.ok) {
+      const text = await response.text();
+      const results: SearchResult[] = [];
+
+      // Parse DuckDuckGo results from Jina Reader markdown output
+      // DuckDuckGo HTML format delivers results as linked titles with snippets
+      const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+      let match;
+      const seenUrls = new Set<string>();
+
+      while ((match = linkRegex.exec(text)) !== null && results.length < numResults) {
+        const title = match[1].trim();
+        const url = match[2];
+
+        // Skip DuckDuckGo internal URLs and duplicate URLs
+        if (url.includes('duckduckgo.com') || url.includes('/l/?uddg=') || seenUrls.has(url)) continue;
+        if (title.length < 3) continue;
+
+        seenUrls.add(url);
+
+        // Extract snippet from text after the link
+        const afterMatch = text.slice(match.index + match[0].length);
+        const snippetText = afterMatch.slice(0, 300).replace(/\[[^\]]*\]\([^)]*\)/g, '').replace(/[#*_\n]/g, ' ').trim();
+        const snippet = snippetText.slice(0, 200);
+
+        results.push({ title, url, snippet });
+      }
+
+      // Handle DuckDuckGo redirect URLs (uddg parameter)
+      const uddgRegex = /uddg=([^&"')]+)/g;
+      let uddgMatch;
+      while ((uddgMatch = uddgRegex.exec(text)) !== null && results.length < numResults) {
+        try {
+          const decodedUrl = decodeURIComponent(uddgMatch[1]);
+          if (!seenUrls.has(decodedUrl) && decodedUrl.startsWith('http')) {
+            seenUrls.add(decodedUrl);
+            // Find the title near this URL in the text
+            const beforeUrl = text.slice(Math.max(0, uddgMatch.index - 200), uddgMatch.index);
+            const titleMatch = beforeUrl.match(/\[([^\]]+)\]\([^)]*\)$/);
+            const title = titleMatch ? titleMatch[1].trim() : new URL(decodedUrl).hostname;
+            const afterUrl = text.slice(uddgMatch.index + uddgMatch[0].length);
+            const snippetText = afterUrl.slice(0, 200).replace(/\[[^\]]*\]\([^)]*\)/g, '').replace(/[#*_\n]/g, ' ').trim();
+            results.push({ title, url: decodedUrl, snippet: snippetText.slice(0, 200) });
+          }
+        } catch { /* skip malformed URLs */ }
+      }
+
+      if (results.length > 0) {
+        console.log(`[exaSearch] DuckDuckGo via Jina Reader returned ${results.length} results for "${query.slice(0, 60)}"`);
+        return makeResult(results, channel, 'DuckDuckGo via Jina Reader', text.slice(0, 2000));
+      }
+      console.warn(`[exaSearch] DuckDuckGo via Jina Reader returned 0 parseable results for "${query.slice(0, 60)}"`);
+    }
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[exaSearch] DuckDuckGo via Jina Reader failed: ${msg.slice(0, 200)}`);
+  }
+
+  // ===== METHOD 2: z-ai-web-dev-sdk web_search (if gateway supports functions.invoke) =====
   try {
     const searchResult = await retryWithBackoff(async () => {
-      await waitForRateLimit(); // Unified rate limiter (shared with LLM calls)
+      await waitForRateLimit();
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
       const zai = await ZAI.create();
       return await zai.functions.invoke('web_search', {
         query,
         num: numResults,
       });
-    }, 2, `exaSearch(web_search: ${query.slice(0, 40)})`);
-
-
+    }, 1, `exaSearch(web_search: ${query.slice(0, 40)})`);
 
     if (Array.isArray(searchResult) && searchResult.length > 0) {
       const results: SearchResult[] = searchResult.map((item: { url?: string; name?: string; snippet?: string; rank?: number; date?: string }) => ({
@@ -373,13 +436,12 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
       console.log(`[exaSearch] z-ai-web-dev-sdk returned ${results.length} results for "${query.slice(0, 60)}"`);
       return makeResult(results, channel, 'z-ai-web-dev-sdk Web Search', JSON.stringify(searchResult).slice(0, 2000));
     }
-    console.warn(`[exaSearch] z-ai-web-dev-sdk returned 0 results for "${query.slice(0, 60)}"`);
   } catch (sdkError) {
     const msg = sdkError instanceof Error ? sdkError.message : 'Unknown error';
     console.warn(`[exaSearch] z-ai-web-dev-sdk failed: ${msg.slice(0, 200)}`);
   }
 
-  // ===== METHOD 2: mcporter Exa (if available) =====
+  // ===== METHOD 3: mcporter Exa (if available) =====
   try {
     const { stdout } = await runCommand(
       `mcporter call 'exa.web_search_exa(query: "${query.replace(/'/g, "\\'")}", numResults: ${numResults})'`,
@@ -401,18 +463,16 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
     // mcporter not available, try fallback
   }
 
-  // ===== METHOD 3: Jina Search (final fallback) =====
+  // ===== METHOD 4: Jina Search API (requires API key) =====
   try {
     const searchUrl = `https://s.jina.ai/${encodeURIComponent(query)}`;
     let response: Response;
     if (USE_PROXY_ROTATION) {
-      // Use proxy rotation for Jina Search fallback to avoid rate limits
       try {
         response = await proxyRotator.fetchWithProxy(searchUrl, {
           headers: { 'Accept': 'text/plain' },
         });
       } catch (proxyErr) {
-        // Proxy failed, fall back to direct fetch
         console.warn(`[exaSearch] Proxy rotation failed for Jina Search, falling back to direct: ${proxyErr instanceof Error ? proxyErr.message : proxyErr}`);
         response = await fetch(searchUrl, {
           headers: { 'Accept': 'text/plain' },
@@ -432,7 +492,6 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
 
     const text = await response.text();
     
-    // Detect HTML error pages
     if (text.trim().startsWith('<') || text.trim().startsWith('<!DOCTYPE')) {
       return makeError<SearchResult[]>('Jina Search returned HTML error page', channel);
     }
@@ -452,7 +511,6 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
     }
 
     if (results.length === 0) {
-      // Parse numbered list format
       const lines = text.split('\n').filter(l => l.trim());
       for (const line of lines.slice(0, numResults)) {
         const urlMatch = line.match(/(https?:\/\/[^\s]+)/);
