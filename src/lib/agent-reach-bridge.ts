@@ -332,34 +332,96 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
 }
 
 // ============================================================
-// Channel 2: Web Search (z-ai-web-dev-sdk → Exa/mcporter → Jina)
+// Channel 2: Web Search (DuckDuckGo → z-ai-web-dev-sdk → mcporter → Jina)
 // ============================================================
+
+/**
+ * Direct DuckDuckGo search — no SDK required, works when z-ai gateway is down.
+ * Uses the DuckDuckGo Instant Answer API via html.duckduckgo.com.
+ */
+async function duckDuckGoSearch(query: string, numResults = 25): Promise<SearchResult[]> {
+  try {
+    const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
+    const response = await fetch(searchUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html',
+      },
+      signal: AbortSignal.timeout(15000),
+    });
+
+    if (!response.ok) {
+      console.warn(`[duckDuckGoSearch] HTTP ${response.status}`);
+      return [];
+    }
+
+    const html = await response.text();
+    const results: SearchResult[] = [];
+
+    // Parse DuckDuckGo HTML results
+    const resultRegex = /<a[^>]+class="result__a"[^>]+href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi;
+    const snippetRegex = /<a[^>]+class="result__snippet"[^>]*>([\s\S]*?)<\/a>/gi;
+
+    const urlMatches = [...html.matchAll(resultRegex)];
+    const snippetMatches = [...html.matchAll(snippetRegex)];
+
+    for (let i = 0; i < Math.min(urlMatches.length, numResults); i++) {
+      const url = urlMatches[i][1];
+      const title = urlMatches[i][2].replace(/<[^>]+>/g, '').trim();
+      const snippet = snippetMatches[i]
+        ? snippetMatches[i][1].replace(/<[^>]+>/g, '').trim()
+        : '';
+
+      if (url && title) {
+        results.push({ title, url, snippet: snippet.slice(0, 300) });
+      }
+    }
+
+    return results;
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown';
+    console.warn(`[duckDuckGoSearch] Failed: ${msg.slice(0, 150)}`);
+    return [];
+  }
+}
 
 /**
  * AI-powered web search using multiple sources with smart fallback.
  * 
  * Pipeline (tries each in order until one returns results):
- * 1. z-ai-web-dev-sdk web_search (MOST RELIABLE — always available)
- * 2. mcporter Exa (if available)
- * 3. Jina Search (s.jina.ai)
+ * 1. DuckDuckGo (DIRECT — always works, no SDK required)
+ * 2. z-ai-web-dev-sdk web_search (if gateway is reachable)
+ * 3. mcporter Exa (if available)
+ * 4. Jina Search (s.jina.ai)
  * 
  * Agent-Reach Reference: SKILL_en.md → "Web Search (Exa)"
  */
 export async function exaSearch(query: string, numResults = 25): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
 
-  // ===== METHOD 1: z-ai-web-dev-sdk web_search (Primary — always works) =====
+  // ===== METHOD 0: DuckDuckGo (Primary — no SDK needed, always available) =====
+  try {
+    const ddgResults = await duckDuckGoSearch(query, numResults);
+    if (ddgResults.length > 0) {
+      console.log(`[exaSearch] DuckDuckGo returned ${ddgResults.length} results for "${query.slice(0, 60)}"`);
+      return makeResult(ddgResults, channel, 'DuckDuckGo Search', JSON.stringify(ddgResults).slice(0, 2000));
+    }
+    console.warn(`[exaSearch] DuckDuckGo returned 0 results for "${query.slice(0, 60)}"`);
+  } catch (ddgError) {
+    const msg = ddgError instanceof Error ? ddgError.message : 'Unknown error';
+    console.warn(`[exaSearch] DuckDuckGo failed: ${msg.slice(0, 200)}`);
+  }
+
+  // ===== METHOD 1: z-ai-web-dev-sdk web_search =====
   try {
     const searchResult = await retryWithBackoff(async () => {
-      await waitForRateLimit(); // Unified rate limiter (shared with LLM calls)
-      const zai = await getSDK(); // Reuse shared SDK singleton
+      await waitForRateLimit();
+      const zai = await getSDK();
       return await zai.functions.invoke('web_search', {
         query,
         num: numResults,
       });
-    }, 2, `exaSearch(web_search: ${query.slice(0, 40)})`);
-
-
+    }, 1, `exaSearch(web_search: ${query.slice(0, 40)})`);
 
     if (Array.isArray(searchResult) && searchResult.length > 0) {
       const results: SearchResult[] = searchResult.map((item: { url?: string; name?: string; snippet?: string; rank?: number; date?: string }) => ({
@@ -1919,7 +1981,30 @@ export async function discoverBusinesses(
   const allResults: SearchResult[] = [];
   const seenUrls = new Set<string>();
 
-  // ===== PRIMARY: Use z-ai-web-dev-sdk web_search with PAGINATION =====
+  // ===== PRIMARY: DuckDuckGo Search (no SDK required — always works) =====
+  try {
+    for (const searchQuery of searchQueries) {
+      const ddgResults = await duckDuckGoSearch(searchQuery, 50);
+      let newResultsThisQuery = 0;
+      for (const r of ddgResults) {
+        if (r.url && !seenUrls.has(r.url)) {
+          seenUrls.add(r.url);
+          allResults.push(r);
+          newResultsThisQuery++;
+        }
+      }
+      console.log(`[discoverBusinesses] DuckDuckGo "${searchQuery.slice(0, 50)}": ${newResultsThisQuery} new results (total: ${allResults.length})`);
+    }
+
+    if (allResults.length > 0) {
+      console.log(`[discoverBusinesses] DuckDuckGo found ${allResults.length} unique results across all query variations`);
+      return makeResult(allResults, 'multi', 'DuckDuckGo Exhaustive Deep Discovery');
+    }
+  } catch (ddgError) {
+    console.warn(`[discoverBusinesses] DuckDuckGo search failed: ${ddgError instanceof Error ? ddgError.message.slice(0, 100) : 'Unknown'}`);
+  }
+
+  // ===== SECONDARY: Use z-ai-web-dev-sdk web_search with PAGINATION =====
   try {
     const zai = await getSDK(); // Reuse shared SDK singleton
 
