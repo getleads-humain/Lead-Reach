@@ -1,7 +1,7 @@
 -- ============================================================================
 -- LeadReach AI — Supabase Complete Migration Script (v2 — Fixed)
 -- ============================================================================
--- Project: ssaskkftdpidfwvpgdwl
+-- Project: [YOUR-PROJECT-REF]
 -- Generated: 2026-05-29
 -- Purpose: One-script full deployment of all tables, indexes, triggers, RLS,
 --          and seed data for the LeadReach B2B lead generation platform.
@@ -9,7 +9,7 @@
 --
 -- USAGE:
 --   Copy this entire script into the Supabase Dashboard SQL Editor at
---   https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
+--   https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]/sql
 --   and click "Run".
 -- ============================================================================
 

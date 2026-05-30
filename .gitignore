@@ -44,6 +44,9 @@ yarn-error.log*
 .env*
 !.env.example
 
+# PM2 config (may contain secrets — use ecosystem.config.example.js as template)
+ecosystem.config.js
+
 # vercel
 .vercel
 

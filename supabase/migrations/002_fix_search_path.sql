@@ -1,7 +1,7 @@
 -- ============================================================================
 -- LeadReach AI — Fix Function Search Path (Supabase Linter Warning)
 -- ============================================================================
--- Project: ssaskkftdpidfwvpgdwl
+-- Project: [YOUR-PROJECT-REF]
 -- Generated: 2026-05-29
 -- Purpose: Fixes the Supabase Database Linter WARN:
 --   "Function `public.gen_cuid` has a role mutable search_path"
@@ -9,7 +9,7 @@
 --
 -- USAGE:
 --   Copy this entire script into the Supabase Dashboard SQL Editor at
---   https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
+--   https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]/sql
 --   and click "Run".
 -- ============================================================================
 

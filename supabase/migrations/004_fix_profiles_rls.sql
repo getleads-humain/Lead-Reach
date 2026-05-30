@@ -1,12 +1,12 @@
 -- ============================================================================
 -- LeadReach AI — Fix Profiles RLS & Add Missing Policies
 -- ============================================================================
--- Project: ssaskkftdpidfwvpgdwl
+-- Project: [YOUR-PROJECT-REF]
 -- Purpose: Add INSERT policy on profiles for authenticated users,
 --          fix onboarding resume logic, and ensure data integrity.
 --
 -- Run this in the Supabase Dashboard SQL Editor:
--- https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
+-- https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]/sql
 -- ============================================================================
 
 -- ─── 1. ADD INSERT POLICY ON PROFILES ──────────────────────────────────────

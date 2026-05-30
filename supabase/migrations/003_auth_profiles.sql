@@ -1,7 +1,7 @@
 -- ============================================================================
 -- LeadReach AI — Auth & Profiles Migration (Supabase Auth Integration)
 -- ============================================================================
--- Project: ssaskkftdpidfwvpgdwl
+-- Project: [YOUR-PROJECT-REF]
 -- Generated: 2026-05-29
 -- Purpose: Creates user profiles table, onboarding tracking, user settings,
 --          and a trigger to auto-create profiles on signup.
@@ -9,7 +9,7 @@
 --
 -- USAGE:
 --   Copy this entire script into the Supabase Dashboard SQL Editor at
---   https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
+--   https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]/sql
 --   and click "Run".
 -- ============================================================================
 

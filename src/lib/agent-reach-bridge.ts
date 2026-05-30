@@ -1396,32 +1396,27 @@ class BilibiliKeyManager {
   private currentIndex: number;
   
   constructor() {
-    this.keys = [
-      {
-        value: '560c52ccd288fed045859ed18bffd973',
-        active: true,
-        lastUsed: 0,
-        last412: 0,
-        successCount: 0,
-        failCount: 0,
-      },
-      {
-        value: '94aba54af9065f71de72f5508f1cd42e',
-        active: true,
-        lastUsed: 0,
-        last412: 0,
-        successCount: 0,
-        failCount: 0,
-      },
-      {
-        value: '1c15888dc316e05a15fdd0a02ed6584f',
-        active: true,
-        lastUsed: 0,
-        last412: 0,
-        successCount: 0,
-        failCount: 0,
-      },
-    ];
+    // SECURITY: Bilibili API keys are loaded from environment variables.
+    // Set BILIBILI_API_KEYS in .env as a comma-separated list.
+    // Example: BILIBILI_API_KEYS=key1,key2,key3
+    const envKeys = (process.env.BILIBILI_API_KEYS || '')
+      .split(',')
+      .map(k => k.trim())
+      .filter(k => k.length > 0);
+
+    this.keys = envKeys.map(key => ({
+      value: key,
+      active: true,
+      lastUsed: 0,
+      last412: 0,
+      successCount: 0,
+      failCount: 0,
+    }));
+
+    if (this.keys.length === 0) {
+      console.warn('[BilibiliKeyManager] No BILIBILI_API_KEYS configured — Bilibili video search will be unavailable');
+    }
+
     this.currentIndex = 0;
   }
   

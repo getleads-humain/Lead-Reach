@@ -251,13 +251,13 @@ async function main() {
     console.log('📋 To complete migration, do ONE of the following:');
     console.log('');
     console.log('   Option A — Supabase Dashboard SQL Editor (RECOMMENDED):');
-    console.log('   1. Go to: https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql');
+    console.log('   1. Go to: https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]/sql');
     console.log('   2. Copy the contents of: supabase/migrations/001_initial_schema.sql');
     console.log('   3. Paste into the SQL Editor and click "Run"');
     console.log('');
     console.log('   Option B — Supabase CLI (if you have access token):');
     console.log('   1. Run: supabase login');
-    console.log('   2. Run: supabase link --project-ref ssaskkftdpidfwvpgdwl');
+    console.log('   2. Run: supabase link --project-ref [YOUR-PROJECT-REF]');
     console.log('   3. Run: supabase db push');
     console.log('');
 

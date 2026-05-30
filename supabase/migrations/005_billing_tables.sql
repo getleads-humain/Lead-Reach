@@ -1,13 +1,13 @@
 -- ============================================================================
 -- LeadReach AI — Missing Tables Migration (Billing, Autoresearch, etc.)
 -- ============================================================================
--- Project: ssaskkftdpidfwvpgdwl
+-- Project: [YOUR-PROJECT-REF]
 -- Purpose: Creates tables referenced by the application but not yet in Supabase.
 --          These include billing, autoresearch, enrichment, reports, and ICP tables.
 --
 -- USAGE:
 --   Copy this entire script into the Supabase Dashboard SQL Editor at
---   https://supabase.com/dashboard/project/ssaskkftdpidfwvpgdwl/sql
+--   https://supabase.com/dashboard/project/[YOUR-PROJECT-REF]/sql
 --   and click "Run".
 -- ============================================================================
 

@@ -6,7 +6,7 @@
 #
 # Usage:
 #   supabase login
-#   supabase link --project-ref ssaskkftdpidfwvpgdwl
+#   supabase link --project-ref [YOUR-PROJECT-REF]
 #   supabase db push
 # ============================================================
 
