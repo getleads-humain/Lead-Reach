@@ -161,12 +161,12 @@ export default function AboutPage() {
                 <p className="mt-1 text-xs text-muted-foreground">Research Channels</p>
               </Card>
               <Card className="card-premium border-border/30 bg-card/50 p-5 text-center">
-                <div className="text-2xl font-bold text-gradient">10K+</div>
-                <p className="mt-1 text-xs text-muted-foreground">Leads Discovered Daily</p>
+                <div className="text-2xl font-bold text-gradient">$0</div>
+                <p className="mt-1 text-xs text-muted-foreground">Free Tier (Launchpad)</p>
               </Card>
               <Card className="card-premium border-border/30 bg-card/50 p-5 text-center">
-                <div className="text-2xl font-bold text-gradient">99.9%</div>
-                <p className="mt-1 text-xs text-muted-foreground">Platform Uptime</p>
+                <div className="text-2xl font-bold text-gradient">$2,497</div>
+                <p className="mt-1 text-xs text-muted-foreground">Lifetime Deal</p>
               </Card>
               <Card className="card-premium border-border/30 bg-card/50 p-5 text-center">
                 <div className="text-2xl font-bold text-gradient">30-40%</div>

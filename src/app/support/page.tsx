@@ -206,7 +206,23 @@ export default function SupportPage() {
               </p>
               <div className="space-y-4">
                 <div className="p-4 rounded-xl border border-border/30 bg-card/50">
-                  <h3 className="text-sm font-bold text-foreground mb-2">Starter Plan</h3>
+                  <h3 className="text-sm font-bold text-foreground mb-2">Launchpad (Free) Plan</h3>
+                  <ul className="space-y-2">
+                    {[
+                      'Email support with 72-hour response SLA',
+                      'Access to documentation and FAQ',
+                      'Community forum access',
+                      'Standard ticket priority',
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-4 w-4 text-emerald-500/60 shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="p-4 rounded-xl border border-border/30 bg-card/50">
+                  <h3 className="text-sm font-bold text-foreground mb-2">Scout Plan</h3>
                   <ul className="space-y-2">
                     {[
                       'Email support with 48-hour response SLA',
@@ -233,6 +249,23 @@ export default function SupportPage() {
                     ].map((item) => (
                       <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
                         <CheckCircle2 className="h-4 w-4 text-emerald-500 shrink-0 mt-0.5" />
+                        {item}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+                <div className="p-4 rounded-xl border border-amber-500/30 bg-amber-500/5">
+                  <h3 className="text-sm font-bold text-amber-400 mb-2">Founders' Pass (Lifetime)</h3>
+                  <ul className="space-y-2">
+                    {[
+                      'Live chat support with < 3 min response',
+                      'Email support with 8-hour response SLA',
+                      'Priority ticket escalation — forever',
+                      'Full documentation & API reference access',
+                      'All future support enhancements included',
+                    ].map((item) => (
+                      <li key={item} className="flex items-start gap-2 text-sm text-muted-foreground">
+                        <CheckCircle2 className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
                         {item}
                       </li>
                     ))}

@@ -86,6 +86,24 @@ const FEATURES = [
 
 const PRICING_TIERS = [
   {
+    name: 'Launchpad',
+    price: '$0',
+    period: '/mo',
+    description: 'Explore AI-powered lead generation at zero cost — forever. Perfect for testing the waters before committing.',
+    features: [
+      '2 AI Agents (Orchestrator + Prospect Discovery)',
+      '100 leads/month',
+      '3 research channels',
+      'Basic ICP Builder & Lead Scoring',
+      '1 user seat',
+      'Email support',
+    ],
+    cta: 'Get Started Free',
+    highlighted: false,
+    track: 'b2b' as const,
+    badge: 'Free Forever',
+  },
+  {
     name: 'Scout',
     price: '$149',
     period: '/mo',
@@ -102,6 +120,7 @@ const PRICING_TIERS = [
     cta: 'Start Free Trial',
     highlighted: false,
     track: 'b2b' as const,
+    badge: null,
   },
   {
     name: 'Command',
@@ -120,24 +139,27 @@ const PRICING_TIERS = [
     cta: 'Start Free Trial',
     highlighted: true,
     track: 'b2b' as const,
+    badge: 'Most Popular',
   },
   {
-    name: 'Enterprise',
-    price: 'Custom',
-    period: '',
-    description: 'For enterprises requiring unlimited scale, custom agents, and dedicated support.',
+    name: "Founders' Pass",
+    price: '$2,497',
+    period: 'one-time',
+    description: 'One payment. Full Command-tier power. Forever. No recurring bills, ever.',
     features: [
-      'Unlimited AI Agents & leads',
-      'Custom channels & data sources',
-      'Custom AI model training',
-      'Advanced workflow orchestration',
-      'White-label & Unlimited seats',
-      'Dedicated CSM + SLA (99.9%)',
-      'Custom integrations & API',
+      'All 8 AI Agents — forever',
+      '15,000 leads/month — lifetime',
+      'All 17+ channels — lifetime',
+      'Advanced ICP, scoring & enrichment',
+      'Multi-step outreach & Pipeline management',
+      '5 user seats & GHL/CRM integrations',
+      'API access & Priority support — forever',
+      'All future platform updates included',
     ],
-    cta: 'Contact Sales',
-    highlighted: false,
+    cta: 'Get Lifetime Access',
+    highlighted: true,
     track: 'b2b' as const,
+    badge: 'Lifetime Deal',
   },
 ];
 
@@ -596,7 +618,7 @@ export default function LandingPage() {
             </p>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 lg:gap-8 max-w-5xl mx-auto">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 lg:gap-6 max-w-6xl mx-auto">
             {PRICING_TIERS.map((tier, i) => (
               <Card
                 key={i}
@@ -604,10 +626,14 @@ export default function LandingPage() {
                   tier.highlighted ? 'border-emerald-500/30 ring-1 ring-emerald-500/20' : ''
                 }`}
               >
-                {tier.highlighted && (
+                {tier.badge && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-emerald-500 text-black border-0 font-semibold">
-                      Most Popular
+                    <Badge className={`border-0 font-semibold ${
+                      tier.badge === 'Lifetime Deal'
+                        ? 'bg-amber-500 text-black'
+                        : 'bg-emerald-500 text-black'
+                    }`}>
+                      {tier.badge}
                     </Badge>
                   </div>
                 )}

@@ -66,7 +66,7 @@ export async function requirePlanAccess(
       };
     }
 
-    const planId = profile?.plan_tier || 'scout';
+    const planId = profile?.plan_tier || 'launchpad';
     const featureAccess = getFeatureAccess(planId);
 
     // Check if the feature is accessible
@@ -150,13 +150,15 @@ function getRequiredGrade(feature: string): 'standard' | 'professional' | 'enter
 }
 
 // Helper: get the upgrade plan name for a given grade and track
-function getUpgradePlan(grade: 'standard' | 'professional' | 'enterprise', track: 'b2b' | 'b2c'): string {
+function getUpgradePlan(grade: 'free' | 'standard' | 'professional' | 'lifetime' | 'enterprise', track: 'b2b' | 'b2c'): string {
   if (track === 'b2c') {
     if (grade === 'professional') return 'Closer';
     if (grade === 'enterprise') return 'Agency';
     return 'Setter';
   }
+  if (grade === 'free') return 'Launchpad';
+  if (grade === 'standard') return 'Scout';
   if (grade === 'professional') return 'Command';
-  if (grade === 'enterprise') return 'Enterprise';
-  return 'Scout';
+  if (grade === 'lifetime') return "Founders' Pass";
+  return 'Enterprise';
 }

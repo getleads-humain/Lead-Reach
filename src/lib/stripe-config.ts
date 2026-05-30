@@ -48,13 +48,36 @@ export interface PlanDefinition {
   includedTeamMembers: number;
   maxCampaigns: number;
   maxSetters: number;
-  grade: 'standard' | 'professional' | 'enterprise';
+  grade: 'free' | 'standard' | 'professional' | 'lifetime' | 'enterprise';
   highlight: boolean;
   badge: string | null;
   description: string;
 }
 
 export const PLANS: PlanDefinition[] = [
+  {
+    id: 'launchpad',
+    name: 'launchpad',
+    displayName: 'Launchpad',
+    track: 'b2b',
+    monthlyPrice: 0,
+    annualPrice: 0,
+    stripeMonthlyPriceId: '',
+    stripeAnnualPriceId: '',
+    stripeProductId: '',
+    features: [
+      '2 AI Agents (Orchestrator + Prospect Discovery)',
+      '100 leads/month',
+      '3 research channels (Web, LinkedIn, Exa)',
+      'Basic ICP Builder', 'Basic Lead Scoring',
+      'Standard support (email only)', '1 user seat',
+      'LeadReach branding on outreach',
+    ],
+    includedLeads: 100, includedAgents: 2, includedChannels: 3,
+    includedTeamMembers: 1, maxCampaigns: 1, maxSetters: 0,
+    grade: 'free', highlight: false, badge: 'Free Forever',
+    description: 'Explore AI-powered lead generation at zero cost — forever',
+  },
   {
     id: 'scout',
     name: 'scout',
@@ -119,6 +142,30 @@ export const PLANS: PlanDefinition[] = [
     includedTeamMembers: -1, maxCampaigns: -1, maxSetters: -1,
     grade: 'enterprise', highlight: false, badge: 'Custom',
     description: 'For enterprises requiring unlimited scale, custom agents, and dedicated support',
+  },
+  {
+    id: 'founders-pass',
+    name: 'founders-pass',
+    displayName: "Founders' Pass",
+    track: 'b2b',
+    monthlyPrice: 2497,
+    annualPrice: 2497,
+    stripeMonthlyPriceId: '',
+    stripeAnnualPriceId: '',
+    stripeProductId: '',
+    features: [
+      'All 8 AI Agents — forever', '15,000 leads/month — lifetime',
+      'All 17+ channels', 'Advanced ICP & multi-dimensional scoring',
+      'Deep enrichment (firmographics & technographics)',
+      'Multi-step outreach (email + LinkedIn)', 'Pipeline management',
+      'Competitive intel', '5 user seats', 'GHL & CRM integrations',
+      'A/B testing', 'API access', 'Priority support — forever',
+      'All future platform updates included',
+    ],
+    includedLeads: 15000, includedAgents: 8, includedChannels: 17,
+    includedTeamMembers: 5, maxCampaigns: -1, maxSetters: 5,
+    grade: 'lifetime', highlight: true, badge: 'Lifetime Deal',
+    description: 'One payment. Unlimited AI lead generation. Forever.',
   },
   {
     id: 'setter',
@@ -224,6 +271,15 @@ export function getFeatureAccess(planTier: string): {
 
   const baseViews = ['dashboard', 'prospect-discovery', 'icp', 'leads', 'reports'];
 
+  if (plan.grade === 'free') {
+    return {
+      views: [...baseViews, 'campaigns'],
+      maxCampaigns: plan.maxCampaigns, maxLeads: plan.includedLeads,
+      maxAgents: plan.includedAgents, maxSetters: plan.maxSetters,
+      maxTeamMembers: plan.includedTeamMembers,
+    };
+  }
+
   if (plan.grade === 'standard') {
     return {
       views: [...baseViews, 'campaigns', 'outreach', 'data-enrichment'],
@@ -233,7 +289,7 @@ export function getFeatureAccess(planTier: string): {
     };
   }
 
-  if (plan.grade === 'professional') {
+  if (plan.grade === 'professional' || plan.grade === 'lifetime') {
     return {
       views: [...baseViews, 'campaigns', 'outreach', 'data-enrichment', 'agents', 'setter', 'booking', 'messaging', 'analytics'],
       maxCampaigns: plan.maxCampaigns, maxLeads: plan.includedLeads,

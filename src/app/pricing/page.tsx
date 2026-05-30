@@ -51,35 +51,36 @@ const FEATURE_COMPARISON = [
   {
     category: 'Lead Generation',
     features: [
-      { name: 'Leads per month', b2b: ['1,000', '10,000+', 'Unlimited'], b2c: ['500', '10,000+', 'Unlimited'] },
-      { name: 'Research channels', b2b: ['5 channels', 'All 17+ channels', 'Custom channels'], b2c: ['2 channels', 'All 5+ channels', 'Custom channels'] },
-      { name: 'ICP Builder', b2b: [true, true, true], b2c: [true, true, true] },
-      { name: 'Lead Scoring', b2b: ['Basic', 'Advanced multi-dimensional', 'Custom AI scoring'], b2c: ['Basic', 'Advanced', 'Custom AI scoring'] },
+      { name: 'Leads per month', b2b: ['100', '1,000', '10,000+', '15,000', 'Unlimited'], b2c: ['500', '10,000+', 'Unlimited'] },
+      { name: 'Research channels', b2b: ['3 channels', '5 channels', 'All 17+ channels', 'All 17+ channels', 'Custom channels'], b2c: ['2 channels', 'All 5+ channels', 'Custom channels'] },
+      { name: 'ICP Builder', b2b: ['Basic', true, true, true, true], b2c: [true, true, true] },
+      { name: 'Lead Scoring', b2b: ['Basic', 'Basic', 'Advanced multi-dimensional', 'Advanced multi-dimensional', 'Custom AI scoring'], b2c: ['Basic', 'Advanced', 'Custom AI scoring'] },
     ],
   },
   {
     category: 'AI Agents',
     features: [
-      { name: 'AI Agents', b2b: ['3 agents', '8 agents', 'Unlimited'], b2c: ['2 setters', 'Unlimited setters', 'Unlimited setters'] },
-      { name: 'Data Enrichment', b2b: ['Basic', 'Deep (firmographics & technographics)', 'Custom enrichment'], b2c: ['Basic', 'Advanced', 'Custom'] },
-      { name: 'Pipeline Management', b2b: [false, true, true], b2c: [false, true, true] },
+      { name: 'AI Agents', b2b: ['2 agents', '3 agents', '8 agents', '8 agents — forever', 'Unlimited'], b2c: ['2 setters', 'Unlimited setters', 'Unlimited setters'] },
+      { name: 'Data Enrichment', b2b: [false, 'Basic', 'Deep (firmographics & technographics)', 'Deep (firmographics & technographics)', 'Custom enrichment'], b2c: ['Basic', 'Advanced', 'Custom'] },
+      { name: 'Pipeline Management', b2b: [false, false, true, true, true], b2c: [false, true, true] },
+      { name: 'API Access', b2b: [false, false, false, true, true], b2c: [false, false, true] },
     ],
   },
   {
     category: 'Outreach & Engagement',
     features: [
-      { name: 'Outreach channels', b2b: ['Email only', 'Email + LinkedIn', 'All channels'], b2c: ['SMS + Email', 'All channels', 'All channels'] },
-      { name: 'A/B Testing', b2b: [false, true, true], b2c: [false, true, true] },
-      { name: 'Follow-up Sequences', b2b: ['Basic', 'Multi-step automated', 'Custom workflows'], b2c: ['Standard', 'Custom & nurture', 'Custom workflows'] },
+      { name: 'Outreach channels', b2b: [false, 'Email only', 'Email + LinkedIn', 'Email + LinkedIn', 'All channels'], b2c: ['SMS + Email', 'All channels', 'All channels'] },
+      { name: 'A/B Testing', b2b: [false, false, true, true, true], b2c: [false, true, true] },
+      { name: 'Follow-up Sequences', b2b: [false, 'Basic', 'Multi-step automated', 'Multi-step automated', 'Custom workflows'], b2c: ['Standard', 'Custom & nurture', 'Custom workflows'] },
     ],
   },
   {
     category: 'Platform & Support',
     features: [
-      { name: 'User seats', b2b: ['1', '5', 'Unlimited'], b2c: ['1', '5', 'Unlimited'] },
-      { name: 'CRM Integrations', b2b: [false, 'GHL & CRM integrations', 'Custom integrations & API'], b2c: [false, 'GHL CRM integration', 'Custom integrations & API'] },
-      { name: 'Support', b2b: ['Standard', 'Priority', 'Dedicated CSM + SLA'], b2c: ['Standard', 'Priority', 'Dedicated CSM + SLA'] },
-      { name: 'White-label', b2b: [false, false, true], b2c: [false, false, true] },
+      { name: 'User seats', b2b: ['1', '1', '5', '5', 'Unlimited'], b2c: ['1', '5', 'Unlimited'] },
+      { name: 'CRM Integrations', b2b: [false, false, 'GHL & CRM integrations', 'GHL & CRM integrations', 'Custom integrations & API'], b2c: [false, 'GHL CRM integration', 'Custom integrations & API'] },
+      { name: 'Support', b2b: ['Email only', 'Standard', 'Priority', 'Priority — forever', 'Dedicated CSM + SLA'], b2c: ['Standard', 'Priority', 'Dedicated CSM + SLA'] },
+      { name: 'White-label', b2b: [false, false, false, false, true], b2c: [false, false, true] },
     ],
   },
 ];
@@ -163,7 +164,7 @@ function PricingContent() {
         <div className="text-center mb-10">
           <Badge className="mb-4 bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
             <Sparkles className="h-3 w-3 mr-1" />
-            14-Day Free Trial on All Plans
+            Free Tier + 14-Day Trial on Paid Plans
           </Badge>
           <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-foreground leading-tight">
             Choose the plan that <span className="text-gradient">fits your growth</span>
@@ -231,10 +232,12 @@ function PricingContent() {
         </div>
 
         {/* Plan Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 lg:gap-6 mb-12">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 lg:gap-5 mb-12">
           {displayPlans.map((plan) => {
             const isCurrentPlan = plan.id === currentPlanId;
-            const isCustom = plan.monthlyPrice === 0;
+            const isCustom = plan.monthlyPrice === 0 && plan.grade === 'enterprise';
+            const isFreeTier = plan.grade === 'free';
+            const isLifetimeTier = plan.grade === 'lifetime';
             const price = billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice;
             const isLoading = checkoutLoading === plan.id;
 
@@ -243,42 +246,56 @@ function PricingContent() {
                 key={plan.id}
                 className={`relative border-border/30 bg-card/80 transition-all ${
                   plan.highlight
-                    ? 'border-emerald-500/30 ring-1 ring-emerald-500/20 scale-[1.02]'
+                    ? isLifetimeTier
+                      ? 'border-amber-500/30 ring-1 ring-amber-500/20 scale-[1.02]'
+                      : 'border-emerald-500/30 ring-1 ring-emerald-500/20 scale-[1.02]'
                     : isCurrentPlan
                       ? 'border-emerald-500/30'
                       : 'hover:border-border/50'
                 }`}
               >
-                {/* Popular badge */}
+                {/* Popular/LTD badge */}
                 {plan.badge && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
-                    <Badge className="bg-emerald-500 text-black border-0 font-bold px-3">
+                    <Badge className={`border-0 font-bold px-3 ${
+                      isLifetimeTier ? 'bg-amber-500 text-black' : 'bg-emerald-500 text-black'
+                    }`}>
                       {plan.badge}
                     </Badge>
                   </div>
                 )}
 
-                <CardContent className="p-6 lg:p-8">
+                <CardContent className="p-5 lg:p-6">
                   {/* Plan name & description */}
-                  <div className="space-y-1 mb-4">
+                  <div className="space-y-1 mb-3">
                     <div className="flex items-center justify-between">
-                      <h3 className="text-lg font-bold text-foreground">{plan.displayName}</h3>
+                      <h3 className="text-base font-bold text-foreground">{plan.displayName}</h3>
                       {isCurrentPlan && (
                         <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-400">
                           Current
                         </Badge>
                       )}
                     </div>
-                    <p className="text-sm text-muted-foreground">{plan.description}</p>
+                    <p className="text-xs text-muted-foreground">{plan.description}</p>
                   </div>
 
                   {/* Price */}
-                  <div className="flex items-baseline gap-1 mb-6">
-                    {isCustom ? (
+                  <div className="flex items-baseline gap-1 mb-4">
+                    {isFreeTier ? (
+                      <>
+                        <span className="text-3xl font-bold text-foreground">$0</span>
+                        <span className="text-sm text-muted-foreground">/mo</span>
+                      </>
+                    ) : isLifetimeTier ? (
+                      <>
+                        <span className="text-3xl font-bold text-foreground">${price.toLocaleString()}</span>
+                        <span className="text-sm text-amber-400 font-medium">one-time</span>
+                      </>
+                    ) : isCustom ? (
                       <span className="text-3xl font-bold text-foreground">Custom</span>
                     ) : (
                       <>
-                        <span className="text-4xl font-bold text-foreground">${price.toLocaleString()}</span>
+                        <span className="text-3xl font-bold text-foreground">${price.toLocaleString()}</span>
                         <span className="text-sm text-muted-foreground">
                           /{billingCycle === 'annual' ? 'yr' : 'mo'}
                         </span>
@@ -294,18 +311,18 @@ function PricingContent() {
                   </div>
 
                   {/* Trial badge */}
-                  {!isCustom && !isCurrentPlan && (
-                    <div className="flex items-center gap-1.5 mb-4 p-2 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
-                      <Gift className="h-3.5 w-3.5 text-emerald-400" />
-                      <span className="text-xs text-emerald-400 font-medium">14-day free trial included</span>
+                  {!isCustom && !isFreeTier && !isLifetimeTier && !isCurrentPlan && (
+                    <div className="flex items-center gap-1.5 mb-3 p-1.5 rounded-lg bg-emerald-500/5 border border-emerald-500/10">
+                      <Gift className="h-3 w-3 text-emerald-400" />
+                      <span className="text-[11px] text-emerald-400 font-medium">14-day free trial included</span>
                     </div>
                   )}
 
                   {/* Features list */}
-                  <div className="space-y-2 mb-6">
+                  <div className="space-y-1.5 mb-4">
                     {plan.features.map((feat, i) => (
-                      <div key={i} className="flex items-start gap-2 text-sm text-muted-foreground">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                      <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400 shrink-0 mt-0.5" />
                         <span>{feat}</span>
                       </div>
                     ))}
@@ -332,6 +349,32 @@ function PricingContent() {
                       }}
                     >
                       Contact Sales
+                    </Button>
+                  ) : isFreeTier ? (
+                    <Link href="/app">
+                      <Button
+                        className="w-full font-semibold gap-1 bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30"
+                      >
+                        Get Started Free
+                        <ChevronRight className="h-3 w-3" />
+                      </Button>
+                    </Link>
+                  ) : isLifetimeTier ? (
+                    <Button
+                      className={`w-full font-semibold gap-1 ${
+                        'bg-amber-500 hover:bg-amber-400 text-black glow-emerald-sm'
+                      }`}
+                      disabled={isLoading}
+                      onClick={() => handleCheckout(plan.id, billingCycle)}
+                    >
+                      {isLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <>
+                          Get Lifetime Access
+                          <ChevronRight className="h-3 w-3" />
+                        </>
+                      )}
                     </Button>
                   ) : (
                     <Button
@@ -382,9 +425,13 @@ function PricingContent() {
                       <th key={plan.id} className="text-center p-4 text-sm font-semibold text-foreground">
                         <div>{plan.displayName}</div>
                         <div className="text-xs font-normal text-muted-foreground mt-0.5">
-                          {plan.monthlyPrice > 0
-                            ? `$${billingCycle === 'annual' ? Math.round(plan.annualPrice / 12) : plan.monthlyPrice}/mo`
-                            : 'Custom'}
+                          {plan.grade === 'free'
+                            ? 'Free'
+                            : plan.grade === 'lifetime'
+                              ? `$${plan.monthlyPrice.toLocaleString()} one-time`
+                              : plan.monthlyPrice > 0
+                                ? `$${billingCycle === 'annual' ? Math.round(plan.annualPrice / 12) : plan.monthlyPrice}/mo`
+                                : 'Custom'}
                         </div>
                       </th>
                     ))}

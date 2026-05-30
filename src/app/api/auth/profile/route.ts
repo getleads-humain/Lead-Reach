@@ -65,7 +65,7 @@ export async function POST(request: NextRequest) {
         email: body.email || user.email,
         full_name: body.full_name || '',
         plan: 'free',
-        plan_tier: 'scout',
+        plan_tier: 'launchpad',
         onboarding_complete: false,
         onboarding_step: 0,
         created_at: new Date().toISOString(),

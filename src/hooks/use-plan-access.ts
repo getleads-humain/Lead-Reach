@@ -37,6 +37,8 @@ export interface PlanAccessResult {
   isFreePlan: boolean;
   /** Whether the user is on a trial */
   isTrial: boolean;
+  /** Whether the user is on a lifetime plan */
+  isLifetime: boolean;
   /** Feature access limits for the current plan */
   limits: ReturnType<typeof getFeatureAccess>;
   /** Get the minimum plan grade required to access a view */
@@ -48,13 +50,13 @@ export interface PlanAccessResult {
 }
 
 // Map each view to the minimum plan grade required
-const VIEW_MIN_GRADE: Record<ViewType, 'standard' | 'professional' | 'enterprise'> = {
-  'dashboard': 'standard',
-  'prospect-discovery': 'standard',
-  'icp': 'standard',
-  'leads': 'standard',
-  'reports': 'standard',
-  'campaigns': 'standard',
+const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'enterprise'> = {
+  'dashboard': 'free',
+  'prospect-discovery': 'free',
+  'icp': 'free',
+  'leads': 'free',
+  'reports': 'free',
+  'campaigns': 'free',
   'outreach': 'standard',
   'data-enrichment': 'standard',
   'agents': 'professional',
@@ -66,18 +68,21 @@ const VIEW_MIN_GRADE: Record<ViewType, 'standard' | 'professional' | 'enterprise
 
 // Map grade to the first plan at that grade
 const GRADE_TO_PLAN: Record<string, string> = {
-  'standard': 'scout',    // B2B standard
+  'free': 'launchpad',       // B2B free
+  'standard': 'scout',       // B2B standard
   'professional': 'command', // B2B professional
-  'enterprise': 'enterprise', // B2B enterprise
+  'lifetime': 'founders-pass', // B2B lifetime
+  'enterprise': 'enterprise',  // B2B enterprise
 };
 
 export function usePlanAccess(): PlanAccessResult {
   const { profile } = useAuth();
 
-  const currentPlanId = profile?.plan_tier || 'scout';
+  const currentPlanId = profile?.plan_tier || 'launchpad';
   const currentPlan = getPlanById(currentPlanId);
-  const isFreePlan = !profile?.plan || profile.plan === 'free';
+  const isFreePlan = !profile?.plan || profile.plan === 'free' || currentPlanId === 'launchpad';
   const isTrial = profile?.plan === 'trial';
+  const isLifetime = currentPlanId === 'founders-pass' || currentPlan?.grade === 'lifetime';
   const limits = getFeatureAccess(currentPlanId);
 
   const canAccess = useMemo(() => {
@@ -131,6 +136,7 @@ export function usePlanAccess(): PlanAccessResult {
     currentPlan,
     isFreePlan,
     isTrial,
+    isLifetime,
     limits,
     requiredPlanForView,
     canCreateMore,

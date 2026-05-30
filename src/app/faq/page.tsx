@@ -98,8 +98,13 @@ const FAQ_ITEMS: FAQItem[] = [
   },
   // Pricing
   {
-    question: 'What is included in the free trial?',
-    answer: 'The 14-day free trial includes full access to all 8 AI agents, 500 leads per month, access to all 17+ research channels, data enrichment, lead scoring, outreach composition, pipeline management, and analytics. No credit card is required, and you can downgrade or cancel anytime.',
+    question: 'Is there a free plan available?',
+    answer: 'Yes! Our Launchpad plan is completely free forever. You get 2 AI Agents, 100 leads per month, 3 research channels, and basic ICP/lead scoring capabilities. It\'s perfect for exploring AI-powered lead generation before committing to a paid plan.',
+    category: 'Pricing',
+  },
+  {
+    question: 'What is the Founders\' Pass (Lifetime Deal)?',
+    answer: 'The Founders\' Pass is a one-time payment of $2,497 that gives you lifetime access to the full Command-tier feature set — all 8 AI Agents, 15,000 leads per month, all 17+ channels, CRM integrations, API access, and priority support. No recurring bills, ever. All future platform updates are included.',
     category: 'Pricing',
   },
   {
