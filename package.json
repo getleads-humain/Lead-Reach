@@ -5,8 +5,8 @@
   "scripts": {
     "dev": "next dev -p 3000 2>&1 | tee dev.log",
     "build": "next build && cp -r .next/static .next/standalone/.next/ && cp -r public .next/standalone/",
-    "start": "NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
-    "start:detached": "NODE_ENV=production setsid node .next/standalone/server.js > /tmp/next-prod.log 2>&1 &",
+    "start": "NODE_OPTIONS='--max-old-space-size=768' HOSTNAME=0.0.0.0 NODE_ENV=production node .next/standalone/server.js 2>&1 | tee server.log",
+    "start:detached": "NODE_OPTIONS='--max-old-space-size=768' HOSTNAME=0.0.0.0 NODE_ENV=production setsid node .next/standalone/server.js > /tmp/next-prod.log 2>&1 &",
     "lint": "eslint .",
     "db:push": "prisma db push --accept-data-loss",
     "db:generate": "prisma generate",

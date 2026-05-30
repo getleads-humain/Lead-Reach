@@ -7,7 +7,7 @@
  * with comprehensive billing management UI.
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
@@ -51,6 +51,14 @@ import { toast } from 'sonner';
 type BillingCycle = 'monthly' | 'annual';
 
 export default function SettingsPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-emerald-400" /></div>}>
+      <SettingsContent />
+    </Suspense>
+  );
+}
+
+function SettingsContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, profile, updateProfile, signOut, loading: authLoading } = useAuth();

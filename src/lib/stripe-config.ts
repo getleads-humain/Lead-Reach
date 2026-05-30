@@ -19,10 +19,51 @@
 
 import Stripe from 'stripe';
 
-export const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
-  apiVersion: '2026-04-22.dahlia',
-  typescript: true,
-});
+// ── Lazy Stripe singleton ──────────────────────────────────────────
+// Stripe SDK throws at import time if STRIPE_SECRET_KEY is missing.
+// We lazily create the client only when it's actually needed, so the
+// app can still build and run without Stripe configured (e.g. dev mode).
+let _stripe: Stripe | null = null;
+
+export function getStripe(): Stripe {
+  if (!_stripe) {
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      throw new Error(
+        'STRIPE_SECRET_KEY is not configured. Please add it to .env to use billing features.'
+      );
+    }
+    _stripe = new Stripe(key, {
+      apiVersion: '2026-04-22.dahlia',
+      typescript: true,
+    });
+  }
+  return _stripe;
+}
+
+// For backward compatibility — consumers that destructure { stripe } still work.
+// The actual Stripe client is created lazily on first property access.
+// If STRIPE_SECRET_KEY is absent, each method call will throw a clear error.
+function noop(): never {
+  throw new Error('STRIPE_SECRET_KEY is not configured. Billing features are unavailable.');
+}
+
+const lazyHandler: ProxyHandler<Stripe> = {
+  get(_target, prop: string | symbol) {
+    if (prop === 'then' || prop === 'toJSON' || typeof prop === 'symbol') {
+      return undefined;
+    }
+    // Return a function that throws only when called, not when accessed
+    return function (...args: unknown[]) {
+      const client = getStripe();
+      const fn = (client as unknown as Record<string | symbol, unknown>)[prop];
+      if (typeof fn === 'function') return (fn as Function).apply(client, args);
+      return fn;
+    };
+  },
+};
+
+export const stripe = new Proxy({} as Stripe, lazyHandler);
 
 // ── Plan Definitions ──────────────────────────────────────────────
 
