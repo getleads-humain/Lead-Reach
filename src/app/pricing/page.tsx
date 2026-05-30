@@ -242,16 +242,16 @@ function PricingContent() {
             const isLoading = checkoutLoading === plan.id;
 
             return (
+              <Link href={`/pricing/${plan.id}`} key={plan.id}>
               <Card
-                key={plan.id}
-                className={`relative border-border/30 bg-card/80 transition-all ${
+                className={`relative border-border/30 bg-card/80 transition-all cursor-pointer hover:scale-[1.02] ${
                   plan.highlight
                     ? isLifetimeTier
-                      ? 'border-amber-500/30 ring-1 ring-amber-500/20 scale-[1.02]'
-                      : 'border-emerald-500/30 ring-1 ring-emerald-500/20 scale-[1.02]'
+                      ? 'border-amber-500/30 ring-1 ring-amber-500/20'
+                      : 'border-emerald-500/30 ring-1 ring-emerald-500/20'
                     : isCurrentPlan
                       ? 'border-emerald-500/30'
-                      : 'hover:border-border/50'
+                      : 'hover:border-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/5'
                 }`}
               >
                 {/* Popular/LTD badge */}
@@ -328,7 +328,7 @@ function PricingContent() {
                     ))}
                   </div>
 
-                  {/* CTA Button */}
+                  {/* CTA Button — stopPropagation to avoid card Link navigation */}
                   {isCurrentPlan ? (
                     <Button
                       variant="outline"
@@ -341,7 +341,9 @@ function PricingContent() {
                     <Button
                       variant="outline"
                       className="w-full border-border/30 hover:bg-secondary/50 gap-1"
-                      onClick={() => {
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
                         toast.info('Contact Sales', {
                           description: 'Our team will help you set up a custom plan for your needs.',
                           duration: 6000,
@@ -351,21 +353,28 @@ function PricingContent() {
                       Contact Sales
                     </Button>
                   ) : isFreeTier ? (
-                    <Link href="/app">
-                      <Button
-                        className="w-full font-semibold gap-1 bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30"
-                      >
-                        Get Started Free
-                        <ChevronRight className="h-3 w-3" />
-                      </Button>
-                    </Link>
+                    <Button
+                      className="w-full font-semibold gap-1 bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        router.push('/app');
+                      }}
+                    >
+                      Get Started Free
+                      <ChevronRight className="h-3 w-3" />
+                    </Button>
                   ) : isLifetimeTier ? (
                     <Button
                       className={`w-full font-semibold gap-1 ${
                         'bg-amber-500 hover:bg-amber-400 text-black glow-emerald-sm'
                       }`}
                       disabled={isLoading}
-                      onClick={() => handleCheckout(plan.id, billingCycle)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleCheckout(plan.id, billingCycle);
+                      }}
                     >
                       {isLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -384,7 +393,11 @@ function PricingContent() {
                           : 'bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30'
                       }`}
                       disabled={isLoading}
-                      onClick={() => handleCheckout(plan.id, billingCycle)}
+                      onClick={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        handleCheckout(plan.id, billingCycle);
+                      }}
                     >
                       {isLoading ? (
                         <Loader2 className="h-4 w-4 animate-spin" />
@@ -396,8 +409,15 @@ function PricingContent() {
                       )}
                     </Button>
                   )}
+
+                  {/* Learn more indicator */}
+                  <div className="mt-3 flex items-center justify-center gap-1 text-[11px] text-muted-foreground/60 hover:text-emerald-400 transition-colors">
+                    <span>Learn more</span>
+                    <ChevronRight className="h-3 w-3" />
+                  </div>
                 </CardContent>
               </Card>
+              </Link>
             );
           })}
         </div>
