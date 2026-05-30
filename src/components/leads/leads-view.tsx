@@ -47,11 +47,16 @@ import {
   ArrowUpDown,
   ChevronLeft,
   ChevronRight,
+  Sparkles,
+  Loader2,
+  Lightbulb,
+  Zap,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import type { LeadTier, LeadStage } from '@/lib/types';
 import { TIER_COLORS, STAGE_LABELS, STAGE_COLORS } from '@/lib/types';
 import { safeFetchJSON } from '@/lib/utils';
+import { useAIOneShot } from '@/hooks/use-ai-chat';
 
 interface Lead {
   id: string;
@@ -117,6 +122,11 @@ export function LeadsView() {
   const [sortDir, setSortDir] = useState<SortDir>('desc');
   const [page, setPage] = useState(1);
   const limit = 25;
+
+  // AI Suggestion state
+  const [aiSuggestion, setAiSuggestion] = useState<string | null>(null);
+  const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
+  const { generate: aiGenerate, isLoading: aiIsGenerating } = useAIOneShot();
 
   useEffect(() => {
     if (selectedCampaignId) {
@@ -197,6 +207,42 @@ export function LeadsView() {
       }
     } catch (error) {
       console.error('Error updating lead:', error);
+    }
+  };
+
+  const generateAISuggestion = async (lead: Lead) => {
+    setAiSuggestionLoading(true);
+    setAiSuggestion(null);
+    try {
+      const result = await aiGenerate(
+        `Analyze this B2B lead and suggest the next best action:
+
+Company: ${lead.companyName}
+Industry: ${lead.industry || 'Unknown'}
+Location: ${lead.city || ''}${lead.country ? `, ${lead.country}` : ''}
+Stage: ${STAGE_LABELS[lead.stage as LeadStage] || lead.stage}
+Tier: ${lead.leadTier}
+Score: ${lead.leadScore}/100
+- Firmographic: ${lead.firmographicScore}/100
+- Intent: ${lead.intentScore}/100
+- Reachability: ${lead.reachabilityScore}/100
+- Strategic: ${lead.strategicScore}/100
+- Data Quality: ${lead.dataCompleteness}/100
+
+Key Contact: ${lead.keyContactName || 'Not identified'}${lead.keyContactTitle ? ` (${lead.keyContactTitle})` : ''}
+CEO: ${lead.ceoName || 'Not identified'}
+Website: ${lead.website || 'Unknown'}
+Employees: ${lead.employeeCount || 'Unknown'}
+Revenue: ${lead.revenueEstimate || 'Unknown'}
+
+Suggest 3 specific next actions for this lead. Be concise and actionable. Format as bullet points.`,
+        'You are a B2B sales strategy expert. Suggest specific, actionable next steps for a lead based on their profile. Consider their pipeline stage, score, and available contact information. Keep it under 100 words. Format with bullet points.'
+      );
+      if (result) setAiSuggestion(result);
+    } catch {
+      // Silently fail
+    } finally {
+      setAiSuggestionLoading(false);
     }
   };
 
@@ -408,7 +454,7 @@ export function LeadsView() {
       )}
 
       {/* Lead Detail Sheet */}
-      <Sheet open={!!selectedLead} onOpenChange={() => setSelectedLead(null)}>
+      <Sheet open={!!selectedLead} onOpenChange={() => { setSelectedLead(null); setAiSuggestion(null); }}>
         <SheetContent className="sm:max-w-lg overflow-y-auto bg-card border-border/40">
           {selectedLead && (
             <>
@@ -541,6 +587,65 @@ export function LeadsView() {
                       </div>
                     )}
                   </div>
+                </div>
+
+                {/* AI Suggested Next Action */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/90">
+                      <Sparkles className="h-4 w-4 text-emerald-400" />
+                      Suggested Next Action
+                    </h4>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1.5 text-[10px] text-emerald-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                      onClick={() => generateAISuggestion(selectedLead)}
+                      disabled={aiSuggestionLoading || aiIsGenerating}
+                    >
+                      {(aiSuggestionLoading || aiIsGenerating) ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Zap className="h-3 w-3" />
+                      )}
+                      {aiSuggestion ? 'Regenerate' : 'Generate'}
+                    </Button>
+                  </div>
+                  {(aiSuggestionLoading || aiIsGenerating) ? (
+                    <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 text-emerald-400 animate-spin" />
+                        <span className="text-xs text-muted-foreground">Analyzing lead...</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-3 bg-secondary/30 rounded w-full" />
+                        <div className="h-3 bg-secondary/30 rounded w-4/5" />
+                        <div className="h-3 bg-secondary/30 rounded w-3/5" />
+                      </div>
+                    </div>
+                  ) : aiSuggestion ? (
+                    <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 text-sm text-foreground/80 leading-relaxed">
+                      <div className="flex items-start gap-2">
+                        <Lightbulb className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <div className="whitespace-pre-wrap">{aiSuggestion}</div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border/30 bg-secondary/10 p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Get AI-powered suggestions for the best next action with this lead
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-[10px] border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400"
+                        onClick={() => generateAISuggestion(selectedLead)}
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Get AI Suggestion
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Stage Update */}

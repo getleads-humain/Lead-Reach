@@ -33,6 +33,7 @@ import {
   Heart,
   ArrowUpRight,
 } from 'lucide-react';
+import { safeFetchJSON } from '@/lib/utils';
 
 const CHANNELS = [
   { id: 'sms', name: 'SMS', icon: MessageSquare, status: 'connected', messagesSent: 1247, responseRate: 68, color: '#10B981' },
@@ -56,6 +57,37 @@ export function MessagingView() {
   const [selectedChannel, setSelectedChannel] = useState('sms');
   const [message, setMessage] = useState('');
   const [generating, setGenerating] = useState(false);
+  const [selectedConversation, setSelectedConversation] = useState<string | null>(null);
+
+  const handleGenerateWithAI = async () => {
+    setGenerating(true);
+    try {
+      const channelInfo = CHANNELS.find(c => c.id === selectedChannel);
+      const conv = DEMO_CONVERSATIONS.find(c => c.id === selectedConversation);
+      const systemPrompt = `You are a professional B2B messaging assistant for LeadReach. Generate a concise, engaging ${channelInfo?.name || selectedChannel} message. Keep it under 150 words. Match the tone of the channel (casual for SMS/WhatsApp, professional for email). Include a clear call-to-action.`;
+
+      const userPrompt = conv
+        ? `Generate a reply for ${conv.leadName} via ${channelInfo?.name || selectedChannel}. Their last message was: "${conv.lastMessage}". Status: ${conv.status}. Write a natural, engaging response that moves the conversation forward.`
+        : `Generate a ${channelInfo?.name || selectedChannel} outreach message for a B2B lead. Make it professional, concise, and compelling with a clear call-to-action.`;
+
+      const data = await safeFetchJSON<{ response?: string }>('/api/ai-assistant/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: userPrompt }],
+          systemPrompt,
+        }),
+      });
+
+      if (data.response) {
+        setMessage(data.response);
+      }
+    } catch (error) {
+      console.error('Error generating message:', error);
+    } finally {
+      setGenerating(false);
+    }
+  };
 
   const getChannelIcon = (ch: string) => {
     switch (ch) {
@@ -178,7 +210,7 @@ export function MessagingView() {
             {DEMO_CONVERSATIONS.map((conv) => {
               const Icon = getChannelIcon(conv.channel);
               return (
-                <div key={conv.id} className="flex items-center gap-3 rounded-lg border border-border/25 bg-secondary/10 p-3 hover:bg-secondary/15 transition-colors">
+                <div key={conv.id} className="flex items-center gap-3 rounded-lg border border-border/25 bg-secondary/10 p-3 hover:bg-secondary/15 transition-colors cursor-pointer" onClick={() => setSelectedConversation(conv.id)}>
                   <div className="shrink-0">
                     <div className="h-9 w-9 rounded-full bg-emerald-500/10 flex items-center justify-center">
                       <Icon className="h-4 w-4 text-emerald-400" />
@@ -236,7 +268,7 @@ export function MessagingView() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <label className="text-sm font-medium text-foreground/80">Message</label>
-                <Button variant="outline" size="sm" className="gap-1.5 text-xs border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10" disabled={generating}>
+                <Button variant="outline" size="sm" className="gap-1.5 text-xs border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400 transition-all" onClick={handleGenerateWithAI} disabled={generating}>
                   {generating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
                   Generate with AI
                 </Button>

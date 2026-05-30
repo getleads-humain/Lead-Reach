@@ -4,6 +4,7 @@ import React, { useEffect, useState } from 'react';
 import { useAppStore } from '@/lib/store';
 import { Sidebar } from './sidebar';
 import { TopBar } from './top-bar';
+import { AIAssistantWidget } from '@/components/ai-assistant/ai-assistant-widget';
 import { cn } from '@/lib/utils';
 import { safeFetchJSON } from '@/lib/utils';
 import type { CampaignWithCounts } from '@/lib/types';
@@ -47,6 +48,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           <TopBar />
           <main className="p-4 md:p-6 lg:p-8">{children}</main>
         </div>
+        <AIAssistantWidget />
       </div>
     </TooltipProvider>
   );

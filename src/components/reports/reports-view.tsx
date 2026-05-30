@@ -12,7 +12,6 @@ import {
   DialogTitle,
   DialogFooter,
 } from '@/components/ui/dialog';
-import { Checkbox } from '@/components/ui/checkbox';
 import {
   Download,
   FileSpreadsheet,
@@ -21,8 +20,14 @@ import {
   Users,
   TrendingUp,
   CheckCircle2,
+  Sparkles,
+  FileText,
+  Loader2,
+  Lightbulb,
+  Zap,
 } from 'lucide-react';
 import { safeFetchJSON } from '@/lib/utils';
+import { useAIOneShot } from '@/hooks/use-ai-chat';
 
 interface ReportData {
   totalLeads: number;
@@ -46,6 +51,11 @@ export function ReportsView() {
   const [exporting, setExporting] = useState(false);
   const [exportType, setExportType] = useState<string>('full');
   const [exportSuccess, setExportSuccess] = useState(false);
+
+  // AI Report Summary state
+  const [aiSummary, setAiSummary] = useState<string | null>(null);
+  const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
+  const { generate: aiGenerate, isLoading: aiIsLoading } = useAIOneShot();
 
   useEffect(() => {
     loadReport();
@@ -101,6 +111,71 @@ export function ReportsView() {
       console.error('Error loading report:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const generateAISummary = async () => {
+    if (!reportData) return;
+    setAiSummaryLoading(true);
+    try {
+      const topIndustries = Object.entries(reportData.leadsByIndustry)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([industry, count]) => `${industry}: ${count}`)
+        .join(', ');
+
+      const topCountries = Object.entries(reportData.leadsByCountry)
+        .sort(([, a], [, b]) => b - a)
+        .slice(0, 5)
+        .map(([country, count]) => `${country}: ${count}`)
+        .join(', ');
+
+      const stageBreakdown = Object.entries(reportData.leadsByStage)
+        .map(([stage, count]) => `${stage}: ${count}`)
+        .join(', ');
+
+      const qualificationRate = Math.round((reportData.qualifiedLeads / Math.max(reportData.totalLeads, 1)) * 100);
+      const contactRate = Math.round((reportData.contactedLeads / Math.max(reportData.totalLeads, 1)) * 100);
+      const responseRate = reportData.contactedLeads > 0
+        ? Math.round((reportData.respondedLeads / reportData.contactedLeads) * 100)
+        : 0;
+
+      const result = await aiGenerate(
+        `Generate an executive summary for this LeadReach B2B lead generation report:
+
+OVERVIEW:
+- Total Leads: ${reportData.totalLeads}
+- Total Campaigns: ${reportData.totalCampaigns}
+- Qualified Leads: ${reportData.qualifiedLeads} (${qualificationRate}% qualification rate)
+- Contacted Leads: ${reportData.contactedLeads} (${contactRate}% contact rate)
+- Responded Leads: ${reportData.respondedLeads} (${responseRate}% response rate)
+- Average Score: ${reportData.avgScore}/100
+
+TIER DISTRIBUTION:
+- Hot: ${reportData.hotLeads} (${Math.round((reportData.hotLeads / Math.max(reportData.totalLeads, 1)) * 100)}%)
+- Warm: ${reportData.warmLeads} (${Math.round((reportData.warmLeads / Math.max(reportData.totalLeads, 1)) * 100)}%)
+- Cold: ${reportData.coldLeads} (${Math.round((reportData.coldLeads / Math.max(reportData.totalLeads, 1)) * 100)}%)
+
+PIPELINE STAGES: ${stageBreakdown}
+
+TOP INDUSTRIES: ${topIndustries}
+
+TOP COUNTRIES: ${topCountries}
+
+Provide a concise executive summary with:
+1. Key performance highlights
+2. Pipeline health assessment
+3. Top opportunities
+4. Recommended actions
+
+Keep it professional, data-driven, and under 200 words.`,
+        'You are a B2B sales analytics expert writing an executive summary for C-suite stakeholders. Be concise, data-driven, and actionable. Use specific numbers. Format with bullet points and clear sections.'
+      );
+      if (result) setAiSummary(result);
+    } catch {
+      // Silently fail — summary is nice-to-have
+    } finally {
+      setAiSummaryLoading(false);
     }
   };
 
@@ -170,13 +245,27 @@ export function ReportsView() {
             Campaign analytics and data export
           </p>
         </div>
-        <Button
-          onClick={() => setExportOpen(true)}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
-        >
-          <Download className="h-4 w-4" />
-          Export Data
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            onClick={generateAISummary}
+            disabled={aiSummaryLoading || aiIsLoading}
+            className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/20 hover:text-emerald-400 font-semibold gap-2 transition-all duration-200"
+          >
+            {aiSummaryLoading || aiIsLoading ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              <Sparkles className="h-4 w-4" />
+            )}
+            Generate Executive Summary
+          </Button>
+          <Button
+            onClick={() => setExportOpen(true)}
+            className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
+          >
+            <Download className="h-4 w-4" />
+            Export Data
+          </Button>
+        </div>
       </div>
 
       {/* Quick Stats */}
@@ -210,6 +299,56 @@ export function ReportsView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Report Summary */}
+      <Card className="card-premium border-emerald-500/20 overflow-hidden relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-cyan-500/5 pointer-events-none" />
+        <CardHeader className="pb-3 relative">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+            <FileText className="h-4 w-4 text-emerald-400" />
+            AI Report Summary
+            {aiSummary && (
+              <Badge variant="outline" className="text-[9px] border-emerald-500/20 text-emerald-400 bg-emerald-500/5 ml-2">
+                <Zap className="h-2.5 w-2.5 mr-1" />
+                AI Generated
+              </Badge>
+            )}
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="relative">
+          {aiSummaryLoading || aiIsLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-full bg-secondary/30" />
+              <Skeleton className="h-4 w-5/6 bg-secondary/30" />
+              <Skeleton className="h-4 w-4/5 bg-secondary/30" />
+              <Skeleton className="h-4 w-3/5 bg-secondary/30" />
+              <Skeleton className="h-4 w-4/6 bg-secondary/30" />
+            </div>
+          ) : aiSummary ? (
+            <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-4 text-sm text-foreground/80 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <Lightbulb className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="whitespace-pre-wrap">{aiSummary}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Sparkles className="h-8 w-8 mx-auto text-emerald-400/30 mb-3" />
+              <p className="text-sm text-muted-foreground mb-3">
+                Generate an AI-powered executive summary of your report data
+              </p>
+              <Button
+                onClick={generateAISummary}
+                variant="outline"
+                className="gap-2 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400"
+              >
+                <Sparkles className="h-4 w-4" />
+                Generate Executive Summary
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Tier Distribution */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

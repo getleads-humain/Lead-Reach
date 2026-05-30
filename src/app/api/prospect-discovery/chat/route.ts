@@ -10,7 +10,7 @@ export const maxDuration = 300;
  * a partial/graceful response.  Kept well under typical reverse-proxy
  * timeouts (60-120s) so the client always receives a JSON response.
  */
-const PIPELINE_TIMEOUT_MS = 55_000; // 55 seconds
+const PIPELINE_TIMEOUT_MS = 90_000; // 90 seconds — gives search + LLM extraction enough time
 
 /**
  * POST /api/prospect-discovery/chat

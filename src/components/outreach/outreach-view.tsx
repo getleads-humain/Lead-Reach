@@ -79,6 +79,13 @@ export function OutreachView() {
   const [msgType, setMsgType] = useState<string>('cold_email');
   const [subject, setSubject] = useState('');
   const [body, setBody] = useState('');
+  const [framework, setFramework] = useState<string>('observation-ask');
+  const [sequenceType, setSequenceType] = useState<string>('cold');
+  const [generatedSequence, setGeneratedSequence] = useState<{
+    steps: Array<{ stepNumber: number; channel: string; type: string; subject?: string; body: string; delayDays: number; tips: string[] }>;
+    overallStrategy: string;
+    keyMessaging: string[];
+  } | null>(null);
 
   useEffect(() => {
     loadOutreach();
@@ -127,23 +134,51 @@ export function OutreachView() {
     if (!lead) return;
 
     setGenerating(true);
+    setGeneratedSequence(null);
     try {
-      const data = await safeFetchJSON<{ response?: string }>('/api/ai', {
+      // Use the outreach agent endpoint for framework-based generation
+      const data = await safeFetchJSON<{
+        steps: Array<{ stepNumber: number; channel: string; type: string; subject?: string; body: string; delayDays: number; tips: string[] }>;
+        overallStrategy: string;
+        keyMessaging: string[];
+      }>('/api/agents/outreach', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: `Generate a ${msgType.replace(/_/g, ' ')} message for ${lead.companyName} (${channel} channel). Contact: ${lead.keyContactName || 'Decision Maker'}. Make it professional, concise, and compelling.`,
+          leadId: selectedLeadId,
+          leadName: lead.keyContactName || 'Decision Maker',
+          companyName: lead.companyName,
+          industry: lead.leadTier,
+          framework,
+          sequenceType,
+          save: false,
         }),
       });
 
-      if (data.response) {
-        const lines = data.response.split('\n');
-        const subjectLine = lines.find((l: string) => l.toLowerCase().startsWith('subject:') || l.toLowerCase().startsWith('subject :'));
-        if (subjectLine) {
-          setSubject(subjectLine.replace(/^subject\s*:\s*/i, ''));
-          setBody(lines.slice(lines.indexOf(subjectLine) + 1).join('\n').trim());
-        } else {
-          setBody(data.response);
+      if (data.steps && data.steps.length > 0) {
+        setGeneratedSequence(data);
+        // Pre-fill with the first step
+        const firstStep = data.steps[0];
+        setSubject(firstStep.subject || '');
+        setBody(firstStep.body);
+      } else {
+        // Fallback to basic AI endpoint
+        const fallbackData = await safeFetchJSON<{ response?: string }>('/api/ai', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            message: `Generate a ${msgType.replace(/_/g, ' ')} message for ${lead.companyName} (${channel} channel). Contact: ${lead.keyContactName || 'Decision Maker'}. Make it professional, concise, and compelling.`,
+          }),
+        });
+        if (fallbackData.response) {
+          const lines = fallbackData.response.split('\n');
+          const subjectLine = lines.find((l: string) => l.toLowerCase().startsWith('subject:') || l.toLowerCase().startsWith('subject :'));
+          if (subjectLine) {
+            setSubject(subjectLine.replace(/^subject\s*:\s*/i, ''));
+            setBody(lines.slice(lines.indexOf(subjectLine) + 1).join('\n').trim());
+          } else {
+            setBody(fallbackData.response);
+          }
         }
       }
     } catch (error) {
@@ -184,6 +219,9 @@ export function OutreachView() {
     setMsgType('cold_email');
     setSubject('');
     setBody('');
+    setFramework('observation-ask');
+    setSequenceType('cold');
+    setGeneratedSequence(null);
   };
 
   const statusIcon = (status: string) => {
@@ -328,7 +366,7 @@ export function OutreachView() {
             </DialogTitle>
           </DialogHeader>
           <div className="space-y-4">
-            <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <label className="text-sm font-medium text-foreground/80">Lead</label>
                 <Select value={selectedLeadId} onValueChange={setSelectedLeadId}>
@@ -358,7 +396,7 @@ export function OutreachView() {
                 </Select>
               </div>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-foreground/80">Type</label>
+                <label className="text-sm font-medium text-foreground/80">Message Type</label>
                 <Select value={msgType} onValueChange={setMsgType}>
                   <SelectTrigger className="bg-secondary/30 border-border/40">
                     <SelectValue />
@@ -373,7 +411,90 @@ export function OutreachView() {
                   </SelectContent>
                 </Select>
               </div>
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground/80">Framework</label>
+                <Select value={framework} onValueChange={setFramework}>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border/60">
+                    <SelectItem value="observation-ask">Observation → Ask</SelectItem>
+                    <SelectItem value="problem-proof-ask">Problem → Proof → Ask</SelectItem>
+                    <SelectItem value="trigger-event">Trigger Event</SelectItem>
+                    <SelectItem value="mutual-connection">Mutual Connection</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
+
+            {/* Sequence Type & Strategy */}
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div className="space-y-2">
+                <label className="text-sm font-medium text-foreground/80">Sequence Type</label>
+                <Select value={sequenceType} onValueChange={setSequenceType}>
+                  <SelectTrigger className="bg-secondary/30 border-border/40">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent className="bg-popover border-border/60">
+                    <SelectItem value="cold">Cold Outreach</SelectItem>
+                    <SelectItem value="warm">Warm Outreach</SelectItem>
+                    <SelectItem value="referral">Referral</SelectItem>
+                    <SelectItem value="nurture">Nurture</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Generated Sequence Preview */}
+            {generatedSequence && (
+              <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Sparkles className="h-4 w-4 text-emerald-400" />
+                  <span className="text-sm font-medium text-foreground/90">AI-Generated Sequence ({generatedSequence.steps.length} steps)</span>
+                </div>
+                {generatedSequence.overallStrategy && (
+                  <p className="text-xs text-muted-foreground italic">{generatedSequence.overallStrategy}</p>
+                )}
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {generatedSequence.steps.map((step) => (
+                    <button
+                      key={step.stepNumber}
+                      className="w-full text-left rounded-lg border border-border/25 bg-secondary/15 p-2.5 hover:bg-secondary/25 transition-colors"
+                      onClick={() => {
+                        setSubject(step.subject || '');
+                        setBody(step.body);
+                      }}
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <Badge variant="outline" className="text-[9px] border-emerald-500/20 text-emerald-400 bg-emerald-500/5">
+                          Step {step.stepNumber}
+                        </Badge>
+                        <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground">
+                          {step.channel}
+                        </Badge>
+                        <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground">
+                          {step.type.replace(/_/g, ' ')}
+                        </Badge>
+                        {step.delayDays > 0 && (
+                          <span className="text-[10px] text-muted-foreground">+{step.delayDays}d</span>
+                        )}
+                      </div>
+                      {step.subject && <div className="text-xs font-medium text-foreground/80">{step.subject}</div>}
+                      <p className="text-[11px] text-muted-foreground line-clamp-2 mt-0.5">{step.body}</p>
+                    </button>
+                  ))}
+                </div>
+                {generatedSequence.keyMessaging.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5">
+                    {generatedSequence.keyMessaging.map((msg, i) => (
+                      <Badge key={i} variant="outline" className="text-[9px] border-cyan-500/20 text-cyan-400 bg-cyan-500/5">
+                        {msg}
+                      </Badge>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
 
             {channel === 'email' && (
               <div className="space-y-2">
