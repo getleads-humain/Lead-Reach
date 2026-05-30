@@ -92,3 +92,19 @@ export {
   type AIInsight,
   type ActionItem,
 } from './report-engine';
+
+// Agent Infrastructure (sessions, models, logs, cron, skills, plugins, profiles, config, keys, docs)
+export {
+  AgentRegistry,
+  sessions,
+  models,
+  logs,
+  cron,
+  skills,
+  plugins,
+  profiles,
+  config as agentConfig,
+  keys,
+  documentation,
+  type AgentContext,
+} from '@/lib/agent-infrastructure';
