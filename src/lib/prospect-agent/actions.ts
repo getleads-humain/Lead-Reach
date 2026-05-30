@@ -78,7 +78,7 @@ export async function executeCompanyResearch(
       // Step 2: Extract data with LLM
       steps.push({ type: 'research_company', label: 'AI Extraction', status: 'running', message: 'Extracting company data with AI...' });
       if (webContents.length > 0) {
-        const extracted = await withTimeout(
+        let extracted = await withTimeout(
           () => callLLMForJSON<Partial<ProspectResult>>(
             `You are a B2B data extraction specialist. Extract company information from the provided web content.
 Return ONLY a JSON object with these fields (use null for anything not found):
@@ -96,9 +96,32 @@ Be precise. Only include information explicitly stated.`,
           ),
           45_000, 'Company LLM extraction',
         );
-        if (extracted) safeMerge(prospect, extracted);
-        steps[steps.length - 1].status = 'completed';
-        steps[steps.length - 1].message = 'Extracted company data';
+        // Retry with a simpler prompt if first extraction failed
+        if (!extracted) {
+          console.warn('[executeCompanyResearch] First LLM extraction returned null — retrying with simpler prompt');
+          extracted = await withTimeout(
+            () => callLLMForJSON<Partial<ProspectResult>>(
+              `Extract key business data about "${companyName}" from this text. Return a JSON object with: companyName, website, industry, description, city, country, phoneMain, generalEmail, ceoName, employeeCount, revenueEstimate, linkedinUrl. Use null for unknown fields.`,
+              webContents[0].slice(0, 3000),
+              { retriesPerModel: 1, useFallback: true },
+            ),
+            30_000, 'Company LLM extraction retry',
+          );
+        }
+        if (extracted) {
+          safeMerge(prospect, extracted);
+          steps[steps.length - 1].status = 'completed';
+          steps[steps.length - 1].message = `Extracted company data (${Object.values(extracted).filter(v => v !== null && v !== undefined && v !== '').length} fields)`;
+        } else {
+          steps[steps.length - 1].status = 'completed';
+          steps[steps.length - 1].message = 'AI extraction unavailable — using search snippets';
+          // Fallback: populate from search snippets
+          const topResults = searchResult!.data.slice(0, 5);
+          if (!prospect.description && topResults[0]?.snippet) prospect.description = topResults[0].snippet;
+          if (!prospect.website && topResults[0]?.url) {
+            try { prospect.website = new URL(topResults[0].url).origin; } catch { /* skip */ }
+          }
+        }
       }
     } else {
       steps[steps.length - 1].status = 'completed';

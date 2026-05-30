@@ -350,6 +350,7 @@ CLASSIFICATION RULES:
 5. "Write to them" or "Reach out" (after research) → compose_outreach (uses context)
 6. "Add this to leads" → add_to_pipeline
 7. Simple company/person name → research_company or research_person
+   IMPORTANT: Single-word names after "research/find/tell me about" are almost always COMPANIES (e.g., "Research Stripe" → research_company, "Find Notion" → research_company). Multi-word names like "Patrick Collison" or "Elon Musk" are persons → research_person. When in doubt, default to research_company.
 8. URL starting with http → research_url
 9. "Compare X vs Y" or "X competitors" → analyze_competitors
 10. Follow-up questions about previous results → converse (but check if they want new actions)

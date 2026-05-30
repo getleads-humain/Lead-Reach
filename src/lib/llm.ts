@@ -60,13 +60,74 @@ export { waitForRateLimit };
 // ============================================================
 
 let zaiInstance: InstanceType<typeof ZAISdk> | null = null;
+let sdkInitAttempts = 0;
+const MAX_SDK_INIT_ATTEMPTS = 3;
 
 async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
   if (!zaiInstance) {
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    zaiInstance = await ZAI.create();
+    try {
+      const ZAI = (await import('z-ai-web-dev-sdk')).default;
+      zaiInstance = await ZAI.create();
+      sdkInitAttempts = 0; // Reset on success
+      console.log('[getSDK] z-ai-web-dev-sdk initialized successfully');
+    } catch (initError) {
+      sdkInitAttempts++;
+      const msg = initError instanceof Error ? initError.message : 'Unknown error';
+      console.error(`[getSDK] Failed to initialize z-ai-web-dev-sdk (attempt ${sdkInitAttempts}): ${msg}`);
+      if (sdkInitAttempts >= MAX_SDK_INIT_ATTEMPTS) {
+        console.error('[getSDK] Max SDK init attempts reached — check .z-ai-config file');
+      }
+      throw initError;
+    }
   }
   return zaiInstance;
+}
+
+/**
+ * Reset the SDK singleton. Useful after API key rotation or config changes.
+ */
+export function resetSDK(): void {
+  zaiInstance = null;
+  sdkInitAttempts = 0;
+  console.log('[resetSDK] SDK instance reset — next call will reinitialize');
+}
+
+/**
+ * Health check: verify the LLM can be initialized and responds.
+ * Returns { ok, model, latencyMs, error? }
+ */
+export async function checkLLMHealth(): Promise<{
+  ok: boolean;
+  model: string;
+  latencyMs: number;
+  error?: string;
+}> {
+  const start = Date.now();
+  try {
+    const zai = await getSDK();
+    const completion = await zai.chat.completions.create({
+      model: MODEL_PRIMARY,
+      messages: [
+        { role: 'system', content: 'You are a health check endpoint.' },
+        { role: 'user', content: 'Reply with exactly: OK' },
+      ],
+      max_tokens: 10,
+      temperature: 0,
+    });
+    const content = completion?.choices?.[0]?.message?.content || '';
+    return {
+      ok: content.trim().length > 0,
+      model: MODEL_PRIMARY,
+      latencyMs: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      model: MODEL_PRIMARY,
+      latencyMs: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
 
 // ============================================================

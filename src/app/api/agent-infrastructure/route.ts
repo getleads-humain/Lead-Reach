@@ -17,6 +17,7 @@ import * as profiles from '@/lib/agent-infrastructure/profiles';
 import * as config from '@/lib/agent-infrastructure/config';
 import * as keys from '@/lib/agent-infrastructure/keys';
 import * as docs from '@/lib/agent-infrastructure/documentation';
+import { checkLLMHealth, resetSDK } from '@/lib/llm';
 import type { AgentName } from '@/lib/types';
 
 const VALID_AGENTS: AgentName[] = [
@@ -33,7 +34,9 @@ export async function GET(request: NextRequest) {
     // System health overview (no agent specified)
     if (!agentName) {
       const health = await AgentRegistry.getSystemHealth();
-      return NextResponse.json({ health, agents: VALID_AGENTS });
+      // Include LLM health in the system overview
+      const llmHealth = await checkLLMHealth();
+      return NextResponse.json({ health, llm: llmHealth, agents: VALID_AGENTS });
     }
 
     // Validate agent name
@@ -172,6 +175,15 @@ export async function POST(request: NextRequest) {
         }
         const key = await keys.registerKey({ agentName: name, keyName, provider, keyType, keyValue, envVarName, environment });
         return NextResponse.json({ success: true, key });
+      }
+      case 'health-check': {
+        const llmHealth = await checkLLMHealth();
+        const systemHealth = await AgentRegistry.getSystemHealth();
+        return NextResponse.json({ success: true, llm: llmHealth, system: systemHealth });
+      }
+      case 'reset-sdk': {
+        resetSDK();
+        return NextResponse.json({ success: true, message: 'SDK instance reset — will reinitialize on next call' });
       }
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });

@@ -166,10 +166,14 @@ export async function revokeKey(id: string) {
 /**
  * Seed default key references for all agents.
  * These reference environment variables that hold actual keys.
+ * The actual key values are read from process.env at runtime.
  */
 export async function seedDefaultKeys(): Promise<number> {
   const defaultKeys: KeyDefinition[] = [
     // GLM API keys — all agents share the z-ai-web-dev-sdk
+    // The ZAI_API_KEY env var is read by both:
+    //   1. The .z-ai-config file (for the SDK initialization)
+    //   2. The resolveKey() function (for agent-level key tracking)
     ...(['orchestrator', 'prospect-discovery', 'data-enrichment', 'web-research', 'lead-qualification', 'outreach-composer', 'pipeline-manager', 'report-generator'] as AgentName[]).flatMap(agentName => [
       { agentName, keyName: 'glm_api_key', provider: 'z-ai', keyType: 'api_key' as KeyType, envVarName: 'ZAI_API_KEY' },
     ]),
@@ -185,4 +189,13 @@ export async function seedDefaultKeys(): Promise<number> {
     }
   }
   return created;
+}
+
+/**
+ * Get the active GLM API key value from environment.
+ * This is the centralized function for obtaining the API key
+ * used by all agents through the z-ai-web-dev-sdk.
+ */
+export function getGLMApiKey(): string | null {
+  return process.env.ZAI_API_KEY || null;
 }
