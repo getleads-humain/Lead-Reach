@@ -155,7 +155,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
                 <li><Link href="/#features" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Features</Link></li>
                 <li><Link href="/agent" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Agents</Link></li>
                 <li><Link href="/#pricing" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Pricing</Link></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">API</a></li>
+                <li><Link href="/api-docs" className="text-xs text-muted-foreground hover:text-foreground transition-colors">API</Link></li>
               </ul>
             </div>
 
@@ -164,9 +164,9 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
               <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Resources</h4>
               <ul className="mt-4 space-y-2.5">
                 <li><Link href="/blog" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Blog</Link></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Documentation</a></li>
+                <li><Link href="/docs" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Documentation</Link></li>
                 <li><Link href="/faq" className="text-xs text-muted-foreground hover:text-foreground transition-colors">FAQ</Link></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Support</a></li>
+                <li><Link href="/support" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Support</Link></li>
               </ul>
             </div>
 
@@ -174,10 +174,10 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
             <div>
               <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Company</h4>
               <ul className="mt-4 space-y-2.5">
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">About</a></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Careers</a></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Press</a></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact</a></li>
+                <li><Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition-colors">About</Link></li>
+                <li><Link href="/careers" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Careers</Link></li>
+                <li><Link href="/press" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Press</Link></li>
+                <li><Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact</Link></li>
               </ul>
             </div>
 
@@ -187,7 +187,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
               <ul className="mt-4 space-y-2.5">
                 <li><Link href="/privacy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Privacy Policy</Link></li>
                 <li><Link href="/terms" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Terms of Service</Link></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cookie Policy</a></li>
+                <li><Link href="/cookie-policy" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Cookie Policy</Link></li>
               </ul>
             </div>
           </div>
