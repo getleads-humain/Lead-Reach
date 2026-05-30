@@ -3,7 +3,21 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Zap, Menu, X, Github, Twitter, Linkedin } from 'lucide-react';
+import { Zap, Menu, X, Github, Linkedin } from 'lucide-react';
+
+/** ORCID brand icon — not available in lucide-react */
+function OrcidIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 256 256"
+      className={className}
+      fill="currentColor"
+    >
+      <path d="M128 0C57.3 0 0 57.3 0 128s57.3 128 128 128 128-57.3 128-128S198.7 0 128 0zM71.3 71.3h18.5v84.4H71.3V71.3zm48.3 0h49.6c18.8 0 34.1 15.3 34.1 34.1 0 18.8-15.3 34.1-34.1 34.1h-31.1v34.5h-18.5V71.3zm18.5 17.3v33.5h31.1c9.3 0 16.8-7.5 16.8-16.8s-7.5-16.8-16.8-16.8h-31.1zM80.6 57.6c-6.4 0-11.6-5.2-11.6-11.6S74.2 34.4 80.6 34.4s11.6 5.2 11.6 11.6-5.2 11.6-11.6 11.6z" />
+    </svg>
+  );
+}
 
 const NAV_LINKS = [
   { href: '/#features', label: 'Features' },
@@ -122,13 +136,13 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
                 Autonomous AI agents that discover, enrich, qualify, and engage leads while you sleep.
               </p>
               <div className="mt-4 flex items-center gap-3">
-                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Twitter">
-                  <Twitter className="h-4 w-4" />
+                <a href="https://orcid.org/0009-0000-3925-4823" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="ORCID">
+                  <OrcidIcon className="h-4 w-4" />
                 </a>
                 <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="LinkedIn">
                   <Linkedin className="h-4 w-4" />
                 </a>
-                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
+                <a href="https://github.com/getleads-humain/Lead-Reach" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
                   <Github className="h-4 w-4" />
                 </a>
               </div>
