@@ -26,6 +26,7 @@ import {
   generateConversationResponse,
 } from './actions';
 import { PERSONA_META } from './types';
+import { isLLMAvailable } from '@/lib/llm';
 
 /**
  * Process a user message through the agent pipeline.
@@ -383,18 +384,10 @@ async function processAgentMessageInner(
 
     case 'converse':
     default: {
-      // General conversation — use LLM to respond intelligently
-      try {
-        const contextHint = buildContextHint(updatedContext);
-        const response = await generateConversationResponse(
-          'navigator', classification.intent, userMessage,
-          contextHint || 'No specific actions taken — this is a conversational response.',
-          updatedContext,
-        );
-        responseContent = response;
-      } catch {
-        responseContent = "I'm here to help with B2B lead generation! You can ask me to:\n\n• **Research a company** — \"Tell me about Stripe\"\n• **Find a person** — \"Find Patrick Collison\"\n• **Analyze a market** — \"SaaS market trends in 2026\"\n• **Build an ICP** — \"Build an ICP for B2B SaaS\"\n• **Score a lead** — \"Is Stripe a good lead for us?\"\n• **Compose outreach** — \"Write an email to Stripe\"\n• **Analyze competitors** — \"HubSpot vs Salesforce\"\n\nWhat would you like to do?";
-      }
+      // General conversation — ALWAYS use fast template response.
+      // No LLM call needed for greetings, help requests, etc.
+      // This saves 10-20 seconds per message and preserves API quota for research tasks.
+      responseContent = getConverseFallback(userMessage, updatedContext);
       break;
     }
   }
@@ -546,6 +539,48 @@ function categorizeCompanySize(employeeCount: string | number | null | undefined
   if (n < 200) return 'Mid-Market (50-199)';
   if (n < 1000) return 'Mid-Enterprise (200-999)';
   return 'Enterprise (1000+)';
+}
+
+/**
+ * Generate a fast template-based response for conversational messages
+ * when the LLM is unavailable or in cooldown. Returns instantly (no API call).
+ */
+function getConverseFallback(userMessage: string, context: ConversationContext): string {
+  const msg = userMessage.toLowerCase().trim();
+  const hasRecentProspects = context.recentProspects.length > 0;
+  const hasICP = !!context.activeICP;
+  const recentName = hasRecentProspects
+    ? context.recentProspects[context.recentProspects.length - 1]?.companyName || context.recentProspects[context.recentProspects.length - 1]?.personName
+    : null;
+
+  // Greeting patterns
+  if (/^(?:hi|hello|hey|good morning|good afternoon|good evening|howdy|greetings|what'?s up|sup)\b/i.test(msg)) {
+    let response = "Hello! I'm your AI lead generation assistant. I can help you find and qualify B2B leads.\n\nHere's what I can do for you:";
+    if (hasRecentProspects && recentName) {
+      response += `\n\n**Continue where you left off:**\n- "Score ${recentName}" — Evaluate your recent prospect\n- "Write an email to ${recentName}" — Compose outreach`;
+    }
+    response += "\n\n**Or start something new:**\n- **Research a company** — \"Tell me about Stripe\"\n- **Find a person** — \"Find Patrick Collison\"\n- **Analyze a market** — \"SaaS market trends in 2026\"\n- **Build an ICP** — \"Build an ICP for B2B SaaS\"\n- **Score a lead** — \"Is Stripe a good lead for us?\"\n- **Compose outreach** — \"Write an email to Stripe\"\n\nWhat would you like to do?";
+    return response;
+  }
+
+  // Thank you patterns
+  if (/^(?:thanks?|thank you|thx|ty|appreciate)\b/i.test(msg)) {
+    let response = "You're welcome! Happy to help with your lead generation needs.";
+    if (hasRecentProspects && recentName) {
+      response += ` Would you like me to do anything else with ${recentName}, like scoring or composing outreach?`;
+    } else {
+      response += " Let me know if you'd like to research any companies or build your ICP.";
+    }
+    return response;
+  }
+
+  // Help / what can you do patterns
+  if (/\b(?:help|what can you|how do|what do you|capabilities|features)\b/i.test(msg)) {
+    return "I'm here to help with B2B lead generation! Here's everything I can do:\n\n**🔍 Company Research** — Deep analysis of any company\n- \"Research Stripe\" — Full company profile with contacts, news, tech stack\n- \"https://stripe.com\" — Analyze a website directly\n\n**🐕 Person Research** — Find decision-makers\n- \"Find Patrick Collison\" — Professional profile, role, contact info\n\n**📊 Market & Competitive Analysis**\n- \"SaaS market trends\" — Market size, trends, opportunities\n- \"HubSpot vs Salesforce\" — Competitive comparison\n\n**🏗️ ICP Building** — Define your ideal customer\n- \"Build an ICP for B2B SaaS\" — Interactive ICP creation\n\n**⚖️ Lead Scoring** — Evaluate lead quality\n- \"Score Stripe\" — Score against your ICP\n\n**✍️ Outreach Composition** — Personalized messages\n- \"Write an email to Stripe\" — Custom outreach emails\n\nWhat would you like to start with?";
+  }
+
+  // Default fallback
+  return "I'm here to help with B2B lead generation! You can ask me to:\n\n• **Research a company** — \"Tell me about Stripe\"\n• **Find a person** — \"Find Patrick Collison\"\n• **Analyze a market** — \"SaaS market trends in 2026\"\n• **Build an ICP** — \"Build an ICP for B2B SaaS\"\n• **Score a lead** — \"Is Stripe a good lead for us?\"\n• **Compose outreach** — \"Write an email to Stripe\"\n• **Analyze competitors** — \"HubSpot vs Salesforce\"\n\nWhat would you like to do?";
 }
 
 /**

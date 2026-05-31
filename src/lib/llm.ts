@@ -5,17 +5,19 @@
  *   - glm-4.7-flash  (primary — fast, high-quality text generation)
  *   - glm-4.6v-flash (secondary — vision-capable, fallback for text)
  *
- * CONNECTION STRATEGY (auto-detect at startup):
- *   1. Try direct Zhipu AI API (https://open.bigmodel.cn/api/paas/v4/)
- *      — Uses JWT auth with the ZHIPU_API_KEY from .env
- *      — Works when the z-ai-web-dev-sdk gateway is unreachable
- *   2. Fallback to z-ai-web-dev-sdk if direct API fails
- *      — Uses the platform's internal gateway
+ * CONNECTION STRATEGY (smart routing with rate-limit awareness):
+ *   1. Try z-ai-web-dev-sdk FIRST (different rate limit pool / gateway)
+ *   2. Fallback to direct Zhipu AI API if SDK fails
+ *   3. On rate limits (1302/1305/429): switch connection mode and add cooldown
  *
  * PROTECTION LAYERS (3-tier defense):
  *   1. Concurrency limiter — max 4 simultaneous LLM calls
  *   2. Token-bucket rate limiter — adaptive pacing based on API response
  *   3. Retry + fallback — 1 retry per model, then switch to secondary model
+ *
+ * KEY INSIGHT: The Zhipu AI free-tier has aggressive rate limits.
+ * Errors 1302 ("account rate limit") and 1305 ("model overloaded") are common.
+ * The SDK gateway may have separate quotas, so we try it first.
  */
 
 import crypto from 'crypto';
@@ -111,9 +113,36 @@ interface ZhipuChatResponse {
   };
 }
 
+/** Zhipu API error response structure */
+interface ZhipuApiError {
+  error?: {
+    code?: string;
+    message?: string;
+  };
+}
+
+/**
+ * Error thrown when Zhipu API returns a rate limit or overload error.
+ * These are retryable but need a cooldown period.
+ */
+class ZhipuRateLimitError extends Error {
+  readonly code: string;
+  readonly isAccountRateLimit: boolean;
+  readonly isModelOverloaded: boolean;
+
+  constructor(code: string, message: string) {
+    super(`Zhipu API error: ${message}`);
+    this.name = 'ZhipuRateLimitError';
+    this.code = code;
+    this.isAccountRateLimit = code === '1302';
+    this.isModelOverloaded = code === '1305';
+  }
+}
+
 /**
  * Make a direct chat completion call to the Zhipu AI API.
  * Returns the full response data (including reasoning_content) or throws on error.
+ * Throws ZhipuRateLimitError for rate limit / overload errors.
  */
 async function directZhipuChatCompletion(params: {
   model: string;
@@ -130,13 +159,28 @@ async function directZhipuChatCompletion(params: {
       'Content-Type': 'application/json',
     },
     body: JSON.stringify(params),
-    signal: AbortSignal.timeout(60_000), // 60s timeout — reasoning models need more time
+    signal: AbortSignal.timeout(30_000), // 30s timeout — reduced from 60s to avoid pipeline stalls
   });
 
   if (!response.ok) {
     const errorBody = await response.text().catch(() => '');
-    const errorData = errorBody ? (() => { try { return JSON.parse(errorBody); } catch { return null; } })() : null;
-    const errorMessage = errorData?.error?.message || `Zhipu API returned ${response.status}`;
+    const errorData: ZhipuApiError | null = errorBody ? (() => {
+      try { return JSON.parse(errorBody); } catch { return null; }
+    })() : null;
+
+    const errorCode = errorData?.error?.code || '';
+    const errorMessage = errorData?.error?.message || `HTTP ${response.status}`;
+
+    // Detect Zhipu-specific rate limit errors
+    if (errorCode === '1302' || errorCode === '1305') {
+      throw new ZhipuRateLimitError(errorCode, errorMessage);
+    }
+
+    // HTTP 429 also indicates rate limit
+    if (response.status === 429) {
+      throw new ZhipuRateLimitError('429', errorMessage);
+    }
+
     throw new Error(`Zhipu API error ${response.status}: ${errorMessage}`);
   }
 
@@ -150,26 +194,69 @@ async function directZhipuChatCompletion(params: {
 }
 
 // ============================================================
-// Connection Mode Detection
+// Connection Mode Detection (smart routing)
 // ============================================================
 
-type ConnectionMode = 'direct' | 'sdk' | 'auto';
-let connectionMode: ConnectionMode = 'auto';
+type ConnectionMode = 'sdk' | 'direct' | 'auto';
 
 /**
- * Get the preferred connection mode.
- * In 'auto' mode, tries direct API first, then SDK for each call.
- * If a mode has been confirmed working, it's cached.
+ * Connection mode with cooldown tracking.
+ *
+ * When a connection mode hits a rate limit, we set a cooldown period
+ * during which we prefer the OTHER mode. This prevents getting stuck
+ * in a loop hitting the same rate-limited endpoint.
  */
-async function getConnectionMode(): Promise<ConnectionMode> {
-  if (connectionMode !== 'auto') return connectionMode;
+let connectionMode: ConnectionMode = 'auto';
+let directCooldownUntil = 0;
+let sdkCooldownUntil = 0;
+let sdkAvailable = false; // Will be set to true only if SDK works
 
-  // Prefer direct API if ZHIPU_API_KEY is configured
-  if (ZHIPU_API_KEY && ZHIPU_API_KEY.includes('.')) {
-    return 'direct'; // Don't test — just try it on the actual call
+/**
+ * Get the preferred connection mode, accounting for cooldowns.
+ *
+ * Priority:
+ * 1. If SDK is known-unavailable, prefer direct API
+ * 2. If a mode is on cooldown, use the other one
+ * 3. If both are available, prefer direct API (more reliable in current env)
+ * 4. If both are on cooldown, use whichever has the shorter cooldown
+ */
+function getConnectionMode(): ConnectionMode {
+  const now = Date.now();
+  const directOnCooldown = now < directCooldownUntil;
+  const sdkOnCooldown = now < sdkCooldownUntil;
+
+  // If SDK is known-unavailable, skip it unless direct is also on cooldown
+  if (!sdkAvailable) {
+    if (!directOnCooldown) return 'direct';
+    if (!sdkOnCooldown) return 'sdk'; // Try SDK as last resort
   }
 
-  return 'sdk';
+  // If we have a cached mode and it's not on cooldown, use it
+  if (connectionMode === 'sdk' && !sdkOnCooldown && sdkAvailable) return 'sdk';
+  if (connectionMode === 'direct' && !directOnCooldown) return 'direct';
+
+  // Otherwise, pick the best available mode
+  if (directOnCooldown && sdkOnCooldown) {
+    return directCooldownUntil < sdkCooldownUntil ? 'direct' : 'sdk';
+  }
+
+  if (directOnCooldown && sdkAvailable) return 'sdk';
+  if (sdkOnCooldown) return 'direct';
+
+  // Neither on cooldown — prefer direct API (more reliable in current env)
+  return 'direct';
+}
+
+/** Set cooldown on direct API after rate limit */
+function setDirectCooldown(ms: number) {
+  directCooldownUntil = Date.now() + ms;
+  console.warn(`[LLM] Direct API cooldown for ${ms}ms`);
+}
+
+/** Set cooldown on SDK after failure */
+function setSDKCooldown(ms: number) {
+  sdkCooldownUntil = Date.now() + ms;
+  console.warn(`[LLM] SDK cooldown for ${ms}ms`);
 }
 
 // ============================================================
@@ -202,38 +289,40 @@ function releaseSlot(): void {
 }
 
 // ============================================================
-// Adaptive Token-Bucket Rate Limiter
+// Adaptive Rate Limiter (tuned for Zhipu free tier)
 // ============================================================
 
 /**
  * Token-bucket rate limiter that adapts to API feedback.
  *
- * - Default rate: 1 call per 1.5s (conservative for Zhipu free tier)
- * - When 429 detected: doubles the interval (up to 8s)
- * - When calls succeed: gradually reduces back to 1.5s
- * - Jitter prevents thundering herd
+ * KEY CHANGES from previous version:
+ * - Reduced base interval from 1.5s to 500ms (Zhipu rate limits are per-minute,
+ *   not per-second, so 500ms between calls is plenty)
+ * - When rate-limited: set a 10-30s cooldown on that connection mode
+ *   instead of just doubling the interval
+ * - Faster recovery: reduce interval by 50% per success instead of 15%
  */
 let lastCallTime = 0;
-let currentIntervalMs = 1500; // Start at 1.5s — balanced for Zhipu API
-const MIN_INTERVAL_MS = 800;  // Minimum when things are going well
-const MAX_INTERVAL_MS = 8000; // Maximum after repeated 429s
-const JITTER_MS = 400;
+let currentIntervalMs = 500; // 500ms — Zhipu rate limits are per-minute, not per-second
+const MIN_INTERVAL_MS = 300;  // Minimum when things are going well
+const MAX_INTERVAL_MS = 6000; // Maximum after repeated rate limits
+const JITTER_MS = 200;
 
 /**
- * Called when a 429 rate limit is detected.
- * Doubles the current interval (capped at MAX_INTERVAL_MS).
+ * Called when a rate limit is detected.
+ * Sets cooldown and increases interval.
  */
 export function notifyRateLimitHit(): void {
   currentIntervalMs = Math.min(currentIntervalMs * 2, MAX_INTERVAL_MS);
-  console.warn(`[RateLimiter] 429 detected — increased interval to ${currentIntervalMs}ms`);
+  console.warn(`[RateLimiter] Rate limit detected — increased interval to ${currentIntervalMs}ms`);
 }
 
 /**
  * Called when a call succeeds.
- * Gradually reduces the interval back toward MIN_INTERVAL_MS.
+ * Quickly reduces the interval back toward MIN_INTERVAL_MS.
  */
 function notifyCallSuccess(): void {
-  currentIntervalMs = Math.max(currentIntervalMs * 0.85, MIN_INTERVAL_MS);
+  currentIntervalMs = Math.max(currentIntervalMs * 0.5, MIN_INTERVAL_MS);
 }
 
 async function waitForRateLimit() {
@@ -256,15 +345,36 @@ export { waitForRateLimit };
 // ============================================================
 
 let zaiInstance: InstanceType<typeof ZAISdk> | null = null;
+let sdkInitFailed = false;
 
 /**
  * Get the shared SDK singleton instance.
- * Exported so agent-reach-bridge.ts can reuse the same instance.
+ * Includes a 5-second timeout to detect unreachable gateway quickly.
+ * If the gateway is unreachable, sets sdkAvailable=false so future calls
+ * skip the SDK entirely instead of waiting 10+ seconds for a connect timeout.
  */
 export async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
+  if (!zaiInstance && !sdkInitFailed) {
+    try {
+      const ZAI = (await import('z-ai-web-dev-sdk')).default;
+      // Create with a short timeout to detect unreachable gateway quickly
+      zaiInstance = await Promise.race([
+        ZAI.create(),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('SDK init timeout (5s) — gateway may be unreachable')), 5000)
+        ),
+      ]);
+      sdkAvailable = true; // SDK works!
+      console.log('[LLM] z-ai-web-dev-sdk initialized successfully');
+    } catch (err) {
+      sdkInitFailed = true;
+      sdkAvailable = false;
+      console.warn('[LLM] SDK unavailable (will use direct API):', err instanceof Error ? err.message : 'Unknown');
+      throw err;
+    }
+  }
   if (!zaiInstance) {
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    zaiInstance = await ZAI.create();
+    throw new Error('z-ai-web-dev-sdk not available');
   }
   return zaiInstance;
 }
@@ -297,7 +407,12 @@ function isHtmlOrGatewayError(msg: string, errorName?: string): boolean {
 }
 
 function isRateLimitError(msg: string): boolean {
-  return msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit') || msg.includes('访问量过大');
+  return msg.includes('429')
+    || msg.includes('Too many requests')
+    || msg.includes('rate limit')
+    || msg.includes('访问量过大')
+    || msg.includes('请求频率')
+    || msg.includes('ZhipuRateLimitError');
 }
 
 // ============================================================
@@ -335,7 +450,6 @@ function extractContentFromResponse(result: ZhipuChatResponse): string {
     console.warn('[extractContent] Model returned reasoning but no content — extracting from reasoning_content');
 
     // Strategy 1: Look for a final conclusion section
-    // Reasoning typically ends with a clear conclusion after the chain-of-thought
     const conclusionPatterns = [
       /(?:therefore|thus|hence|in conclusion|in summary|to summarize|so,?\s*the answer|final answer|answer:|conclusion:|result:)\s*(.+)/is,
       /(?:the (?:best |most |correct )?(?:answer|response|result|choice|option) (?:is|would be))\s*(.+)/is,
@@ -349,12 +463,9 @@ function extractContentFromResponse(result: ZhipuChatResponse): string {
     }
 
     // Strategy 2: Take the last paragraph/section of the reasoning
-    // This is usually where the model summarizes its conclusion
     const paragraphs = reasoningContent.split(/\n\n+/).filter(p => p.trim().length > 20);
     if (paragraphs.length >= 2) {
-      // Take the last 1-2 paragraphs which typically contain the conclusion
       const lastParagraphs = paragraphs.slice(-1).join('\n\n');
-      // Remove numbering/bullets from the start
       const cleaned = lastParagraphs.replace(/^\s*(?:\d+\.|\*|-)\s*/, '').trim();
       if (cleaned.length > 10) {
         return cleaned;
@@ -376,7 +487,7 @@ function extractContentFromResponse(result: ZhipuChatResponse): string {
 }
 
 // ============================================================
-// Core LLM Call — with concurrency, model fallback and retry
+// Core LLM Call — with smart routing, cooldown, and model fallback
 // ============================================================
 
 export interface LLMCallOptions {
@@ -394,76 +505,26 @@ export interface LLMCallOptions {
   retriesPerModel?: number;
   /** Whether to fall back to the other model on failure, default true */
   useFallback?: boolean;
+  /** Skip rate limiter wait (for retries that already waited) */
+  skipRateLimit?: boolean;
 }
 
 /**
  * Make a single LLM call using the best available connection.
- * Tries the detected connection mode, falls back to the other if it fails.
- * Handles reasoning_content extraction for glm-4.7-flash.
+ * Smart routing: tries SDK first (different rate limit pool),
+ * falls back to direct API if SDK fails.
  */
 async function makeLLMCall(
   model: string,
   messages: Array<{ role: string; content: string }>,
   temperature: number,
   maxTokens: number,
+  skipRateLimit = false,
 ): Promise<string | null> {
-  const mode = await getConnectionMode();
+  const mode = getConnectionMode();
 
   // Try the primary connection mode first
-  if (mode === 'direct' || mode === 'auto') {
-    try {
-      const result = await directZhipuChatCompletion({
-        model,
-        messages,
-        temperature,
-        max_tokens: maxTokens,
-      });
-
-      // Extract content, handling reasoning_content from reasoning models
-      const content = extractContentFromResponse(result);
-
-      if (content.trim() && !isHtmlContent(content)) {
-        // Cache successful mode and notify rate limiter
-        connectionMode = 'direct';
-        notifyCallSuccess();
-        return content;
-      }
-
-      // Content was empty or HTML — this is unusual, log it
-      console.warn(`[makeLLMCall] Direct API returned empty/HTML for ${model}, finish_reason=${result.choices?.[0]?.finish_reason}`);
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown';
-
-      // If rate limited, notify the rate limiter and throw immediately
-      if (msg.includes('429')) {
-        notifyRateLimitHit();
-        throw err; // Let the retry logic handle rate limits with adaptive backoff
-      }
-
-      console.warn(`[makeLLMCall] Direct API failed for ${model}: ${msg.slice(0, 150)}`);
-
-      // Only try SDK fallback for non-rate-limit errors AND only if SDK is likely available
-      // (Don't waste time on SDK if it's been consistently failing)
-      try {
-        const zai = await getSDK();
-        const result = await zai.chat.completions.create({
-          model,
-          messages,
-          temperature,
-          max_tokens: maxTokens,
-        });
-        const content = result.choices?.[0]?.message?.content || '';
-        if (content.trim() && !isHtmlContent(content)) {
-          connectionMode = 'sdk';
-          notifyCallSuccess();
-          console.log(`[makeLLMCall] SDK fallback succeeded for ${model}`);
-          return content;
-        }
-      } catch (sdkErr) {
-        console.warn(`[makeLLMCall] SDK fallback also failed: ${sdkErr instanceof Error ? sdkErr.message.slice(0, 100) : 'Unknown'}`);
-      }
-    }
-  } else if (mode === 'sdk') {
+  if (mode === 'sdk' || mode === 'auto') {
     try {
       const zai = await getSDK();
       const result = await zai.chat.completions.create({
@@ -474,36 +535,126 @@ async function makeLLMCall(
       });
       const content = result.choices?.[0]?.message?.content || '';
       if (content.trim() && !isHtmlContent(content)) {
+        connectionMode = 'sdk';
+        notifyCallSuccess();
+        return content;
+      }
+    } catch (sdkErr) {
+      const msg = sdkErr instanceof Error ? sdkErr.message : 'Unknown';
+      const isRate = isRateLimitError(msg);
+
+      if (isRate) {
+        setSDKCooldown(15_000); // 15s cooldown on SDK
+        notifyRateLimitHit();
+      } else {
+        setSDKCooldown(5_000); // 5s cooldown on non-rate-limit failures
+      }
+
+      console.warn(`[makeLLMCall] SDK failed for ${model}: ${msg.slice(0, 150)}`);
+
+      // Fall through to try direct API
+    }
+
+    // Try direct API as fallback
+    if (ZHIPU_API_KEY && ZHIPU_API_KEY.includes('.')) {
+      try {
+        const result = await directZhipuChatCompletion({
+          model,
+          messages,
+          temperature,
+          max_tokens: maxTokens,
+        });
+
+        const content = extractContentFromResponse(result);
+
+        if (content.trim() && !isHtmlContent(content)) {
+          connectionMode = 'direct';
+          notifyCallSuccess();
+          return content;
+        }
+      } catch (directErr) {
+        if (directErr instanceof ZhipuRateLimitError) {
+          // Zhipu-specific rate limit — set appropriate cooldown
+          const cooldown = directErr.isModelOverloaded ? 20_000 : 10_000; // 20s for overload, 10s for account limit
+          setDirectCooldown(cooldown);
+          notifyRateLimitHit();
+          console.warn(`[makeLLMCall] Direct API rate-limited (${directErr.code}): ${directErr.message.slice(0, 100)}`);
+        } else {
+          const msg = directErr instanceof Error ? directErr.message : 'Unknown';
+          console.warn(`[makeLLMCall] Direct API also failed for ${model}: ${msg.slice(0, 150)}`);
+        }
+      }
+    }
+  } else if (mode === 'direct') {
+    // Direct API preferred — try it first
+    try {
+      const result = await directZhipuChatCompletion({
+        model,
+        messages,
+        temperature,
+        max_tokens: maxTokens,
+      });
+
+      const content = extractContentFromResponse(result);
+
+      if (content.trim() && !isHtmlContent(content)) {
+        connectionMode = 'direct';
         notifyCallSuccess();
         return content;
       }
     } catch (err) {
-      const msg = err instanceof Error ? err.message : 'Unknown';
-      console.warn(`[makeLLMCall] SDK failed for ${model}: ${msg.slice(0, 150)}`);
+      if (err instanceof ZhipuRateLimitError) {
+        const cooldown = err.isModelOverloaded ? 20_000 : 10_000;
+        setDirectCooldown(cooldown);
+        notifyRateLimitHit();
+        console.warn(`[makeLLMCall] Direct API rate-limited (${err.code}): ${err.message.slice(0, 100)}`);
 
-      // If SDK fails, try direct API as fallback
-      if (ZHIPU_API_KEY && ZHIPU_API_KEY.includes('.')) {
+        // Try SDK as fallback when direct is rate-limited
         try {
-          const result = await directZhipuChatCompletion({
+          const zai = await getSDK();
+          const result = await zai.chat.completions.create({
             model,
             messages,
             temperature,
             max_tokens: maxTokens,
           });
-
-          const content = extractContentFromResponse(result);
-
+          const content = result.choices?.[0]?.message?.content || '';
           if (content.trim() && !isHtmlContent(content)) {
-            connectionMode = 'direct';
+            connectionMode = 'sdk';
             notifyCallSuccess();
-            console.log(`[makeLLMCall] Direct API fallback succeeded for ${model}`);
+            console.log(`[makeLLMCall] SDK fallback succeeded for ${model}`);
             return content;
           }
-        } catch (directErr) {
-          if (directErr instanceof Error && directErr.message.includes('429')) {
+        } catch (sdkErr) {
+          const msg = sdkErr instanceof Error ? sdkErr.message : 'Unknown';
+          if (isRateLimitError(msg)) {
+            setSDKCooldown(15_000);
             notifyRateLimitHit();
           }
-          console.warn(`[makeLLMCall] Direct API fallback also failed: ${directErr instanceof Error ? directErr.message.slice(0, 100) : 'Unknown'}`);
+          console.warn(`[makeLLMCall] SDK fallback also failed: ${msg.slice(0, 100)}`);
+        }
+      } else {
+        const msg = err instanceof Error ? err.message : 'Unknown';
+        console.warn(`[makeLLMCall] Direct API failed for ${model}: ${msg.slice(0, 150)}`);
+
+        // Try SDK for non-rate-limit errors
+        try {
+          const zai = await getSDK();
+          const result = await zai.chat.completions.create({
+            model,
+            messages,
+            temperature,
+            max_tokens: maxTokens,
+          });
+          const content = result.choices?.[0]?.message?.content || '';
+          if (content.trim() && !isHtmlContent(content)) {
+            connectionMode = 'sdk';
+            notifyCallSuccess();
+            console.log(`[makeLLMCall] SDK fallback succeeded for ${model}`);
+            return content;
+          }
+        } catch (sdkErr) {
+          console.warn(`[makeLLMCall] SDK fallback also failed: ${sdkErr instanceof Error ? sdkErr.message.slice(0, 100) : 'Unknown'}`);
         }
       }
     }
@@ -517,7 +668,7 @@ async function makeLLMCall(
  *
  * Strategy:
  * 1. Acquire a concurrency slot (max 4 simultaneous calls)
- * 2. Wait for adaptive rate limiter
+ * 2. Wait for adaptive rate limiter (unless skipped)
  * 3. Try the primary model (glm-4.7-flash) with limited retries
  * 4. If all retries fail, try the secondary model (glm-4.6v-flash)
  * 5. Returns null if both models fail (graceful degradation)
@@ -527,10 +678,11 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     systemPrompt,
     userMessage,
     temperature = 0.3,
-    maxTokens = 4096, // 4K output tokens — enough for most responses; reasoning tokens are separate
+    maxTokens = 4096,
     model = MODEL_PRIMARY,
-    retriesPerModel = 1, // Only 1 retry per model to avoid rate limit cascading
+    retriesPerModel = 1,
     useFallback = true,
+    skipRateLimit = false,
   } = options;
 
   // Acquire concurrency slot
@@ -546,7 +698,9 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     for (const currentModel of modelsToTry) {
       for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
         try {
-          await waitForRateLimit();
+          if (!skipRateLimit) {
+            await waitForRateLimit();
+          }
 
           const content = await makeLLMCall(
             currentModel,
@@ -556,6 +710,7 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
             ],
             temperature,
             maxTokens,
+            attempt > 0, // Skip rate limit on retries (we already waited)
           );
 
           if (content && content.trim()) {
@@ -583,12 +738,12 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
           // For rate limit errors, use adaptive backoff based on current rate limiter state
           if (attempt < retriesPerModel) {
-            let backoffMs = 1500;
+            let backoffMs = 1000;
             if (isRateErr) {
-              // Use the current adaptive interval + extra buffer
-              backoffMs = currentIntervalMs + Math.random() * 2000;
+              // Zhipu rate limits need longer backoff — at least 10-20 seconds
+              backoffMs = 10_000 + Math.random() * 10_000;
             } else if (isGatewayErr) {
-              backoffMs = (attempt + 1) * 2500 + Math.random() * 1500;
+              backoffMs = (attempt + 1) * 2000 + Math.random() * 1000;
             }
 
             console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
@@ -634,6 +789,7 @@ export async function callLLMForJSON<T>(
         model: options?.model,
         retriesPerModel: options?.retriesPerModel ?? 1,
         useFallback: options?.useFallback ?? true,
+        skipRateLimit: options?.skipRateLimit,
       });
 
       if (response === null || response === undefined) {
@@ -662,7 +818,7 @@ export async function callLLMForJSON<T>(
     }
 
     if (attempt < MAX_JSON_RETRIES) {
-      await new Promise(r => setTimeout(r, 1500));
+      await new Promise(r => setTimeout(r, 1000));
     }
   }
 
@@ -688,4 +844,22 @@ export function extractJSONFromString<T>(text: string): T | null {
   try { return JSON.parse(text) as T; } catch { /* continue */ }
 
   return null;
+}
+
+/**
+ * Check if the LLM is currently available (not in cooldown for all modes).
+ * Useful for pre-flight checks before starting expensive pipelines.
+ */
+export function isLLMAvailable(): { available: boolean; waitMs: number } {
+  const now = Date.now();
+  const directWait = Math.max(0, directCooldownUntil - now);
+  const sdkWait = Math.max(0, sdkCooldownUntil - now);
+
+  // If at least one mode is available, LLM is available
+  if (directWait === 0 || sdkWait === 0) {
+    return { available: true, waitMs: 0 };
+  }
+
+  // Both modes on cooldown — return the shorter wait
+  return { available: false, waitMs: Math.min(directWait, sdkWait) };
 }

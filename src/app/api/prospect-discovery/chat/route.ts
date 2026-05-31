@@ -10,11 +10,11 @@ export const maxDuration = 300;
  * a partial/graceful response.  Kept well under typical reverse-proxy
  * timeouts (60-120s) so the client always receives a JSON response.
  *
- * Increased from 55s to 90s because the research pipeline makes
- * multiple sequential LLM and web-search calls that can legitimately
- * take 60-90 seconds for complex queries.
+ * Reduced from 90s to 60s — the optimized pipeline (rule-based intent
+ * classification, smarter rate limit handling, reduced LLM calls) should
+ * complete in 30-60s. The extra 30s buffer handles rate limit backoff.
  */
-const PIPELINE_TIMEOUT_MS = 90_000; // 90 seconds
+const PIPELINE_TIMEOUT_MS = 60_000; // 60 seconds
 
 /**
  * POST /api/prospect-discovery/chat

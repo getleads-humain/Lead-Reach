@@ -2,7 +2,7 @@
 // Prospect Discovery Agent — Action Execution Engine
 // ============================================================
 
-import { callLLM, callLLMForJSON } from '@/lib/llm';
+import { callLLM, callLLMForJSON, isLLMAvailable } from '@/lib/llm';
 import {
   webRead,
   exaSearch,
@@ -828,6 +828,15 @@ export async function generateConversationResponse(
   actionResults: string,
   context?: ConversationContext,
 ): Promise<string> {
+  // Check if LLM is available before attempting the call.
+  // If rate-limited, use the fast fallback to avoid wasting precious API quota
+  // on a non-essential conversational polish step.
+  const llmStatus = isLLMAvailable();
+  if (!llmStatus.available) {
+    console.log('[generateConversationResponse] LLM in cooldown, using fast fallback');
+    return buildFallbackResponse(intent, actionResults);
+  }
+
   try {
     const response = await callLLM({
       systemPrompt: getConversationResponsePrompt(
@@ -838,7 +847,7 @@ export async function generateConversationResponse(
         context,
       ),
       userMessage: 'Generate your conversational response based on the action results above.',
-      retriesPerModel: 2, // Increased from 1 to 2 for better resilience
+      retriesPerModel: 0, // No retries for conversational polish — save API quota for essential calls
     });
     if (response) return response;
 
