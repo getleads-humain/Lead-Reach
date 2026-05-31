@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { safeFetchJSON } from '@/lib/utils';
-import type { ICPResult, ConversationContext, SuggestedAction } from '@/lib/prospect-agent/types';
+import type { ICPResult } from '@/lib/prospect-agent/types';
 import { PERSONA_META } from '@/lib/prospect-agent/types';
 
 // ============================================================
@@ -645,24 +645,24 @@ export function ICPView() {
     setIsBuilding(true);
 
     try {
+      // Use the dedicated ICP chat endpoint — much faster than the
+      // general prospect-discovery pipeline (1 LLM call vs 3).
       const result = await safeFetchJSON<{
         success: boolean;
-        message: { content: string; icpData?: ICPResult };
-        updatedContext?: ConversationContext;
+        message: { content: string };
+        icpData?: ICPResult | null;
+        completeness?: number;
+        isComplete?: boolean;
+        nextDimension?: string;
+        suggestedActions?: string[];
         error?: string;
-      }>('/api/prospect-discovery/chat', {
+      }>('/api/icp/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
           conversationHistory: chatMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
-          context: {
-            recentProspects: [],
-            activeICP: builderICP,
-            lastIntent: null,
-            lastPersona: null,
-            userPreferences: {},
-          },
+          currentICP: builderICP,
         }),
       });
 
@@ -672,17 +672,17 @@ export function ICPView() {
           role: 'assistant',
           content: result.message.content,
           timestamp: new Date(),
-          icpData: result.message.icpData || null,
+          icpData: result.icpData || null,
         };
         setChatMessages((prev) => [...prev, assistantMsg]);
-        if (result.message.icpData) {
-          setBuilderICP(result.message.icpData);
+        if (result.icpData) {
+          setBuilderICP(result.icpData);
         }
       } else {
         const errorMsg: ChatMessage = {
           id: `error-${Date.now()}`,
           role: 'system',
-          content: result.error || 'The agent encountered an error. Please try again.',
+          content: result.error || 'The ICP builder encountered an error. Please try again.',
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, errorMsg]);
@@ -692,7 +692,7 @@ export function ICPView() {
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'system',
-        content: `Agent error: ${msg}`,
+        content: `Connection error: ${msg}. The ICP builder will work better with a simpler description — try "B2B SaaS companies in healthcare" or "Fintech startups in Europe".`,
         timestamp: new Date(),
       };
       setChatMessages((prev) => [...prev, errorMsg]);
@@ -846,14 +846,30 @@ export function ICPView() {
                     <span className="text-sm font-medium text-foreground">AI ICP Builder</span>
                     <span className="text-[9px] text-muted-foreground ml-2">Architect Persona</span>
                   </div>
+                  {builderICP && (() => {
+                    const dims = [
+                      builderICP.firmographic.industries.length > 0,
+                      builderICP.firmographic.companySizes.length > 0,
+                      builderICP.technographic.requiredTech.length > 0,
+                      builderICP.psychographic.challenges.length > 0,
+                      builderICP.behavioral.buyingSignals.length > 0,
+                      builderICP.economic.budgetRange || builderICP.economic.decisionTimeline,
+                    ];
+                    const filled = dims.filter(Boolean).length;
+                    const pct = Math.round((filled / dims.length) * 100);
+                    const color = pct >= 80 ? 'text-emerald-400' : pct >= 50 ? 'text-amber-400' : 'text-orange-400';
+                    return <Badge variant="outline" className={`text-[9px] ${color} border-border/30`}>{pct}% complete</Badge>;
+                  })()}
                 </div>
                 {builderICP && (
-                  <Button
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs h-8"
-                    onClick={() => handleSaveICP(builderICP)}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
-                  </Button>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs h-8"
+                      onClick={() => handleSaveICP(builderICP)}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
+                    </Button>
+                  </div>
                 )}
               </div>
 
@@ -1013,9 +1029,12 @@ export function ICPView() {
                   {/* Building indicator */}
                   {isBuilding && (
                     <div className="flex justify-start">
-                      <div className="flex items-center gap-2 ml-9">
+                      <div className="flex items-center gap-3 ml-9">
                         <Loader2 className="h-4 w-4 animate-spin text-amber-400" />
-                        <span className="text-xs text-amber-400 font-medium">Building your ICP...</span>
+                        <div className="flex flex-col">
+                          <span className="text-xs text-amber-400 font-medium">Architect is analyzing your criteria...</span>
+                          <span className="text-[9px] text-muted-foreground">This usually takes 10-20 seconds</span>
+                        </div>
                       </div>
                     </div>
                   )}
