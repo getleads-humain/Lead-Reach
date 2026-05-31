@@ -2,6 +2,11 @@
  * LeadReach — Supabase Server Client
  * =====================================
  * Server-side Supabase client for use in API routes and server components.
+ *
+ * IMPORTANT: With middleware.ts now handling session refresh via cookie
+ * updates, the `setAll` catch block is no longer needed for session
+ * persistence. The middleware ensures cookies are always fresh before
+ * any server component or API route runs.
  */
 
 import { createServerClient } from '@supabase/ssr';
@@ -25,7 +30,8 @@ export async function createClient() {
             );
           } catch {
             // The `setAll` method was called from a Server Component.
-            // This can be ignored if you have middleware refreshing sessions.
+            // This can be ignored since middleware.ts now handles
+            // refreshing sessions by updating cookies on every request.
           }
         },
       },
