@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/lib/db';
-import ZAI from 'z-ai-web-dev-sdk';
+import { getSDK } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -373,7 +373,7 @@ Generate 4-6 insights as JSON array:
 Return ONLY the JSON array.`;
 
   try {
-    const zai = await ZAI.create();
+    const zai = await getSDK();
     const result = await zai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
     });

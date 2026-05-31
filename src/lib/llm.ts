@@ -1,15 +1,19 @@
 /**
  * Centralized LLM Utility — LeadReach AI
  *
- * Uses exactly two models via z-ai-web-dev-sdk:
+ * Uses exactly two models via Zhipu AI API with JWT authentication:
  *   - glm-4.7-flash  (primary — fast, high-quality text generation)
  *   - glm-4.6v-flash (secondary — vision-capable, fallback for text)
  *
  * All LLM calls in the application should go through this module
  * to ensure consistent model usage, rate limiting, and error handling.
+ *
+ * IMPORTANT: Zhipu AI requires JWT authentication. The API key format
+ * is `{id}.{secret}`, and it must be converted to a JWT token before
+ * use. This is handled by the zhipu-jwt.ts utility.
  */
 
-import type ZAISdk from 'z-ai-web-dev-sdk';
+import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from './zhipu-jwt';
 
 // ============================================================
 // Model Definitions
@@ -27,11 +31,11 @@ export const LLM_MODELS = [MODEL_PRIMARY, MODEL_VISION] as const;
 export type LLMModel = typeof LLM_MODELS[number];
 
 // ============================================================
-// Unified Rate Limiter (shared across ALL z-ai-web-dev-sdk calls)
+// Unified Rate Limiter (shared across ALL API calls)
 // ============================================================
 
-// IMPORTANT: Both callLLM (chat.completions.create) and agent-reach-bridge
-// (functions.invoke) go through the same z-ai-web-dev-sdk gateway.
+// IMPORTANT: Both callLLM (chat.completions) and agent-reach-bridge
+// (functions.invoke / web_search) go through the same Zhipu AI gateway.
 // A single shared rate limiter prevents concurrent bursts that cause 502s.
 
 let lastCallTime = 0;
@@ -51,35 +55,127 @@ async function waitForRateLimit() {
 /**
  * Exported so agent-reach-bridge.ts can share the same rate limiter.
  * This prevents LLM calls and search calls from firing simultaneously
- * and overwhelming the shared z-ai-web-dev-sdk gateway.
+ * and overwhelming the shared Zhipu AI gateway.
  */
 export { waitForRateLimit };
 
 // ============================================================
-// SDK Singleton (lazy init, reuse across calls)
+// Direct HTTP LLM Call (bypasses z-ai-web-dev-sdk)
 // ============================================================
 
-let zaiInstance: InstanceType<typeof ZAISdk> | null = null;
-let sdkInitAttempts = 0;
-const MAX_SDK_INIT_ATTEMPTS = 3;
+/**
+ * Make a direct HTTP call to the Zhipu AI chat completions API.
+ * Uses JWT authentication generated from the API key.
+ *
+ * This bypasses the z-ai-web-dev-sdk which requires a .z-ai-config
+ * file and doesn't support dynamic JWT token generation.
+ */
+async function directChatCompletion(params: {
+  model: string;
+  messages: Array<{ role: string; content: string }>;
+  temperature?: number;
+  max_tokens?: number;
+}): Promise<{
+  choices?: Array<{
+    finish_reason?: string;
+    index?: number;
+    message?: { content?: string; role?: string; reasoning_content?: string };
+  }>;
+  created?: number;
+  model?: string;
+  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+} | null> {
+  const token = getZhipuToken();
+  if (!token) {
+    throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
+  }
 
-async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
-  if (!zaiInstance) {
+  const baseUrl = getZhipuApiBase();
+  const url = `${baseUrl}/chat/completions`;
+
+  // Disable thinking/reasoning by default to get clean text responses
+  const body = {
+    ...params,
+    thinking: { type: 'disabled' as const },
+  };
+
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${token}`,
+    },
+    body: JSON.stringify(body),
+    signal: AbortSignal.timeout(60000), // 60s timeout
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text().catch(() => 'Unknown error');
+
+    // If we get a 401, the JWT may have expired — refresh and retry once
+    if (response.status === 401) {
+      console.warn('[directChatCompletion] Got 401 — refreshing JWT token and will retry');
+      refreshToken();
+      const newToken = getZhipuToken();
+      if (newToken && newToken !== token) {
+        const retryResponse = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${newToken}`,
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(60000),
+        });
+        if (!retryResponse.ok) {
+          const retryErrorText = await retryResponse.text().catch(() => 'Unknown error');
+          throw new Error(`API request failed with status ${retryResponse.status}: ${retryErrorText.slice(0, 200)}`);
+        }
+        return retryResponse.json();
+      }
+    }
+
+    throw new Error(`API request failed with status ${response.status}: ${errorText.slice(0, 200)}`);
+  }
+
+  return response.json();
+}
+
+// ============================================================
+// SDK Compatibility Layer (for agent-reach-bridge.ts web search)
+// ============================================================
+
+/**
+ * Get a Zhipu AI SDK instance for functions.invoke (web search, etc).
+ * Uses the ZAI constructor directly with a fresh JWT token.
+ */
+let zaiInstance: any = null;
+let zaiTokenUsed = '';
+
+async function getSDK(): Promise<any> {
+  const token = getZhipuToken();
+  if (!token) {
+    throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
+  }
+
+  // Re-create the SDK instance if the token has changed (JWT refresh)
+  if (!zaiInstance || zaiTokenUsed !== token) {
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      zaiInstance = await ZAI.create();
-      sdkInitAttempts = 0; // Reset on success
-      console.log('[getSDK] z-ai-web-dev-sdk initialized successfully');
+      const config = {
+        baseUrl: getZhipuApiBase(),
+        apiKey: token,
+      };
+      zaiInstance = new ZAI(config);
+      zaiTokenUsed = token;
+      console.log('[getSDK] Created ZAI instance with fresh JWT token');
     } catch (initError) {
-      sdkInitAttempts++;
       const msg = initError instanceof Error ? initError.message : 'Unknown error';
-      console.error(`[getSDK] Failed to initialize z-ai-web-dev-sdk (attempt ${sdkInitAttempts}): ${msg}`);
-      if (sdkInitAttempts >= MAX_SDK_INIT_ATTEMPTS) {
-        console.error('[getSDK] Max SDK init attempts reached — check .z-ai-config file');
-      }
+      console.error(`[getSDK] Failed to create ZAI instance: ${msg}`);
       throw initError;
     }
   }
+
   return zaiInstance;
 }
 
@@ -88,12 +184,12 @@ async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
  */
 export function resetSDK(): void {
   zaiInstance = null;
-  sdkInitAttempts = 0;
+  zaiTokenUsed = '';
   console.log('[resetSDK] SDK instance reset — next call will reinitialize');
 }
 
 /**
- * Health check: verify the LLM can be initialized and responds.
+ * Health check: verify the LLM can connect and respond.
  * Returns { ok, model, latencyMs, error? }
  */
 export async function checkLLMHealth(): Promise<{
@@ -104,8 +200,16 @@ export async function checkLLMHealth(): Promise<{
 }> {
   const start = Date.now();
   try {
-    const zai = await getSDK();
-    const completion = await zai.chat.completions.create({
+    if (!isZhipuConfigured()) {
+      return {
+        ok: false,
+        model: MODEL_PRIMARY,
+        latencyMs: Date.now() - start,
+        error: 'Zhipu AI API key not configured (ZHIPU_AI_API_KEY env var missing)',
+      };
+    }
+
+    const completion = await directChatCompletion({
       model: MODEL_PRIMARY,
       messages: [
         { role: 'system', content: 'You are a health check endpoint.' },
@@ -114,7 +218,12 @@ export async function checkLLMHealth(): Promise<{
       max_tokens: 10,
       temperature: 0,
     });
-    const content = completion?.choices?.[0]?.message?.content || '';
+
+    // Extract content from either reasoning_content or content
+    const rawContent = completion?.choices?.[0]?.message?.content || '';
+    const reasoningContent = completion?.choices?.[0]?.message?.reasoning_content || '';
+    const content = rawContent || reasoningContent;
+
     return {
       ok: content.trim().length > 0,
       model: MODEL_PRIMARY,
@@ -187,6 +296,8 @@ export interface LLMCallOptions {
  * 1. Try the primary model (glm-4.7-flash) with retries
  * 2. If all retries fail, try the secondary model (glm-4.6v-flash)
  * 3. Returns null if both models fail (graceful degradation)
+ *
+ * Uses direct HTTP calls with JWT authentication for reliability.
  */
 export async function callLLM(options: LLMCallOptions): Promise<string | null> {
   const {
@@ -195,9 +306,15 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     temperature = 0.3,
     maxTokens = 4096,
     model = MODEL_PRIMARY,
-    retriesPerModel = 3, // Increased from 2 to 3 for better 502 resilience
+    retriesPerModel = 3,
     useFallback = true,
   } = options;
+
+  // Check configuration before attempting any calls
+  if (!isZhipuConfigured()) {
+    console.error('[callLLM] Zhipu AI API key not configured — check ZHIPU_AI_API_KEY env var');
+    return null;
+  }
 
   const modelsToTry: LLMModel[] = [model];
   if (useFallback) {
@@ -210,8 +327,7 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
       try {
         await waitForRateLimit();
 
-        const zai = await getSDK();
-        const completion = await zai.chat.completions.create({
+        const completion = await directChatCompletion({
           model: currentModel,
           messages: [
             { role: 'system', content: systemPrompt },
@@ -226,7 +342,10 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
           throw new Error('LLM returned invalid response structure (possible gateway error)');
         }
 
-        const content = completion.choices?.[0]?.message?.content || '';
+        // Extract content — Zhipu AI may return content in 'content' or 'reasoning_content'
+        const rawContent = completion.choices?.[0]?.message?.content || '';
+        const reasoningContent = completion.choices?.[0]?.message?.reasoning_content || '';
+        const content = rawContent || reasoningContent;
 
         // Detect HTML in response
         if (isHtmlContent(content)) {
@@ -259,8 +378,8 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         if (attempt < retriesPerModel) {
           // Exponential backoff with jitter for 502/gateway errors
           let backoffMs = 2000;
-          if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000; // 4-6s, 8-10s, 12-14s
-          else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3-4s, 6-7s, 9-10s
+          if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000;
+          else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000;
 
           console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
@@ -362,3 +481,14 @@ export function extractJSONFromString<T>(text: string): T | null {
 
   return null;
 }
+
+// ============================================================
+// Export getSDK for agent-reach-bridge.ts
+// ============================================================
+
+/**
+ * Get the SDK instance for functions.invoke (web search, page reader, etc.).
+ * This is only used for non-chat-completion features of the z-ai-web-dev-sdk.
+ * All chat completions go through directChatCompletion for better JWT control.
+ */
+export { getSDK };

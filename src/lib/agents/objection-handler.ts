@@ -5,7 +5,7 @@
  * and 3 response frameworks.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { getSDK } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -138,7 +138,7 @@ Rules:
 - Return ONLY valid JSON`;
 
   try {
-    const zai = await ZAI.create();
+    const zai = await getSDK();
     const result = await zai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
     });

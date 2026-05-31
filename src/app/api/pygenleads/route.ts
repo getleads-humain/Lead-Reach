@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+import { getSDK } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -69,8 +70,7 @@ export async function POST(request: NextRequest) {
 
       // Use LLM to extract structured business data from content
       try {
-        const ZAI = (await import('z-ai-web-dev-sdk')).default;
-        const zai = await ZAI.create();
+        const zai = await getSDK();
 
         const combinedContent = readResults
           .filter((r): r is NonNullable<typeof r> => r !== null)

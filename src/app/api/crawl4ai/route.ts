@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
+import { getSDK } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -43,8 +44,7 @@ export async function POST(request: NextRequest) {
 
     if (extractSchema && typeof extractSchema === 'object' && Object.keys(extractSchema).length > 0) {
       try {
-        const ZAI = (await import('z-ai-web-dev-sdk')).default;
-        const zai = await ZAI.create();
+        const zai = await getSDK();
 
         const schemaDescription = Object.entries(extractSchema)
           .map(([key, description]) => `"${key}": ${description}`)

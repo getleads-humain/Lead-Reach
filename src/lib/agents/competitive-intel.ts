@@ -4,7 +4,7 @@
  * Analyze competitive landscape and generate battle cards using LLM.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { getSDK } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
 
 // ============================================================
@@ -122,7 +122,7 @@ ${searchData ? `WEB RESEARCH DATA:\n${searchData}\n\n` : ''}Generate a comprehen
 Return ONLY valid JSON.`;
 
   try {
-    const zai = await ZAI.create();
+    const zai = await getSDK();
     const result = await zai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
     });
@@ -230,7 +230,7 @@ Include 6-8 features in the feature matrix and 4-6 common objections.
 Return ONLY valid JSON.`;
 
   try {
-    const zai = await ZAI.create();
+    const zai = await getSDK();
     const result = await zai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
     });

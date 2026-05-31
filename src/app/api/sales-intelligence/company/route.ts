@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+import { getSDK } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -77,8 +78,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Step 3: Use LLM to analyze and synthesize
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
+    const zai = await getSDK();
 
     const analysisResult = await zai.chat.completions.create({
       messages: [

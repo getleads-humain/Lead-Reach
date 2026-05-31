@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-import ZAI from 'z-ai-web-dev-sdk';
+import { getSDK } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -81,7 +81,7 @@ Respond ONLY with a JSON object containing the filled fields. Use null for field
 Example: {"industry": "Technology", "employeeCount": "51-200"}`;
 
         try {
-          const zai = await ZAI.create();
+          const zai = await getSDK();
           const llmResult = await zai.chat.completions.create({
             messages: [{ role: 'user', content: prompt }],
           });

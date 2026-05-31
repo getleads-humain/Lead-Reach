@@ -4,7 +4,7 @@
  * Generate comprehensive 11-section meeting briefings using LLM.
  */
 
-import ZAI from 'z-ai-web-dev-sdk';
+import { getSDK } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
 
 // ============================================================
@@ -107,7 +107,7 @@ Be specific and actionable. Reference real data where possible.
 Return ONLY valid JSON.`;
 
   try {
-    const zai = await ZAI.create();
+    const zai = await getSDK();
     const result = await zai.chat.completions.create({
       messages: [{ role: 'user', content: prompt }],
     });

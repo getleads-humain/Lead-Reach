@@ -16,7 +16,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
-import { waitForRateLimit } from '@/lib/llm'; // Unified rate limiter — shared with LLM calls
+import { waitForRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK with JWT auth
 
 const execAsync = promisify(exec);
 
@@ -417,8 +417,7 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
   try {
     const searchResult = await retryWithBackoff(async () => {
       await waitForRateLimit();
-      const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      const zai = await ZAI.create();
+      const zai = await getSDK(); // Uses JWT auth from zhipu-jwt.ts
       return await zai.functions.invoke('web_search', {
         query,
         num: numResults,
@@ -1985,8 +1984,7 @@ export async function discoverBusinesses(
 
   // ===== PRIMARY: Use z-ai-web-dev-sdk web_search with PAGINATION =====
   try {
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
+    const zai = await getSDK(); // Uses JWT auth from zhipu-jwt.ts
 
     for (const searchQuery of searchQueries) {
       let previousCount = allResults.length;

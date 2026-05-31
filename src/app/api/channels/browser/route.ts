@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
+import { getSDK } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,8 +41,7 @@ export async function POST(request: NextRequest) {
 
         // Use LLM to extract structured data
         try {
-          const ZAI = (await import('z-ai-web-dev-sdk')).default;
-          const zai = await ZAI.create();
+          const zai = await getSDK();
 
           const extractPrompt = `You are a data extraction assistant. Extract the following information from the web page content.
 ${selectors ? `Focus on these selectors/fields: ${selectors.join(', ')}` : 'Extract key information like company name, contact details, addresses, phone numbers, and emails.'}
