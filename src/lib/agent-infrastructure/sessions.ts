@@ -56,7 +56,7 @@ export async function createSession(options: SessionCreateOptions) {
     data: {
       agentName: options.agentName,
       sessionId,
-      modelId: options.modelId || 'glm-4.7-flash',
+      modelId: options.modelId || 'glm-4.6v-flash',
       campaignId: options.campaignId || null,
       context: JSON.stringify(context),
       status: 'active',

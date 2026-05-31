@@ -4,8 +4,8 @@
  * Manages GLM model selection, routing, and configuration for each agent.
  * 
  * Supported models (strictly):
- *   - glm-4.7-flash   (primary — fast, high-quality text generation)
- *   - glm-4.6v-flash  (secondary — vision-capable, text fallback)
+ *   - glm-4.6v-flash  (primary — reasoning-capable, confirmed working)
+ *   - glm-4.7-flash   (secondary — may be rate-limited on free tier)
  *
  * Each agent can have its preferred model configured via AgentProfile.
  * The model router selects the right model based on:
@@ -45,29 +45,29 @@ export interface ModelRoutingDecision {
 // ── Model Definitions ──────────────────────────────────────────
 
 export const MODEL_DEFINITIONS: Record<GLMModel, ModelConfig> = {
-  'glm-4.7-flash': {
-    modelId: 'glm-4.7-flash',
-    displayName: 'GLM-4.7 Flash',
-    description: 'Primary model — fast, high-quality text generation with strong reasoning capabilities. Optimal for all text-based agent tasks including extraction, scoring, composition, and analysis.',
-    maxTokens: 4096,
-    supportsVision: false,
-    supportsStreaming: true,
-    rateLimitRPM: 20,
-    costPer1kTokens: 1.0,
-  },
   'glm-4.6v-flash': {
     modelId: 'glm-4.6v-flash',
     displayName: 'GLM-4.6V Flash',
-    description: 'Vision-capable model — supports multimodal inputs (text + images) with strong text generation. Used as secondary/fallback and for tasks requiring image understanding (e.g., screenshot analysis, logo extraction).',
+    description: 'Primary model — reasoning-capable with thinking:enabled support. Separates reasoning from clean content output. Confirmed working and reliable for all agent tasks.',
     maxTokens: 4096,
     supportsVision: true,
     supportsStreaming: true,
     rateLimitRPM: 15,
-    costPer1kTokens: 1.2,
+    costPer1kTokens: 1.0,
+  },
+  'glm-4.7-flash': {
+    modelId: 'glm-4.7-flash',
+    displayName: 'GLM-4.7 Flash',
+    description: 'Secondary/fallback model — may be rate-limited on free tier. Fast text generation when available.',
+    maxTokens: 4096,
+    supportsVision: false,
+    supportsStreaming: true,
+    rateLimitRPM: 20,
+    costPer1kTokens: 0.8,
   },
 };
 
-export const ALL_MODELS: GLMModel[] = ['glm-4.7-flash', 'glm-4.6v-flash'];
+export const ALL_MODELS: GLMModel[] = ['glm-4.6v-flash', 'glm-4.7-flash'];
 
 // ── Model Router ───────────────────────────────────────────────
 
@@ -88,7 +88,7 @@ export async function routeModel(
   const temperature = profile?.temperature ?? 0.3;
   const maxTokens = profile?.maxTokens ?? 4096;
 
-  // Vision tasks must use glm-4.6v-flash
+  // Vision tasks must use glm-4.6v-flash (the primary model, also supports vision)
   if (options?.requiresVision) {
     return {
       model: 'glm-4.6v-flash',
@@ -99,7 +99,7 @@ export async function routeModel(
     };
   }
 
-  // Speed preference — glm-4.7-flash is faster for pure text
+  // Speed preference — try glm-4.7-flash first if not in cooldown
   if (options?.preferSpeed) {
     return {
       model: 'glm-4.7-flash',
@@ -131,7 +131,7 @@ export function getModelConfig(modelId: GLMModel): ModelConfig {
  * Check if a model supports vision inputs.
  */
 export function modelSupportsVision(modelId: string): boolean {
-  return modelId === 'glm-4.6v-flash';
+  return modelId === 'glm-4.6v-flash'; // Primary model also supports vision
 }
 
 /**

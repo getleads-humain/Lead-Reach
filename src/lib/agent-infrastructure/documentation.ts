@@ -127,8 +127,8 @@ The Orchestrator Agent coordinates multi-agent workflows. It breaks complex requ
 - **Progress Monitoring**: Tracks overall workflow progress and reports status
 
 ## Model
-- Primary: glm-4.7-flash
-- Fallback: glm-4.6v-flash
+- Primary: glm-4.6v-flash
+- Fallback: glm-4.7-flash
 
 ## Usage
 The Orchestrator is automatically invoked when you submit a complex request via the AI chat. It creates an execution plan and dispatches sub-tasks to other agents.

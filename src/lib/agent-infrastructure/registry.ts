@@ -239,8 +239,8 @@ class AgentRegistryClass {
     const defaultConfigs: config.ConfigEntry[] = [
       // Model defaults (all agents)
       ...AGENT_DEFINITIONS.map(def => [
-        { agentName: def.name as AgentName, key: 'preferred_model', value: 'glm-4.7-flash', type: 'string' as const, category: 'model' as const, description: 'Preferred GLM model for this agent' },
-        { agentName: def.name as AgentName, key: 'fallback_model', value: 'glm-4.6v-flash', type: 'string' as const, category: 'model' as const, description: 'Fallback GLM model when primary fails' },
+        { agentName: def.name as AgentName, key: 'preferred_model', value: 'glm-4.6v-flash', type: 'string' as const, category: 'model' as const, description: 'Preferred GLM model for this agent' },
+        { agentName: def.name as AgentName, key: 'fallback_model', value: 'glm-4.7-flash', type: 'string' as const, category: 'model' as const, description: 'Fallback GLM model when primary fails' },
         { agentName: def.name as AgentName, key: 'temperature', value: 0.3, type: 'number' as const, category: 'model' as const, description: 'LLM temperature for this agent' },
         { agentName: def.name as AgentName, key: 'max_tokens', value: 4096, type: 'number' as const, category: 'model' as const, description: 'Max tokens per LLM response' },
         { agentName: def.name as AgentName, key: 'retries_per_model', value: 3, type: 'number' as const, category: 'model' as const, description: 'Number of retries per model before fallback' },

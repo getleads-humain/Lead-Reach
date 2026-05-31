@@ -1,16 +1,23 @@
 /**
  * Centralized LLM Utility — LeadReach AI
  *
- * Uses exactly two models via Zhipu AI API with JWT authentication:
- *   - glm-4.7-flash  (primary — fast, high-quality text generation)
- *   - glm-4.6v-flash (secondary — vision-capable, fallback for text)
+ * Uses Zhipu AI's GLM models via JWT-authenticated HTTP API.
  *
- * All LLM calls in the application should go through this module
- * to ensure consistent model usage, rate limiting, and error handling.
+ * Model Configuration (as of 2025-06):
+ *   - glm-4.6v-flash  (PRIMARY — currently active, reasoning-capable)
+ *   - glm-4.7-flash   (SECONDARY — may be rate-limited on free tier)
  *
- * IMPORTANT: Zhipu AI requires JWT authentication. The API key format
- * is `{id}.{secret}`, and it must be converted to a JWT token before
- * use. This is handled by the zhipu-jwt.ts utility.
+ * IMPORTANT DESIGN NOTES:
+ * 1. Zhipu AI requires JWT authentication. The API key format is
+ *    `{id}.{secret}`, converted to a JWT token by zhipu-jwt.ts.
+ * 2. GLM reasoning models (4.6v-flash, 4.7-flash) use the `thinking`
+ *    parameter. With `thinking: {type: "enabled", budget_tokens: N}`,
+ *    the model separates reasoning (in `reasoning_content`) from the
+ *    clean answer (in `content`). With `thinking: {type: "disabled"}`,
+ *    ALL output goes into `reasoning_content` and `content` is empty.
+ * 3. We use `thinking: enabled` with a budget to get clean, structured
+ *    output in the `content` field while still benefiting from the
+ *    model's reasoning capability.
  */
 
 import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from './zhipu-jwt';
@@ -19,28 +26,52 @@ import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from 
 // Model Definitions
 // ============================================================
 
-/** Primary model — fast, high-quality text generation */
-export const MODEL_PRIMARY = 'glm-4.7-flash' as const;
+/**
+ * Primary model — currently glm-4.6v-flash (reasoning-capable, confirmed working).
+ * This model properly separates reasoning from content when thinking is enabled.
+ */
+export const MODEL_PRIMARY = 'glm-4.6v-flash' as const;
 
-/** Secondary model — vision-capable, also works as text fallback */
-export const MODEL_VISION = 'glm-4.6v-flash' as const;
+/**
+ * Secondary/fallback model — glm-4.7-flash.
+ * May be rate-limited on the free tier; skipped quickly on 429.
+ */
+export const MODEL_FALLBACK = 'glm-4.7-flash' as const;
+
+/** Legacy alias for MODEL_FALLBACK (used by some importers) */
+export const MODEL_VISION = MODEL_PRIMARY;
 
 /** All available models for iteration */
-export const LLM_MODELS = [MODEL_PRIMARY, MODEL_VISION] as const;
+export const LLM_MODELS = [MODEL_PRIMARY, MODEL_FALLBACK] as const;
 
 export type LLMModel = typeof LLM_MODELS[number];
+
+// ============================================================
+// Thinking Budget Configuration
+// ============================================================
+
+/**
+ * Thinking budget per request type.
+ * Higher budget = more reasoning before answering, but costs more tokens.
+ */
+const THINKING_BUDGETS = {
+  /** Quick responses (intent classification, health checks) */
+  quick: 512,
+  /** Standard responses (chat, data extraction) */
+  standard: 2048,
+  /** Complex reasoning (deep research, multi-step analysis) */
+  deep: 4096,
+} as const;
+
+type ThinkingBudget = keyof typeof THINKING_BUDGETS;
 
 // ============================================================
 // Unified Rate Limiter (shared across ALL API calls)
 // ============================================================
 
-// IMPORTANT: Both callLLM (chat.completions) and agent-reach-bridge
-// (functions.invoke / web_search) go through the same Zhipu AI gateway.
-// A single shared rate limiter prevents concurrent bursts that cause 502s.
-
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 2500; // 2.5s between calls — balances throughput vs 502 risk
-const JITTER_MS = 800; // Random jitter to avoid thundering herd
+const MIN_INTERVAL_MS = 1500; // 1.5s between calls
+const JITTER_MS = 500; // Random jitter to avoid thundering herd
 
 async function waitForRateLimit() {
   const now = Date.now();
@@ -54,27 +85,59 @@ async function waitForRateLimit() {
 
 /**
  * Exported so agent-reach-bridge.ts can share the same rate limiter.
- * This prevents LLM calls and search calls from firing simultaneously
- * and overwhelming the shared Zhipu AI gateway.
  */
 export { waitForRateLimit };
 
 // ============================================================
-// Direct HTTP LLM Call (bypasses z-ai-web-dev-sdk)
+// Model Health Tracker (skips models that return persistent 429s)
 // ============================================================
 
-/**
- * Make a direct HTTP call to the Zhipu AI chat completions API.
- * Uses JWT authentication generated from the API key.
- *
- * This bypasses the z-ai-web-dev-sdk which requires a .z-ai-config
- * file and doesn't support dynamic JWT token generation.
- */
+interface ModelHealth {
+  last429At: number;
+  consecutive429s: number;
+  cooldownUntil: number;
+}
+
+const modelHealth: Map<string, ModelHealth> = new Map();
+
+const COOLDOWN_AFTER_429_MS = 60_000; // 1 minute cooldown after consecutive 429s
+const MAX_CONSECUTIVE_429S = 2; // After 2 consecutive 429s, skip model for cooldown period
+
+function isModelInCooldown(model: string): boolean {
+  const health = modelHealth.get(model);
+  if (!health) return false;
+  return Date.now() < health.cooldownUntil;
+}
+
+function record429(model: string): void {
+  const health = modelHealth.get(model) || { last429At: 0, consecutive429s: 0, cooldownUntil: 0 };
+  health.last429At = Date.now();
+  health.consecutive429s += 1;
+  if (health.consecutive429s >= MAX_CONSECUTIVE_429S) {
+    health.cooldownUntil = Date.now() + COOLDOWN_AFTER_429_MS;
+    console.warn(`[callLLM] Model ${model} hit ${health.consecutive429s} consecutive 429s — cooldown for ${COOLDOWN_AFTER_429_MS / 1000}s`);
+  }
+  modelHealth.set(model, health);
+}
+
+function recordSuccess(model: string): void {
+  const health = modelHealth.get(model);
+  if (health) {
+    health.consecutive429s = 0;
+    health.cooldownUntil = 0;
+  }
+}
+
+// ============================================================
+// Direct HTTP LLM Call
+// ============================================================
+
 async function directChatCompletion(params: {
   model: string;
   messages: Array<{ role: string; content: string }>;
   temperature?: number;
   max_tokens?: number;
+  thinking_budget?: ThinkingBudget;
 }): Promise<{
   choices?: Array<{
     finish_reason?: string;
@@ -93,10 +156,15 @@ async function directChatCompletion(params: {
   const baseUrl = getZhipuApiBase();
   const url = `${baseUrl}/chat/completions`;
 
-  // Disable thinking/reasoning by default to get clean text responses
+  // Use thinking:enabled with a budget to get clean content output.
+  // Without this, the model puts everything in reasoning_content and leaves content empty.
+  const budget = THINKING_BUDGETS[params.thinking_budget || 'standard'];
   const body = {
-    ...params,
-    thinking: { type: 'disabled' as const },
+    model: params.model,
+    messages: params.messages,
+    temperature: params.temperature,
+    max_tokens: params.max_tokens,
+    thinking: { type: 'enabled', budget_tokens: budget },
   };
 
   const response = await fetch(url, {
@@ -145,10 +213,6 @@ async function directChatCompletion(params: {
 // SDK Compatibility Layer (for agent-reach-bridge.ts web search)
 // ============================================================
 
-/**
- * Get a Zhipu AI SDK instance for functions.invoke (web search, etc).
- * Uses the ZAI constructor directly with a fresh JWT token.
- */
 let zaiInstance: any = null;
 let zaiTokenUsed = '';
 
@@ -158,7 +222,6 @@ async function getSDK(): Promise<any> {
     throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
   }
 
-  // Re-create the SDK instance if the token has changed (JWT refresh)
   if (!zaiInstance || zaiTokenUsed !== token) {
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
@@ -179,19 +242,16 @@ async function getSDK(): Promise<any> {
   return zaiInstance;
 }
 
-/**
- * Reset the SDK singleton. Useful after API key rotation or config changes.
- */
 export function resetSDK(): void {
   zaiInstance = null;
   zaiTokenUsed = '';
   console.log('[resetSDK] SDK instance reset — next call will reinitialize');
 }
 
-/**
- * Health check: verify the LLM can connect and respond.
- * Returns { ok, model, latencyMs, error? }
- */
+// ============================================================
+// Health Check
+// ============================================================
+
 export async function checkLLMHealth(): Promise<{
   ok: boolean;
   model: string;
@@ -212,14 +272,15 @@ export async function checkLLMHealth(): Promise<{
     const completion = await directChatCompletion({
       model: MODEL_PRIMARY,
       messages: [
-        { role: 'system', content: 'You are a health check endpoint.' },
-        { role: 'user', content: 'Reply with exactly: OK' },
+        { role: 'system', content: 'You are a health check endpoint. Reply with exactly the word OK and nothing else.' },
+        { role: 'user', content: 'Health check' },
       ],
-      max_tokens: 10,
+      max_tokens: 20,
       temperature: 0,
+      thinking_budget: 'quick',
     });
 
-    // Extract content from either reasoning_content or content
+    // With thinking:enabled, content should have the clean answer
     const rawContent = completion?.choices?.[0]?.message?.content || '';
     const reasoningContent = completion?.choices?.[0]?.message?.reasoning_content || '';
     const content = rawContent || reasoningContent;
@@ -237,6 +298,39 @@ export async function checkLLMHealth(): Promise<{
       error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
+}
+
+// ============================================================
+// Content Extraction
+// ============================================================
+
+/**
+ * Extract the clean content from a Zhipu AI response.
+ * With thinking:enabled, the model puts the answer in `content` and
+ * reasoning in `reasoning_content`. We prefer `content` when available.
+ * Falls back to `reasoning_content` for backward compatibility.
+ */
+function extractContent(completion: {
+  choices?: Array<{
+    message?: { content?: string; reasoning_content?: string };
+  }>;
+} | null): string {
+  if (!completion?.choices?.[0]?.message) return '';
+
+  const msg = completion.choices[0].message;
+  const content = msg.content?.trim() || '';
+  const reasoning = msg.reasoning_content?.trim() || '';
+
+  // Prefer content (the clean answer) over reasoning_content (the thinking steps)
+  if (content) return content;
+  if (reasoning) {
+    // When thinking is disabled, all output goes to reasoning_content.
+    // Try to extract the useful part (after reasoning, if there's a clear split).
+    // Often the last part of reasoning_content contains the actual answer.
+    return reasoning;
+  }
+
+  return '';
 }
 
 // ============================================================
@@ -265,11 +359,15 @@ function isHtmlOrGatewayError(msg: string, errorName?: string): boolean {
 }
 
 function isRateLimitError(msg: string): boolean {
-  return msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit');
+  return msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit') || msg.includes('速率限制');
+}
+
+function isQuotaError(msg: string): boolean {
+  return msg.includes('余额不足') || msg.includes('insufficient') || msg.includes('quota');
 }
 
 // ============================================================
-// Core LLM Call — with model fallback and retry
+// Core LLM Call — with model fallback, rate limit tracking, and retry
 // ============================================================
 
 export interface LLMCallOptions {
@@ -287,17 +385,18 @@ export interface LLMCallOptions {
   retriesPerModel?: number;
   /** Whether to fall back to the other model on failure, default true */
   useFallback?: boolean;
+  /** Thinking budget: 'quick' (512), 'standard' (2048), or 'deep' (4096), default 'standard' */
+  thinkingBudget?: ThinkingBudget;
 }
 
 /**
- * Call the LLM with automatic model fallback.
+ * Call the LLM with automatic model fallback and rate-limit-aware routing.
  *
  * Strategy:
- * 1. Try the primary model (glm-4.7-flash) with retries
- * 2. If all retries fail, try the secondary model (glm-4.6v-flash)
- * 3. Returns null if both models fail (graceful degradation)
- *
- * Uses direct HTTP calls with JWT authentication for reliability.
+ * 1. Try the primary model (glm-4.6v-flash) with retries
+ * 2. If all retries fail, try the secondary model (glm-4.7-flash)
+ * 3. Skips models that are in cooldown from consecutive 429s
+ * 4. Returns null if both models fail (graceful degradation)
  */
 export async function callLLM(options: LLMCallOptions): Promise<string | null> {
   const {
@@ -306,20 +405,37 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     temperature = 0.3,
     maxTokens = 4096,
     model = MODEL_PRIMARY,
-    retriesPerModel = 3,
+    retriesPerModel = 2,
     useFallback = true,
+    thinkingBudget = 'standard',
   } = options;
 
-  // Check configuration before attempting any calls
   if (!isZhipuConfigured()) {
     console.error('[callLLM] Zhipu AI API key not configured — check ZHIPU_AI_API_KEY env var');
     return null;
   }
 
-  const modelsToTry: LLMModel[] = [model];
+  // Build model list, skipping any in cooldown
+  const modelsToTry: LLMModel[] = [];
+  if (!isModelInCooldown(model)) {
+    modelsToTry.push(model);
+  } else {
+    console.warn(`[callLLM] Skipping ${model} — in 429 cooldown`);
+  }
+
   if (useFallback) {
-    const fallback = model === MODEL_PRIMARY ? MODEL_VISION : MODEL_PRIMARY;
-    if (!modelsToTry.includes(fallback)) modelsToTry.push(fallback);
+    const fallback = model === MODEL_PRIMARY ? MODEL_FALLBACK : MODEL_PRIMARY;
+    if (!modelsToTry.includes(fallback) && !isModelInCooldown(fallback)) {
+      modelsToTry.push(fallback);
+    } else if (!modelsToTry.includes(fallback)) {
+      console.warn(`[callLLM] Skipping fallback ${fallback} — in 429 cooldown`);
+    }
+  }
+
+  // If all models are in cooldown, force primary anyway (it might have recovered)
+  if (modelsToTry.length === 0) {
+    console.warn('[callLLM] All models in cooldown — attempting primary anyway');
+    modelsToTry.push(MODEL_PRIMARY);
   }
 
   for (const currentModel of modelsToTry) {
@@ -335,6 +451,7 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
           ],
           temperature,
           max_tokens: maxTokens,
+          thinking_budget: thinkingBudget,
         });
 
         // Validate response structure
@@ -342,10 +459,8 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
           throw new Error('LLM returned invalid response structure (possible gateway error)');
         }
 
-        // Extract content — Zhipu AI may return content in 'content' or 'reasoning_content'
-        const rawContent = completion.choices?.[0]?.message?.content || '';
-        const reasoningContent = completion.choices?.[0]?.message?.reasoning_content || '';
-        const content = rawContent || reasoningContent;
+        // Extract clean content
+        const content = extractContent(completion);
 
         // Detect HTML in response
         if (isHtmlContent(content)) {
@@ -353,6 +468,7 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         }
 
         if (content.trim()) {
+          recordSuccess(currentModel);
           console.log(`[callLLM] Success with ${currentModel} on attempt ${attempt + 1}`);
           return content;
         }
@@ -368,6 +484,18 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
         const isGatewayErr = isHtmlOrGatewayError(msg, errorName);
         const isRateErr = isRateLimitError(msg);
+        const isQuotaErr = isQuotaError(msg);
+
+        // Track 429s for cooldown logic
+        if (isRateErr) {
+          record429(currentModel);
+        }
+
+        // Quota exhaustion — don't retry this model
+        if (isQuotaErr) {
+          console.error(`[callLLM] ${currentModel} quota exhausted: ${msg.slice(0, 150)}`);
+          break; // Skip to next model immediately
+        }
 
         if (isGatewayErr || isRateErr) {
           console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: gateway/rate error — ${msg.slice(0, 150)}`);
@@ -376,23 +504,21 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         }
 
         if (attempt < retriesPerModel) {
-          // Exponential backoff with jitter for 502/gateway errors
-          let backoffMs = 2000;
-          if (isGatewayErr) backoffMs = (attempt + 1) * 4000 + Math.random() * 2000;
-          else if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000;
+          // Backoff strategy
+          let backoffMs = 1500;
+          if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000;
+          else if (isGatewayErr) backoffMs = (attempt + 1) * 2000 + Math.random() * 1000;
 
           console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
           continue;
         }
 
-        // This model exhausted its retries — log and try next model
         console.warn(`[callLLM] ${currentModel} exhausted all ${retriesPerModel + 1} attempts, ${useFallback ? 'trying fallback model...' : 'giving up.'}`);
       }
     }
   }
 
-  // Both models failed
   console.error('[callLLM] All models failed, returning null for graceful degradation');
   return null;
 }
@@ -401,11 +527,6 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 // JSON Extraction Helper
 // ============================================================
 
-/**
- * Call LLM and parse the response as JSON.
- * Uses multiple extraction strategies: code blocks, balanced brackets, direct parse.
- * Falls back between models automatically.
- */
 export async function callLLMForJSON<T>(
   systemPrompt: string,
   userMessage: string,
@@ -423,6 +544,7 @@ export async function callLLMForJSON<T>(
         model: options?.model,
         retriesPerModel: options?.retriesPerModel ?? 1,
         useFallback: options?.useFallback ?? true,
+        thinkingBudget: options?.thinkingBudget ?? 'standard',
       });
 
       if (response === null || response === undefined) {
@@ -486,9 +608,4 @@ export function extractJSONFromString<T>(text: string): T | null {
 // Export getSDK for agent-reach-bridge.ts
 // ============================================================
 
-/**
- * Get the SDK instance for functions.invoke (web search, page reader, etc.).
- * This is only used for non-chat-completion features of the z-ai-web-dev-sdk.
- * All chat completions go through directChatCompletion for better JWT control.
- */
 export { getSDK };
