@@ -51,11 +51,11 @@ export async function executeCompanyResearch(
   const prospect = createEmptyProspect('company', companyName);
   prospect.companyName = companyName;
 
-  // Step 1: Web search
+  // Step 1: Web search + combined extraction (single LLM call)
   steps.push({ type: 'research_company', label: 'Web Search', status: 'running', message: `Searching for "${companyName}"...` });
   try {
     const searchResult = await withTimeout(
-      () => exaSearch(`${companyName} company overview contact information`, 10),
+      () => exaSearch(`${companyName} company overview contact information CEO`, 10),
       30_000, 'Company web search',
     );
     if (searchResult?.success && searchResult.data.length > 0) {
@@ -63,10 +63,10 @@ export async function executeCompanyResearch(
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = `Found ${searchResult.data.length} web results`;
 
-      // Read top 3 results
-      const topUrls = searchResult.data.slice(0, 3).map(r => r.url);
+      // Read top 2 results (reduced from 3 to save time)
+      const topUrls = searchResult.data.slice(0, 2).map(r => r.url);
       const readResults = await Promise.allSettled(
-        topUrls.map(u => withTimeout(() => webRead(u), 25_000, `Read: ${u.slice(0, 50)}`)),
+        topUrls.map(u => withTimeout(() => webRead(u), 20_000, `Read: ${u.slice(0, 50)}`)),
       );
       const webContents: string[] = [];
       for (const result of readResults) {
@@ -75,12 +75,13 @@ export async function executeCompanyResearch(
         }
       }
 
-      // Step 2: Extract data with LLM
+      // Step 2: Extract ALL data in a single LLM call (company + contacts + news)
+      // This replaces the previous 3 separate LLM calls (company extraction, deep contact, news)
       steps.push({ type: 'research_company', label: 'AI Extraction', status: 'running', message: 'Extracting company data with AI...' });
       if (webContents.length > 0) {
         const extracted = await withTimeout(
           () => callLLMForJSON<Partial<ProspectResult>>(
-            `You are a B2B data extraction specialist. Extract company information from the provided web content.
+            `You are a B2B data extraction specialist. Extract ALL available company and contact information from the provided web content.
 Return ONLY a JSON object with these fields (use null for anything not found):
 companyName, legalName, website, industry, subIndustry, description,
 hqAddress, city, stateProvince, country, postalCode,
@@ -91,7 +92,7 @@ linkedinUrl, twitterHandle, facebookPage,
 techStack (array of strings), boardMembers (array of strings),
 recentNews (array of strings), productsServices (array of strings),
 partners (array of strings), fundingInfo.
-Be precise. Only include information explicitly stated.`,
+Be precise. Only include information explicitly stated. Include CEO/leadership names and contact details if found.`,
             `Company: ${companyName}\n\nWeb Content:\n${webContents.join('\n---\n')}`,
           ),
           45_000, 'Company LLM extraction',
@@ -109,12 +110,46 @@ Be precise. Only include information explicitly stated.`,
     steps[steps.length - 1].message = 'Web search failed';
   }
 
-  // Step 3: LinkedIn
+  // Step 2b: LLM knowledge fallback — when web search failed or returned no data
+  // Use the LLM's own knowledge to generate company data if we have nothing
+  if (!prospect.description && !prospect.industry && !prospect.website) {
+    steps.push({ type: 'research_company', label: 'AI Knowledge Base', status: 'running', message: 'Generating company profile from AI knowledge...' });
+    try {
+      const llmData = await withTimeout(
+        () => callLLMForJSON<Partial<ProspectResult>>(
+          `You are a B2B research assistant. Provide information about the company "${companyName}" from your training data.
+Return a JSON object with these fields (use null for anything you're not confident about):
+companyName, legalName, website, industry, subIndustry, description,
+hqAddress, city, stateProvince, country,
+ceoName, employeeCount, revenueEstimate, foundingYear, ownershipType,
+linkedinUrl, techStack (array of strings), productsServices (array of strings), fundingInfo.
+Only include information you are confident about. Do not fabricate specific details like email addresses or phone numbers.`,
+          `Tell me about ${companyName}`,
+          { temperature: 0.2, retriesPerModel: 1 },
+        ),
+        30_000, 'Company LLM knowledge',
+      );
+      if (llmData) {
+        safeMerge(prospect, llmData);
+        sources.push('ai-knowledge-base');
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Generated from AI knowledge';
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'AI knowledge unavailable';
+      }
+    } catch {
+      steps[steps.length - 1].status = 'completed';
+      steps[steps.length - 1].message = 'AI knowledge lookup skipped';
+    }
+  }
+
+  // Step 3: LinkedIn (non-LLM — just data lookup, runs in parallel with web search results)
   steps.push({ type: 'research_company', label: 'LinkedIn Search', status: 'running', message: 'Searching LinkedIn...' });
   try {
     const liResult = await withTimeout(
       () => linkedInSearchCompanies(companyName, 3),
-      20_000, 'LinkedIn search',
+      15_000, 'LinkedIn search',
     );
     if (liResult?.success && liResult.data.length > 0) {
       const company = liResult.data[0];
@@ -134,76 +169,27 @@ Be precise. Only include information explicitly stated.`,
     steps[steps.length - 1].message = 'LinkedIn search unavailable';
   }
 
-  // Step 4: Deep contact research
-  steps.push({ type: 'research_company', label: 'Deep Research', status: 'running', message: 'Researching key contacts...' });
-  try {
-    const contactSearch = await withTimeout(
-      () => exaSearch(`${companyName} CEO founder leadership team contact email`, 5),
-      30_000, 'Deep contact search',
-    );
-    if (contactSearch?.success && contactSearch.data.length > 0) {
-      sources.push(...contactSearch.data.map(r => r.url));
-      const topUrl = contactSearch.data[0]?.url;
-      if (topUrl) {
-        const readResult = await withTimeout(() => webRead(topUrl), 25_000, 'Deep contact read');
-        if (readResult?.success) {
-          const contactData = await withTimeout(
-            () => callLLMForJSON<{
-              ceoName?: string | null;
-              keyContactName?: string | null;
-              keyContactTitle?: string | null;
-              keyContactEmail?: string | null;
-              ceoEmail?: string | null;
-              boardMembers?: string[];
-            }>(
-              `Extract key people and contact info from this content about "${companyName}".
-Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail, boardMembers (array of names). Use null for not found.`,
-              readResult.data.content.slice(0, 4000),
-            ),
-            45_000, 'Deep contact LLM',
-          );
-          if (contactData) {
-            if (contactData.ceoName && !prospect.ceoName) prospect.ceoName = contactData.ceoName;
-            if (contactData.keyContactName && !prospect.keyContactName) prospect.keyContactName = contactData.keyContactName;
-            if (contactData.keyContactTitle && !prospect.keyContactTitle) prospect.keyContactTitle = contactData.keyContactTitle;
-            if (contactData.keyContactEmail && !prospect.keyContactEmail) prospect.keyContactEmail = contactData.keyContactEmail;
-            if (contactData.ceoEmail && !prospect.ceoEmail) prospect.ceoEmail = contactData.ceoEmail;
-            if (contactData.boardMembers?.length && !prospect.boardMembers.length) prospect.boardMembers = contactData.boardMembers;
-          }
-        }
-      }
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Found key contacts';
-    } else {
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Limited contact info';
-    }
-  } catch {
-    steps[steps.length - 1].status = 'completed';
-    steps[steps.length - 1].message = 'Deep research partially completed';
-  }
-
-  // Step 5: News
-  steps.push({ type: 'research_company', label: 'News Search', status: 'running', message: 'Finding recent news...' });
-  try {
-    const newsSearch = await withTimeout(
-      () => exaSearch(`${companyName} news 2024 2025 2026`, 5),
-      20_000, 'News search',
-    );
-    if (newsSearch?.success && newsSearch.data.length > 0) {
-      sources.push(...newsSearch.data.map(r => r.url));
-      if (!prospect.recentNews.length) {
+  // Step 4: News search (only if we don't already have news from the main extraction)
+  if (!prospect.recentNews?.length) {
+    steps.push({ type: 'research_company', label: 'News Search', status: 'running', message: 'Finding recent news...' });
+    try {
+      const newsSearch = await withTimeout(
+        () => exaSearch(`${companyName} news 2024 2025 2026`, 5),
+        15_000, 'News search',
+      );
+      if (newsSearch?.success && newsSearch.data.length > 0) {
+        sources.push(...newsSearch.data.map(r => r.url));
         prospect.recentNews = newsSearch.data.map(r => `${r.title} - ${r.snippet?.slice(0, 100) || ''}`);
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = `Found ${newsSearch.data.length} news items`;
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'No recent news found';
       }
+    } catch {
       steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = `Found ${newsSearch.data.length} news items`;
-    } else {
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'No recent news found';
+      steps[steps.length - 1].message = 'News search skipped';
     }
-  } catch {
-    steps[steps.length - 1].status = 'completed';
-    steps[steps.length - 1].message = 'News search skipped';
   }
 
   prospect.sources = [...new Set(sources)];
@@ -235,9 +221,9 @@ export async function executePersonResearch(
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = `Found ${searchResult.data.length} results`;
 
-      const topUrls = searchResult.data.slice(0, 3).map(r => r.url);
+      const topUrls = searchResult.data.slice(0, 2).map(r => r.url);
       const readResults = await Promise.allSettled(
-        topUrls.map(u => withTimeout(() => webRead(u), 25_000, `Person read: ${u.slice(0, 50)}`)),
+        topUrls.map(u => withTimeout(() => webRead(u), 20_000, `Person read: ${u.slice(0, 50)}`)),
       );
       const webContents: string[] = [];
       for (const result of readResults) {
@@ -246,13 +232,13 @@ export async function executePersonResearch(
         }
       }
 
-      // Step 2: Extract person data
+      // Step 2: Extract person data + company info in single LLM call
       steps.push({ type: 'research_person', label: 'AI Extraction', status: 'running', message: 'Extracting person data with AI...' });
       if (webContents.length > 0) {
         const extracted = await withTimeout(
           () => callLLMForJSON<Partial<ProspectResult>>(
-            `Extract information about "${personName}" from this web content.
-Return JSON: personName, personTitle, personCompany, personEmail, personPhone, personLinkedin, personBio, companyName, industry, city, country, website. Use null for not found.`,
+            `Extract ALL information about "${personName}" from this web content, including their company details.
+Return JSON: personName, personTitle, personCompany, personEmail, personPhone, personLinkedin, personBio, companyName, industry, city, country, website, generalEmail, phoneMain, employeeCount, revenueEstimate. Use null for not found.`,
             webContents.join('\n---\n'),
           ),
           45_000, 'Person LLM extraction',
@@ -270,6 +256,10 @@ Return JSON: personName, personTitle, personCompany, personEmail, personPhone, p
           if (extracted.city) prospect.city = extracted.city;
           if (extracted.country) prospect.country = extracted.country;
           if (extracted.website) prospect.website = extracted.website;
+          if (extracted.generalEmail) prospect.generalEmail = extracted.generalEmail;
+          if (extracted.phoneMain) prospect.phoneMain = extracted.phoneMain;
+          if (extracted.employeeCount) prospect.employeeCount = extracted.employeeCount;
+          if (extracted.revenueEstimate) prospect.revenueEstimate = extracted.revenueEstimate;
         }
         steps[steps.length - 1].status = 'completed';
         steps[steps.length - 1].message = 'Extracted person data';
@@ -286,7 +276,7 @@ Return JSON: personName, personTitle, personCompany, personEmail, personPhone, p
   // Step 3: LinkedIn
   steps.push({ type: 'research_person', label: 'LinkedIn Search', status: 'running', message: 'Searching LinkedIn...' });
   try {
-    const liResult = await withTimeout(() => linkedInSearchPeople(personName, 3), 20_000, 'LinkedIn person');
+    const liResult = await withTimeout(() => linkedInSearchPeople(personName, 3), 15_000, 'LinkedIn person');
     if (liResult?.success && liResult.data.length > 0) {
       const person = liResult.data[0];
       if (person.name && !prospect.personName) prospect.personName = person.name;
@@ -305,9 +295,11 @@ Return JSON: personName, personTitle, personCompany, personEmail, personPhone, p
     steps[steps.length - 1].message = 'LinkedIn search unavailable';
   }
 
-  // Step 4: Associated company research
+  // Step 4: Associated company research (only if we're missing key data)
+  // Skip if we already have company details from the combined extraction
   const companyName = prospect.personCompany || prospect.companyName;
-  if (companyName) {
+  const needsCompanyResearch = companyName && (!prospect.generalEmail && !prospect.phoneMain && !prospect.industry);
+  if (needsCompanyResearch) {
     steps.push({ type: 'research_person', label: 'Company Research', status: 'running', message: `Researching ${companyName}...` });
     try {
       const companySearch = await withTimeout(
@@ -352,23 +344,25 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
     }
   }
 
-  // Step 5: Twitter
-  steps.push({ type: 'research_person', label: 'Twitter/X', status: 'running', message: 'Searching Twitter/X...' });
-  try {
-    const twResult = await withTimeout(() => twitterSearch(personName, 3), 20_000, 'Twitter search');
-    if (twResult?.success && twResult.data.length > 0) {
-      const tweet = twResult.data[0] as unknown as Record<string, unknown>;
-      if (tweet.username && !prospect.twitterHandle) prospect.twitterHandle = `@${tweet.username}`;
-      sources.push(`twitter:${tweet.url || personName}`);
+  // Step 5: Twitter (only if we don't have a handle yet)
+  if (!prospect.twitterHandle) {
+    steps.push({ type: 'research_person', label: 'Twitter/X', status: 'running', message: 'Searching Twitter/X...' });
+    try {
+      const twResult = await withTimeout(() => twitterSearch(personName, 3), 15_000, 'Twitter search');
+      if (twResult?.success && twResult.data.length > 0) {
+        const tweet = twResult.data[0] as unknown as Record<string, unknown>;
+        if (tweet.username && !prospect.twitterHandle) prospect.twitterHandle = `@${tweet.username}`;
+        sources.push(`twitter:${tweet.url || personName}`);
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Found Twitter profile';
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'No Twitter profile found';
+      }
+    } catch {
       steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Found Twitter profile';
-    } else {
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'No Twitter profile found';
+      steps[steps.length - 1].message = 'Twitter search unavailable';
     }
-  } catch {
-    steps[steps.length - 1].status = 'completed';
-    steps[steps.length - 1].message = 'Twitter search unavailable';
   }
 
   prospect.sources = [...new Set(sources)];

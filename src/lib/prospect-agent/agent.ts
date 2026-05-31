@@ -68,14 +68,23 @@ export async function processAgentMessage(
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     const isGatewayError = errorMsg.includes('502') || errorMsg.includes('Bad Gateway')
       || errorMsg.includes('HTML instead') || errorMsg.includes('gateway error');
+    const isRateLimitError = errorMsg.includes('429') || errorMsg.includes('rate limit')
+      || errorMsg.includes('访问量过大') || errorMsg.includes('Too many requests');
+
+    let errorContent: string;
+    if (isRateLimitError) {
+      errorContent = "The AI service is currently experiencing high demand. Please wait about 10 seconds and try again — your message will be processed freshly.\n\n**Tip:** Try a simpler query for faster results.";
+    } else if (isGatewayError) {
+      errorContent = "I'm having trouble connecting to the AI service right now. The servers may be temporarily overloaded. Please try again in a few seconds — your message will be processed freshly.";
+    } else {
+      errorContent = `I encountered an unexpected error while processing your request. Please try again or rephrase your question.\n\nError: ${errorMsg.slice(0, 150)}`;
+    }
 
     return {
       message: {
         id: `agent-fallback-${Date.now()}`,
         role: 'assistant',
-        content: isGatewayError
-          ? "I'm having trouble connecting to the AI service right now. The servers may be temporarily overloaded. Please try again in a few seconds — your message will be processed freshly."
-          : `I encountered an unexpected error while processing your request. Please try again or rephrase your question.\n\nError: ${errorMsg.slice(0, 150)}`,
+        content: errorContent,
         timestamp: new Date(),
         persona: 'navigator',
         thinking: {

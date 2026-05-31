@@ -16,7 +16,7 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
-import { waitForRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK singleton — shared with LLM calls
+import { waitForRateLimit, getSDK, notifyRateLimitHit } from '@/lib/llm'; // Unified rate limiter + SDK singleton — shared with LLM calls
 
 const execAsync = promisify(exec);
 
@@ -154,7 +154,11 @@ async function retryWithBackoff<T>(fn: () => Promise<T>, maxRetries = 2, label =
     } catch (error) {
       const msg = error instanceof Error ? error.message : 'Unknown';
       const is502 = msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('HTML');
-      if (attempt < maxRetries && (is502 || msg.includes('429'))) {
+      const is429 = msg.includes('429') || msg.includes('rate limit') || msg.includes('访问量过大');
+      if (is429) {
+        notifyRateLimitHit(); // Notify the adaptive rate limiter
+      }
+      if (attempt < maxRetries && (is502 || is429)) {
         const backoff = is502 ? (attempt + 1) * 5000 : (attempt + 1) * 3000;
         console.warn(`[retryWithBackoff] "${label}" attempt ${attempt + 1} failed (${msg.slice(0, 100)}). Retrying in ${backoff}ms...`);
         await new Promise(r => setTimeout(r, backoff));
@@ -296,7 +300,11 @@ export async function webRead(url: string, format: 'markdown' | 'text' = 'markdo
       if (!response.ok) {
         const errorMsg = `Jina Reader returned ${response.status}: ${response.statusText}`;
         // Throw for 502/503/429 so retryWithBackoff can catch and retry
-        if (response.status === 502 || response.status === 503 || response.status === 429) {
+        if (response.status === 429) {
+          notifyRateLimitHit();
+          throw new Error(errorMsg);
+        }
+        if (response.status === 502 || response.status === 503) {
           throw new Error(errorMsg);
         }
         return makeError<WebReadResult>(errorMsg, channel);
@@ -344,14 +352,19 @@ async function duckDuckGoSearch(query: string, numResults = 25): Promise<SearchR
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
     const response = await fetch(searchUrl, {
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html',
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'DNT': '1',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
       },
       signal: AbortSignal.timeout(15000),
     });
 
     if (!response.ok) {
-      console.warn(`[duckDuckGoSearch] HTTP ${response.status}`);
+      console.warn(`[duckDuckGoSearch] HTTP ${response.status} — DuckDuckGo may be blocking this request`);
       return [];
     }
 
@@ -374,6 +387,20 @@ async function duckDuckGoSearch(query: string, numResults = 25): Promise<SearchR
 
       if (url && title) {
         results.push({ title, url, snippet: snippet.slice(0, 300) });
+      }
+    }
+
+    // If no results found with standard parser, try alternative patterns
+    if (results.length === 0 && html.length > 5000) {
+      // Try parsing generic link patterns that DuckDuckGo might use
+      const altLinkRegex = /<a[^>]+href="(https?:\/\/(?!duckduckgo\.com)[^"]+)"[^>]*>([^<]+)<\/a>/gi;
+      const altMatches = [...html.matchAll(altLinkRegex)];
+      for (const match of altMatches.slice(0, numResults)) {
+        const url = match[1];
+        const title = match[2].trim();
+        if (url && title && title.length > 5) {
+          results.push({ title, url, snippet: '' });
+        }
       }
     }
 

@@ -53,7 +53,9 @@ export async function safeFetchJSON<T = unknown>(url: string | URL | Request, in
         // HTML error page from a reverse proxy (nginx, CloudFront, etc.)
         // These are the WORST case — we can't extract useful info.
         // Provide a friendly message and mark as retryable.
-        if (response.status === 502) {
+        if (response.status === 429) {
+          errorDetail = 'The AI service is currently experiencing high demand. Please wait about 10 seconds and try again.';
+        } else if (response.status === 502) {
           errorDetail = 'The AI service is temporarily busy. Please try again in a few seconds.';
         } else if (response.status === 503) {
           errorDetail = 'The server is temporarily overloaded. Please try again shortly.';

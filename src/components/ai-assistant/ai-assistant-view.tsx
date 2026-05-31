@@ -677,11 +677,16 @@ export function AIAssistantView() {
     } catch (error) {
       console.error('AI Assistant error:', error);
 
+      const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+      const isRateLimitError = errorMsg.includes('429') || errorMsg.includes('rate limit') || errorMsg.includes('high demand');
+      const errorContent = isRateLimitError
+        ? 'The AI service is currently experiencing high demand. Please wait about 10 seconds and try again. Simpler queries tend to get faster results.'
+        : 'I encountered a connection error. This could be due to a network issue or the AI service being temporarily unavailable. Please try again in a moment.';
+
       const errorMessage: Message = {
         id: `error-${Date.now()}`,
         role: 'assistant',
-        content:
-          'I encountered a connection error. This could be due to a network issue or the AI service being temporarily unavailable. Please try again in a moment.',
+        content: errorContent,
         timestamp: new Date(),
         isError: true,
       };

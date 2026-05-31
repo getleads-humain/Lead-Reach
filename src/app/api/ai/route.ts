@@ -103,7 +103,7 @@ For general questions, respond naturally.`,
         // Not JSON, that's fine
       }
     } catch (sdkError) {
-      console.error('SDK Error, falling back to pattern matching:', sdkError);
+      console.warn('LLM call failed, falling back to pattern matching:', sdkError instanceof Error ? sdkError.message.slice(0, 100) : 'Unknown');
 
       // Fallback: Pattern-based intent detection
       const lowerMessage = message.toLowerCase();

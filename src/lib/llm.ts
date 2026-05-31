@@ -12,10 +12,10 @@
  *   2. Fallback to z-ai-web-dev-sdk if direct API fails
  *      — Uses the platform's internal gateway
  *
- * PROTECTION LAYERS (3-tier defense against 502 Bad Gateway):
+ * PROTECTION LAYERS (3-tier defense):
  *   1. Concurrency limiter — max 4 simultaneous LLM calls
- *   2. Rate limiter — minimum 1.2s between calls + jitter
- *   3. Retry + fallback — 3 retries per model, then switch to secondary model
+ *   2. Token-bucket rate limiter — adaptive pacing based on API response
+ *   3. Retry + fallback — 1 retry per model, then switch to secondary model
  */
 
 import crypto from 'crypto';
@@ -85,15 +85,42 @@ function generateZhipuToken(): string {
 }
 
 /**
+ * Response structure from the Zhipu AI API.
+ * Includes reasoning_content for reasoning models like glm-4.7-flash.
+ */
+interface ZhipuChatResponse {
+  choices: Array<{
+    message: {
+      content: string;
+      reasoning_content?: string;
+      role: string;
+    };
+    finish_reason: string;
+    index: number;
+  }>;
+  created: number;
+  id: string;
+  model: string;
+  usage?: {
+    prompt_tokens: number;
+    completion_tokens: number;
+    total_tokens: number;
+    completion_tokens_details?: {
+      reasoning_tokens: number;
+    };
+  };
+}
+
+/**
  * Make a direct chat completion call to the Zhipu AI API.
- * Returns the response data or throws on error.
+ * Returns the full response data (including reasoning_content) or throws on error.
  */
 async function directZhipuChatCompletion(params: {
   model: string;
   messages: Array<{ role: string; content: string }>;
   temperature: number;
   max_tokens: number;
-}): Promise<{ choices: Array<{ message: { content: string }; finish_reason: string }> }> {
+}): Promise<ZhipuChatResponse> {
   const token = generateZhipuToken();
 
   const response = await fetch(`${ZHIPU_API_BASE}/chat/completions`, {
@@ -113,9 +140,7 @@ async function directZhipuChatCompletion(params: {
     throw new Error(`Zhipu API error ${response.status}: ${errorMessage}`);
   }
 
-  const data = await response.json() as {
-    choices: Array<{ message: { content: string }; finish_reason: string }>;
-  };
+  const data = await response.json() as ZhipuChatResponse;
 
   if (!data.choices || !Array.isArray(data.choices)) {
     throw new Error('Zhipu API returned invalid response structure');
@@ -177,17 +202,44 @@ function releaseSlot(): void {
 }
 
 // ============================================================
-// Unified Rate Limiter
+// Adaptive Token-Bucket Rate Limiter
 // ============================================================
 
+/**
+ * Token-bucket rate limiter that adapts to API feedback.
+ *
+ * - Default rate: 1 call per 1.5s (conservative for Zhipu free tier)
+ * - When 429 detected: doubles the interval (up to 8s)
+ * - When calls succeed: gradually reduces back to 1.5s
+ * - Jitter prevents thundering herd
+ */
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 2000; // 2s between calls to avoid rate limits
-const JITTER_MS = 800;
+let currentIntervalMs = 1500; // Start at 1.5s — balanced for Zhipu API
+const MIN_INTERVAL_MS = 800;  // Minimum when things are going well
+const MAX_INTERVAL_MS = 8000; // Maximum after repeated 429s
+const JITTER_MS = 400;
+
+/**
+ * Called when a 429 rate limit is detected.
+ * Doubles the current interval (capped at MAX_INTERVAL_MS).
+ */
+export function notifyRateLimitHit(): void {
+  currentIntervalMs = Math.min(currentIntervalMs * 2, MAX_INTERVAL_MS);
+  console.warn(`[RateLimiter] 429 detected — increased interval to ${currentIntervalMs}ms`);
+}
+
+/**
+ * Called when a call succeeds.
+ * Gradually reduces the interval back toward MIN_INTERVAL_MS.
+ */
+function notifyCallSuccess(): void {
+  currentIntervalMs = Math.max(currentIntervalMs * 0.85, MIN_INTERVAL_MS);
+}
 
 async function waitForRateLimit() {
   const now = Date.now();
   const elapsed = now - lastCallTime;
-  const waitTime = MIN_INTERVAL_MS - elapsed + Math.random() * JITTER_MS;
+  const waitTime = currentIntervalMs - elapsed + Math.random() * JITTER_MS;
   if (waitTime > 0) {
     await new Promise(r => setTimeout(r, waitTime));
   }
@@ -249,6 +301,81 @@ function isRateLimitError(msg: string): boolean {
 }
 
 // ============================================================
+// Reasoning Content Extraction
+// ============================================================
+
+/**
+ * Extract useful content from a reasoning model's response.
+ *
+ * glm-4.7-flash is a reasoning model that sometimes:
+ * 1. Returns content in `reasoning_content` with empty `content`
+ *    (happens when max_tokens is exhausted during reasoning)
+ * 2. Returns a valid `content` field along with `reasoning_content`
+ *    (normal case)
+ *
+ * This function handles both cases:
+ * - If `content` is present and non-empty, return it directly
+ * - If `content` is empty but `reasoning_content` has content,
+ *   extract the final answer portion from the reasoning
+ */
+function extractContentFromResponse(result: ZhipuChatResponse): string {
+  const choice = result.choices?.[0];
+  if (!choice?.message) return '';
+
+  const content = choice.message.content || '';
+  const reasoningContent = choice.message.reasoning_content || '';
+
+  // Normal case: model produced final content
+  if (content.trim()) {
+    return content;
+  }
+
+  // Reasoning model exhausted tokens during reasoning — extract from reasoning
+  if (reasoningContent.trim()) {
+    console.warn('[extractContent] Model returned reasoning but no content — extracting from reasoning_content');
+
+    // Strategy 1: Look for a final conclusion section
+    // Reasoning typically ends with a clear conclusion after the chain-of-thought
+    const conclusionPatterns = [
+      /(?:therefore|thus|hence|in conclusion|in summary|to summarize|so,?\s*the answer|final answer|answer:|conclusion:|result:)\s*(.+)/is,
+      /(?:the (?:best |most |correct )?(?:answer|response|result|choice|option) (?:is|would be))\s*(.+)/is,
+    ];
+
+    for (const pattern of conclusionPatterns) {
+      const match = reasoningContent.match(pattern);
+      if (match && match[1]?.trim()) {
+        return match[1].trim();
+      }
+    }
+
+    // Strategy 2: Take the last paragraph/section of the reasoning
+    // This is usually where the model summarizes its conclusion
+    const paragraphs = reasoningContent.split(/\n\n+/).filter(p => p.trim().length > 20);
+    if (paragraphs.length >= 2) {
+      // Take the last 1-2 paragraphs which typically contain the conclusion
+      const lastParagraphs = paragraphs.slice(-1).join('\n\n');
+      // Remove numbering/bullets from the start
+      const cleaned = lastParagraphs.replace(/^\s*(?:\d+\.|\*|-)\s*/, '').trim();
+      if (cleaned.length > 10) {
+        return cleaned;
+      }
+    }
+
+    // Strategy 3: Take the last meaningful sentence
+    const sentences = reasoningContent.split(/[.!?]+\s+/).filter(s => s.trim().length > 15);
+    if (sentences.length > 0) {
+      const lastSentence = sentences[sentences.length - 1].trim();
+      return lastSentence;
+    }
+
+    // Last resort: return a truncated portion of the reasoning
+    return reasoningContent.slice(-500).trim();
+  }
+
+  return '';
+}
+
+// ============================================================
 // Core LLM Call — with concurrency, model fallback and retry
 // ============================================================
 
@@ -263,7 +390,7 @@ export interface LLMCallOptions {
   maxTokens?: number;
   /** Preferred model (defaults to MODEL_PRIMARY) */
   model?: LLMModel;
-  /** Number of retries per model before falling back, default 3 */
+  /** Number of retries per model before falling back, default 1 */
   retriesPerModel?: number;
   /** Whether to fall back to the other model on failure, default true */
   useFallback?: boolean;
@@ -272,6 +399,7 @@ export interface LLMCallOptions {
 /**
  * Make a single LLM call using the best available connection.
  * Tries the detected connection mode, falls back to the other if it fails.
+ * Handles reasoning_content extraction for glm-4.7-flash.
  */
 async function makeLLMCall(
   model: string,
@@ -291,35 +419,31 @@ async function makeLLMCall(
         max_tokens: maxTokens,
       });
 
-      // The glm-4.7-flash model sometimes returns content in reasoning_content
-      // with empty content field — extract reasoning_content as fallback
-      let content = result.choices?.[0]?.message?.content || '';
-      
-      if (!content.trim()) {
-        // Try to get reasoning content if available (some models return it)
-        const reasoningContent = (result.choices?.[0]?.message as Record<string, unknown>)?.reasoning_content;
-        if (typeof reasoningContent === 'string' && reasoningContent.trim()) {
-          // reasoning_content is the model's chain-of-thought — we don't use it
-          // The model just didn't produce final content, treat as empty
-          console.warn(`[makeLLMCall] Model ${model} returned reasoning but no content (likely hit max_tokens during reasoning)`);
-        }
-      }
+      // Extract content, handling reasoning_content from reasoning models
+      const content = extractContentFromResponse(result);
 
       if (content.trim() && !isHtmlContent(content)) {
-        // Cache successful mode
+        // Cache successful mode and notify rate limiter
         connectionMode = 'direct';
+        notifyCallSuccess();
         return content;
       }
+
+      // Content was empty or HTML — this is unusual, log it
+      console.warn(`[makeLLMCall] Direct API returned empty/HTML for ${model}, finish_reason=${result.choices?.[0]?.finish_reason}`);
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Unknown';
-      // If rate limited, don't fall back to SDK (SDK won't help)
+
+      // If rate limited, notify the rate limiter and throw immediately
       if (msg.includes('429')) {
-        console.warn(`[makeLLMCall] Rate limited on ${model}, waiting before retry...`);
-        throw err; // Let the retry logic handle rate limits
+        notifyRateLimitHit();
+        throw err; // Let the retry logic handle rate limits with adaptive backoff
       }
+
       console.warn(`[makeLLMCall] Direct API failed for ${model}: ${msg.slice(0, 150)}`);
 
-      // If direct fails with non-rate-limit error, try SDK
+      // Only try SDK fallback for non-rate-limit errors AND only if SDK is likely available
+      // (Don't waste time on SDK if it's been consistently failing)
       try {
         const zai = await getSDK();
         const result = await zai.chat.completions.create({
@@ -331,6 +455,7 @@ async function makeLLMCall(
         const content = result.choices?.[0]?.message?.content || '';
         if (content.trim() && !isHtmlContent(content)) {
           connectionMode = 'sdk';
+          notifyCallSuccess();
           console.log(`[makeLLMCall] SDK fallback succeeded for ${model}`);
           return content;
         }
@@ -349,6 +474,7 @@ async function makeLLMCall(
       });
       const content = result.choices?.[0]?.message?.content || '';
       if (content.trim() && !isHtmlContent(content)) {
+        notifyCallSuccess();
         return content;
       }
     } catch (err) {
@@ -364,13 +490,19 @@ async function makeLLMCall(
             temperature,
             max_tokens: maxTokens,
           });
-          const content = result.choices?.[0]?.message?.content || '';
+
+          const content = extractContentFromResponse(result);
+
           if (content.trim() && !isHtmlContent(content)) {
             connectionMode = 'direct';
+            notifyCallSuccess();
             console.log(`[makeLLMCall] Direct API fallback succeeded for ${model}`);
             return content;
           }
         } catch (directErr) {
+          if (directErr instanceof Error && directErr.message.includes('429')) {
+            notifyRateLimitHit();
+          }
           console.warn(`[makeLLMCall] Direct API fallback also failed: ${directErr instanceof Error ? directErr.message.slice(0, 100) : 'Unknown'}`);
         }
       }
@@ -385,8 +517,8 @@ async function makeLLMCall(
  *
  * Strategy:
  * 1. Acquire a concurrency slot (max 4 simultaneous calls)
- * 2. Wait for rate limiter (1.2s + jitter between calls)
- * 3. Try the primary model (glm-4.7-flash) with retries
+ * 2. Wait for adaptive rate limiter
+ * 3. Try the primary model (glm-4.7-flash) with limited retries
  * 4. If all retries fail, try the secondary model (glm-4.6v-flash)
  * 5. Returns null if both models fail (graceful degradation)
  */
@@ -395,9 +527,9 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     systemPrompt,
     userMessage,
     temperature = 0.3,
-    maxTokens = 16384, // glm-4.7-flash uses reasoning tokens; 16K ensures enough output for content
+    maxTokens = 4096, // 4K output tokens — enough for most responses; reasoning tokens are separate
     model = MODEL_PRIMARY,
-    retriesPerModel = 2, // Reduced from 3 to avoid rate limits
+    retriesPerModel = 1, // Only 1 retry per model to avoid rate limit cascading
     useFallback = true,
   } = options;
 
@@ -431,7 +563,7 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
             return content;
           }
 
-          // Empty response — retry
+          // Empty response — retry once
           if (attempt < retriesPerModel) {
             console.warn(`[callLLM] Empty response from ${currentModel}, attempt ${attempt + 1}, retrying...`);
             continue;
@@ -449,10 +581,15 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
             console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1} failed: ${msg.slice(0, 200)}`);
           }
 
+          // For rate limit errors, use adaptive backoff based on current rate limiter state
           if (attempt < retriesPerModel) {
             let backoffMs = 1500;
-            if (isGatewayErr) backoffMs = (attempt + 1) * 2500 + Math.random() * 1500;
-            else if (isRateErr) backoffMs = (attempt + 1) * 2000 + Math.random() * 800;
+            if (isRateErr) {
+              // Use the current adaptive interval + extra buffer
+              backoffMs = currentIntervalMs + Math.random() * 2000;
+            } else if (isGatewayErr) {
+              backoffMs = (attempt + 1) * 2500 + Math.random() * 1500;
+            }
 
             console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
             await new Promise(resolve => setTimeout(resolve, backoffMs));
@@ -493,7 +630,7 @@ export async function callLLMForJSON<T>(
         systemPrompt,
         userMessage,
         temperature: options?.temperature ?? 0.2,
-        maxTokens: options?.maxTokens ?? 16384,
+        maxTokens: options?.maxTokens ?? 4096,
         model: options?.model,
         retriesPerModel: options?.retriesPerModel ?? 1,
         useFallback: options?.useFallback ?? true,

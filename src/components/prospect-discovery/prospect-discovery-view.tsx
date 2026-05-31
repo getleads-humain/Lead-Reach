@@ -704,13 +704,17 @@ export function ProspectDiscoveryView() {
         }
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
+        const isRateLimitError = msg.includes('429') || msg.includes('rate limit') || msg.includes('high demand');
         const isTransientError = msg.includes('502') || msg.includes('503') || msg.includes('overloaded')
           || msg.includes('Bad Gateway') || msg.includes('busy') || msg.includes('Server error')
-          || msg.includes('temporarily') || msg.includes('unavailable') || msg.includes('timed out');
+          || msg.includes('temporarily') || msg.includes('unavailable') || msg.includes('timed out')
+          || isRateLimitError;
 
         if (isTransientError && attempt < MAX_RETRIES) {
-          // Wait before retrying
-          const backoff = (attempt + 1) * 2500;
+          // Rate limit errors need longer backoff
+          const backoff = isRateLimitError
+            ? (attempt + 1) * 5000  // 5s, 10s for rate limits
+            : (attempt + 1) * 2500; // 2.5s, 5s for other transient errors
           console.warn(`[ProspectDiscovery] Transient error (${msg.slice(0, 80)}), waiting ${backoff}ms before retry ${attempt + 1}...`);
           await new Promise(r => setTimeout(r, backoff));
           lastError = msg;
@@ -718,12 +722,19 @@ export function ProspectDiscoveryView() {
         }
 
         // Non-transient or exhausted retries — show friendly error
+        let errorContent: string;
+        if (isRateLimitError) {
+          errorContent = "The AI service is currently experiencing high demand. Please wait about 10 seconds and try again — your message will be processed freshly.\n\n**Tip:** Try a simpler query for faster results.";
+        } else if (isTransientError) {
+          errorContent = "I'm having trouble connecting to the AI service right now. Please try again in a few seconds — your message will be processed freshly.";
+        } else {
+          errorContent = `I encountered an error: ${msg.slice(0, 150)}. Please try again or rephrase your question.`;
+        }
+
         const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
           role: 'assistant',
-          content: isTransientError
-            ? "I'm having trouble connecting to the AI service right now. Please try again in a few seconds — your message will be processed freshly."
-            : `I encountered an error: ${msg.slice(0, 150)}. Please try again or rephrase your question.`,
+          content: errorContent,
           timestamp: new Date(),
           persona: 'navigator',
         };
