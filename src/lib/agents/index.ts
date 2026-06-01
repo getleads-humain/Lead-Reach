@@ -283,3 +283,34 @@ export {
   type SuppressedEmail,
   type LeadSequenceEnrollment,
 } from './email-engine';
+
+// Lead Intelligence
+export {
+  analyzeLeadBehavior,
+  predictLeadConversion,
+  getLeadIntelligenceDashboard,
+  identifyDecisionMakers,
+  mapBuyingSignals,
+  scoreLeadEngagement,
+  type LeadBehaviorProfile,
+  type ConversionPrediction,
+  type DecisionMaker,
+  type BuyingSignal,
+  type LeadEngagementScore,
+} from './lead-intelligence';
+
+// Agent Infrastructure (sessions, models, logs, cron, skills, plugins, profiles, config, keys, docs)
+export {
+  AgentRegistry,
+  sessions,
+  models,
+  logs,
+  cron,
+  skills,
+  plugins,
+  profiles,
+  config as agentConfig,
+  keys,
+  documentation,
+  type AgentContext,
+} from '@/lib/agent-infrastructure';

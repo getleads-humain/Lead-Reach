@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+<<<<<<< HEAD
 import { callLLMForJSON } from '@/lib/llm';
+=======
+import { getSDK } from '@/lib/llm';
+>>>>>>> origin/main
 
 export const maxDuration = 300;
 
@@ -77,7 +81,11 @@ export async function POST(request: NextRequest) {
       if (!combinedContent) continue;
 
       try {
+<<<<<<< HEAD
         const systemPrompt = `You are a business data extraction assistant. Extract business listings from the provided web content. For each business found, provide: name, phone (if available), email (if available), address (if available), and website URL. Return ONLY a JSON array of objects with these fields: name, phone, email, address, url. If a field is not found, omit it or set to null. Only include real businesses, not ads or navigation elements.`;
+=======
+        const zai = await getSDK();
+>>>>>>> origin/main
 
         const extracted = await callLLMForJSON<GeneratedLead[]>(systemPrompt, `Extract ${keyword} businesses in ${location} from:\n\n${combinedContent.slice(0, 10000)}`, {
           temperature: 0.1,

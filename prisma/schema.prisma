@@ -436,6 +436,55 @@ model ICPProfile {
   @@map("icp_profiles")
 }
 
+model ICPProfile {
+  id          String   @id @default(cuid())
+  name        String
+  description String?
+
+  // Firmographic
+  industries     String?  // JSON array
+  companySizes   String?  // JSON array
+  locations      String?  // JSON array
+  revenueRange   String?
+
+  // Technographic
+  requiredTech            String?  // JSON array
+  preferredTech           String?  // JSON array
+  techSophisticationLevel String   @default("medium")
+  digitalMaturityScore    Int      @default(50)
+
+  // Psychographic
+  values       String?  // JSON array
+  challenges   String?  // JSON array
+  goals        String?  // JSON array
+  cultureTypes String?  // JSON array
+
+  // Behavioral
+  buyingSignals      String?  // JSON array
+  engagementPatterns String?  // JSON array
+
+  // Situational
+  triggerEvents     String?  // JSON array
+  expansionSignals  String?  // JSON array
+  complianceNeeds   String?  // JSON array
+
+  // Economic
+  budgetRange          String?
+  decisionTimeline     String?
+  priceSensitivity     String   @default("medium")
+  lifetimeValuePotential String @default("medium")
+
+  // Full criteria JSON for flexibility
+  criteria     String?  // Full JSON of ICP criteria
+
+  // Stats
+  leadsScored  Int      @default(0)
+  avgFitScore  Float    @default(0)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
 model FollowUpSequence {
   id          String  @id @default(cuid())
   userId      String? @map("user_id")
@@ -633,4 +682,267 @@ model DataQualityAudit {
   createdAt DateTime @default(now()) @map("created_at")
 
   @@map("data_quality_audits")
+}
+
+// ─── Agent Infrastructure Models ────────────────────────────────
+
+model AgentSession {
+  id          String   @id @default(cuid())
+  agentName   String   // maps to AgentName type
+  sessionId   String   @unique // unique session identifier
+  
+  // Session state
+  status      String   @default("active") // active, paused, completed, archived
+  context     String?  // JSON: full conversation context, state, metadata
+  
+  // Model used in this session
+  modelId     String   @default("glm-4.7-flash") // which GLM model powers this session
+  
+  // Session metrics
+  messageCount     Int    @default(0)
+  tokensUsed       Int    @default(0)
+  tasksCompleted   Int    @default(0)
+  tasksFailed      Int    @default(0)
+  
+  // Embedding for semantic search (stored as JSON float array for SQLite compat)
+  embedding   String?  // JSON array of floats for vector similarity
+  
+  // Relations
+  campaignId  String?
+  
+  // Timestamps
+  startedAt   DateTime @default(now())
+  lastActiveAt DateTime @default(now())
+  endedAt     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  logs        AgentLog[]
+  cronJobs    AgentCronJob[]
+}
+
+model AgentLog {
+  id          String   @id @default(cuid())
+  agentName   String
+  sessionId   String?
+  session     AgentSession? @relation(fields: [sessionId], references: [id])
+  
+  // Log details
+  level       String   @default("info") // debug, info, warn, error, critical
+  category    String   // execution, model, channel, memory, skill, plugin, system
+  message     String
+  metadata    String?  // JSON: structured log data (tokens, latency, etc.)
+  
+  // Execution context
+  taskId      String?
+  skillId     String?
+  pluginId    String?
+  
+  // Performance
+  durationMs  Int?     // how long the operation took
+  tokensIn    Int?
+  tokensOut   Int?
+  
+  createdAt   DateTime @default(now())
+}
+
+model AgentCronJob {
+  id          String   @id @default(cuid())
+  agentName   String
+  sessionId   String?
+  session     AgentSession? @relation(fields: [sessionId], references: [id])
+  
+  // Schedule
+  name        String
+  description String?
+  schedule    String   // cron expression or interval string e.g. "0 */6 * * *" or "every_30_min"
+  scheduleType String  @default("cron") // cron, fixed_rate, one_time
+  timezone    String   @default("UTC")
+  nextRunAt   DateTime?
+  lastRunAt   DateTime?
+  
+  // Task to execute
+  taskType    String   // search, enrich, qualify, outreach, report, coordinate
+  taskInput   String?  // JSON: input for the agent task
+  
+  // Status
+  status      String   @default("active") // active, paused, completed, failed
+  runCount    Int      @default(0)
+  failCount   Int      @default(0)
+  maxRuns     Int?     // null = unlimited
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AgentSkill {
+  id          String   @id @default(cuid())
+  agentName   String
+  
+  // Skill definition
+  name        String
+  displayName String
+  description String
+  version     String   @default("1.0.0")
+  
+  // Skill config
+  category    String   // search, enrich, qualify, outreach, report, manage, coordinate
+  inputSchema String?  // JSON Schema for skill inputs
+  outputSchema String? // JSON Schema for skill outputs
+  
+  // Implementation
+  handler     String   // function name in agent-executor.ts or agents/*.ts
+  prompt      String?  // system prompt template for LLM-powered skills
+  
+  // Channels this skill uses
+  channels    String?  // JSON array of channel names
+  
+  // Status
+  status      String   @default("active") // active, deprecated, experimental
+  priority    Int      @default(5) // execution priority
+  
+  // Metrics
+  executionsCount Int  @default(0)
+  avgDurationMs   Int  @default(0)
+  successRate     Float @default(0)
+  lastExecutedAt  DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AgentPlugin {
+  id          String   @id @default(cuid())
+  agentName   String
+  
+  // Plugin definition
+  name        String
+  displayName String
+  description String
+  version     String   @default("1.0.0")
+  
+  // Plugin type
+  type        String   // integration, enrichment, notification, automation, analytics
+  provider    String?  // e.g. "hubspot", "slack", "ghl", "zapier"
+  
+  // Configuration
+  config      String?  // JSON: plugin configuration
+  secrets     String?  // JSON: encrypted API keys / tokens (store references, not raw keys)
+  
+  // Hooks — which events trigger this plugin
+  hooks       String?  // JSON array: ["task.completed", "lead.qualified", "pipeline.stage_changed"]
+  
+  // Status
+  status      String   @default("active") // active, disabled, error
+  enabled     Boolean  @default(true)
+  
+  // Metrics
+  invocationsCount Int @default(0)
+  lastInvokedAt    DateTime?
+  lastError        String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AgentProfile {
+  id          String   @id @default(cuid())
+  agentName   String   @unique
+  
+  // Identity
+  displayName String
+  description String
+  icon        String   @default("Bot") // lucide icon name
+  color       String   @default("#10B981") // hex color
+  
+  // Personality
+  persona     String?  // System persona description for LLM
+  tone        String   @default("professional") // professional, friendly, technical, executive
+  expertise   String?  // JSON array of expertise areas
+  
+  // Capabilities
+  capabilities String? // JSON array: ["search", "enrich", "qualify", ...]
+  channels    String?  // JSON array of available Agent-Reach channels
+  
+  // Model preferences
+  preferredModel  String @default("glm-4.7-flash") // glm-4.7-flash or glm-4.6v-flash
+  fallbackModel   String @default("glm-4.6v-flash")
+  temperature     Float  @default(0.3)
+  maxTokens       Int    @default(4096)
+  
+  // Rate limits
+  maxConcurrentTasks Int @default(3)
+  rateLimitPerMin    Int @default(10)
+  
+  // Status
+  status      String   @default("active") // active, maintenance, disabled
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model AgentConfig {
+  id          String   @id @default(cuid())
+  agentName   String
+  
+  // Config key-value
+  key         String
+  value       String   // JSON-encoded value
+  type        String   @default("string") // string, number, boolean, json, secret
+  
+  // Metadata
+  description String?
+  category    String   @default("general") // general, model, channel, rate_limit, memory, skill
+  isSecret    Boolean  @default(false)
+  isRequired  Boolean  @default(false)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([agentName, key])
+}
+
+model AgentKey {
+  id          String   @id @default(cuid())
+  agentName   String
+  
+  // Key definition
+  keyName     String   // e.g. "glm_api_key", "linkedin_api_key", "exa_api_key"
+  provider    String   // e.g. "z-ai", "linkedin", "exa", "jina"
+  keyType     String   @default("api_key") // api_key, oauth, token, certificate
+  
+  // Key value (encrypted or reference)
+  keyValue    String?  // The actual key or a reference to a secrets manager
+  environment String   @default("production") // development, staging, production
+  
+  // Status
+  status      String   @default("active") // active, rotated, revoked, expired
+  expiresAt   DateTime?
+  lastUsedAt  DateTime?
+  lastRotatedAt DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  @@unique([agentName, keyName, environment])
+}
+
+model AgentDocumentation {
+  id          String   @id @default(cuid())
+  agentName   String
+  
+  // Doc metadata
+  title       String
+  category    String   @default("general") // getting_started, api, skill, plugin, config, troubleshooting
+  version     String   @default("1.0.0")
+  
+  // Content
+  content     String   // Markdown content
+  examples    String?  // JSON array of code examples
+  
+  // Status
+  status      String   @default("published") // draft, published, archived
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

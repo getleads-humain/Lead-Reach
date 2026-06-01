@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
+<<<<<<< HEAD
 import { callLLMForJSON } from '@/lib/llm';
+=======
+import { getSDK } from '@/lib/llm';
+>>>>>>> origin/main
 
 export async function POST(request: NextRequest) {
   try {
@@ -44,6 +48,11 @@ export async function POST(request: NextRequest) {
 
     if (extractSchema && typeof extractSchema === 'object' && Object.keys(extractSchema).length > 0) {
       try {
+<<<<<<< HEAD
+=======
+        const zai = await getSDK();
+
+>>>>>>> origin/main
         const schemaDescription = Object.entries(extractSchema)
           .map(([key, description]) => `"${key}": ${description}`)
           .join(', ');

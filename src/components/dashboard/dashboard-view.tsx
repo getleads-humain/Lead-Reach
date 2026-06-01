@@ -1,10 +1,11 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Progress } from '@/components/ui/progress';
 import { Button } from '@/components/ui/button';
+import { Textarea } from '@/components/ui/textarea';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Target,
@@ -18,10 +19,14 @@ import {
   AlertCircle,
   Loader2,
   Zap,
+  Sparkles,
+  Send,
+  Lightbulb,
 } from 'lucide-react';
 import type { CampaignWithCounts } from '@/lib/types';
 import { STAGE_LABELS, type LeadStage } from '@/lib/types';
 import { safeFetchJSON } from '@/lib/utils';
+import { useAIOneShot } from '@/hooks/use-ai-chat';
 
 interface DashboardStats {
   totalCampaigns: number;
@@ -58,11 +63,14 @@ export function DashboardView() {
   const [recentTasks, setRecentTasks] = useState<AgentTask[]>([]);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    loadDashboard();
-  }, []);
+  // AI Insights state
+  const [aiInsight, setAiInsight] = useState<string | null>(null);
+  const [aiInsightLoading, setAiInsightLoading] = useState(false);
+  const [aiChatInput, setAiChatInput] = useState('');
+  const { generate: aiGenerate, isLoading: aiIsLoading } = useAIOneShot();
+  const [aiChatMessages, setAiChatMessages] = useState<Array<{ role: string; content: string }>>([]);
 
-  const loadDashboard = async () => {
+  const loadDashboard = useCallback(async () => {
     try {
       const [campaignsData, leadsData, tasksData] = await Promise.all([
         safeFetchJSON<CampaignWithCounts[]>('/api/campaigns'),
@@ -110,6 +118,56 @@ export function DashboardView() {
       console.error('Error loading dashboard:', error);
     } finally {
       setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadDashboard();
+  }, [loadDashboard]);
+
+  // Load AI insight after dashboard data is loaded
+  useEffect(() => {
+    if (!loading && stats.totalLeads > 0 && !aiInsight && !aiInsightLoading) {
+      loadAIInsight();
+    }
+  }, [loading, stats.totalLeads]);
+
+  const loadAIInsight = async () => {
+    setAiInsightLoading(true);
+    try {
+      const result = await aiGenerate(
+        `Analyze this LeadReach dashboard data and provide 2-3 concise, actionable insights:
+- Total Campaigns: ${stats.totalCampaigns}
+- Total Leads: ${stats.totalLeads}
+- Qualified Leads: ${stats.qualifiedLeads} (${Math.round((stats.qualifiedLeads / Math.max(stats.totalLeads, 1)) * 100)}% qualification rate)
+- Response Rate: ${stats.responseRate}%
+- Pipeline stages: ${pipeline.filter(p => p.count > 0).map(p => `${p.label}: ${p.count}`).join(', ')}
+- Active campaigns: ${campaigns.filter(c => c.status === 'active').length}
+
+Focus on actionable recommendations. Be specific and concise.`,
+        'You are a B2B sales analytics expert. Provide concise, actionable insights about lead generation pipelines. Use specific numbers from the data. Keep responses under 100 words. Format with bullet points.'
+      );
+      if (result) setAiInsight(result);
+    } catch {
+      // Silently fail — insights are nice-to-have
+    } finally {
+      setAiInsightLoading(false);
+    }
+  };
+
+  const handleAIChat = async () => {
+    if (!aiChatInput.trim() || aiIsLoading) return;
+    const msg = aiChatInput.trim();
+    setAiChatInput('');
+    setAiChatMessages(prev => [...prev, { role: 'user', content: msg }]);
+    const result = await aiGenerate(
+      `Dashboard context: ${stats.totalCampaigns} campaigns, ${stats.totalLeads} leads, ${stats.qualifiedLeads} qualified (${Math.round((stats.qualifiedLeads / Math.max(stats.totalLeads, 1)) * 100)}% rate), ${stats.responseRate}% response rate.
+
+User question: ${msg}`,
+      'You are a B2B sales analytics expert helping a user understand their LeadReach dashboard data. Be concise and specific. Use numbers from the context.'
+    );
+    if (result) {
+      setAiChatMessages(prev => [...prev, { role: 'assistant', content: result }]);
     }
   };
 
@@ -203,7 +261,7 @@ export function DashboardView() {
           </CardContent>
         </Card>
 
-        {/* System Status Card (replacing Avatar) */}
+        {/* System Status Card */}
         <Card className="card-premium border-border/40 overflow-hidden relative">
           <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-cyan-500/5 pointer-events-none" />
           <CardHeader className="pb-3 relative">
@@ -245,6 +303,94 @@ export function DashboardView() {
           </CardContent>
         </Card>
       </div>
+
+      {/* AI Insights Card */}
+      <Card className="card-premium border-emerald-500/20 overflow-hidden relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-emerald-500/5 via-transparent to-cyan-500/5 pointer-events-none" />
+        <CardHeader className="pb-3 relative">
+          <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+            <Sparkles className="h-4 w-4 text-emerald-400" />
+            AI Insights
+            <Badge variant="outline" className="text-[9px] border-emerald-500/20 text-emerald-400 bg-emerald-500/5 ml-2">
+              <Zap className="h-2.5 w-2.5 mr-1" />
+              Auto-generated
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent className="relative space-y-3">
+          {aiInsightLoading ? (
+            <div className="space-y-2">
+              <Skeleton className="h-4 w-full bg-secondary/30" />
+              <Skeleton className="h-4 w-4/5 bg-secondary/30" />
+              <Skeleton className="h-4 w-3/5 bg-secondary/30" />
+            </div>
+          ) : aiInsight ? (
+            <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 text-sm text-foreground/80 leading-relaxed">
+              <div className="flex items-start gap-2">
+                <Lightbulb className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                <div className="whitespace-pre-wrap">{aiInsight}</div>
+              </div>
+            </div>
+          ) : (
+            <div className="text-sm text-muted-foreground py-4 text-center">
+              Insights will appear once your data loads
+            </div>
+          )}
+
+          {/* Chat Messages */}
+          {aiChatMessages.length > 0 && (
+            <div className="space-y-2 max-h-40 overflow-y-auto">
+              {aiChatMessages.map((msg, i) => (
+                <div
+                  key={i}
+                  className={`rounded-lg px-3 py-2 text-xs leading-relaxed ${
+                    msg.role === 'user'
+                      ? 'bg-secondary/20 text-foreground/70 ml-4'
+                      : 'bg-emerald-500/5 border border-emerald-500/10 text-foreground/80 mr-4'
+                  }`}
+                >
+                  {msg.content}
+                </div>
+              ))}
+              {aiIsLoading && (
+                <div className="flex items-center gap-1.5 px-3 text-xs text-muted-foreground">
+                  <Loader2 className="h-3 w-3 text-emerald-400 animate-spin" />
+                  Thinking...
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Ask AI Input */}
+          <div className="flex items-end gap-2">
+            <Textarea
+              value={aiChatInput}
+              onChange={(e) => setAiChatInput(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                  e.preventDefault();
+                  handleAIChat();
+                }
+              }}
+              placeholder="Ask about your data..."
+              rows={1}
+              className="resize-none bg-secondary/20 border-border/30 text-xs min-h-[32px] max-h-[60px] focus:border-emerald-500/30"
+            />
+            <Button
+              size="icon"
+              onClick={handleAIChat}
+              disabled={!aiChatInput.trim() || aiIsLoading}
+              className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black shrink-0"
+            >
+              {aiIsLoading ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Send className="h-3.5 w-3.5" />
+              )}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* Bottom Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

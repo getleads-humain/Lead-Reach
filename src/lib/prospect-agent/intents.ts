@@ -353,13 +353,32 @@ function ruleBasedClassification(
   }
 
   // Person name detection (2-4 capitalized words, no numbers)
+  // Must be at least 2 words to avoid matching single-word company names like "Stripe", "Notion", etc.
   const personPattern = /^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,3}$/;
-  if (personPattern.test(originalMsg)) {
+  // Also check if the message looks like a person name but with a "research/find" prefix
+  // e.g., "Research Patrick Collison" → person, but "Research Stripe" → company
+  const personWithPrefix = msg.match(/^(?:research|find|look up|tell me about)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
+  
+  if (personWithPrefix && personWithPrefix[1]) {
+    // Multi-word name after a research prefix — likely a person
+    const name = personWithPrefix[1];
+    const wordCount = name.split(/\s+/).length;
+    if (wordCount >= 2) {
+      return {
+        intent: 'research_person',
+        persona: 'hound',
+        confidence: 0.8,
+        reasoning: 'Multi-word name after research prefix suggests person search',
+        extractedEntities: { companyName: null, personName: name, url: null, industry: null, location: null },
+        clarifyingQuestion: null,
+      };
+    }
+  } else if (personPattern.test(originalMsg)) {
     return {
       intent: 'research_person',
       persona: 'hound',
       confidence: 0.8,
-      reasoning: 'Message matches a person name pattern',
+      reasoning: 'Message matches a person name pattern (multi-word)',
       extractedEntities: { companyName: null, personName: originalMsg, url: null, industry: null, location: null },
       clarifyingQuestion: null,
     };

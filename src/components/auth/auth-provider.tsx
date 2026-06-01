@@ -328,7 +328,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
    */
   const ensureProfile = useCallback(async () => {
     if (!user) return { error: 'Not authenticated' };
-
     // If profile already exists, nothing to do
     if (profile) return { error: null };
 

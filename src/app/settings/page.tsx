@@ -12,7 +12,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuth } from '@/components/auth/auth-provider';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Badge } from '@/components/ui/badge';
 import { Separator } from '@/components/ui/separator';
@@ -35,30 +35,32 @@ import {
   Calendar,
   ExternalLink,
   Sparkles,
-  Users,
   Target,
   Rocket,
   ChevronRight,
   Clock,
   TrendingUp,
-  AlertCircle,
 } from 'lucide-react';
 import Link from 'next/link';
 import { INDUSTRIES, COMPANY_SIZES } from '@/lib/types';
-import { PLANS, getPlanById, getFeatureAccess } from '@/lib/stripe-config';
+import { PLANS, getPlanById, getFeatureAccess } from '@/lib/plans';
 import { toast } from 'sonner';
 
 type BillingCycle = 'monthly' | 'annual';
 
 export default function SettingsPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center bg-background"><Loader2 className="h-6 w-6 animate-spin text-emerald-400" /></div>}>
-      <SettingsContent />
+    <Suspense fallback={
+      <div className="min-h-screen flex items-center justify-center bg-background">
+        <Loader2 className="h-6 w-6 animate-spin text-emerald-400" />
+      </div>
+    }>
+      <SettingsContentInner />
     </Suspense>
   );
 }
 
-function SettingsContent() {
+function SettingsContentInner() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const { user, profile, updateProfile, signOut, loading: authLoading } = useAuth();
@@ -69,7 +71,6 @@ function SettingsContent() {
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
   const [portalLoading, setPortalLoading] = useState(false);
-
   // Profile form state
   const [fullName, setFullName] = useState('');
   const [jobTitle, setJobTitle] = useState('');
@@ -96,7 +97,6 @@ function SettingsContent() {
         description: 'Your plan has been successfully changed. Changes may take a moment to reflect.',
         duration: 6000,
       });
-      // Clean up URL
       router.replace('/settings');
     } else if (checkoutStatus === 'cancelled') {
       toast.info('Checkout cancelled', {
@@ -151,7 +151,7 @@ function SettingsContent() {
       if (data.url) {
         window.location.href = data.url;
       }
-    } catch (err) {
+    } catch {
       toast.error('Network error', { description: 'Could not connect to the server. Please try again.' });
     } finally {
       setCheckoutLoading(null);
@@ -177,7 +177,7 @@ function SettingsContent() {
       if (data.url) {
         window.location.href = data.url;
       }
-    } catch (err) {
+    } catch {
       toast.error('Network error', { description: 'Could not connect to the server. Please try again.' });
     } finally {
       setPortalLoading(false);
@@ -210,14 +210,59 @@ function SettingsContent() {
   const isOnFreePlan = !profile?.plan || profile.plan === 'free';
   const isTrial = profile?.plan === 'trial';
 
-  // Placeholder usage data (in production, this would come from the backend)
-  const usageStats = {
-    leadsUsed: currentPlanId === 'command' ? 3420 : currentPlanId === 'scout' ? 654 : currentPlanId === 'closer' ? 2180 : 120,
-    agentsActive: currentPlanId === 'command' ? 5 : currentPlanId === 'scout' ? 2 : currentPlanId === 'closer' ? 3 : 1,
-    campaignsRunning: currentPlanId === 'command' ? 4 : currentPlanId === 'scout' ? 1 : currentPlanId === 'closer' ? 2 : 1,
-  };
+  // ── Real usage data from API ──────────────────────────────────────
+  const [usageStats, setUsageStats] = useState({
+    leadsUsed: 0,
+    agentsActive: 0,
+    campaignsRunning: 0,
+  });
+  const [subscriptionData, setSubscriptionData] = useState<{
+    stripeSubscription: {
+      status: string;
+      planName: string;
+      currentPeriodEnd: number;
+      trialEnd: number | null;
+      cancelAtPeriodEnd: boolean;
+    } | null;
+    upcomingInvoice: {
+      amount: number;
+      currency: string;
+      date: number;
+    } | null;
+  }>({ stripeSubscription: null, upcomingInvoice: null });
 
-  // B2B plans for comparison
+  useEffect(() => {
+    if (!user) return;
+
+    // Fetch usage data
+    fetch('/api/stripe/usage')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.usage) {
+          setUsageStats({
+            leadsUsed: data.usage.leads || 0,
+            agentsActive: data.usage.agents || 0,
+            campaignsRunning: data.usage.campaigns || 0,
+          });
+        }
+      })
+      .catch(() => {});
+
+    // Fetch subscription data
+    fetch('/api/stripe/subscription')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data) {
+          setSubscriptionData({
+            stripeSubscription: data.stripeSubscription || null,
+            upcomingInvoice: data.upcomingInvoice || null,
+          });
+        }
+      })
+      .catch(() => {});
+  }, [user]);
+
+  // Plans for comparison — show track matching the user's current plan
   const b2bPlans = PLANS.filter(p => p.track === 'b2b');
   const b2cPlans = PLANS.filter(p => p.track === 'b2c');
   const userTrack = currentPlan?.track || 'b2b';
@@ -273,7 +318,7 @@ function SettingsContent() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Profile Tab */}
+          {/* ── Profile Tab ────────────────────────────────────────── */}
           <TabsContent value="profile" className="space-y-6">
             <Card className="border-border/30 bg-card/80">
               <CardHeader>
@@ -353,7 +398,7 @@ function SettingsContent() {
             </Card>
           </TabsContent>
 
-          {/* Company Tab */}
+          {/* ── Company Tab ────────────────────────────────────────── */}
           <TabsContent value="company" className="space-y-6">
             <Card className="border-border/30 bg-card/80">
               <CardHeader>
@@ -433,7 +478,7 @@ function SettingsContent() {
             </Card>
           </TabsContent>
 
-          {/* Notifications Tab */}
+          {/* ── Notifications Tab ──────────────────────────────────── */}
           <TabsContent value="notifications" className="space-y-6">
             <Card className="border-border/30 bg-card/80">
               <CardHeader>
@@ -460,7 +505,7 @@ function SettingsContent() {
             </Card>
           </TabsContent>
 
-          {/* ─── Account Tab (Enhanced with Billing) ──────────────────── */}
+          {/* ── Account Tab (Enhanced with Billing) ──────────────────── */}
           <TabsContent value="account" className="space-y-6">
 
             {/* ── Current Plan Card ─────────────────────────────────── */}
@@ -485,9 +530,8 @@ function SettingsContent() {
                           ? billingCycle === 'annual'
                             ? `$${currentPlan.annualPrice.toLocaleString()}/yr`
                             : `$${currentPlan.monthlyPrice}/mo`
-                          : 'Custom pricing'
-                        }
-                        {isTrial && ' · Trial'}
+                          : 'Custom pricing'}
+                        {isTrial && ' \u00b7 Trial'}
                       </div>
                     </div>
                   </div>
@@ -524,7 +568,7 @@ function SettingsContent() {
                         Leads
                       </div>
                       <span className="text-xs font-medium text-foreground">
-                        {usageStats.leadsUsed.toLocaleString()}/{featureAccess.maxLeads === -1 ? '∞' : featureAccess.maxLeads.toLocaleString()}
+                        {usageStats.leadsUsed.toLocaleString()}/{featureAccess.maxLeads === -1 ? '\u221e' : featureAccess.maxLeads.toLocaleString()}
                       </span>
                     </div>
                     <Progress
@@ -541,7 +585,7 @@ function SettingsContent() {
                         AI Agents
                       </div>
                       <span className="text-xs font-medium text-foreground">
-                        {usageStats.agentsActive}/{featureAccess.maxAgents === -1 ? '∞' : featureAccess.maxAgents}
+                        {usageStats.agentsActive}/{featureAccess.maxAgents === -1 ? '\u221e' : featureAccess.maxAgents}
                       </span>
                     </div>
                     <Progress
@@ -558,7 +602,7 @@ function SettingsContent() {
                         Campaigns
                       </div>
                       <span className="text-xs font-medium text-foreground">
-                        {usageStats.campaignsRunning}/{featureAccess.maxCampaigns === -1 ? '∞' : featureAccess.maxCampaigns}
+                        {usageStats.campaignsRunning}/{featureAccess.maxCampaigns === -1 ? '\u221e' : featureAccess.maxCampaigns}
                       </span>
                     </div>
                     <Progress
@@ -743,7 +787,7 @@ function SettingsContent() {
               <CardHeader>
                 <CardTitle className="text-base flex items-center gap-2">
                   <CreditCard className="h-4 w-4 text-emerald-400" />
-                  Billing & Payments
+                  Billing &amp; Payments
                 </CardTitle>
                 <CardDescription>Manage your payment method, invoices, and billing details</CardDescription>
               </CardHeader>
@@ -759,10 +803,11 @@ function SettingsContent() {
                       <div className="text-sm font-medium text-foreground">
                         {isOnFreePlan
                           ? 'N/A'
-                          : isTrial
-                            ? `Trial ends ${new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-                            : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-                        }
+                          : subscriptionData.stripeSubscription?.currentPeriodEnd
+                            ? new Date(subscriptionData.stripeSubscription.currentPeriodEnd * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+                            : isTrial
+                              ? `Trial ends ${new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+                              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                       </div>
                     </div>
                   </div>
@@ -773,11 +818,35 @@ function SettingsContent() {
                     <div>
                       <div className="text-xs text-muted-foreground">Payment method</div>
                       <div className="text-sm font-medium text-foreground">
-                        {isOnFreePlan ? 'No card on file' : '•••• •••• •••• 4242'}
+                        {isOnFreePlan ? 'No card on file' : 'Manage in Stripe Portal'}
                       </div>
                     </div>
                   </div>
                 </div>
+
+                {/* Subscription status indicator */}
+                {subscriptionData.stripeSubscription && (
+                  <div className="flex items-center gap-2 p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+                    <Badge className={`border-0 text-[10px] ${
+                      subscriptionData.stripeSubscription.status === 'active'
+                        ? 'bg-emerald-500/10 text-emerald-400'
+                        : subscriptionData.stripeSubscription.status === 'trialing'
+                          ? 'bg-amber-500/10 text-amber-400'
+                          : 'bg-red-500/10 text-red-400'
+                    }`}>
+                      {subscriptionData.stripeSubscription.status === 'active' ? 'Active' :
+                       subscriptionData.stripeSubscription.status === 'trialing' ? 'Trialing' : 'Inactive'}
+                    </Badge>
+                    {subscriptionData.stripeSubscription.cancelAtPeriodEnd && (
+                      <span className="text-xs text-amber-400">
+                        Cancels at end of billing period
+                      </span>
+                    )}
+                    <span className="text-xs text-muted-foreground ml-auto">
+                      {subscriptionData.stripeSubscription.planName} plan
+                    </span>
+                  </div>
+                )}
 
                 {/* Billing history */}
                 <div className="space-y-2">
@@ -804,8 +873,7 @@ function SettingsContent() {
                                 ? billingCycle === 'annual'
                                   ? `$${currentPlan.annualPrice.toLocaleString()}/yr`
                                   : `$${currentPlan.monthlyPrice}/mo`
-                                : 'Custom'
-                              }
+                                : 'Custom'}
                             </div>
                           </div>
                         </div>
@@ -824,8 +892,7 @@ function SettingsContent() {
                             <div className="text-[10px] text-muted-foreground">
                               {currentPlan?.monthlyPrice
                                 ? `$${currentPlan.monthlyPrice.toLocaleString()}`
-                                : 'Custom'
-                              } — {new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                                : 'Custom'} — {new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                             </div>
                           </div>
                         </div>
@@ -838,21 +905,32 @@ function SettingsContent() {
                 </div>
 
                 {/* Manage Billing button */}
-                {!isOnFreePlan && (
-                  <Button
-                    variant="outline"
-                    className="w-full border-border/30 hover:bg-secondary/50 gap-2"
-                    disabled={portalLoading}
-                    onClick={handlePortal}
-                  >
-                    {portalLoading ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      <ExternalLink className="h-4 w-4" />
-                    )}
-                    Manage Billing Portal
-                  </Button>
-                )}
+                <div className="space-y-2">
+                  {!isOnFreePlan && (
+                    <Button
+                      variant="outline"
+                      className="w-full border-border/30 hover:bg-secondary/50 gap-2"
+                      disabled={portalLoading}
+                      onClick={handlePortal}
+                    >
+                      {portalLoading ? (
+                        <Loader2 className="h-4 w-4 animate-spin" />
+                      ) : (
+                        <ExternalLink className="h-4 w-4" />
+                      )}
+                      Manage Billing Portal
+                    </Button>
+                  )}
+                  <Link href="/pricing" className="block">
+                    <Button
+                      variant="outline"
+                      className="w-full border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/5 hover:text-emerald-400 gap-2"
+                    >
+                      <Crown className="h-4 w-4" />
+                      View All Plans & Pricing
+                    </Button>
+                  </Link>
+                </div>
               </CardContent>
             </Card>
 

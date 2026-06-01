@@ -37,7 +37,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { safeFetchJSON } from '@/lib/utils';
-import type { ICPResult } from '@/lib/prospect-agent/types';
+import type { ICPResult, ConversationContext, SuggestedAction } from '@/lib/prospect-agent/types';
 import { PERSONA_META } from '@/lib/prospect-agent/types';
 
 // ============================================================
@@ -655,6 +655,7 @@ export function ICPView() {
         isComplete?: boolean;
         nextDimension?: string;
         suggestedActions?: string[];
+        updatedContext?: ConversationContext;
         error?: string;
       }>('/api/icp/chat', {
         method: 'POST',
@@ -663,6 +664,13 @@ export function ICPView() {
           message: text,
           conversationHistory: chatMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
           currentICP: builderICP,
+          context: {
+            recentProspects: [],
+            activeICP: builderICP,
+            lastIntent: null,
+            lastPersona: null,
+            userPreferences: {},
+          },
         }),
       });
 
@@ -672,11 +680,13 @@ export function ICPView() {
           role: 'assistant',
           content: result.message.content,
           timestamp: new Date(),
-          icpData: result.icpData || null,
+          icpData: result.icpData || result.message?.icpData || null,
         };
         setChatMessages((prev) => [...prev, assistantMsg]);
         if (result.icpData) {
           setBuilderICP(result.icpData);
+        } else if (result.message?.icpData) {
+          setBuilderICP(result.message.icpData);
         }
       } else {
         const errorMsg: ChatMessage = {
@@ -862,14 +872,12 @@ export function ICPView() {
                   })()}
                 </div>
                 {builderICP && (
-                  <div className="flex items-center gap-2">
-                    <Button
-                      className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs h-8"
-                      onClick={() => handleSaveICP(builderICP)}
-                    >
-                      <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
-                    </Button>
-                  </div>
+                  <Button
+                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs h-8"
+                    onClick={() => handleSaveICP(builderICP)}
+                  >
+                    <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
+                  </Button>
                 )}
               </div>
 

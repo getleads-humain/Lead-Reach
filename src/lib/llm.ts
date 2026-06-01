@@ -1,27 +1,26 @@
 /**
  * Centralized LLM Utility — LeadReach AI
  *
- * Uses exactly two models via DIRECT Zhipu AI API (primary) with SDK fallback:
+ * Uses exactly two models via Zhipu AI API with JWT authentication:
  *   - glm-4.7-flash  (primary — fast, high-quality text generation)
  *   - glm-4.6v-flash (secondary — vision-capable, fallback for text)
  *
  * CONNECTION STRATEGY (smart routing with rate-limit awareness):
- *   1. Try z-ai-web-dev-sdk FIRST (different rate limit pool / gateway)
- *   2. Fallback to direct Zhipu AI API if SDK fails
+ *   1. Try direct Zhipu AI API FIRST (JWT auth via zhipu-jwt.ts)
+ *   2. Fallback to z-ai-web-dev-sdk if direct API fails
  *   3. On rate limits (1302/1305/429): switch connection mode and add cooldown
  *
  * PROTECTION LAYERS (3-tier defense):
  *   1. Concurrency limiter — max 4 simultaneous LLM calls
  *   2. Token-bucket rate limiter — adaptive pacing based on API response
- *   3. Retry + fallback — 1 retry per model, then switch to secondary model
+ *   3. Retry + fallback — retries per model, then switch to secondary model
  *
- * KEY INSIGHT: The Zhipu AI free-tier has aggressive rate limits.
- * Errors 1302 ("account rate limit") and 1305 ("model overloaded") are common.
- * The SDK gateway may have separate quotas, so we try it first.
+ * IMPORTANT: Zhipu AI requires JWT authentication. The API key format
+ * is `{id}.{secret}`, and it must be converted to a JWT token before
+ * use. This is handled by the zhipu-jwt.ts utility.
  */
 
-import crypto from 'crypto';
-import type ZAISdk from 'z-ai-web-dev-sdk';
+import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from './zhipu-jwt';
 
 // ============================================================
 // Model Definitions
@@ -39,52 +38,12 @@ export const LLM_MODELS = [MODEL_PRIMARY, MODEL_VISION] as const;
 export type LLMModel = typeof LLM_MODELS[number];
 
 // ============================================================
-// Direct Zhipu AI API Client
+// Unified Rate Limiter (shared across ALL API calls)
 // ============================================================
 
-const ZHIPU_API_BASE = 'https://open.bigmodel.cn/api/paas/v4';
-const ZHIPU_API_KEY = process.env.ZHIPU_API_KEY || '';
-
-/** Cached JWT token and expiry */
-let cachedToken: { token: string; expiresAt: number } | null = null;
-
-/**
- * Generate a JWT token for Zhipu AI API authentication.
- * The API key format is {id}.{secret}.
- * Caches the token until 5 minutes before expiry.
- */
-function generateZhipuToken(): string {
-  // Return cached token if still valid (with 5 min buffer)
-  if (cachedToken && cachedToken.expiresAt > Date.now() + 5 * 60 * 1000) {
-    return cachedToken.token;
-  }
-
-  if (!ZHIPU_API_KEY || !ZHIPU_API_KEY.includes('.')) {
-    throw new Error('ZHIPU_API_KEY is not configured or has invalid format (expected: id.secret)');
-  }
-
-  const [id, secret] = ZHIPU_API_KEY.split('.');
-
-  // Zhipu AI JWT structure
-  const header = Buffer.from(JSON.stringify({ alg: 'HS256', sign_type: 'SIGN' })).toString('base64url');
-  const now = Date.now();
-  const exp = now + 3600 * 1000; // 1 hour expiry
-  const payload = Buffer.from(JSON.stringify({
-    api_key: id,
-    exp,
-    timestamp: now,
-  })).toString('base64url');
-
-  const signature = crypto
-    .createHmac('sha256', secret)
-    .update(`${header}.${payload}`)
-    .digest('base64url');
-
-  const token = `${header}.${payload}.${signature}`;
-  cachedToken = { token, expiresAt: exp };
-
-  return token;
-}
+// IMPORTANT: Both callLLM (chat.completions) and agent-reach-bridge
+// (functions.invoke / web_search) go through the same Zhipu AI gateway.
+// A single shared rate limiter prevents concurrent bursts that cause 502s.
 
 /**
  * Response structure from the Zhipu AI API.
@@ -143,6 +102,7 @@ class ZhipuRateLimitError extends Error {
  * Make a direct chat completion call to the Zhipu AI API.
  * Returns the full response data (including reasoning_content) or throws on error.
  * Throws ZhipuRateLimitError for rate limit / overload errors.
+ * Uses JWT authentication via zhipu-jwt.ts.
  */
 async function directZhipuChatCompletion(params: {
   model: string;
@@ -150,9 +110,14 @@ async function directZhipuChatCompletion(params: {
   temperature: number;
   max_tokens: number;
 }): Promise<ZhipuChatResponse> {
-  const token = generateZhipuToken();
+  const token = getZhipuToken();
+  if (!token) {
+    throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
+  }
 
-  const response = await fetch(`${ZHIPU_API_BASE}/chat/completions`, {
+  const baseUrl = getZhipuApiBase();
+
+  const response = await fetch(`${baseUrl}/chat/completions`, {
     method: 'POST',
     headers: {
       'Authorization': `Bearer ${token}`,
@@ -179,6 +144,44 @@ async function directZhipuChatCompletion(params: {
     // HTTP 429 also indicates rate limit
     if (response.status === 429) {
       throw new ZhipuRateLimitError('429', errorMessage);
+    }
+
+    // If we get a 401, the JWT may have expired — refresh and retry once
+    if (response.status === 401) {
+      console.warn('[directZhipuChatCompletion] Got 401 — refreshing JWT token and retrying');
+      refreshToken();
+      const newToken = getZhipuToken();
+      if (newToken && newToken !== token) {
+        const retryResponse = await fetch(`${baseUrl}/chat/completions`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${newToken}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(params),
+          signal: AbortSignal.timeout(30_000),
+        });
+        if (!retryResponse.ok) {
+          const retryErrorBody = await retryResponse.text().catch(() => '');
+          const retryErrorData: ZhipuApiError | null = retryErrorBody ? (() => {
+            try { return JSON.parse(retryErrorBody); } catch { return null; }
+          })() : null;
+          const retryErrorCode = retryErrorData?.error?.code || '';
+          const retryErrorMessage = retryErrorData?.error?.message || `HTTP ${retryResponse.status}`;
+          if (retryErrorCode === '1302' || retryErrorCode === '1305') {
+            throw new ZhipuRateLimitError(retryErrorCode, retryErrorMessage);
+          }
+          if (retryResponse.status === 429) {
+            throw new ZhipuRateLimitError('429', retryErrorMessage);
+          }
+          throw new Error(`Zhipu API error ${retryResponse.status}: ${retryErrorMessage}`);
+        }
+        const data = await retryResponse.json() as ZhipuChatResponse;
+        if (!data.choices || !Array.isArray(data.choices)) {
+          throw new Error('Zhipu API returned invalid response structure');
+        }
+        return data;
+      }
     }
 
     throw new Error(`Zhipu API error ${response.status}: ${errorMessage}`);
@@ -337,46 +340,109 @@ async function waitForRateLimit() {
 
 /**
  * Exported so agent-reach-bridge.ts can share the same rate limiter.
+ * This prevents LLM calls and search calls from firing simultaneously
+ * and overwhelming the shared Zhipu AI gateway.
  */
 export { waitForRateLimit };
 
 // ============================================================
-// SDK Singleton (lazy init, reuse across calls)
+// SDK Compatibility Layer (for agent-reach-bridge.ts web search)
 // ============================================================
 
-let zaiInstance: InstanceType<typeof ZAISdk> | null = null;
+/**
+ * Get a Zhipu AI SDK instance for functions.invoke (web search, etc).
+ * Uses the ZAI constructor directly with a fresh JWT token.
+ */
+let zaiInstance: any = null;
+let zaiTokenUsed = '';
 let sdkInitFailed = false;
 
-/**
- * Get the shared SDK singleton instance.
- * Includes a 5-second timeout to detect unreachable gateway quickly.
- * If the gateway is unreachable, sets sdkAvailable=false so future calls
- * skip the SDK entirely instead of waiting 10+ seconds for a connect timeout.
- */
-export async function getSDK(): Promise<InstanceType<typeof ZAISdk>> {
-  if (!zaiInstance && !sdkInitFailed) {
+async function getSDK(): Promise<any> {
+  const token = getZhipuToken();
+  if (!token) {
+    throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
+  }
+
+  // Re-create the SDK instance if the token has changed (JWT refresh)
+  if (!zaiInstance || zaiTokenUsed !== token) {
     try {
       const ZAI = (await import('z-ai-web-dev-sdk')).default;
-      // Create with a short timeout to detect unreachable gateway quickly
-      zaiInstance = await Promise.race([
-        ZAI.create(),
-        new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('SDK init timeout (5s) — gateway may be unreachable')), 5000)
-        ),
-      ]);
-      sdkAvailable = true; // SDK works!
-      console.log('[LLM] z-ai-web-dev-sdk initialized successfully');
-    } catch (err) {
+      const config = {
+        baseUrl: getZhipuApiBase(),
+        apiKey: token,
+      };
+      zaiInstance = new ZAI(config);
+      zaiTokenUsed = token;
+      sdkAvailable = true;
+      sdkInitFailed = false;
+      console.log('[getSDK] Created ZAI instance with fresh JWT token');
+    } catch (initError) {
       sdkInitFailed = true;
       sdkAvailable = false;
-      console.warn('[LLM] SDK unavailable (will use direct API):', err instanceof Error ? err.message : 'Unknown');
-      throw err;
+      const msg = initError instanceof Error ? initError.message : 'Unknown error';
+      console.error(`[getSDK] Failed to create ZAI instance: ${msg}`);
+      throw initError;
     }
   }
-  if (!zaiInstance) {
-    throw new Error('z-ai-web-dev-sdk not available');
-  }
+
   return zaiInstance;
+}
+
+/**
+ * Reset the SDK singleton. Useful after API key rotation or config changes.
+ */
+export function resetSDK(): void {
+  zaiInstance = null;
+  zaiTokenUsed = '';
+  console.log('[resetSDK] SDK instance reset — next call will reinitialize');
+}
+
+/**
+ * Health check: verify the LLM can connect and respond.
+ * Returns { ok, model, latencyMs, error? }
+ */
+export async function checkLLMHealth(): Promise<{
+  ok: boolean;
+  model: string;
+  latencyMs: number;
+  error?: string;
+}> {
+  const start = Date.now();
+  try {
+    if (!isZhipuConfigured()) {
+      return {
+        ok: false,
+        model: MODEL_PRIMARY,
+        latencyMs: Date.now() - start,
+        error: 'Zhipu AI API key not configured (ZHIPU_AI_API_KEY env var missing)',
+      };
+    }
+
+    const completion = await directZhipuChatCompletion({
+      model: MODEL_PRIMARY,
+      messages: [
+        { role: 'system', content: 'You are a health check endpoint.' },
+        { role: 'user', content: 'Reply with exactly: OK' },
+      ],
+      temperature: 0,
+      max_tokens: 10,
+    });
+
+    const content = extractContentFromResponse(completion);
+
+    return {
+      ok: content.trim().length > 0,
+      model: MODEL_PRIMARY,
+      latencyMs: Date.now() - start,
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      model: MODEL_PRIMARY,
+      latencyMs: Date.now() - start,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
+  }
 }
 
 // ============================================================
@@ -511,8 +577,7 @@ export interface LLMCallOptions {
 
 /**
  * Make a single LLM call using the best available connection.
- * Smart routing: tries SDK first (different rate limit pool),
- * falls back to direct API if SDK fails.
+ * Smart routing: tries direct API first (JWT auth), falls back to SDK if needed.
  */
 async function makeLLMCall(
   model: string,
@@ -556,7 +621,7 @@ async function makeLLMCall(
     }
 
     // Try direct API as fallback
-    if (ZHIPU_API_KEY && ZHIPU_API_KEY.includes('.')) {
+    if (isZhipuConfigured()) {
       try {
         const result = await directZhipuChatCompletion({
           model,
@@ -669,9 +734,12 @@ async function makeLLMCall(
  * Strategy:
  * 1. Acquire a concurrency slot (max 4 simultaneous calls)
  * 2. Wait for adaptive rate limiter (unless skipped)
- * 3. Try the primary model (glm-4.7-flash) with limited retries
- * 4. If all retries fail, try the secondary model (glm-4.6v-flash)
- * 5. Returns null if both models fail (graceful degradation)
+ * 3. Check configuration before attempting any calls
+ * 4. Try the primary model (glm-4.7-flash) with limited retries
+ * 5. If all retries fail, try the secondary model (glm-4.6v-flash)
+ * 6. Returns null if both models fail (graceful degradation)
+ *
+ * Uses JWT authentication via zhipu-jwt.ts for reliable API access.
  */
 export async function callLLM(options: LLMCallOptions): Promise<string | null> {
   const {
@@ -684,6 +752,12 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
     useFallback = true,
     skipRateLimit = false,
   } = options;
+
+  // Check configuration before attempting any calls
+  if (!isZhipuConfigured()) {
+    console.error('[callLLM] Zhipu AI API key not configured — check ZHIPU_AI_API_KEY env var');
+    return null;
+  }
 
   // Acquire concurrency slot
   await acquireSlot();
@@ -863,3 +937,9 @@ export function isLLMAvailable(): { available: boolean; waitMs: number } {
   // Both modes on cooldown — return the shorter wait
   return { available: false, waitMs: Math.min(directWait, sdkWait) };
 }
+
+// ============================================================
+// Export getSDK for agent-reach-bridge.ts
+// ============================================================
+
+export { getSDK };

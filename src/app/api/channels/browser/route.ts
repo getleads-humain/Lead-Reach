@@ -1,6 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
+<<<<<<< HEAD
 import { callLLM, callLLMForJSON } from '@/lib/llm';
+=======
+import { getSDK } from '@/lib/llm';
+>>>>>>> origin/main
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,7 +45,11 @@ export async function POST(request: NextRequest) {
 
         // Use centralized callLLMForJSON with rate limiting, retries, and model fallback
         try {
+<<<<<<< HEAD
           const systemPrompt = 'You are a precise data extraction assistant. Always respond with valid JSON only.';
+=======
+          const zai = await getSDK();
+>>>>>>> origin/main
 
           const userPrompt = `You are a data extraction assistant. Extract the following information from the web page content.
 ${selectors ? `Focus on these selectors/fields: ${selectors.join(', ')}` : 'Extract key information like company name, contact details, addresses, phone numbers, and emails.'}
