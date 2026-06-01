@@ -16,6 +16,12 @@ import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment
 import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
 import { IdentityView } from '@/components/identity/identity-view';
 import { ICPView } from '@/components/icp/icp-view';
+import { EmailEngagementView } from '@/components/email-engagement/email-engagement-view';
+import { SalesEnablementView } from '@/components/sales-enablement/sales-enablement-view';
+import { RevenueIntelligenceView } from '@/components/revenue-intelligence/revenue-intelligence-view';
+import { AbmView } from '@/components/abm/abm-view';
+import { DataQualityView } from '@/components/data-quality/data-quality-view';
+import { LeadIntelligenceView } from '@/components/lead-intelligence/lead-intelligence-view';
 import { useAppStore } from '@/lib/store';
 
 export default function AppPage() {
@@ -51,6 +57,18 @@ export default function AppPage() {
         return <IdentityView />;
       case 'icp':
         return <ICPView />;
+      case 'email-engagement':
+        return <EmailEngagementView />;
+      case 'sales-enablement':
+        return <SalesEnablementView />;
+      case 'revenue-intelligence':
+        return <RevenueIntelligenceView />;
+      case 'abm':
+        return <AbmView />;
+      case 'data-quality':
+        return <DataQualityView />;
+      case 'lead-intelligence':
+        return <LeadIntelligenceView />;
       default:
         return <DashboardView />;
     }

@@ -27,6 +27,9 @@ const CUID_MODELS = new Set([
   'billingPlan', 'subscription', 'billingEvent', 'consumptionRecord',
   'autoresearchJob', 'autoresearchExperiment', 'autoresearchFragment',
   'enrichmentJob', 'prospectReport', 'icp',
+  'emailTemplate', 'emailTracking', 'emailSuppression',
+  'targetAccount', 'accountList', 'revenueForecast',
+  'salesAsset', 'dataQualityAudit',
 ])
 
 // ── camelCase → snake_case converter ──────────────────────────────────────
@@ -54,6 +57,19 @@ const MODEL_TABLE_MAP: Record<string, string> = {
   followUpSequence: 'follow_up_sequences',
   profile: 'profiles',
   userSettings: 'user_settings',
+  // Email Engagement
+  emailTemplate: 'email_templates',
+  emailTracking: 'email_tracking',
+  emailSuppression: 'email_suppressions',
+  // Account-Based Marketing
+  targetAccount: 'target_accounts',
+  accountList: 'account_lists',
+  // Revenue Intelligence
+  revenueForecast: 'revenue_forecasts',
+  // Sales Enablement
+  salesAsset: 'sales_assets',
+  // Data Quality
+  dataQualityAudit: 'data_quality_audits',
   // Billing models (defined in Supabase SQL migrations, not in Prisma schema)
   billingPlan: 'billing_plans',
   subscription: 'subscriptions',
@@ -754,6 +770,19 @@ export const db = {
   prospectReport: new ModelDelegate('prospectReport'),
   // ICP models (separate from iCPProfile which maps to icp_profiles)
   icp: new ModelDelegate('icp'),
+  // Email Engagement models
+  emailTemplate: new ModelDelegate('emailTemplate'),
+  emailTracking: new ModelDelegate('emailTracking'),
+  emailSuppression: new ModelDelegate('emailSuppression'),
+  // Account-Based Marketing models
+  targetAccount: new ModelDelegate('targetAccount'),
+  accountList: new ModelDelegate('accountList'),
+  // Revenue Intelligence models
+  revenueForecast: new ModelDelegate('revenueForecast'),
+  // Sales Enablement models
+  salesAsset: new ModelDelegate('salesAsset'),
+  // Data Quality models
+  dataQualityAudit: new ModelDelegate('dataQualityAudit'),
 
   /** Execute raw SQL via Supabase RPC (not available via REST) */
   $queryRawUnsafe: async (_sql: string) => {

@@ -456,3 +456,181 @@ model FollowUpSequence {
 
   @@map("follow_up_sequences")
 }
+
+// ─── Email Engagement Models ────────────────────────────────────────────────
+
+model EmailTemplate {
+  id          String  @id @default(cuid())
+  userId      String? @map("user_id")
+  name        String
+  subject     String
+  body        String
+  category    String  @default("cold_outreach") // cold_outreach, follow_up, meeting_request, proposal, break_up, nurture, referral
+  variables   String? // JSON array of template variables
+  usageCount  Int     @default(0) @map("usage_count")
+  openRate    Float   @default(0) @map("open_rate")
+  clickRate   Float   @default(0) @map("click_rate")
+  replyRate   Float   @default(0) @map("reply_rate")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("email_templates")
+}
+
+model EmailTracking {
+  id        String   @id @default(cuid())
+  outreachId String? @map("outreach_id")
+  leadId    String?  @map("lead_id")
+  event     String   // sent, delivered, opened, clicked, replied, bounced, complained
+  metadata  String?  // JSON: {ip, userAgent, timestamp, link, bounceType, etc.}
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("email_tracking")
+}
+
+model EmailSuppression {
+  id          String  @id @default(cuid())
+  email       String  @unique
+  reason      String  // bounce, complaint, manual
+  bounceType  String? @map("bounce_type") // hard, soft
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@map("email_suppressions")
+}
+
+// ─── Account-Based Marketing Models ─────────────────────────────────────────
+
+model TargetAccount {
+  id          String  @id @default(cuid())
+  userId      String? @map("user_id")
+  leadId      String? @map("lead_id")
+  listId      String? @map("list_id")
+
+  companyName     String  @map("company_name")
+  domain          String?
+  industry        String?
+  employeeCount   String? @map("employee_count")
+  revenueEstimate String? @map("revenue_estimate")
+  tier            String  @default("tier3") // tier1, tier2, tier3
+
+  // Scoring
+  icpFitScore      Int @default(0) @map("icp_fit_score")
+  engagementScore  Int @default(0) @map("engagement_score")
+  intentScore      Int @default(0) @map("intent_score")
+  compositeScore   Int @default(0) @map("composite_score")
+
+  // Engagement tracking
+  totalInteractions Int       @default(0) @map("total_interactions")
+  lastActivity      DateTime? @map("last_activity")
+  engagementTrend   String    @default("stable") @map("engagement_trend") // increasing, stable, decreasing
+
+  // Intent signals (JSON)
+  intentSignals String? @map("intent_signals") // JSON array of detected signals
+
+  // Buying committee (JSON)
+  buyingCommittee String? @map("buying_committee") // JSON array of committee members
+
+  // Content strategy (JSON)
+  contentStrategy String? @map("content_strategy") // JSON: personalized strategy
+
+  status String @default("active") // active, converted, churned, disqualified
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("target_accounts")
+}
+
+model AccountList {
+  id          String  @id @default(cuid())
+  userId      String? @map("user_id")
+  name        String
+  description String?
+
+  // Criteria (JSON)
+  criteria String? // JSON: {industries, companySizes, locations, techStack, revenueRange}
+
+  // Stats
+  totalAccounts Int @default(0) @map("total_accounts")
+  tier1Count    Int @default(0) @map("tier1_count")
+  tier2Count    Int @default(0) @map("tier2_count")
+  tier3Count    Int @default(0) @map("tier3_count")
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("account_lists")
+}
+
+// ─── Revenue Intelligence Models ────────────────────────────────────────────
+
+model RevenueForecast {
+  id          String  @id @default(cuid())
+  userId      String? @map("user_id")
+  period      String  // e.g., "2024-Q1", "2024-01"
+  projectedRevenue Float @default(0) @map("projected_revenue")
+  confidence  Float   @default(0)
+
+  // Scenario breakdown
+  committedRevenue Float @default(0) @map("committed_revenue")
+  bestCaseRevenue  Float @default(0) @map("best_case_revenue")
+  upsideRevenue    Float @default(0) @map("upside_revenue")
+
+  pipelineContribution Float   @default(0) @map("pipeline_contribution")
+  metadata             String? // JSON: additional forecast data
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("revenue_forecasts")
+}
+
+// ─── Sales Enablement Models ────────────────────────────────────────────────
+
+model SalesAsset {
+  id          String  @id @default(cuid())
+  userId      String? @map("user_id")
+  type        String  // playbook, battle_card, proposal, collateral, training
+  name        String
+  description String?
+  content     String  // JSON: full content of the asset
+  tags        String? // JSON array of tags
+  industry    String?
+
+  // Linking
+  leadId         String? @map("lead_id")
+  competitorName String? @map("competitor_name") // for battle cards
+
+  // Stats
+  usageCount   Int     @default(0) @map("usage_count")
+  effectiveness Float  @default(0) @map("effectiveness") // 0-100
+
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  @@map("sales_assets")
+}
+
+// ─── Data Quality Models ────────────────────────────────────────────────────
+
+model DataQualityAudit {
+  id          String  @id @default(cuid())
+  userId      String? @map("user_id")
+  campaignId  String? @map("campaign_id")
+  leadId      String? @map("lead_id")
+
+  overallScore      Int @default(0) @map("overall_score") // 0-100
+  completenessScore Int @default(0) @map("completeness_score")
+  accuracyScore     Int @default(0) @map("accuracy_score")
+  freshnessScore    Int @default(0) @map("freshness_score")
+  consistencyScore  Int @default(0) @map("consistency_score")
+  validityScore     Int @default(0) @map("validity_score")
+
+  issues String? // JSON array of DataIssue objects
+
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("data_quality_audits")
+}

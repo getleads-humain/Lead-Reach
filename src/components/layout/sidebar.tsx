@@ -23,6 +23,12 @@ import {
   Crosshair,
   Settings,
   LogOut,
+  DollarSign,
+  Shield,
+  Brain,
+  Building2,
+  MailCheck,
+  BookOpen,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,6 +54,12 @@ const navItems: NavItem[] = [
   { view: 'booking', label: 'Bookings', icon: Calendar },
   { view: 'messaging', label: 'Messaging', icon: MessageCircle },
   { view: 'outreach', label: 'Outreach', icon: Mail },
+  { view: 'email-engagement', label: 'Email Hub', icon: MailCheck },
+  { view: 'sales-enablement', label: 'Enablement', icon: BookOpen },
+  { view: 'revenue-intelligence', label: 'Revenue Intel', icon: DollarSign },
+  { view: 'abm', label: 'ABM', icon: Building2 },
+  { view: 'lead-intelligence', label: 'Lead Intel', icon: Brain },
+  { view: 'data-quality', label: 'Data Quality', icon: Shield },
   { view: 'analytics', label: 'Analytics', icon: TrendingUp },
   { view: 'reports', label: 'Reports', icon: BarChart3 },
 ];
