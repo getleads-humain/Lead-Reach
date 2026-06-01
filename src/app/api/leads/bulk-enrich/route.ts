@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-<<<<<<< HEAD
 import { callLLMForJSON } from '@/lib/llm';
-=======
-import { getSDK } from '@/lib/llm';
->>>>>>> origin/main
 
 export async function POST(request: NextRequest) {
   try {
@@ -82,16 +78,10 @@ FIELDS TO FILL (only fill fields that are missing or empty):
 ${fieldsToEnrich.join(', ')}`;
 
         try {
-<<<<<<< HEAD
           const enrichedData = await callLLMForJSON<Record<string, unknown>>(systemPrompt, userMessage, {
             temperature: 0.2,
             retriesPerModel: 2,
             useFallback: true,
-=======
-          const zai = await getSDK();
-          const llmResult = await zai.chat.completions.create({
-            messages: [{ role: 'user', content: prompt }],
->>>>>>> origin/main
           });
 
           // Update the lead with enriched data

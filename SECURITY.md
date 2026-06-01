@@ -1,5 +1,7 @@
 # Security Policy
 
+> **Note**: This document covers vulnerability reporting and responsible disclosure. For the comprehensive enterprise-grade security policy, see [SECURITY_POLICY.md](./SECURITY_POLICY.md).
+
 ## Supported Versions
 
 We actively support the following versions of LeadReach AI with security updates:
@@ -146,7 +148,7 @@ We are currently evaluating the launch of a formal bug bounty program. In the me
 
 ## Policy Updates
 
-This security policy was last updated on January 15, 2026. We may update this policy from time to time. Significant changes will be communicated through our GitHub repository and website.
+This security policy was last updated on June 2, 2026. We may update this policy from time to time. Significant changes will be communicated through our GitHub repository and website.
 
 ---
 

@@ -1,8 +1,14 @@
+# LeadReach AI — robots.txt
+# Per SECURITY_POLICY.md: control automated access to the platform
+
+# ── Allowed search engine crawlers ──
 User-agent: Googlebot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Bingbot
 Allow: /
+Crawl-delay: 1
 
 User-agent: Twitterbot
 Allow: /
@@ -10,5 +16,50 @@ Allow: /
 User-agent: facebookexternalhit
 Allow: /
 
+User-agent: LinkedInBot
+Allow: /
+
+# ── AI crawlers — restricted per data protection policy ──
+# Lead data is proprietary and must not be used for AI training
+User-agent: GPTBot
+Disallow: /
+
+User-agent: ChatGPT-User
+Disallow: /
+
+User-agent: CCBot
+Disallow: /
+
+User-agent: Google-Extended
+Disallow: /
+
+User-agent: Omgilibot
+Disallow: /
+
+User-agent: Omgili
+Disallow: /
+
+User-agent: FacebookBot
+Disallow: /
+
+User-agent: Applebot-Extended
+Disallow: /
+
+User-agent: Bytespider
+Disallow: /
+
+User-agent: ClaudeBot
+Disallow: /
+
+# ── All other bots ──
 User-agent: *
 Allow: /
+Disallow: /api/
+Disallow: /portal/
+Disallow: /onboarding/
+Disallow: /settings/
+Disallow: /.well-known/
+Crawl-delay: 10
+
+# ── Sitemap ──
+# Sitemap: https://leadreach.ai/sitemap.xml

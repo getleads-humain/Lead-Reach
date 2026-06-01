@@ -1,0 +1,33 @@
+# LeadReach AI — Security Contact Information
+# https://securitytxt.org/ — RFC 9116
+
+# Our security disclosure policy is available at:
+Contact: security@leadreach.ai
+Contact: https://github.com/getleads-humain/Lead-Reach/security/advisories/new
+
+# Our preferred languages for security reports:
+Preferred-Languages: en
+
+# Our security policy document:
+Policy: https://github.com/getleads-humain/Lead-Reach/blob/main/SECURITY_POLICY.md
+
+# Our vulnerability disclosure policy:
+Policy: https://github.com/getleads-humain/Lead-Reach/blob/main/SECURITY.md
+
+# Acknowledgments for security researchers:
+Acknowledgments: https://github.com/getleads-humain/Lead-Reach/security
+
+# Our PGP key for encrypted communications:
+# (To be added upon PGP key generation)
+
+# Canonical URI for this file:
+Canonical: https://leadreach.ai/.well-known/security.txt
+
+# This file was last updated:
+Last-Updated: 2026-06-02T00:00:00.000Z
+
+# Hiring security professionals:
+Hiring: https://leadreach.ai/careers
+
+# The expiry date for this security.txt file:
+Expires: 2027-06-02T00:00:00.000Z

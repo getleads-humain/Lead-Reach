@@ -1,10 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-<<<<<<< HEAD
 import { callLLMForJSON, callLLM } from '@/lib/llm';
-=======
-import { getSDK } from '@/lib/llm';
->>>>>>> origin/main
 
 export const maxDuration = 300;
 
@@ -81,23 +77,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-<<<<<<< HEAD
     // Step 3: Use centralized callLLMForJSON with rate limiting, retries, and model fallback
     // Call 1: Company analysis
     let company: ProspectData = { companyName };
     try {
       const companyAnalysis = await callLLMForJSON<ProspectData>(
         `You are a sales intelligence analyst. Analyze the provided company information and return a JSON object with the following structure:
-=======
-    // Step 3: Use LLM to analyze and synthesize
-    const zai = await getSDK();
-
-    const analysisResult = await zai.chat.completions.create({
-      messages: [
-        {
-          role: 'system',
-          content: `You are a sales intelligence analyst. Analyze the provided company information and return a JSON object with the following structure:
->>>>>>> origin/main
 {
   "companyName": "string",
   "website": "string or null",
