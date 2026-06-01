@@ -90,3 +90,7 @@ mini-services/*/__pycache__/
 
 # OS
 Thumbs.db
+
+# GitHub workflow files (require workflow scope PAT — manage via GitHub UI)
+.github/workflows/*.yml
+.github/codeql.yml
