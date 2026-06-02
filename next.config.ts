@@ -9,6 +9,7 @@ const nextConfig: NextConfig = {
   // Allow preview iframe origins (space-z.ai preview system)
   allowedDevOrigins: [
     ".space-z.ai",
+    ".space.chatglm.site",
   ],
   experimental: {},
   serverExternalPackages: ["@prisma/client"],
