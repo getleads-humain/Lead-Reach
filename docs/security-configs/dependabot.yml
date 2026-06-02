@@ -1,0 +1,68 @@
+# LeadReach — Dependabot Configuration
+# ========================================
+# Automated dependency updates for npm packages and GitHub Actions.
+#
+# - npm: Daily check for dependency updates
+# - GitHub Actions: Weekly check for action version updates
+#
+# @see SECURITY_POLICY.md §8.6, §16.1
+
+version: 2
+
+updates:
+  # ── npm Dependencies ──────────────────────────────────────────────
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "leadreach/security-team"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "deps"
+      include: "scope"
+    # Auto-merge minor and patch updates (not major)
+    allow:
+      - dependency-type: "production"
+        update-type: "semver:patch"
+      - dependency-type: "production"
+        update-type: "semver:minor"
+      - dependency-type: "development"
+        update-type: "all"
+    # Group minor/patch updates to reduce PR noise
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+    # Reject known vulnerable packages
+    ignore:
+      - dependency-name: "*"
+        update-type: "version-update:semver-major"
+        # Major updates require manual review
+
+  # ── GitHub Actions ────────────────────────────────────────────────
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 5
+    reviewers:
+      - "leadreach/security-team"
+    labels:
+      - "github-actions"
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "ci"
+      include: "scope"

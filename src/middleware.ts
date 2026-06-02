@@ -9,17 +9,22 @@
  * 2. Protects authenticated routes — redirects to /login if not signed in
  * 3. Redirects logged-in users away from /login and /signup to /app
  * 4. Handles the JWKS-based JWT verification dynamically via @supabase/ssr
+ * 5. Applies enterprise-grade security headers to all responses
  *
  * The JWKS endpoint is fetched automatically by the Supabase client:
  * https://ssaskkftdpidfwvpgdwl.supabase.co/auth/v1/.well-known/jwks.json
  * Key ID: ff84e55f-9852-4892-916f-4284fdcd67d6
  */
 
-import { type NextRequest } from 'next/server';
+import { type NextRequest, NextResponse } from 'next/server';
 import { updateSession } from '@/lib/supabase-middleware';
+import { applySecurityHeaders } from '@/lib/security-headers';
 
 export async function middleware(request: NextRequest) {
-  return await updateSession(request);
+  const response = await updateSession(request);
+
+  // Apply security headers to all responses
+  return applySecurityHeaders(response);
 }
 
 export const config = {

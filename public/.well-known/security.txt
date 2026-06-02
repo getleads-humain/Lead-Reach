@@ -1,0 +1,20 @@
+# LeadReach AI Corp — Security Contact Information
+# RFC 9116 compliant security.txt
+# https://www.rfc-editor.org/rfc/rfc9116
+
+Contact: security@leadreach.ai
+Contact: https://leadreach.ai/security
+
+Preferred-Languages: en
+
+Canonical: https://leadreach.ai/.well-known/security.txt
+
+Policy: https://github.com/leadreach/security/blob/main/VULNERABILITY_DISCLOSURE_POLICY.md
+Policy: https://leadreach.ai/security-policy
+
+Hiring: https://leadreach.ai/careers
+
+# This file is signed; verify integrity at:
+# https://leadreach.ai/.well-known/security.txt.sig
+
+Expires: 2027-06-02T23:59:59.000Z
