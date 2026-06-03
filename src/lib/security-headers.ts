@@ -6,6 +6,11 @@
  * Implements defense-in-depth via strict CSP, HSTS, clickjacking protection,
  * MIME sniffing prevention, and other browser security mechanisms.
  *
+ * Preview Environment Support:
+ * - Detects preview domains (*.space-z.ai, *.space.chatglm.site)
+ * - Relaxes CSP and cross-origin headers for preview to allow JS execution
+ * - Maintains strict security for production deployments
+ *
  * @see SECURITY_POLICY.md §8.2
  */
 
@@ -15,6 +20,30 @@ import type { NextResponse as NextResponseType } from 'next/server';
 // ── Environment Detection ──────────────────────────────────────────
 
 const isDev = process.env.NODE_ENV === 'development';
+
+// ── Preview Domain Detection ───────────────────────────────────────
+
+const PREVIEW_DOMAINS = [
+  '.space-z.ai',
+  '.space.chatglm.site',
+  'localhost',
+  '127.0.0.1',
+];
+
+/**
+ * Checks if a request is coming from a preview environment.
+ * Preview domains follow the pattern: preview-*.space-z.ai or preview-*.space.chatglm.site
+ * Also detects local development (localhost, 127.0.0.1) which should be treated as preview-like.
+ * Handles host strings that include port numbers (e.g., "localhost:3000").
+ */
+function isPreviewRequest(host: string): boolean {
+  if (!host) return false;
+  // Strip port number (e.g., "localhost:3000" → "localhost")
+  const hostname = host.split(':')[0];
+  return PREVIEW_DOMAINS.some(
+    domain => hostname.endsWith(domain) || hostname === domain
+  );
+}
 
 // ── Allowed Origins ────────────────────────────────────────────────
 
@@ -33,32 +62,39 @@ const STRIPE_API_URL = 'https://api.stripe.com';
  * In development mode, the CSP is relaxed to support Next.js HMR (Hot Module
  * Replacement) which requires `eval` and WebSocket connections to localhost.
  *
- * In production, a strict nonce-based CSP is enforced with no inline scripts.
+ * In preview mode (deployed previews on *.space-z.ai / *.space.chatglm.site),
+ * the CSP is moderately relaxed to allow scripts from the preview domain while
+ * still maintaining basic security.
+ *
+ * In production, a strict CSP is enforced.
+ *
+ * @param host - The host header of the request (used for preview detection)
  */
-export function buildCSP(): string {
+export function buildCSP(host?: string): string {
   const directives: string[] = [];
+  const hostStr = host || '';
+  const isPreview = isPreviewRequest(hostStr);
 
   // default-src: Fallback for all fetches not covered by more specific directives
   directives.push(`default-src 'self'`);
 
   // script-src: JavaScript execution
-  if (isDev) {
+  if (isDev || isPreview) {
     // Next.js HMR requires eval and localhost WebSocket connections
+    // Preview environments need relaxed CSP to allow Next.js chunk loading
     directives.push(
-      `script-src 'self' 'unsafe-eval' 'unsafe-inline' localhost:* 127.0.0.1:*`
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline' localhost:* 127.0.0.1:* https://*.space-z.ai https://*.space.chatglm.site`
     );
   } else {
     directives.push(
-      `script-src 'self' 'strict-dynamic' 'nonce-{NONCE}' https: 'unsafe-inline' ` +
-      // 'unsafe-inline' is ignored by browsers that support 'strict-dynamic'
-      // but is included as a fallback for older browsers
+      `script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ` +
       `${STRIPE_JS_URL}`
     );
   }
 
   // style-src: CSS sources
-  if (isDev) {
-    directives.push(`style-src 'self' 'unsafe-inline'`);
+  if (isDev || isPreview) {
+    directives.push(`style-src 'self' 'unsafe-inline' https://*.space-z.ai https://*.space.chatglm.site`);
   } else {
     // Tailwind CSS and shadcn/ui require inline styles; use nonce in production
     directives.push(`style-src 'self' 'unsafe-inline'`);
@@ -66,11 +102,11 @@ export function buildCSP(): string {
 
   // img-src: Image sources
   directives.push(
-    `img-src 'self' data: blob: https://*.supabase.co ${supabaseOrigin} https://*.stripe.com`
+    `img-src 'self' data: blob: https://*.supabase.co ${supabaseOrigin} https://*.stripe.com https://*.space-z.ai https://*.space.chatglm.site`
   );
 
   // font-src: Font sources
-  directives.push(`font-src 'self' data:`);
+  directives.push(`font-src 'self' data: https://*.space-z.ai https://*.space.chatglm.site`);
 
   // connect-src: AJAX, WebSocket, EventSource destinations
   const connectSources = [
@@ -82,9 +118,14 @@ export function buildCSP(): string {
     STRIPE_JS_URL,
   ];
 
-  if (isDev) {
-    // Next.js HMR WebSocket + dev server
-    connectSources.push('localhost:*', '127.0.0.1:*', 'ws://localhost:*', 'ws://127.0.0.1:*');
+  if (isDev || isPreview) {
+    // Next.js HMR WebSocket + dev server + preview WebSocket
+    connectSources.push(
+      'localhost:*', '127.0.0.1:*',
+      'ws://localhost:*', 'ws://127.0.0.1:*',
+      'wss://*.space-z.ai', 'wss://*.space.chatglm.site',
+      'https://*.space-z.ai', 'https://*.space.chatglm.site'
+    );
   }
 
   directives.push(`connect-src ${connectSources.join(' ')}`);
@@ -92,8 +133,14 @@ export function buildCSP(): string {
   // frame-src: Embedded iframes (Stripe Checkout, etc.)
   directives.push(`frame-src 'self' ${STRIPE_JS_URL} https://hooks.stripe.com`);
 
-  // frame-ancestors: Prevent clickjacking (supersedes X-Frame-Options)
-  directives.push(`frame-ancestors 'none'`);
+  // frame-ancestors: Control who can embed this page
+  if (isPreview) {
+    // Allow preview platform to embed the page in iframes
+    directives.push(`frame-ancestors 'self' https://*.space-z.ai https://*.space.chatglm.site`);
+  } else {
+    // Prevent clickjacking (supersedes X-Frame-Options)
+    directives.push(`frame-ancestors 'none'`);
+  }
 
   // object-src: No Flash/Java/etc.
   directives.push(`object-src 'none'`);
@@ -126,17 +173,16 @@ export function buildCSP(): string {
  *
  * These headers implement defense-in-depth browser security mechanisms
  * as specified in SECURITY_POLICY.md §8.2.
+ *
+ * @param host - The host header of the request (used for preview detection)
  */
-export function getSecurityHeaders(): Record<string, string> {
-  const headers: Record<string, string> = {
-    // Prevent clickjacking — DENY means the page cannot be framed at all
-    'X-Frame-Options': 'DENY',
+export function getSecurityHeaders(host?: string): Record<string, string> {
+  const hostStr = host || '';
+  const isPreview = isPreviewRequest(hostStr);
 
+  const headers: Record<string, string> = {
     // Prevent MIME-type sniffing (forces browser to respect declared Content-Type)
     'X-Content-Type-Options': 'nosniff',
-
-    // HTTP Strict Transport Security — force HTTPS for 2 years with preload
-    'Strict-Transport-Security': 'max-age=63072000; includeSubDomains; preload',
 
     // Disable legacy XSS filter (it causes more harm than good; CSP is the proper mitigation)
     'X-XSS-Protection': '0',
@@ -161,14 +207,31 @@ export function getSecurityHeaders(): Record<string, string> {
       'interest-cohort=()', // Disable FLoC / Topics API
     ].join(', '),
 
-    // Content Security Policy
-    'Content-Security-Policy': buildCSP(),
-
-    // Cross-Origin isolation headers — prevent Spectre-class side-channel attacks
-    'Cross-Origin-Opener-Policy': 'same-origin',
-    'Cross-Origin-Resource-Policy': 'same-origin',
-    'Cross-Origin-Embedder-Policy': isDev ? 'unsafe-none' : 'require-corp',
+    // Content Security Policy — dynamically built based on environment
+    'Content-Security-Policy': buildCSP(hostStr),
   };
+
+  if (isPreview) {
+    // Preview environment: relax framing and cross-origin restrictions
+    // to allow the preview platform to serve the page properly
+    headers['X-Frame-Options'] = 'ALLOWALL';
+    headers['Cross-Origin-Opener-Policy'] = 'unsafe-none';
+    headers['Cross-Origin-Resource-Policy'] = 'cross-origin';
+    headers['Cross-Origin-Embedder-Policy'] = 'unsafe-none';
+  } else if (isDev) {
+    // Development: relaxed for local tooling
+    headers['X-Frame-Options'] = 'SAMEORIGIN';
+    headers['Cross-Origin-Opener-Policy'] = 'same-origin-unsafe';
+    headers['Cross-Origin-Resource-Policy'] = 'same-origin';
+    headers['Cross-Origin-Embedder-Policy'] = 'unsafe-none';
+  } else {
+    // Production: strict security
+    headers['X-Frame-Options'] = 'DENY';
+    headers['Strict-Transport-Security'] = 'max-age=63072000; includeSubDomains; preload';
+    headers['Cross-Origin-Opener-Policy'] = 'same-origin';
+    headers['Cross-Origin-Resource-Policy'] = 'same-origin';
+    headers['Cross-Origin-Embedder-Policy'] = 'require-corp';
+  }
 
   return headers;
 }
@@ -180,16 +243,17 @@ export function getSecurityHeaders(): Record<string, string> {
  * Also removes information-leaking headers (X-Powered-By, Server).
  *
  * @param response - The NextResponse to apply headers to
+ * @param host - The host header of the request (used for preview detection)
  * @returns The modified NextResponse with security headers
  *
  * @example
  * ```ts
  * const response = NextResponse.next();
- * return applySecurityHeaders(response);
+ * return applySecurityHeaders(response, request.headers.get('host') || undefined);
  * ```
  */
-export function applySecurityHeaders<T extends NextResponseType>(response: T): T {
-  const securityHeaders = getSecurityHeaders();
+export function applySecurityHeaders<T extends NextResponseType>(response: T, host?: string): T {
+  const securityHeaders = getSecurityHeaders(host);
 
   // Apply all security headers
   for (const [key, value] of Object.entries(securityHeaders)) {

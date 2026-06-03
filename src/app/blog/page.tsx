@@ -20,12 +20,12 @@ import {
   Calendar,
 } from 'lucide-react';
 import {
-  BLOG_POSTS,
+  BLOG_POSTS_META,
   CATEGORIES,
   POPULAR_TAGS,
   CATEGORY_COLORS,
   type BlogCategory,
-} from '@/lib/blog-data';
+} from '@/lib/blog-metadata';
 
 export default function BlogPage() {
   const [activeCategory, setActiveCategory] = useState<BlogCategory>('All');
@@ -33,7 +33,7 @@ export default function BlogPage() {
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
 
-  const filteredPosts = BLOG_POSTS.filter((post) => {
+  const filteredPosts = BLOG_POSTS_META.filter((post) => {
     const matchesCategory = activeCategory === 'All' || post.category === activeCategory;
     const matchesSearch =
       !searchQuery ||

@@ -9,11 +9,13 @@
  * 2. Protects authenticated routes — redirects to /login if not signed in
  * 3. Redirects logged-in users away from /login and /signup to /app
  * 4. Handles the JWKS-based JWT verification dynamically via @supabase/ssr
- * 5. Applies enterprise-grade security headers to all responses
+ * 5. Applies environment-aware security headers to all responses
+ *    (relaxed for preview domains, strict for production)
  *
- * The JWKS endpoint is fetched automatically by the Supabase client:
- * https://ssaskkftdpidfwvpgdwl.supabase.co/auth/v1/.well-known/jwks.json
- * Key ID: ff84e55f-9852-4892-916f-4284fdcd67d6
+ * Preview Environment:
+ * - Detects *.space-z.ai and *.space.chatglm.site domains
+ * - Relaxes CSP and cross-origin headers to allow JS execution and framing
+ * - This ensures the preview platform can properly render the application
  */
 
 import { type NextRequest, NextResponse } from 'next/server';
@@ -23,8 +25,9 @@ import { applySecurityHeaders } from '@/lib/security-headers';
 export async function middleware(request: NextRequest) {
   const response = await updateSession(request);
 
-  // Apply security headers to all responses
-  return applySecurityHeaders(response);
+  // Pass the request host to security headers for preview detection
+  const host = request.headers.get('host') || undefined;
+  return applySecurityHeaders(response, host);
 }
 
 export const config = {

@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  output: "standalone",
+  // Removed "output: standalone" — it requires node .next/standalone/server.js
+  // and causes "next start" to warn. Standard output works with next start.
   typescript: {
     ignoreBuildErrors: true,
   },
