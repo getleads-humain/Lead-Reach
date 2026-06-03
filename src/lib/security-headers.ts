@@ -103,9 +103,9 @@ export function buildCSP(host?: string): string {
     directives.push(`style-src 'self' 'unsafe-inline'`);
   }
 
-  // img-src: Image sources
+  // img-src: Image sources (includes Spline design assets)
   directives.push(
-    `img-src 'self' data: blob: https://*.supabase.co ${supabaseOrigin} https://*.stripe.com https://*.space-z.ai https://*.space.chatglm.site ${SPLINE_URL}`
+    `img-src 'self' data: blob: https://*.supabase.co ${supabaseOrigin} https://*.stripe.com https://*.space-z.ai https://*.space.chatglm.site ${SPLINE_URL} https://app.spline.design`
   );
 
   // font-src: Font sources
