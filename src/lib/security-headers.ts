@@ -53,6 +53,8 @@ const supabaseOrigin = SUPABASE_URL ? new URL(SUPABASE_URL).origin : '';
 const ZHIPU_API_URL = 'https://open.bigmodel.cn';
 const STRIPE_JS_URL = 'https://js.stripe.com';
 const STRIPE_API_URL = 'https://api.stripe.com';
+const UNPKG_URL = 'https://unpkg.com';
+const SPLINE_URL = 'https://prod.spline.design';
 
 // ── CSP Directives ─────────────────────────────────────────────────
 
@@ -82,13 +84,14 @@ export function buildCSP(host?: string): string {
   if (isDev || isPreview) {
     // Next.js HMR requires eval and localhost WebSocket connections
     // Preview environments need relaxed CSP to allow Next.js chunk loading
+    // Also allow Spline 3D viewer (unpkg.com + prod.spline.design)
     directives.push(
-      `script-src 'self' 'unsafe-eval' 'unsafe-inline' localhost:* 127.0.0.1:* https://*.space-z.ai https://*.space.chatglm.site`
+      `script-src 'self' 'unsafe-eval' 'unsafe-inline' localhost:* 127.0.0.1:* https://*.space-z.ai https://*.space.chatglm.site ${UNPKG_URL}`
     );
   } else {
     directives.push(
       `script-src 'self' 'unsafe-inline' 'unsafe-eval' https: ` +
-      `${STRIPE_JS_URL}`
+      `${STRIPE_JS_URL} ${UNPKG_URL}`
     );
   }
 
@@ -102,11 +105,11 @@ export function buildCSP(host?: string): string {
 
   // img-src: Image sources
   directives.push(
-    `img-src 'self' data: blob: https://*.supabase.co ${supabaseOrigin} https://*.stripe.com https://*.space-z.ai https://*.space.chatglm.site`
+    `img-src 'self' data: blob: https://*.supabase.co ${supabaseOrigin} https://*.stripe.com https://*.space-z.ai https://*.space.chatglm.site ${SPLINE_URL}`
   );
 
   // font-src: Font sources
-  directives.push(`font-src 'self' data: https://*.space-z.ai https://*.space.chatglm.site`);
+  directives.push(`font-src 'self' data: https://*.space-z.ai https://*.space.chatglm.site ${UNPKG_URL}`);
 
   // connect-src: AJAX, WebSocket, EventSource destinations
   const connectSources = [
@@ -116,6 +119,8 @@ export function buildCSP(host?: string): string {
     ZHIPU_API_URL,
     STRIPE_API_URL,
     STRIPE_JS_URL,
+    UNPKG_URL,
+    SPLINE_URL,
   ];
 
   if (isDev || isPreview) {

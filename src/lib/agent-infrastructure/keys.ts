@@ -45,10 +45,24 @@ export interface KeyDefinition {
 
 /**
  * Register an API key for an agent.
+ * Uses upsert to handle the unique constraint on (agentName, keyName, environment).
  */
 export async function registerKey(keyDef: KeyDefinition) {
-  return db.agentKey.create({
-    data: {
+  return db.agentKey.upsert({
+    where: {
+      agentName_keyName_environment: {
+        agentName: keyDef.agentName,
+        keyName: keyDef.keyName,
+        environment: keyDef.environment || 'production',
+      },
+    },
+    update: {
+      provider: keyDef.provider,
+      keyType: keyDef.keyType || 'api_key',
+      keyValue: keyDef.keyValue || keyDef.envVarName || null,
+      status: 'active',
+    },
+    create: {
       agentName: keyDef.agentName,
       keyName: keyDef.keyName,
       provider: keyDef.provider,

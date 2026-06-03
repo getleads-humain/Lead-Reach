@@ -126,6 +126,7 @@ export default function BlogPage() {
                             src={post.heroImage}
                             alt={post.title}
                             fill
+                            sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
                             className="object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
                           />
                           <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
