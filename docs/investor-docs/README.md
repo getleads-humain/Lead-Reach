@@ -1,4 +1,4 @@
-# LeadReach AI Corp — Investor Documentation Suite
+# LeadReach AI IFSC Corp — Investor Documentation Suite
 
 > Print-ready, investor-grade documentation for VC/LP/investor presentations.
 
@@ -36,6 +36,6 @@
 ---
 
 **Total Documents:** 12 (11 PDF + 1 CSV)  
-**Entity:** LeadReach AI Corp  
+**Entity:** LeadReach AI IFSC Corp  
 **Platform:** LeadReach — AI-Powered B2B Lead Generation  
 **Stack:** Next.js 14 · TypeScript · Prisma · Supabase PostgreSQL · Zhipu AI GLM
