@@ -80,6 +80,9 @@ worklog.md
 
 # Mini services runtime
 mini-services/*/node_modules/
+mini-services/*/venv/
+mini-services/*/__pycache__/
+mini-services/**/*.pyc
 
 # IDE
 .idea/
