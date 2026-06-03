@@ -2,20 +2,15 @@
  * LeadReach — Stripe Webhook Handler
  * =====================================
  * Handles Stripe webhook events for subscription management.
+ *
+ * SECURITY: Uses createServiceClient() which returns null when env vars
+ * are missing. Returns 503 when Supabase is not configured.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { stripe, getPlanByStripePriceId, mapStripeStatus } from '@/lib/stripe-config';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-function getServiceClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
+import { createServiceClient } from '@/lib/supabase-server';
 
 export async function POST(request: NextRequest) {
   const body = await request.text();
@@ -37,7 +32,14 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 });
   }
 
-  const serviceClient = getServiceClient();
+  const serviceClient = createServiceClient();
+  if (!serviceClient) {
+    console.error('[LeadReach] Webhook received but Supabase service client not configured');
+    return NextResponse.json(
+      { error: 'Service not configured' },
+      { status: 503 }
+    );
+  }
 
   try {
     switch (event.type) {

@@ -7,7 +7,7 @@ Search: Exa web_search with includeDomains mp.weixin.qq.com
 
 import shutil
 import subprocess
-from .base import Channel
+from .base import Channel, _domain_matches
 
 
 def _exa_available() -> bool:
@@ -32,8 +32,13 @@ class WeChatChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urlparse(url).netloc.lower()
-        return "mp.weixin.qq.com" in d or "weixin.qq.com" in d
+        return _domain_matches(d, "mp.weixin.qq.com") or _domain_matches(d, "weixin.qq.com")
 
     def check(self, config=None):
         has_exa = _exa_available()

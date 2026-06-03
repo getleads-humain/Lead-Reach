@@ -3,20 +3,15 @@
  * ====================================
  * Utility for checking plan access in API routes.
  * Returns the user's profile and feature access, or an error response.
+ *
+ * SECURITY: Never calls Supabase clients without first validating env vars.
+ * Returns a 503 Service Unavailable response when Supabase is not configured.
  */
 
 import { NextResponse } from 'next/server';
 import { createClient } from '@/lib/supabase-server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
+import { createServiceClient } from '@/lib/supabase-server';
 import { getFeatureAccess, getPlanById } from '@/lib/plans';
-
-function getServiceClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
 
 export interface PlanCheckResult {
   authorized: true;
@@ -43,6 +38,16 @@ export async function requirePlanAccess(
 ): Promise<PlanCheckResult | PlanCheckError> {
   try {
     const supabase = await createClient();
+    if (!supabase) {
+      return {
+        authorized: false,
+        response: NextResponse.json(
+          { error: 'Service not configured. Please set up Supabase environment variables.' },
+          { status: 503 }
+        ),
+      };
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
@@ -52,7 +57,17 @@ export async function requirePlanAccess(
       };
     }
 
-    const serviceClient = getServiceClient();
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      return {
+        authorized: false,
+        response: NextResponse.json(
+          { error: 'Service not configured. Admin features require SUPABASE_SERVICE_ROLE_KEY.' },
+          { status: 503 }
+        ),
+      };
+    }
+
     const { data: profile, error: profileError } = await serviceClient
       .from('profiles')
       .select('*')

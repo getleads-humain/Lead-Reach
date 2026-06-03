@@ -2,24 +2,26 @@
  * LeadReach — Stripe Checkout Session API
  * =========================================
  * Creates a Stripe Checkout Session for subscribing to a plan.
+ *
+ * SECURITY: Uses createServiceClient() which returns null when env vars
+ * are missing, preventing runtime crashes from undefined credentials.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
+import { createClient, createServiceClient } from '@/lib/supabase-server';
 import { stripe, getPlanById, getStripePriceId } from '@/lib/stripe-config';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-function getServiceClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
+import type Stripe from 'stripe';
 
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Service not configured. Please set up Supabase environment variables.' },
+        { status: 503 }
+      );
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
@@ -69,7 +71,14 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const serviceClient = getServiceClient();
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      return NextResponse.json(
+        { error: 'Service not configured. Admin features require SUPABASE_SERVICE_ROLE_KEY.' },
+        { status: 503 }
+      );
+    }
+
     const { data: profile, error: profileError } = await serviceClient
       .from('profiles')
       .select('stripe_customer_id, plan')

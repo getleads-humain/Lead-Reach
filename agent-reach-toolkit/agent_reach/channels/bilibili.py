@@ -6,7 +6,7 @@ import os
 import shutil
 import subprocess
 import urllib.request
-from .base import Channel
+from .base import Channel, _domain_matches
 
 _UA = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36"
 _TIMEOUT = 10
@@ -32,8 +32,13 @@ class BilibiliChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urlparse(url).netloc.lower()
-        return "bilibili.com" in d or "b23.tv" in d
+        return _domain_matches(d, "bilibili.com") or _domain_matches(d, "b23.tv")
 
     def check(self, config=None):
         if not shutil.which("yt-dlp"):

@@ -41,7 +41,13 @@ yarn-error.log*
 .pnpm-debug.log*
 
 # env files (contains secrets — never commit)
-.env*
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+# Allow .env.example to be committed (it contains only placeholders)
+!.env.example
 
 # vercel
 .vercel
@@ -83,3 +89,5 @@ mini-services/*/node_modules/
 
 # OS
 Thumbs.db
+__pycache__/
+*.pyc

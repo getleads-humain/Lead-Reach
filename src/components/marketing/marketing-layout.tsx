@@ -109,13 +109,13 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
                 Autonomous AI agents that discover, enrich, qualify, and engage leads while you sleep.
               </p>
               <div className="mt-4 flex items-center gap-3">
-                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Twitter">
+                <a href="https://twitter.com/LeadReachAI" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Twitter">
                   <Twitter className="h-4 w-4" />
                 </a>
-                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="LinkedIn">
+                <a href="https://linkedin.com/company/leadreach-ai" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="LinkedIn">
                   <Linkedin className="h-4 w-4" />
                 </a>
-                <a href="#" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
+                <a href="https://github.com/LeadReachAI" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
                   <Github className="h-4 w-4" />
                 </a>
               </div>
@@ -127,8 +127,8 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
               <ul className="mt-4 space-y-2.5">
                 <li><Link href="/#features" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Features</Link></li>
                 <li><Link href="/agent" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Agents</Link></li>
-                <li><Link href="/#pricing" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Pricing</Link></li>
-                <li><a href="#" className="text-xs text-muted-foreground hover:text-foreground transition-colors">API</a></li>
+                <li><Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Pricing</Link></li>
+                <li><Link href="/api-docs" className="text-xs text-muted-foreground hover:text-foreground transition-colors">API</Link></li>
               </ul>
             </div>
 

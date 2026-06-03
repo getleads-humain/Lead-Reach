@@ -5,10 +5,14 @@
  * ===================================
  * Provides authentication state to the entire app.
  * Uses Supabase Auth with real-time session tracking.
+ *
+ * Gracefully degrades when Supabase env vars are missing so the
+ * app still renders (auth features are simply disabled).
  */
 
 import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
-import { createClient } from '@/lib/supabase-browser';
+import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser';
+import type { SupabaseClient } from '@supabase/supabase-js';
 import type { User, Session } from '@supabase/supabase-js';
 
 export interface AuthUserProfile {
@@ -37,6 +41,7 @@ interface AuthContextType {
   session: Session | null;
   profile: AuthUserProfile | null;
   loading: boolean;
+  supabaseReady: boolean;
   signIn: (email: string, password: string) => Promise<{ error: string | null }>;
   signUp: (email: string, password: string, fullName: string) => Promise<{ error: string | null; needsConfirmation?: boolean }>;
   signOut: () => Promise<void>;
@@ -113,6 +118,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [profile, setProfile] = useState<AuthUserProfile | null>(null);
   const [loading, setLoading] = useState(true);
+  const [supabaseReady, setSupabaseReady] = useState(false);
 
   const updateOnboardingCookie = useCallback((isComplete: boolean) => {
     document.cookie = `lr_onboarding_done=${isComplete ? 'true' : 'false'}; path=/; max-age=${60 * 60 * 24 * 365}; SameSite=Lax`;
@@ -127,7 +133,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return p;
       }
 
+      // createClient() returns null when Supabase is not configured
       const supabase = createClient();
+      if (!supabase) return null;
+
       const { data, error } = await supabase
         .from('profiles')
         .select('*')
@@ -146,7 +155,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [updateOnboardingCookie]);
 
   useEffect(() => {
-    const supabase = createClient();
+    // createClient() returns null when Supabase is not configured
+    // This is the normal path when env vars are missing — app renders in demo mode
+    const supabase = createClient() as SupabaseClient | null;
+
+    if (!supabase) {
+      setSupabaseReady(false);
+      setLoading(false);
+      return;
+    }
+
+    setSupabaseReady(true);
 
     supabase.auth.getSession().then(async ({ data: { session: s } }) => {
       setSession(s);
@@ -174,8 +193,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [fetchAndSetProfile]);
 
   const signIn = useCallback(async (email: string, password: string) => {
+    const supabase = createClient();
+    if (!supabase) return { error: 'Supabase is not configured. Please set up your environment variables.' };
     try {
-      const supabase = createClient();
       const { error } = await supabase.auth.signInWithPassword({ email, password });
       return { error: error?.message ?? null };
     } catch (err: unknown) {
@@ -184,8 +204,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signUp = useCallback(async (email: string, password: string, fullName: string) => {
+    const supabase = createClient();
+    if (!supabase) return { error: 'Supabase is not configured. Please set up your environment variables.', needsConfirmation: false };
     try {
-      const supabase = createClient();
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -200,12 +221,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signOut = useCallback(async () => {
-    try {
-      const supabase = createClient();
-      document.cookie = 'lr_onboarding_done=; path=/; max-age=0';
-      await supabase.auth.signOut();
-    } catch {
-      // Ignore sign out errors
+    const supabase = createClient();
+    if (supabase) {
+      try {
+        document.cookie = 'lr_onboarding_done=; path=/; max-age=0';
+        await supabase.auth.signOut();
+      } catch {
+        // Ignore sign out errors
+      }
     }
     setUser(null);
     setSession(null);
@@ -214,8 +237,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGoogle = useCallback(async () => {
+    const supabase = createClient();
+    if (!supabase) return { error: 'Supabase is not configured. Please set up your environment variables.' };
     try {
-      const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'google',
         options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -227,8 +251,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signInWithGitHub = useCallback(async () => {
+    const supabase = createClient();
+    if (!supabase) return { error: 'Supabase is not configured. Please set up your environment variables.' };
     try {
-      const supabase = createClient();
       const { error } = await supabase.auth.signInWithOAuth({
         provider: 'github',
         options: { redirectTo: `${window.location.origin}/auth/callback` },
@@ -240,8 +265,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const resetPassword = useCallback(async (email: string) => {
+    const supabase = createClient();
+    if (!supabase) return { error: 'Supabase is not configured. Please set up your environment variables.' };
     try {
-      const supabase = createClient();
       const { error } = await supabase.auth.resetPasswordForEmail(email, {
         redirectTo: `${window.location.origin}/reset-password`,
       });
@@ -252,8 +278,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const updatePassword = useCallback(async (password: string) => {
+    const supabase = createClient();
+    if (!supabase) return { error: 'Supabase is not configured. Please set up your environment variables.' };
     try {
-      const supabase = createClient();
       const { error } = await supabase.auth.updateUser({ password });
       return { error: error?.message ?? null };
     } catch (err: unknown) {
@@ -301,7 +328,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, session, profile, loading,
+      user, session, profile, loading, supabaseReady,
       signIn, signUp, signOut,
       signInWithGoogle, signInWithGitHub,
       resetPassword, updatePassword,

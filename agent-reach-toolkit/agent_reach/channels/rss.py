@@ -11,6 +11,11 @@ class RSSChannel(Channel):
     tier = 0
 
     def can_handle(self, url: str) -> bool:
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         return any(x in url.lower() for x in ["/feed", "/rss", ".xml", "atom"])
 
     def check(self, config=None):

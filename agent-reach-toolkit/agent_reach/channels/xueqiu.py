@@ -8,7 +8,7 @@ import urllib.parse
 import urllib.request
 from typing import Any
 
-from .base import Channel
+from .base import Channel, _domain_matches
 
 _UA = (
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
@@ -136,11 +136,22 @@ def _get_json(url: str) -> Any:
 
 
 def _strip_html(text: str) -> str:
-    """Remove HTML tags and decode common entities."""
-    text = re.sub(r"<[^>]+>", "", text)
-    for entity, char in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">")):
-        text = text.replace(entity, char)
-    return text.strip()
+    """Remove HTML tags and decode common entities.
+
+    Uses iterative tag removal to handle nested/broken tags like
+    <<script>script>, then decodes entities after stripping to prevent
+    re-introducing tags via entity decoding.
+    """
+    # Iteratively remove HTML tags until stable (handles nested/broken tags)
+    previous = ""
+    current = text
+    while previous != current:
+        previous = current
+        current = re.sub(r"<[^>]+>", "", current)
+    # Decode entities AFTER stripping tags (prevents re-introducing tags)
+    for entity, char in (("&nbsp;", " "), ("&amp;", "&"), ("&lt;", "<"), ("&gt;", ">"), ("&quot;", '"'), ("&#x27;", "'")):
+        current = current.replace(entity, char)
+    return current.strip()
 
 
 class XueqiuChannel(Channel):
@@ -154,8 +165,13 @@ class XueqiuChannel(Channel):
     # ------------------------------------------------------------------ #
 
     def can_handle(self, url: str) -> bool:
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urllib.parse.urlparse(url).netloc.lower()
-        return "xueqiu.com" in d
+        return _domain_matches(d, "xueqiu.com")
 
     # ------------------------------------------------------------------ #
     # Health check

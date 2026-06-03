@@ -3,7 +3,7 @@
 
 import shutil
 import subprocess
-from .base import Channel
+from .base import Channel, _domain_matches
 
 
 class TwitterChannel(Channel):
@@ -14,8 +14,13 @@ class TwitterChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urlparse(url).netloc.lower()
-        return "x.com" in d or "twitter.com" in d
+        return _domain_matches(d, "x.com") or _domain_matches(d, "twitter.com")
 
     def check(self, config=None):
         # Prefer twitter-cli, fallback to bird/birdx

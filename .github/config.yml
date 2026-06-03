@@ -1,0 +1,14 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Documentation
+    url: https://leadreach.ai/docs
+    about: Check our documentation for guides, API reference, and integration instructions.
+  - name: FAQ
+    url: https://leadreach.ai/faq
+    about: Browse frequently asked questions before opening a new issue.
+  - name: Security Vulnerability (Critical)
+    url: mailto:security@leadreach.ai
+    about: For CRITICAL security vulnerabilities (RCE, credential exposure, auth bypass), please email security@leadreach.ai directly instead of filing a public issue. See our Security Policy for details.
+  - name: General Discussion
+    url: https://github.com/getleads-humain/Lead-Reach/discussions
+    about: Ask questions, share ideas, and discuss LeadReach AI with the community.

@@ -6,7 +6,7 @@ import shutil
 from agent_reach.utils.paths import get_ytdlp_config_path, render_ytdlp_fix_command
 from agent_reach.utils.text import read_utf8_text
 
-from .base import Channel
+from .base import Channel, _domain_matches
 
 
 class YouTubeChannel(Channel):
@@ -17,8 +17,13 @@ class YouTubeChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urlparse(url).netloc.lower()
-        return "youtube.com" in d or "youtu.be" in d
+        return _domain_matches(d, "youtube.com") or _domain_matches(d, "youtu.be")
 
     def check(self, config=None):
         if not shutil.which("yt-dlp"):

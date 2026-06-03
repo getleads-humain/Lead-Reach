@@ -3,7 +3,7 @@
 
 import shutil
 import subprocess
-from .base import Channel
+from .base import Channel, _domain_matches
 
 
 class WeiboChannel(Channel):
@@ -14,8 +14,13 @@ class WeiboChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urlparse(url).netloc.lower()
-        return "weibo.com" in d or "weibo.cn" in d
+        return _domain_matches(d, "weibo.com") or _domain_matches(d, "weibo.cn")
 
     def check(self, config=None):
         mcporter = shutil.which("mcporter")

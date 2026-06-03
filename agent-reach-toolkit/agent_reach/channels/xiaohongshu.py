@@ -3,7 +3,7 @@
 
 import shutil
 import subprocess
-from .base import Channel
+from .base import Channel, _domain_matches
 
 
 def format_xhs_result(data):
@@ -123,8 +123,13 @@ class XiaoHongShuChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         d = urlparse(url).netloc.lower()
-        return "xiaohongshu.com" in d or "xhslink.com" in d
+        return _domain_matches(d, "xiaohongshu.com") or _domain_matches(d, "xhslink.com")
 
     def check(self, config=None):
         xhs = shutil.which("xhs")

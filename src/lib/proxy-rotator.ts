@@ -13,10 +13,10 @@
  * - openproxy.space
  */
 
-import { exec } from 'child_process';
+import { execFile } from 'child_process';
 import { promisify } from 'util';
 
-const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ============================================================
 // Types
@@ -461,29 +461,73 @@ class ProxyRotator {
   }
 
   /**
+   * Validates a URL to prevent SSRF and command injection.
+   * Only allows http/https URLs with valid hostname and port.
+   */
+  private isValidFetchUrl(url: string): boolean {
+    try {
+      const parsed = new URL(url);
+      if (!['http:', 'https:'].includes(parsed.protocol)) return false;
+      if (!parsed.hostname || parsed.hostname.length === 0) return false;
+      // Block internal/private network addresses (SSRF prevention)
+      const blockedPatterns = [
+        /^localhost$/i,
+        /^127\./,
+        /^10\./,
+        /^172\.(1[6-9]|2[0-9]|3[01])\./,
+        /^192\.168\./,
+        /^0\./,
+        /^::1$/,
+        /^fd/i,
+        /^fe80:/i,
+        /^169\.254\./,
+      ];
+      return !blockedPatterns.some(p => p.test(parsed.hostname));
+    } catch {
+      return false;
+    }
+  }
+
+  /**
    * Fetch a URL through a specific proxy using curl.
-   * This is the core mechanism — uses child_process.exec to call curl,
-   * which supports HTTP, SOCKS4, and SOCKS5 proxies natively.
+   * Uses execFile with argument array (no shell interpolation) to prevent
+   * command injection. Supports HTTP, SOCKS4, and SOCKS5 proxies natively.
+   *
+   * Security: URL is validated before being passed as a curl argument.
+   * The execFile call uses argument arrays (no shell) so arguments are
+   * passed directly to the curl binary without shell interpretation.
    */
   private async fetchViaProxy(
     url: string,
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
+    // Validate URL before passing to any command (CodeQL: uncontrolled command line)
+    if (!this.isValidFetchUrl(url)) {
+      throw new Error(`Blocked fetch URL (invalid or internal network): ${url.slice(0, 100)}`);
+    }
+
+    // Validate proxy host/port to prevent injection via proxy URL
+    if (!/^[\w.-]+$/.test(proxy.host) || proxy.port < 1 || proxy.port > 65535) {
+      throw new Error(`Invalid proxy address: ${proxy.host}:${proxy.port}`);
+    }
+
     const proxyUrl = `${proxy.protocol}://${proxy.host}:${proxy.port}`;
     const timeoutSec = Math.floor(timeout / 1000);
 
-    // Build curl command
-    // -s: silent mode
-    // -o -: output to stdout
-    // -w '\n%{http_code}': append status code as last line
-    // --proxy: set the proxy
-    // --max-time: overall timeout
-    // -H 'User-Agent': set user agent
-    // -L: follow redirects
-    const curlCommand = `curl -s -o - -w '\\n__HTTP_CODE__%{http_code}' --proxy '${proxyUrl}' --max-time ${timeoutSec} -H 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36' -L '${url.replace(/'/g, "'\\''")}'`;
+    // Use execFile with argument array to prevent shell injection
+    // (no shell interpolation — arguments passed directly to curl binary)
+    const curlArgs = [
+      '-s', '-o', '-',
+      '-w', '\n__HTTP_CODE__%{http_code}',
+      '--proxy', proxyUrl,
+      '--max-time', String(timeoutSec),
+      '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      '-L',
+      url, // Passed as separate argument — no shell escaping needed
+    ];
 
-    const { stdout, stderr } = await execAsync(curlCommand, {
+    const { stdout, stderr } = await execFileAsync('curl', curlArgs, {
       timeout: timeout + 5000, // Extra 5s for process overhead
       maxBuffer: 5 * 1024 * 1024, // 5MB
     });

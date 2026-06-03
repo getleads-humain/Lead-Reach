@@ -14,6 +14,11 @@ class WebChannel(Channel):
     tier = 0
 
     def can_handle(self, url: str) -> bool:
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
         return True  # Fallback — handles any URL
 
     def check(self, config=None):
@@ -21,8 +26,8 @@ class WebChannel(Channel):
 
     def read(self, url: str) -> str:
         """通过 Jina Reader 读取网页，返回 Markdown 全文。"""
-        if not url.startswith(("http://", "https://")):
-            url = "https://" + url
+        from .base import validate_url
+        url = validate_url(url)
         jina_url = f"https://r.jina.ai/{url}"
         req = urllib.request.Request(
             jina_url,

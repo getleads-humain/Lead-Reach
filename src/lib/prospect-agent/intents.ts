@@ -64,20 +64,35 @@ export async function classifyIntent(
 /**
  * Rule-based intent classification as a fallback when LLM is unavailable.
  * Enhanced with multi-intent detection, context awareness, and smarter patterns.
+ *
+ * SECURITY: Input is truncated to MAX_INPUT_LENGTH before regex processing
+ * to prevent polynomial-time ReDoS on uncontrolled user input (CodeQL fix).
+ * All regex patterns are designed to be linear-time by avoiding:
+ * - Nested quantifiers like (a+)+ or (a*)*
+ * - Overlapping alternations like (a|a)b
+ * - Unbounded backreference patterns
  */
+const MAX_INPUT_LENGTH = 500;
+
 function ruleBasedClassification(
   userMessage: string,
   context?: ConversationContext,
 ): IntentClassification {
-  const msg = userMessage.trim().toLowerCase();
-  const originalMsg = userMessage.trim();
+  // Truncate input to prevent ReDoS on polynomial regex patterns
+  const safeMsg = userMessage.length > MAX_INPUT_LENGTH 
+    ? userMessage.slice(0, MAX_INPUT_LENGTH) 
+    : userMessage;
+  const msg = safeMsg.trim().toLowerCase();
+  const originalMsg = safeMsg.trim();
 
   // ============================================================
   // Multi-intent detection: queries that imply chaining actions
   // ============================================================
 
   // "Research X and write them" / "Tell me about X and email them"
-  const researchAndOutreach = msg.match(/(?:research|tell me about|look up|find info on|analyze)\s+(.+?)(?:\s+and\s+(?:write|email|compose|reach out|send|draft))/i);
+  // Use {1,80} instead of .+? to prevent polynomial backtracking (CodeQL fix)
+  // Limit to 80 chars which is more than enough for a company/person name
+  const researchAndOutreach = msg.match(/(?:research|tell me about|look up|find info on|analyze)\s+([\w\s]{1,80}?)(?:\s+and\s+(?:write|email|compose|reach out|send|draft))/i);
   if (researchAndOutreach) {
     const entity = researchAndOutreach[1].trim();
     return {
@@ -92,7 +107,7 @@ function ruleBasedClassification(
   }
 
   // "Research X and score it" / "Tell me about X, is it a good lead?"
-  const researchAndScore = msg.match(/(?:research|tell me about|look up|find info on)\s+(.+?)(?:\s+and\s+(?:score|evaluate|qualify|rate))/i);
+  const researchAndScore = msg.match(/(?:research|tell me about|look up|find info on)\s+([\w\s]{1,80}?)(?:\s+and\s+(?:score|evaluate|qualify|rate))/i);
   if (researchAndScore) {
     return {
       intent: 'research_company',
@@ -405,8 +420,11 @@ function ruleBasedClassification(
 
 /**
  * Extract entities from a user message using simple patterns.
+ * Input is truncated to prevent ReDoS.
  */
 function extractEntities(message: string): IntentClassification['extractedEntities'] {
+  // Truncate to prevent ReDoS on uncontrolled input
+  const safeMessage = message.length > MAX_INPUT_LENGTH ? message.slice(0, MAX_INPUT_LENGTH) : message;
   const entities: IntentClassification['extractedEntities'] = {
     companyName: null,
     personName: null,
@@ -416,7 +434,7 @@ function extractEntities(message: string): IntentClassification['extractedEntiti
   };
 
   // URL extraction
-  const urlMatch = message.match(/https?:\/\/[^\s]+/i);
+  const urlMatch = safeMessage.match(/https?:\/\/[^\s]+/i);
   if (urlMatch) entities.url = urlMatch[0];
 
   // Industry extraction
@@ -425,7 +443,7 @@ function extractEntities(message: string): IntentClassification['extractedEntiti
     /(\w+(?:\s+\w+)?)\s+(?:industry|market|sector|space)/i,
   ];
   for (const pattern of industryPatterns) {
-    const match = message.match(pattern);
+    const match = safeMessage.match(pattern);
     if (match) { entities.industry = match[1].trim(); break; }
   }
 
@@ -434,7 +452,7 @@ function extractEntities(message: string): IntentClassification['extractedEntiti
     /(?:in|from|near|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/,
   ];
   for (const pattern of locationPatterns) {
-    const match = message.match(pattern);
+    const match = safeMessage.match(pattern);
     if (match) { entities.location = match[1].trim(); break; }
   }
 
@@ -443,16 +461,19 @@ function extractEntities(message: string): IntentClassification['extractedEntiti
 
 /**
  * Extract a company name from a user message by stripping common prefixes.
+ * Input is truncated to prevent ReDoS.
  */
 function extractCompanyName(message: string): string {
-  let cleaned = message
+  // Truncate to prevent ReDoS on polynomial regex
+  const safeMessage = message.length > MAX_INPUT_LENGTH ? message.slice(0, MAX_INPUT_LENGTH) : message;
+  let cleaned = safeMessage
     .replace(/^(?:tell me about|research|look up|find info on|find|search for|info on|about|what is|who is|discover|analyze)\s+/i, '')
     .replace(/\s*please\s*$/i, '')
     .trim();
 
   // If the result is too long, it's probably not just a company name
   if (cleaned.split(/\s+/).length > 6) {
-    cleaned = message.trim(); // Use the original
+    cleaned = safeMessage.trim(); // Use the truncated original
   }
 
   return cleaned;

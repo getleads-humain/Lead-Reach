@@ -1,0 +1,61 @@
+# LeadReach — Dependabot Configuration
+# ======================================
+# Automated dependency updates per SECURITY_POLICY.md Section 16.1:
+# "Daily + every PR" dependency vulnerability scanning
+
+version: 2
+
+updates:
+  # ── npm/Node.js dependencies ──
+  - package-ecosystem: "npm"
+    directory: "/"
+    schedule:
+      interval: "daily"
+      time: "06:00"
+      timezone: "America/New_York"
+    open-pull-requests-limit: 10
+    reviewers:
+      - "getleads-humain/security"
+    labels:
+      - "dependencies"
+      - "security"
+    commit-message:
+      prefix: "chore(deps)"
+      prefix-development: "chore(deps-dev)"
+    # Group minor/patch updates to reduce noise
+    groups:
+      minor-and-patch:
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+      major:
+        patterns:
+          - "*"
+        update-types:
+          - "major"
+
+  # ── GitHub Actions ──
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "github-actions"
+      - "dependencies"
+    commit-message:
+      prefix: "ci(actions)"
+
+  # ── Docker ──
+  - package-ecosystem: "docker"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels:
+      - "docker"
+      - "dependencies"
+    commit-message:
+      prefix: "ci(docker)"

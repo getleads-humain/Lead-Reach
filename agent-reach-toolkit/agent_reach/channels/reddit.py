@@ -10,7 +10,7 @@ import json
 import shutil
 import subprocess
 
-from .base import Channel
+from .base import Channel, _domain_matches
 
 _CREDENTIAL_FILE = "~/.config/rdt-cli/credential.json"
 
@@ -23,9 +23,14 @@ class RedditChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
 
         d = urlparse(url).netloc.lower()
-        return "reddit.com" in d or "redd.it" in d
+        return _domain_matches(d, "reddit.com") or _domain_matches(d, "redd.it")
 
     def check(self, config=None):
         rdt = shutil.which("rdt")

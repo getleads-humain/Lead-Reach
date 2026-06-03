@@ -4,30 +4,38 @@
  * GET: Fetch user profile
  * POST: Create profile if missing
  * PATCH: Update user profile
+ *
+ * SECURITY: Never calls Supabase clients without first validating env vars.
+ * Returns 503 when Supabase is not configured.
  */
 
 import { NextRequest, NextResponse } from 'next/server';
-import { createClient } from '@/lib/supabase-server';
-import { createClient as createSupabaseClient } from '@supabase/supabase-js';
-
-function getServiceClient() {
-  return createSupabaseClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { persistSession: false, autoRefreshToken: false } }
-  );
-}
+import { createClient, createServiceClient } from '@/lib/supabase-server';
 
 export async function GET() {
   try {
     const supabase = await createClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Service not configured. Please set up Supabase environment variables.' },
+        { status: 503 }
+      );
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
       return NextResponse.json({ error: 'Not authenticated' }, { status: 401 });
     }
 
-    const serviceClient = getServiceClient();
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      return NextResponse.json(
+        { error: 'Service not configured. Admin features require SUPABASE_SERVICE_ROLE_KEY.' },
+        { status: 503 }
+      );
+    }
+
     const { data: profile, error } = await serviceClient
       .from('profiles')
       .select('*')
@@ -49,6 +57,13 @@ export async function GET() {
 export async function POST(request: NextRequest) {
   try {
     const supabase = await createClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Service not configured. Please set up Supabase environment variables.' },
+        { status: 503 }
+      );
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
@@ -56,7 +71,13 @@ export async function POST(request: NextRequest) {
     }
 
     const body = await request.json();
-    const serviceClient = getServiceClient();
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      return NextResponse.json(
+        { error: 'Service not configured. Admin features require SUPABASE_SERVICE_ROLE_KEY.' },
+        { status: 503 }
+      );
+    }
 
     const { data: profile, error } = await serviceClient
       .from('profiles')
@@ -89,6 +110,13 @@ export async function POST(request: NextRequest) {
 export async function PATCH(request: NextRequest) {
   try {
     const supabase = await createClient();
+    if (!supabase) {
+      return NextResponse.json(
+        { error: 'Service not configured. Please set up Supabase environment variables.' },
+        { status: 503 }
+      );
+    }
+
     const { data: { user }, error: authError } = await supabase.auth.getUser();
 
     if (authError || !user) {
@@ -96,7 +124,13 @@ export async function PATCH(request: NextRequest) {
     }
 
     const updates = await request.json();
-    const serviceClient = getServiceClient();
+    const serviceClient = createServiceClient();
+    if (!serviceClient) {
+      return NextResponse.json(
+        { error: 'Service not configured. Admin features require SUPABASE_SERVICE_ROLE_KEY.' },
+        { status: 503 }
+      );
+    }
 
     const { data: profile, error } = await serviceClient
       .from('profiles')

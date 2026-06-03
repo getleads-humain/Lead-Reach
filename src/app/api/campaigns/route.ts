@@ -2,6 +2,27 @@ import { db } from '@/lib/db';
 import { spawn } from 'child_process';
 import { NextRequest, NextResponse } from 'next/server';
 
+/**
+ * Validates that an ID contains only safe characters (UUID format).
+ * Prevents command injection in spawned processes.
+ */
+function isValidId(id: string): boolean {
+  return /^[a-zA-Z0-9_-]+$/.test(id) && id.length <= 128;
+}
+
+/**
+ * Validates that a string argument is safe to pass to a child process.
+ * Rejects strings containing shell metacharacters, null bytes, or excessive length.
+ * This prevents command injection even though spawn() uses argument arrays.
+ */
+function isSafeSpawnArg(value: string, maxLength = 1000): boolean {
+  if (typeof value !== 'string') return false;
+  if (value.length === 0 || value.length > maxLength) return false;
+  // Block null bytes and common shell metacharacters as defense-in-depth
+  if (/[\x00`$\\!;|&<>(){}\[\]#~]/.test(value)) return false;
+  return true;
+}
+
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
@@ -32,25 +53,66 @@ export async function GET(request: NextRequest) {
  * Key: We use detached mode + unref so the child process is completely
  * independent from the Next.js server. If the server restarts, the
  * pipeline continues running.
+ * 
+ * Security: Uses spawn with direct argument array (no shell interpolation)
+ * to prevent command injection. Input validation is performed on all
+ * arguments before spawning.
  */
 function spawnPipelineWorker(campaignId: string, query: string, industry: string, location: string) {
   console.log(`[Campaigns] Spawning pipeline worker for campaign ${campaignId}`);
 
+  // Validate all inputs to prevent command injection (CodeQL: uncontrolled command line)
+  if (!isValidId(campaignId)) {
+    console.error(`[Campaigns] Invalid campaign ID rejected: ${campaignId.slice(0, 50)}`);
+    return;
+  }
+  if (!isSafeSpawnArg(query, 1000)) {
+    console.error(`[Campaigns] Invalid query rejected for pipeline worker`);
+    return;
+  }
+  if (industry && !isSafeSpawnArg(industry, 200)) {
+    console.error(`[Campaigns] Invalid industry rejected for pipeline worker`);
+    return;
+  }
+  if (location && !isSafeSpawnArg(location, 200)) {
+    console.error(`[Campaigns] Invalid location rejected for pipeline worker`);
+    return;
+  }
+
   try {
-    // Use shell command with nohup and background to completely decouple
-    // the pipeline process from the Next.js server process.
-    // This prevents any parent-child relationship that could cause crashes.
-    const escapedQuery = query.replace(/'/g, "'\\''");
-    const cmd = `cd /home/z/my-project && DATABASE_URL=file:./db/custom.db nohup bun run src/lib/workers/pipeline-worker.ts '${campaignId}' '${escapedQuery}' '${industry || ''}' '${location || ''}' > /tmp/pipeline-${campaignId}.log 2>&1 &`;
-    
-    const child = spawn('sh', ['-c', cmd], {
-      stdio: 'ignore',
+    // Use spawn with direct argument array (no shell -c) to prevent command injection.
+    // Arguments are passed directly to bun without shell interpretation.
+    const logFile = `/tmp/pipeline-${campaignId}.log`;
+    const child = spawn('bun', [
+      'run',
+      'src/lib/workers/pipeline-worker.ts',
+      campaignId,
+      query,
+      industry || '',
+      location || '',
+    ], {
+      stdio: [
+        'ignore',  // stdin
+        'pipe',    // stdout -> log file
+        'pipe',    // stderr -> log file
+      ],
       detached: true,
+      env: {
+        ...process.env,
+        DATABASE_URL: 'file:./db/custom.db',
+      },
+      cwd: '/home/z/my-project',
     });
+
+    // Redirect stdout/stderr to log file
+    const fs = require('fs');
+    const logStream = fs.createWriteStream(logFile, { flags: 'a' });
+    child.stdout?.pipe(logStream);
+    child.stderr?.pipe(logStream);
 
     child.unref();
     
-    console.log(`[Campaigns] Pipeline worker launched via shell (PID: ${child.pid})`);
+    console.log(`[Campaigns] Pipeline worker launched via bun (PID: ${child.pid})`);
   } catch (spawnError) {
     console.error(`[Campaigns] Failed to spawn pipeline worker:`, spawnError);
   }

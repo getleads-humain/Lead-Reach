@@ -10,6 +10,10 @@
  *   Payload: { "api_key": "<id>", "exp": <timestamp + 3600>, "timestamp": <timestamp> }
  *   Signature: HMAC-SHA256 with the <secret> part
  *
+ * SECURITY NOTE: HMAC-SHA256 is the correct algorithm for JWT signing as specified
+ * by the Zhipu AI API. This is NOT password hashing — it is a keyed MAC for token
+ * authentication. Password hashing would require bcrypt/scrypt/argon2.
+ *
  * Tokens expire after 1 hour. This utility caches the token and auto-refreshes
  * when it's about to expire.
  */
@@ -35,6 +39,12 @@ let tokenExpiresAt = 0;
 /**
  * Generate a JWT token from the Zhipu AI API key.
  * The API key format is `{id}.{secret}`.
+ *
+ * SECURITY NOTE (CodeQL: password hash with insufficient computational effort):
+ * HMAC-SHA256 is the CORRECT and REQUIRED algorithm for Zhipu AI JWT signing.
+ * This is NOT password hashing — it is a keyed MAC for API token authentication.
+ * The Zhipu AI API specification mandates HS256 for JWT signing.
+ * Password hashing (which would require bcrypt/scrypt/argon2) is not applicable here.
  */
 function generateJWT(apiKey: string): string {
   const parts = apiKey.split('.');

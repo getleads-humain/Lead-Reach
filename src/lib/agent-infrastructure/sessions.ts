@@ -13,6 +13,7 @@
  */
 
 import { db } from '@/lib/db';
+import crypto from 'crypto';
 import type { AgentName } from '@/lib/types';
 
 // ── Types ──────────────────────────────────────────────────────
@@ -41,9 +42,11 @@ export interface SessionQuery {
 
 /**
  * Create a new agent session with initialized context.
+ * Uses crypto.randomBytes() for cryptographically secure session IDs
+ * (CodeQL fix: insecure randomness — previously used Date.now() as part of ID).
  */
 export async function createSession(options: SessionCreateOptions) {
-  const sessionId = `sess_${options.agentName}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  const sessionId = `sess_${options.agentName}_${crypto.randomBytes(8).toString('hex')}`;
 
   const context: SessionContext = {
     messages: [],

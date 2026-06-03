@@ -3,7 +3,7 @@
 
 import shutil
 import subprocess
-from .base import Channel
+from .base import Channel, _domain_matches
 
 
 class LinkedInChannel(Channel):
@@ -14,7 +14,12 @@ class LinkedInChannel(Channel):
 
     def can_handle(self, url: str) -> bool:
         from urllib.parse import urlparse
-        return "linkedin.com" in urlparse(url).netloc.lower()
+        from .base import validate_url
+        try:
+            validate_url(url)
+        except ValueError:
+            return False
+        return _domain_matches(urlparse(url).netloc.lower(), "linkedin.com")
 
     def check(self, config=None):
         mcporter = shutil.which("mcporter")
