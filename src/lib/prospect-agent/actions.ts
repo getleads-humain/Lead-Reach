@@ -21,6 +21,9 @@ import type {
   ConversationContext,
 } from './types';
 import { getConversationResponsePrompt } from './prompts';
+import { deepCrawlWebsite } from './deep-crawler';
+import { extractCompanyIdentity, smartCompanySearch } from './company-verifier';
+import { resolveFromEmail, resolveFromName, isEmail } from './person-resolver';
 
 // ============================================================
 // Timeout helper
@@ -239,96 +242,112 @@ Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail
 // ============================================================
 
 export async function executePersonResearch(
-  personName: string,
+  personInput: string,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [];
-  const prospect = createEmptyProspect('person', personName);
-  prospect.personName = personName;
+  const prospect = createEmptyProspect('person', personInput);
+  prospect.personName = personInput;
 
-  // Step 1: Web search
-  steps.push({ type: 'research_person', label: 'Web Search', status: 'running', message: `Searching for "${personName}"...` });
-  try {
-    const searchResult = await withTimeout(
-      () => exaSearch(`"${personName}" professional profile company title`, 10),
-      30_000, 'Person web search',
-    );
-    if (searchResult?.success && searchResult.data.length > 0) {
-      sources.push(...searchResult.data.map(r => r.url));
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = `Found ${searchResult.data.length} results`;
+  // ─── Detect input type: email vs name ───
+  const inputIsEmail = isEmail(personInput);
 
-      const topUrls = searchResult.data.slice(0, 3).map(r => r.url);
-      const readResults = await Promise.allSettled(
-        topUrls.map(u => withTimeout(() => webRead(u), 25_000, `Person read: ${u.slice(0, 50)}`)),
+  if (inputIsEmail) {
+    // ═══ EMAIL-BASED RESOLUTION (most reliable) ═══
+    steps.push({ type: 'research_person', label: 'Email Intelligence', status: 'running', message: `Analyzing email: ${personInput}...` });
+    try {
+      const resolved = await withTimeout(
+        () => resolveFromEmail(personInput),
+        90_000, 'Email-based person resolution',
       );
-      const webContents: string[] = [];
-      for (const result of readResults) {
-        if (result.status === 'fulfilled' && result.value?.success) {
-          webContents.push(result.value.data.content.slice(0, 5000));
-        }
-      }
+      if (resolved) {
+        const id = resolved.identity;
+        if (id.fullName) prospect.personName = id.fullName;
+        if (id.title) prospect.personTitle = id.title;
+        if (id.associatedCompany) { prospect.personCompany = id.associatedCompany; prospect.companyName = id.associatedCompany; }
+        if (id.email) prospect.personEmail = id.email;
+        if (id.location) { prospect.city = id.location; }
+        if (id.linkedinUrl) prospect.personLinkedin = id.linkedinUrl;
 
-      // Step 2: Extract person data
-      steps.push({ type: 'research_person', label: 'AI Extraction', status: 'running', message: 'Extracting person data with AI...' });
-      if (webContents.length > 0) {
-        const extracted = await withTimeout(
-          () => callLLMForJSON<Partial<ProspectResult>>(
-            `Extract information about "${personName}" from this web content.
-Return JSON: personName, personTitle, personCompany, personEmail, personPhone, personLinkedin, personBio, companyName, industry, city, country, website. Use null for not found.`,
-            webContents.join('\n---\n'),
-          ),
-          45_000, 'Person LLM extraction',
-        );
-        if (extracted) {
-          if (extracted.personName) prospect.personName = extracted.personName;
-          if (extracted.personTitle) prospect.personTitle = extracted.personTitle;
-          if (extracted.personCompany) prospect.personCompany = extracted.personCompany;
-          if (extracted.personEmail) prospect.personEmail = extracted.personEmail;
-          if (extracted.personPhone) prospect.personPhone = extracted.personPhone;
-          if (extracted.personLinkedin) prospect.personLinkedin = extracted.personLinkedin;
-          if (extracted.personBio) prospect.personBio = extracted.personBio;
-          if (extracted.companyName) prospect.companyName = extracted.companyName;
-          if (extracted.industry) prospect.industry = extracted.industry;
-          if (extracted.city) prospect.city = extracted.city;
-          if (extracted.country) prospect.country = extracted.country;
-          if (extracted.website) prospect.website = extracted.website;
-        }
+        const data = resolved.mergedData;
+        if (data.personPhone && !prospect.personPhone) prospect.personPhone = String(data.personPhone);
+        if (data.personBio && !prospect.personBio) prospect.personBio = String(data.personBio);
+        if (data.industry && !prospect.industry) prospect.industry = String(data.industry);
+        if (data.country && !prospect.country) prospect.country = String(data.country);
+        if (data.website && !prospect.website) prospect.website = String(data.website);
+
+        sources.push(...resolved.verificationSources);
         steps[steps.length - 1].status = 'completed';
-        steps[steps.length - 1].message = 'Extracted person data';
+        steps[steps.length - 1].message = `Resolved via email: ${id.fullName}${id.associatedCompany ? ` at ${id.associatedCompany}` : ''} (${resolved.verificationCount} sources verified)`;
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Email resolution returned limited results';
       }
-    } else {
+    } catch {
       steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Limited results found';
+      steps[steps.length - 1].message = 'Email resolution partially completed';
     }
-  } catch {
-    steps[steps.length - 1].status = 'failed';
-    steps[steps.length - 1].message = 'Web search failed';
+  } else {
+    // ═══ NAME-BASED RESOLUTION (with smart disambiguation) ═══
+    steps.push({ type: 'research_person', label: 'Identity Resolution', status: 'running', message: `Resolving identity of "${personInput}"...` });
+    try {
+      const resolved = await withTimeout(
+        () => resolveFromName(personInput),
+        90_000, 'Name-based person resolution',
+      );
+      if (resolved) {
+        const id = resolved.identity;
+        if (id.fullName) prospect.personName = id.fullName;
+        if (id.title) prospect.personTitle = id.title;
+        if (id.associatedCompany) { prospect.personCompany = id.associatedCompany; prospect.companyName = id.associatedCompany; }
+        if (id.email) prospect.personEmail = id.email;
+        if (id.location) { prospect.city = id.location; }
+        if (id.linkedinUrl) prospect.personLinkedin = id.linkedinUrl;
+
+        const data = resolved.mergedData;
+        if (data.personPhone && !prospect.personPhone) prospect.personPhone = String(data.personPhone);
+        if (data.personBio && !prospect.personBio) prospect.personBio = String(data.personBio);
+        if (data.industry && !prospect.industry) prospect.industry = String(data.industry);
+        if (data.country && !prospect.country) prospect.country = String(data.country);
+        if (data.website && !prospect.website) prospect.website = String(data.website);
+
+        sources.push(...resolved.verificationSources);
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = `Resolved: ${id.fullName}${id.associatedCompany ? ` at ${id.associatedCompany}` : ''} (${resolved.verificationCount} sources, confidence: ${id.confidence})`;
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Identity resolution returned limited results';
+      }
+    } catch {
+      steps[steps.length - 1].status = 'completed';
+      steps[steps.length - 1].message = 'Identity resolution partially completed';
+    }
   }
 
-  // Step 3: LinkedIn
-  steps.push({ type: 'research_person', label: 'LinkedIn Search', status: 'running', message: 'Searching LinkedIn...' });
-  try {
-    const liResult = await withTimeout(() => linkedInSearchPeople(personName, 3), 20_000, 'LinkedIn person');
-    if (liResult?.success && liResult.data.length > 0) {
-      const person = liResult.data[0];
-      if (person.name && !prospect.personName) prospect.personName = person.name;
-      if (person.headline && !prospect.personTitle) prospect.personTitle = person.headline;
-      if (person.url && !prospect.personLinkedin) prospect.personLinkedin = person.url;
-      if (person.location && !prospect.hqAddress) prospect.hqAddress = person.location;
-      sources.push(`linkedin:${person.url || personName}`);
+  // ─── Additional data gathering (if resolution didn't fill everything) ───
+  if (!prospect.personLinkedin) {
+    steps.push({ type: 'research_person', label: 'LinkedIn Search', status: 'running', message: 'Searching LinkedIn...' });
+    try {
+      const liResult = await withTimeout(() => linkedInSearchPeople(personInput, 3), 20_000, 'LinkedIn person');
+      if (liResult?.success && liResult.data.length > 0) {
+        const person = liResult.data[0];
+        if (person.name && !prospect.personName) prospect.personName = person.name;
+        if (person.headline && !prospect.personTitle) prospect.personTitle = person.headline;
+        if (person.url) prospect.personLinkedin = person.url;
+        if (person.location && !prospect.hqAddress) prospect.hqAddress = person.location;
+        sources.push(`linkedin:${person.url || personInput}`);
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Found LinkedIn profile';
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'No LinkedIn profile found';
+      }
+    } catch {
       steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Found LinkedIn profile';
-    } else {
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'No LinkedIn profile found';
+      steps[steps.length - 1].message = 'LinkedIn search unavailable';
     }
-  } catch {
-    steps[steps.length - 1].status = 'completed';
-    steps[steps.length - 1].message = 'LinkedIn search unavailable';
   }
 
-  // Step 4: Associated company research
   const companyName = prospect.personCompany || prospect.companyName;
   if (companyName) {
     steps.push({ type: 'research_person', label: 'Company Research', status: 'running', message: `Researching ${companyName}...` });
@@ -375,23 +394,24 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
     }
   }
 
-  // Step 5: Twitter
-  steps.push({ type: 'research_person', label: 'Twitter/X', status: 'running', message: 'Searching Twitter/X...' });
-  try {
-    const twResult = await withTimeout(() => twitterSearch(personName, 3), 20_000, 'Twitter search');
-    if (twResult?.success && twResult.data.length > 0) {
-      const tweet = twResult.data[0] as unknown as Record<string, unknown>;
-      if (tweet.username && !prospect.twitterHandle) prospect.twitterHandle = `@${tweet.username}`;
-      sources.push(`twitter:${tweet.url || personName}`);
+  if (!prospect.twitterHandle) {
+    steps.push({ type: 'research_person', label: 'Twitter/X', status: 'running', message: 'Searching Twitter/X...' });
+    try {
+      const twResult = await withTimeout(() => twitterSearch(prospect.personName || personInput, 3), 20_000, 'Twitter search');
+      if (twResult?.success && twResult.data.length > 0) {
+        const tweet = twResult.data[0] as unknown as Record<string, unknown>;
+        if (tweet.username) prospect.twitterHandle = `@${tweet.username}`;
+        sources.push(`twitter:${tweet.url || personInput}`);
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Found Twitter profile';
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'No Twitter profile found';
+      }
+    } catch {
       steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'Found Twitter profile';
-    } else {
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = 'No Twitter profile found';
+      steps[steps.length - 1].message = 'Twitter search unavailable';
     }
-  } catch {
-    steps[steps.length - 1].status = 'completed';
-    steps[steps.length - 1].message = 'Twitter search unavailable';
   }
 
   prospect.sources = [...new Set(sources)];
@@ -410,88 +430,159 @@ export async function executeUrlResearch(
   const sources: string[] = [url];
   const prospect = createEmptyProspect('url', url);
 
-  steps.push({ type: 'research_url', label: 'Reading Page', status: 'running', message: `Reading ${url}...` });
+  // ─── STEP 1: Deep Crawl — scrape every corner of the website ───
+  steps.push({ type: 'research_url', label: 'Deep Site Crawl', status: 'running', message: `Deep-crawling ${url} and all sub-pages...` });
   try {
-    const readResult = await withTimeout(() => webRead(url), 25_000, `URL read: ${url.slice(0, 50)}`);
-    if (readResult?.success) {
-      steps[steps.length - 1].status = 'completed';
-      steps[steps.length - 1].message = `Read ${readResult.data.wordCount} words`;
+    const crawlResult = await withTimeout(
+      () => deepCrawlWebsite(url, (msg) => {
+        steps[0].message = msg;
+      }),
+      120_000, 'Deep site crawl',
+    );
 
-      steps.push({ type: 'research_url', label: 'AI Extraction', status: 'running', message: 'Analyzing page content...' });
+    if (crawlResult.totalPagesCrawled > 0) {
+      steps[0].status = 'completed';
+      steps[0].message = `Crawled ${crawlResult.totalPagesCrawled} pages (${crawlResult.totalWords.toLocaleString()} words) across ${crawlResult.domain}`;
+
+      sources.push(...crawlResult.pages.map(p => p.url));
+
+      // ─── STEP 2: AI Extraction from ALL crawled content ───
+      steps.push({ type: 'research_url', label: 'AI Analysis', status: 'running', message: 'Analyzing all pages with AI...' });
       const extracted = await withTimeout(
         () => callLLMForJSON<Partial<ProspectResult>>(
-          `Analyze this webpage and extract business/contact information. Determine if it's a company or person page.
-Return JSON: companyName, personName, personTitle, personEmail, personPhone, industry, description, website, city, country, phoneMain, generalEmail, linkedinUrl, productsServices (array), keyContactName, keyContactTitle, keyContactEmail. Use null for not found.`,
-          readResult.data.content.slice(0, 8000),
+          `You are a B2B intelligence analyst. You have been given content from MULTIPLE pages of a website (including About, Contact, Team, Services pages). Extract comprehensive business/contact information.
+
+IMPORTANT: This is content from the ENTIRE website, not just one page. Use ALL the information available across pages to build the most complete picture possible.
+
+Return JSON with these fields (use null for anything not found):
+companyName, legalName, website, industry, subIndustry, description,
+hqAddress, city, stateProvince, country, postalCode,
+phoneMain, generalEmail, supportEmail,
+ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail,
+employeeCount, revenueEstimate, foundingYear, ownershipType,
+linkedinUrl, twitterHandle, facebookPage,
+techStack (array of strings), boardMembers (array of strings),
+recentNews (array of strings), productsServices (array of strings),
+partners (array of strings), fundingInfo,
+personName, personTitle, personCompany, personEmail, personPhone, personLinkedin, personBio.
+
+Be thorough — you have data from the entire website, so extract everything you can find.`,
+          crawlResult.allContentCombined.slice(0, 50000),
         ),
-        45_000, 'URL LLM extraction',
+        60_000, 'Deep crawl LLM extraction',
       );
 
       if (extracted) {
-        if (extracted.companyName) { prospect.companyName = extracted.companyName; prospect.queryType = 'company'; }
-        if (extracted.personName) { prospect.personName = extracted.personName; prospect.personTitle = extracted.personTitle || null; prospect.personEmail = extracted.personEmail || null; }
-        if (extracted.industry) prospect.industry = extracted.industry;
-        if (extracted.description) prospect.description = extracted.description;
-        if (extracted.website) prospect.website = extracted.website;
-        if (extracted.city) prospect.city = extracted.city;
-        if (extracted.country) prospect.country = extracted.country;
-        if (extracted.phoneMain) prospect.phoneMain = extracted.phoneMain;
-        if (extracted.generalEmail) prospect.generalEmail = extracted.generalEmail;
-        if (extracted.linkedinUrl) prospect.linkedinUrl = extracted.linkedinUrl;
-        if (extracted.productsServices?.length) prospect.productsServices = extracted.productsServices;
-        if (extracted.keyContactName) prospect.keyContactName = extracted.keyContactName;
-        if (extracted.keyContactTitle) prospect.keyContactTitle = extracted.keyContactTitle;
-        if (extracted.keyContactEmail) prospect.keyContactEmail = extracted.keyContactEmail;
+        safeMerge(prospect, extracted);
+        if (extracted.companyName) prospect.queryType = 'company';
         steps[steps.length - 1].status = 'completed';
-        steps[steps.length - 1].message = 'Extracted data from page';
+        steps[steps.length - 1].message = `Extracted data from ${crawlResult.totalPagesCrawled} pages (${Object.values(extracted).filter(v => v !== null && v !== undefined && v !== '').length} fields)`;
+      } else {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'AI extraction partially completed';
       }
 
-      // Deep research if company found
+      // ─── STEP 3: Company Identity Verification ───
       if (prospect.companyName) {
-        steps.push({ type: 'research_url', label: 'Deep Research', status: 'running', message: `Deep researching ${prospect.companyName}...` });
+        steps.push({ type: 'research_url', label: 'Company Verification', status: 'running', message: `Verifying "${prospect.companyName}" identity...` });
         try {
-          const companySearch = await withTimeout(
-            () => exaSearch(`"${prospect.companyName}" company overview employees revenue`, 5),
-            30_000, 'URL deep search',
+          const identity = await withTimeout(
+            () => extractCompanyIdentity(crawlResult),
+            45_000, 'Company identity extraction',
           );
-          if (companySearch?.success && companySearch.data.length > 0) {
-            sources.push(...companySearch.data.map(r => r.url));
-            const topResult = companySearch.data[0];
-            if (topResult) {
-              const deepRead = await withTimeout(() => webRead(topResult.url), 25_000, 'URL deep read');
-              if (deepRead?.success) {
-                const deepData = await withTimeout(
-                  () => callLLMForJSON<Partial<ProspectResult>>(
-                    `Extract comprehensive business data about "${prospect.companyName}" from this content.
-Return JSON: legalName, industry, subIndustry, hqAddress, city, stateProvince, country, employeeCount, revenueEstimate, foundingYear, ownershipType, ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail, linkedinUrl, twitterHandle, techStack (array), boardMembers (array), recentNews (array), fundingInfo. Use null for not found.`,
-                    deepRead.data.content.slice(0, 6000),
-                  ),
-                  45_000, 'URL deep LLM',
+          if (identity) {
+            if (identity.verifiedName && identity.confidence !== 'low') {
+              prospect.companyName = identity.verifiedName;
+            }
+            if (identity.alternateNames?.length) {
+              if (!prospect.legalName && identity.alternateNames[0]) {
+                prospect.legalName = identity.alternateNames[0];
+              }
+            }
+            steps[steps.length - 1].status = 'completed';
+            steps[steps.length - 1].message = `Verified: ${identity.verifiedName} (confidence: ${identity.confidence})`;
+
+            // ─── STEP 4: Smart Verified Web Search ───
+            steps.push({ type: 'research_url', label: 'Verified Web Search', status: 'running', message: `Searching for verified info about ${identity.verifiedName}...` });
+            try {
+              const verifiedResults = await withTimeout(
+                () => smartCompanySearch(identity, 10),
+                60_000, 'Smart company search',
+              );
+              const matchedResults = verifiedResults.filter(r => r.isVerifiedMatch && r.matchConfidence >= 0.6);
+              const matchedUrls = matchedResults.map(r => r.url);
+              sources.push(...matchedUrls);
+
+              if (matchedResults.length > 0) {
+                const topVerified = matchedResults.slice(0, 3);
+                const readResults = await Promise.allSettled(
+                  topVerified.map(r => withTimeout(() => webRead(r.url), 25_000, `Verified read: ${r.url.slice(0, 50)}`)),
                 );
-                if (deepData) {
-                  for (const [key, value] of Object.entries(deepData)) {
-                    if (value !== null && value !== undefined && (prospect as unknown as Record<string, unknown>)[key] === null) {
-                      (prospect as unknown as Record<string, unknown>)[key] = value;
+                const webContents: string[] = [];
+                for (const result of readResults) {
+                  if (result.status === 'fulfilled' && result.value?.success) {
+                    webContents.push(result.value.data.content.slice(0, 4000));
+                  }
+                }
+                if (webContents.length > 0) {
+                  const deepData = await withTimeout(
+                    () => callLLMForJSON<Partial<ProspectResult>>(
+                      `Extract additional business data about "${identity.verifiedName}" from these VERIFIED web results (confirmed to be about THIS specific company, not a similarly-named different company).
+Return JSON: legalName, industry, subIndustry, hqAddress, city, stateProvince, country, employeeCount, revenueEstimate, foundingYear, ownershipType, ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail, linkedinUrl, twitterHandle, techStack (array), boardMembers (array), recentNews (array), fundingInfo. Use null for not found. Only fill in fields that have NEW information not already available.`,
+                      webContents.join('\n---\n'),
+                    ),
+                    45_000, 'Verified deep LLM',
+                  );
+                  if (deepData) {
+                    for (const [key, value] of Object.entries(deepData)) {
+                      if (value !== null && value !== undefined && (prospect as unknown as Record<string, unknown>)[key] === null) {
+                        (prospect as unknown as Record<string, unknown>)[key] = value;
+                      }
                     }
                   }
                 }
               }
+              steps[steps.length - 1].status = 'completed';
+              steps[steps.length - 1].message = `Found ${matchedResults.length} verified results about ${identity.verifiedName}`;
+            } catch {
+              steps[steps.length - 1].status = 'completed';
+              steps[steps.length - 1].message = 'Verified search partially completed';
             }
+          } else {
             steps[steps.length - 1].status = 'completed';
-            steps[steps.length - 1].message = 'Deep research completed';
+            steps[steps.length - 1].message = 'Company verification skipped (limited data)';
           }
         } catch {
           steps[steps.length - 1].status = 'completed';
-          steps[steps.length - 1].message = 'Deep research partially completed';
+          steps[steps.length - 1].message = 'Company verification partially completed';
         }
       }
     } else {
-      steps[steps.length - 1].status = 'failed';
-      steps[steps.length - 1].message = 'Could not read the webpage';
+      // Deep crawl returned no pages — fall back to simple single-page read
+      steps[0].status = 'completed';
+      steps[0].message = 'Deep crawl unavailable, reading single page...';
+      steps.push({ type: 'research_url', label: 'Page Read', status: 'running', message: `Reading ${url}...` });
+      const readResult = await withTimeout(() => webRead(url), 25_000, `URL read: ${url.slice(0, 50)}`);
+      if (readResult?.success) {
+        const extracted = await withTimeout(
+          () => callLLMForJSON<Partial<ProspectResult>>(
+            `Analyze this webpage and extract business/contact information.
+Return JSON: companyName, personName, personTitle, personEmail, personPhone, industry, description, website, city, country, phoneMain, generalEmail, linkedinUrl, productsServices (array), keyContactName, keyContactTitle, keyContactEmail. Use null for not found.`,
+            readResult.data.content.slice(0, 8000),
+          ),
+          45_000, 'URL fallback LLM',
+        );
+        if (extracted) safeMerge(prospect, extracted);
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = `Read ${readResult.data.wordCount} words from single page`;
+      } else {
+        steps[steps.length - 1].status = 'failed';
+        steps[steps.length - 1].message = 'Could not read the webpage';
+      }
     }
   } catch {
-    steps[steps.length - 1].status = 'failed';
-    steps[steps.length - 1].message = 'Error reading URL';
+    steps[0].status = 'failed';
+    steps[0].message = 'Error reading URL';
   }
 
   prospect.sources = [...new Set(sources)];
