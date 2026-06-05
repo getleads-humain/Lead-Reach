@@ -105,6 +105,41 @@ wait_for_service() {
 
 cd "$PROJECT_DIR"
 
+# ─── Ensure .env has all required variables ───────────────────────
+# The container's /start.sh may overwrite .env with just DATABASE_URL.
+# We need Supabase and Zhipu keys for auth middleware and AI features.
+log_step_start "Environment setup"
+echo "[ENV] Ensuring .env has all required variables..."
+
+ENV_FILE="$PROJECT_DIR/.env"
+ENV_CHANGED=false
+
+# Required env vars (key=name, value to set if missing)
+declare -A REQUIRED_ENV=(
+  ["DATABASE_URL"]="file:$PROJECT_DIR/db/custom.db"
+  ["DIRECT_URL"]="postgresql://postgres:%5BNilay%409909250605%5D@db.ssaskkftdpidfwvpgdwl.supabase.co:5432/postgres"
+  ["NEXT_PUBLIC_SUPABASE_URL"]="https://ssaskkftdpidfwvpgdwl.supabase.co"
+  ["NEXT_PUBLIC_SUPABASE_ANON_KEY"]="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYXNra2Z0ZHBpZGZ3dnBnZHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5OTMyOTYsImV4cCI6MjA5NTU2OTI5Nn0.9B2yYStYtOVTHAAbJn3_czl7F5laVH6rT0VXX0MVScg"
+  ["SUPABASE_SERVICE_ROLE_KEY"]="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYXNra2Z0ZHBpZGZ3dnBnZHdsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTk5MzI5NiwiZXhwIjoyMDk1NTY5Mjk2fQ.5yna1hYhjqmzrLiqoTmVoKKsB6Fr90qILdkTVTqSyF0"
+  ["ZHIPU_API_KEY"]="c68cdeade96b45fa8bf45fbd487707b2.cgpoWSZ5Ae8BHEdO"
+)
+
+for key in "${!REQUIRED_ENV[@]}"; do
+  value="${REQUIRED_ENV[$key]}"
+  if ! grep -q "^${key}=" "$ENV_FILE" 2>/dev/null; then
+    echo "${key}=${value}" >> "$ENV_FILE"
+    ENV_CHANGED=true
+    echo "[ENV] Added ${key}"
+  fi
+done
+
+if [ "$ENV_CHANGED" = true ]; then
+  echo "[ENV] Updated .env with missing variables"
+else
+  echo "[ENV] All required variables already present"
+fi
+log_step_end "Environment setup"
+
 if ! command -v bun >/dev/null 2>&1; then
         echo "ERROR: bun is not installed or not in PATH"
         exit 1
@@ -138,8 +173,43 @@ export NEXT_PUBLIC_SUPABASE_URL="https://ssaskkftdpidfwvpgdwl.supabase.co"
 export NEXT_PUBLIC_SUPABASE_ANON_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYXNra2Z0ZHBpZGZ3dnBnZHdsIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzk5OTMyOTYsImV4cCI6MjA5NTU2OTI5Nn0.9B2yYStYtOVTHAAbJn3_czl7F5laVH6rT0VXX0MVScg"
 export SUPABASE_SERVICE_ROLE_KEY="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InNzYXNra2Z0ZHBpZGZ3dnBnZHdsIiwicm9sZSI6InNlcnZpY2Vfcm9sZSIsImlhdCI6MTc3OTk5MzI5NiwiZXhwIjoyMDk1NTY5Mjk2fQ.5yna1hYhjqmzrLiqoTmVoKKsB6Fr90qILdkTVTqSyF0"
 export ZHIPU_API_KEY="c68cdeade96b45fa8bf45fbd487707b2.cgpoWSZ5Ae8BHEdO"
-node_modules/.bin/next start -p 3000 -H 0.0.0.0 &
-DEV_PID=$!
+
+# Start the server using Node.js detached spawn — this survives tini process reaper
+# and keeps running even if this shell script dies. The daemon-launcher.js handles
+# auto-restart if the server crashes.
+node -e "
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+
+// Load .env variables
+const envPath = path.join('$PROJECT_DIR', '.env');
+const env = { ...process.env };
+if (fs.existsSync(envPath)) {
+  const content = fs.readFileSync(envPath, 'utf8');
+  content.split('\n').forEach(line => {
+    line = line.trim();
+    if (!line || line.startsWith('#')) return;
+    const [key, ...val] = line.split('=');
+    if (key && val.length) env[key.trim()] = val.join('=').trim();
+  });
+}
+env.NODE_ENV = 'production';
+env.HOSTNAME = '0.0.0.0';
+env.PORT = '3000';
+env.NODE_OPTIONS = '--max-old-space-size=768';
+
+const child = spawn(path.join('$PROJECT_DIR', 'node_modules', '.bin', 'next'), ['start', '-p', '3000', '-H', '0.0.0.0'], {
+  cwd: '$PROJECT_DIR',
+  env,
+  detached: true,
+  stdio: ['ignore', fs.openSync('/tmp/leadreach-server.log', 'a'), fs.openSync('/tmp/leadreach-server.log', 'a')]
+});
+child.unref();
+fs.writeFileSync('/tmp/next-server.pid', String(child.pid));
+console.log('[PROD] Server started with detached PID:', child.pid);
+"
+
 log_step_end "Starting Next.js production server"
 
 log_step_start "Waiting for Next.js server"
@@ -154,20 +224,40 @@ log_step_end "Health check"
 
 start_mini_services
 
-echo "Next.js production server is running in background (PID: $DEV_PID)."
+echo "Next.js production server is running (detached process, survives tini reaper)."
 
-# Keep the script alive to prevent the container's process reaper (tini)
-# from killing the Next.js server. Previously, this script would exit,
-# which triggered the cleanup trap that killed the server, and then tini
-# reaped the orphaned process. By using `wait`, we keep this script alive
-# as long as the server is running — when the server exits, we restart it.
+# Keep the script alive with a lightweight monitoring loop
+# If the server dies, restart it using the same detached spawn approach
 while true; do
-        echo "[PROD] Monitoring server process (PID: $DEV_PID)..."
-        wait "$DEV_PID" 2>/dev/null
-        EXIT_CODE=$?
-        echo "[PROD] Server exited with code $EXIT_CODE, restarting in 3s..."
-        sleep 3
-        node_modules/.bin/next start -p 3000 -H 0.0.0.0 &
-        DEV_PID=$!
-        echo "[PROD] Server restarted (PID: $DEV_PID)"
+        SERVER_PID=$(cat /tmp/next-server.pid 2>/dev/null || echo "")
+        if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
+                sleep 30
+        else
+                echo "[PROD] Server process died, restarting via detached spawn..."
+                node -e "
+const { spawn } = require('child_process');
+const fs = require('fs');
+const path = require('path');
+const envPath = path.join('$PROJECT_DIR', '.env');
+const env = { ...process.env };
+if (fs.existsSync(envPath)) {
+  const content = fs.readFileSync(envPath, 'utf8');
+  content.split('\n').forEach(line => {
+    line = line.trim();
+    if (!line || line.startsWith('#')) return;
+    const [key, ...val] = line.split('=');
+    if (key && val.length) env[key.trim()] = val.join('=').trim();
+  });
+}
+env.NODE_ENV = 'production'; env.HOSTNAME = '0.0.0.0'; env.PORT = '3000'; env.NODE_OPTIONS = '--max-old-space-size=768';
+const child = spawn(path.join('$PROJECT_DIR', 'node_modules', '.bin', 'next'), ['start', '-p', '3000', '-H', '0.0.0.0'], {
+  cwd: '$PROJECT_DIR', env, detached: true,
+  stdio: ['ignore', fs.openSync('/tmp/leadreach-server.log', 'a'), fs.openSync('/tmp/leadreach-server.log', 'a')]
+});
+child.unref();
+fs.writeFileSync('/tmp/next-server.pid', String(child.pid));
+console.log('[PROD] Server restarted with detached PID:', child.pid);
+"
+                sleep 5
+        fi
 done
