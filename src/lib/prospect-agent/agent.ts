@@ -731,6 +731,46 @@ Create an ICP that targets companies SIMILAR to this one. Respond with JSON:
 function buildFallbackICP(prospect: ProspectResult): ICPResult {
   const industry = prospect.industry || 'General Business';
   const employeeRange = categorizeCompanySize(prospect.employeeCount) || 'Mid-Market (50-199)';
+  const location = [prospect.country, prospect.city].filter(Boolean).join(', ') || 'North America';
+
+  // Derive challenges from prospect data instead of hardcoding
+  const challenges: string[] = [];
+  if (prospect.employeeCount) {
+    const size = categorizeCompanySize(prospect.employeeCount);
+    if (size?.includes('Small') || size?.includes('Micro')) challenges.push('Resource constraints');
+    if (size?.includes('Mid') || size?.includes('Enterprise')) challenges.push('Scaling operations');
+  }
+  if (prospect.industry?.toLowerCase().includes('tech') || prospect.industry?.toLowerCase().includes('software')) challenges.push('Talent acquisition');
+  if (!challenges.length) challenges.push('Growth management', 'Operational efficiency');
+
+  // Derive goals from prospect data
+  const goals: string[] = [];
+  if (prospect.fundingInfo) goals.push('Post-funding growth execution');
+  if (prospect.recentNews?.some(n => /expand|growth|launch/i.test(n))) goals.push('Market expansion');
+  if (!goals.length) goals.push('Revenue growth', 'Customer acquisition');
+
+  // Derive buying signals from prospect data
+  const signals = extractBuyingSignals(prospect);
+  if (!signals.length) signals.push('Active technology adoption', 'Team growth signals');
+
+  // Derive engagement patterns from available data
+  const engagementPatterns: string[] = [];
+  if (prospect.linkedinUrl) engagementPatterns.push('LinkedIn activity');
+  if (prospect.twitterHandle) engagementPatterns.push('Social media engagement');
+  if (!engagementPatterns.length) engagementPatterns.push('Website visits', 'Content downloads');
+
+  // Derive budget from revenue estimate
+  let budgetRange = '$10K-$100K';
+  if (prospect.revenueEstimate) {
+    const revStr = String(prospect.revenueEstimate);
+    const revMatch = revStr.match(/[\d,.]+/);
+    if (revMatch) {
+      const rev = parseFloat(revMatch[0].replace(/,/g, ''));
+      if (rev >= 100) budgetRange = '$100K-$500K';
+      if (rev >= 500) budgetRange = '$500K-$2M';
+      if (rev >= 1000) budgetRange = '$2M+';
+    }
+  }
 
   return {
     name: `${industry} — Auto-Curated ICP`,
@@ -738,7 +778,7 @@ function buildFallbackICP(prospect: ProspectResult): ICPResult {
     firmographic: {
       industries: [industry, ...(prospect.subIndustry ? [prospect.subIndustry] : [])],
       companySizes: [employeeRange],
-      locations: [prospect.country || 'North America'],
+      locations: [location],
       revenueRange: prospect.revenueEstimate || '$1M-$50M',
     },
     technographic: {
@@ -747,15 +787,15 @@ function buildFallbackICP(prospect: ProspectResult): ICPResult {
     },
     psychographic: {
       values: ['Innovation', 'Growth', 'Efficiency'],
-      challenges: ['Scaling operations', 'Digital transformation', 'Customer acquisition'],
-      goals: ['Revenue growth', 'Market expansion', 'Operational efficiency'],
+      challenges,
+      goals,
     },
     behavioral: {
-      buyingSignals: extractBuyingSignals(prospect),
-      engagementPatterns: ['Website visits', 'Content downloads', 'Conference attendance'],
+      buyingSignals: signals,
+      engagementPatterns,
     },
     economic: {
-      budgetRange: '$10K-$100K',
+      budgetRange,
       decisionTimeline: '30-90 days',
     },
     criteria: JSON.stringify({ source: 'auto-curated', company: prospect.companyName }),
@@ -860,15 +900,25 @@ function generateInsights(
       });
     }
 
-    // Data completeness
-    if (prospect.dataCompleteness < 50) {
+    // Data completeness — only warn if very sparse
+    if (prospect.dataCompleteness < 25) {
       insights.push({
         id: 'insight-data-gap',
         type: 'gap',
         icon: 'AlertCircle',
         title: 'Limited Data Available',
-        description: `Only ${prospect.dataCompleteness}% data completeness. Consider additional research channels to fill gaps before outreach.`,
+        description: `${prospect.dataCompleteness}% data completeness. Consider providing a company website URL or more specific name for deeper research.`,
         confidence: 0.7,
+      });
+    } else if (prospect.dataCompleteness < 50) {
+      insights.push({
+        id: 'insight-data-partial',
+        type: 'gap',
+        icon: 'Info',
+        title: 'Partial Data Available',
+        description: `${prospect.dataCompleteness}% data completeness. Key profile data found — try "Score this lead" or "Compose outreach" to take the next step.`,
+        confidence: 0.6,
+        relatedDimension: 'firmographic',
       });
     }
   }

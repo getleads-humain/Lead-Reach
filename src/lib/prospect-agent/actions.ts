@@ -66,15 +66,15 @@ export async function executeCompanyResearch(
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = `Found ${searchResult.data.length} web results`;
 
-      // Read top 3 results
-      const topUrls = searchResult.data.slice(0, 3).map(r => r.url);
+      // Read top 5 results (increased from 3 for broader data coverage)
+      const topUrls = searchResult.data.slice(0, 5).map(r => r.url);
       const readResults = await Promise.allSettled(
         topUrls.map(u => withTimeout(() => webRead(u), 25_000, `Read: ${u.slice(0, 50)}`)),
       );
       const webContents: string[] = [];
       for (const result of readResults) {
         if (result.status === 'fulfilled' && result.value?.success) {
-          webContents.push(result.value.data.content.slice(0, 5000));
+          webContents.push(result.value.data.content.slice(0, 8000));
         }
       }
 
@@ -118,13 +118,31 @@ Be precise. Only include information explicitly stated.`,
         } else {
           steps[steps.length - 1].status = 'completed';
           steps[steps.length - 1].message = 'AI extraction unavailable — using search snippets';
-          // Fallback: populate from search snippets
+          // Fallback 1: Try LLM with shorter prompt on search snippets
           const topResults = searchResult!.data.slice(0, 5);
-          if (!prospect.description && topResults[0]?.snippet) prospect.description = topResults[0].snippet;
-          if (!prospect.website && topResults[0]?.url) {
-            try { prospect.website = new URL(topResults[0].url).origin; } catch { /* skip */ }
+          const snippetContent = topResults.map(r => `Title: ${r.title}\nSnippet: ${r.snippet}\nURL: ${r.url}`).join('\n---\n');
+          const snippetExtract = await withTimeout(
+            () => callLLMForJSON<Partial<ProspectResult>>(
+              `Extract basic business info about "${companyName}" from these search snippets. Return JSON: companyName, industry, description, city, stateProvince, country, employeeCount, revenueEstimate, foundingYear, ceoName, website, phoneMain, generalEmail, linkedinUrl, twitterHandle. Use null for unknown fields.`,
+              snippetContent.slice(0, 3000),
+              { retriesPerModel: 1, useFallback: true },
+            ),
+            20_000, 'Snippet LLM extraction',
+          );
+          if (snippetExtract) {
+            safeMerge(prospect, snippetExtract);
+            steps[steps.length - 1].message = 'Extracted basic data from search snippets';
+          } else {
+            // Fallback 2: regex-based extraction from snippets
+            populateFromSearchSnippets(prospect, topResults.map(r => ({ title: r.title, snippet: r.snippet || '', url: r.url })));
           }
         }
+      } else {
+        // webContents is empty but we have search snippets — use them
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'AI extraction skipped (no page content) — using search snippets';
+        const topSnippets = searchResult!.data.slice(0, 5);
+        populateFromSearchSnippets(prospect, topSnippets.map(r => ({ title: r.title, snippet: r.snippet || '', url: r.url })));
       }
     } else {
       steps[steps.length - 1].status = 'completed';
@@ -148,6 +166,30 @@ Be precise. Only include information explicitly stated.`,
       if (company.headline && !prospect.description) prospect.description = company.headline;
       if (company.url && !prospect.linkedinUrl) prospect.linkedinUrl = company.url;
       if (company.location && !prospect.hqAddress) prospect.hqAddress = company.location;
+      // Also populate city/country from LinkedIn location
+      if (company.location) {
+        if (!prospect.city) {
+          const cityMatch = company.location.match(/^([A-Z][a-zA-Z\s]+?)(?:,|\s*-|\s*$)/);
+          if (cityMatch) prospect.city = cityMatch[1].trim();
+        }
+        if (!prospect.country) {
+          const countryMatch = company.location.match(/,\s*([A-Z][a-zA-Z\s]+)$/);
+          if (countryMatch) prospect.country = countryMatch[1].trim();
+        }
+      }
+      // Try to extract industry from LinkedIn headline if available
+      if (company.headline && !prospect.industry) {
+        const industryMatch = company.headline.match(/([A-Z][a-z]+(?:\s+[A-Z][a-z]+)*)\s+(?:Company|Startup|Firm|Corporation)/i);
+        if (industryMatch) prospect.industry = industryMatch[1].trim();
+      }
+      // Check additional LinkedIn results for more data
+      if (liResult.data.length > 1) {
+        for (let i = 1; i < Math.min(liResult.data.length, 3); i++) {
+          const extra = liResult.data[i];
+          if (extra.headline && !prospect.description) prospect.description = extra.headline;
+          if (extra.location && !prospect.hqAddress) prospect.hqAddress = extra.location;
+        }
+      }
       sources.push(`linkedin:${company.url || companyName}`);
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'Found LinkedIn profile';
@@ -400,7 +442,15 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
       const twResult = await withTimeout(() => twitterSearch(prospect.personName || personInput, 3), 20_000, 'Twitter search');
       if (twResult?.success && twResult.data.length > 0) {
         const tweet = twResult.data[0] as unknown as Record<string, unknown>;
-        if (tweet.username) prospect.twitterHandle = `@${tweet.username}`;
+        // BUG FIX: TwitterResult uses 'author', not 'username'
+        if (tweet.author) {
+          const handle = String(tweet.author);
+          prospect.twitterHandle = handle.startsWith('@') ? handle : `@${handle}`;
+        } else if (tweet.url) {
+          // Fallback: extract handle from URL (twitter.com/username or x.com/username)
+          const urlMatch = String(tweet.url).match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+          if (urlMatch && urlMatch[1] !== 'status') prospect.twitterHandle = `@${urlMatch[1]}`;
+        }
         sources.push(`twitter:${tweet.url || personInput}`);
         steps[steps.length - 1].status = 'completed';
         steps[steps.length - 1].message = 'Found Twitter profile';
@@ -1023,6 +1073,103 @@ function buildFallbackResponse(intent: UserIntent, actionResults: string): strin
 // Helpers
 // ============================================================
 
+// ============================================================
+// populateFromSearchSnippets — regex-based extraction from
+// search result titles and snippets when LLM is unavailable
+// ============================================================
+
+interface SearchSnippet {
+  title: string;
+  snippet: string;
+  url: string;
+}
+
+function populateFromSearchSnippets(prospect: ProspectResult, results: SearchSnippet[]): void {
+  const combined = results.map(r => `${r.title}. ${r.snippet}`).join(' ');
+
+  // Extract location: "based in X", "headquartered in X", "located in X"
+  if (!prospect.city || !prospect.hqAddress) {
+    const locMatch = combined.match(/(?:based|headquartered|located|hq'd)\s+in\s+([A-Z][a-zA-Z\s]+?)(?:[,.;]|\s+(?:and|with|\d))/);
+    if (locMatch) {
+      const loc = locMatch[1].trim();
+      if (!prospect.city) prospect.city = loc;
+      if (!prospect.hqAddress) prospect.hqAddress = loc;
+    }
+  }
+
+  // Extract employee count: "X employees", "X+ employees", "team of X"
+  if (!prospect.employeeCount) {
+    const empMatch = combined.match(/(\d[\d,+]*)\s*(?:employees?|team\s+members?|staff|people)/i);
+    if (empMatch) prospect.employeeCount = empMatch[1].replace(/,/g, '');
+  }
+
+  // Extract revenue: "$XM", "$X billion", etc.
+  if (!prospect.revenueEstimate) {
+    const revMatch = combined.match(/\$([\d.]+\s*(?:million|billion|M|B|trillion))/i);
+    if (revMatch) prospect.revenueEstimate = `$${revMatch[1].trim()}`;
+  }
+
+  // Extract founding year: "founded in YYYY", "established in YYYY", "since YYYY"
+  if (!prospect.foundingYear) {
+    const yearMatch = combined.match(/(?:founded|established|started|incorporated|since)\s+(?:in\s+)?(\d{4})/i);
+    if (yearMatch) prospect.foundingYear = yearMatch[1];
+  }
+
+  // Extract industry keywords from snippet
+  if (!prospect.industry) {
+    const industryPatterns = [
+      /(?:a|an)\s+([a-z]+(?:\s+[a-z]+)?)\s+(?:company|startup|firm|platform|provider|business)/i,
+      /(?:leading|global|top)\s+([a-z]+(?:\s+[a-z]+)?)\s+(?:company|startup|firm|platform|provider)/i,
+    ];
+    for (const pat of industryPatterns) {
+      const m = combined.match(pat);
+      if (m) { prospect.industry = m[1].trim(); break; }
+    }
+  }
+
+  // Extract CEO name: "CEO Name", "led by Name"
+  if (!prospect.ceoName) {
+    const ceoMatch = combined.match(/(?:CEO|Chief Executive(?: Officer)?)[,:]\s*([A-Z][a-z]+\s+[A-Z][a-z]+)/);
+    if (ceoMatch) prospect.ceoName = ceoMatch[1].trim();
+    else {
+      const ledMatch = combined.match(/(?:led by|founded by|co-founded by)\s+([A-Z][a-z]+\s+[A-Z][a-z]+)/);
+      if (ledMatch) prospect.ceoName = ledMatch[1].trim();
+    }
+  }
+
+  // Extract country if not set
+  if (!prospect.country) {
+    const countryPatterns = /(?:based|headquartered|located)\s+in\s+(?:[A-Z][a-zA-Z\s]+?,\s*)?([A-Z][a-zA-Z]+)/;
+    const cMatch = combined.match(countryPatterns);
+    if (cMatch) prospect.country = cMatch[1].trim();
+  }
+
+  // Extract website from URL
+  if (!prospect.website && results[0]?.url) {
+    try { prospect.website = new URL(results[0].url).origin; } catch { /* skip */ }
+  }
+
+  // Use first snippet as description fallback
+  if (!prospect.description && results[0]?.snippet) {
+    prospect.description = results[0].snippet;
+  }
+
+  // Extract LinkedIn URL from search results
+  if (!prospect.linkedinUrl) {
+    const liResult = results.find(r => r.url.includes('linkedin.com/company'));
+    if (liResult) prospect.linkedinUrl = liResult.url;
+  }
+
+  // Extract Twitter/X handle from search result URLs
+  if (!prospect.twitterHandle) {
+    const twResult = results.find(r => r.url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/));
+    if (twResult) {
+      const m = twResult.url.match(/(?:twitter\.com|x\.com)\/([a-zA-Z0-9_]+)/);
+      if (m && m[1] !== 'status') prospect.twitterHandle = `@${m[1]}`;
+    }
+  }
+}
+
 function createEmptyProspect(queryType: string, query: string): ProspectResult {
   return {
     queryType, query,
@@ -1041,14 +1188,18 @@ function createEmptyProspect(queryType: string, query: string): ProspectResult {
 
 function calculateCompleteness(p: ProspectResult): number {
   const fields: (string | string[] | null)[] = [
-    p.companyName, p.website, p.industry, p.description,
-    p.hqAddress, p.city, p.country,
-    p.phoneMain, p.generalEmail,
-    p.ceoName, p.keyContactName, p.keyContactEmail,
-    p.employeeCount, p.revenueEstimate,
-    p.linkedinUrl, p.twitterHandle,
+    // Core company fields
+    p.companyName, p.legalName, p.website, p.industry, p.subIndustry, p.description,
+    p.hqAddress, p.city, p.stateProvince, p.country, p.postalCode,
+    p.phoneMain, p.generalEmail, p.supportEmail,
+    p.ceoName, p.ceoEmail, p.keyContactName, p.keyContactTitle, p.keyContactEmail,
+    p.employeeCount, p.revenueEstimate, p.foundingYear, p.ownershipType,
+    p.linkedinUrl, p.twitterHandle, p.facebookPage, p.fundingInfo,
+    // Person fields
+    p.personName, p.personTitle, p.personEmail, p.personLinkedin,
+    p.personPhone, p.personBio, p.personCompany,
   ];
-  const arrayFields: string[][] = [p.techStack, p.boardMembers, p.recentNews, p.productsServices];
+  const arrayFields: string[][] = [p.techStack, p.boardMembers, p.recentNews, p.productsServices, p.partners];
   let filled = 0;
   let total = fields.length + arrayFields.length;
   for (const f of fields) { if (f) filled++; }
