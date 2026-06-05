@@ -58,6 +58,9 @@ import type {
   ScoreResult,
   ConversationContext,
   SuggestedAction,
+  InsightItem,
+  NavigationSuggestion,
+  ViewType,
 } from '@/lib/prospect-agent/types';
 import { PERSONA_META } from '@/lib/prospect-agent/types';
 
@@ -68,6 +71,7 @@ import { PERSONA_META } from '@/lib/prospect-agent/types';
 const ICON_MAP: Record<string, React.ElementType> = {
   Plus, Star, Mail, Search, Building2, Target, User, Globe,
   Telescope, Sparkles, Zap, Users, BarChart3, Briefcase,
+  TrendingUp, AlertCircle, Send, Lightbulb, ArrowRight,
 };
 
 // ============================================================
@@ -595,6 +599,81 @@ function OutreachDataCard({ outreach }: { outreach: OutreachResult }) {
 }
 
 // ============================================================
+// Insights Panel
+// ============================================================
+
+function InsightsPanel({ insights }: { insights: InsightItem[] }) {
+  if (!insights || insights.length === 0) return null;
+  
+  const typeConfig: Record<string, { color: string; bg: string; border: string }> = {
+    opportunity: { color: 'text-emerald-400', bg: 'bg-emerald-500/10', border: 'border-emerald-500/20' },
+    alignment: { color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20' },
+    risk: { color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
+    action: { color: 'text-sky-400', bg: 'bg-sky-500/10', border: 'border-sky-500/20' },
+    gap: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
+  };
+
+  return (
+    <div className="ml-9 space-y-2">
+      <div className="flex items-center gap-2 mb-1">
+        <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
+        <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Actionable Insights</span>
+      </div>
+      {insights.map((insight) => {
+        const config = typeConfig[insight.type] || typeConfig.opportunity;
+        const InsightIcon = ICON_MAP[insight.icon] || Lightbulb;
+        return (
+          <div key={insight.id} className={`rounded-lg border ${config.border} ${config.bg} p-2.5 flex items-start gap-2.5`}>
+            <InsightIcon className={`h-4 w-4 ${config.color} mt-0.5 shrink-0`} />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2">
+                <span className={`text-xs font-semibold ${config.color}`}>{insight.title}</span>
+                {insight.relatedDimension && (
+                  <Badge variant="outline" className="text-[8px] h-4 px-1 border-border/30 text-muted-foreground/50">
+                    {insight.relatedDimension}
+                  </Badge>
+                )}
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-0.5 leading-relaxed">{insight.description}</p>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
+// Navigation Buttons
+// ============================================================
+
+function NavigationButtons({ suggestions, onNavigate }: { suggestions: NavigationSuggestion[]; onNavigate: (view: ViewType) => void }) {
+  if (!suggestions || suggestions.length === 0) return null;
+  
+  return (
+    <div className="ml-9 flex flex-wrap gap-2 mt-2">
+      {suggestions.map((suggestion, i) => {
+        const NavIcon = ICON_MAP[suggestion.icon] || ArrowRight;
+        return (
+          <Button
+            key={i}
+            variant="outline"
+            size="sm"
+            className="text-[10px] h-7 gap-1.5 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 hover:border-emerald-500/30 transition-all"
+            onClick={() => onNavigate(suggestion.targetView)}
+            title={suggestion.reason}
+          >
+            <NavIcon className="h-3 w-3" />
+            {suggestion.label}
+            <ArrowRight className="h-2.5 w-2.5 ml-0.5" />
+          </Button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ============================================================
 // Main Component
 // ============================================================
 
@@ -762,6 +841,10 @@ export function ProspectDiscoveryView() {
   const handleSuggestedAction = (prompt: string) => {
     handleSendMessage(prompt);
   };
+
+  const handleNavigate = useCallback((view: ViewType) => {
+    setActiveView(view);
+  }, [setActiveView]);
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
     if (e.key === 'Enter' && !e.shiftKey) {
@@ -936,6 +1019,16 @@ export function ProspectDiscoveryView() {
 
                       {/* Outreach Data Card */}
                       {msg.outreachData && <OutreachDataCard outreach={msg.outreachData} />}
+
+                      {/* Insights Panel */}
+                      {msg.insights && msg.insights.length > 0 && (
+                        <InsightsPanel insights={msg.insights} />
+                      )}
+
+                      {/* Navigation Suggestions */}
+                      {msg.navigation && msg.navigation.length > 0 && (
+                        <NavigationButtons suggestions={msg.navigation} onNavigate={handleNavigate} />
+                      )}
                     </div>
                   </div>
                 )}

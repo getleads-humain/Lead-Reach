@@ -77,6 +77,10 @@ export interface AgentMessage {
   marketData?: MarketResult;       // Market analysis data
   scoreData?: ScoreResult;         // Lead scoring result
 
+  // Analytical insights & navigation suggestions
+  insights?: InsightItem[];           // Actionable insights from the response
+  navigation?: NavigationSuggestion[]; // Navigation suggestions to other tabs
+
   // Pipeline fields
   converted?: boolean;
   leadId?: string;
@@ -226,6 +230,41 @@ export interface SuggestedAction {
   prompt: string;     // What to send as the next user message
   icon: string;       // Icon name from lucide-react
 }
+
+/**
+ * An actionable insight generated from research/scoring/outreach results.
+ * Unlike suggested actions, insights are analytical observations with
+ * explicit implications for the user's next steps.
+ */
+export interface InsightItem {
+  id: string;
+  type: 'opportunity' | 'alignment' | 'risk' | 'action' | 'gap';
+  icon: string;        // lucide icon name
+  title: string;       // Short title (under 40 chars)
+  description: string; // Detailed insight (1-2 sentences)
+  confidence: number;  // 0-1 how confident we are
+  relatedDimension?: string; // ICP dimension this relates to (firmographic, technographic, etc.)
+}
+
+/**
+ * A navigation suggestion that guides the user to a specific platform tab.
+ * These appear as clickable "Go to [Tab]" buttons within agent responses.
+ */
+export interface NavigationSuggestion {
+  targetView: ViewType;
+  label: string;       // Button text like "View in ICP Builder"
+  icon: string;        // lucide icon name
+  reason: string;      // Why we're suggesting this navigation
+  prefillData?: Record<string, unknown>; // Optional data to pass to the target view
+}
+
+/**
+ * View type compatible with the main app's ViewType.
+ * Import from the main types file when available.
+ */
+export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports'
+  | 'setter' | 'booking' | 'messaging' | 'analytics' | 'data-enrichment'
+  | 'prospect-discovery' | 'identity' | 'icp';
 
 /**
  * Conversation context maintained across messages.

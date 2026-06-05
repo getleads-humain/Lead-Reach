@@ -550,3 +550,50 @@ Respond with JSON:
   ]
 }`;
 }
+
+/**
+ * Get the auto-ICP curation prompt.
+ * Used to automatically generate an ICP from prospect research data.
+ */
+export function getAutoICPCurationPrompt(prospectData: string, userQuery: string): string {
+  return `You are ARCHITECT, the ICP Builder specialist. Based on the company research data below, create an Ideal Customer Profile (ICP) that will help the user find SIMILAR companies.
+
+The user's original query was: "${userQuery}"
+
+COMPANY RESEARCH DATA:
+${prospectData}
+
+Create an ICP that targets companies SIMILAR to this one. Extract and infer as many criteria as possible from the data. Make smart inferences — for example, if the company is in healthcare, include HIPAA compliance as a challenge; if they use React, include frontend frameworks as required tech.
+
+IMPORTANT: The ICP should be BROAD enough to find similar companies but SPECIFIC enough to be useful. Don't just copy the company's data — generalize it into a profile.
+
+Respond with JSON:
+{
+  "name": "<descriptive ICP name like 'Mid-Market HealthTech SaaS'>",
+  "description": "<1-2 sentence description of the ideal customer type>",
+  "firmographic": {
+    "industries": ["<primary industry>", "<2-3 related industries>"],
+    "companySizes": ["<size range>"],
+    "locations": ["<geographic regions>"],
+    "revenueRange": "<estimated revenue range>"
+  },
+  "technographic": {
+    "requiredTech": ["<3-5 core technologies>"],
+    "preferredTech": ["<2-3 nice-to-have technologies>"]
+  },
+  "psychographic": {
+    "values": ["<what these companies value>"],
+    "challenges": ["<3-5 common challenges>"],
+    "goals": ["<3-4 typical goals>"]
+  },
+  "behavioral": {
+    "buyingSignals": ["<3-5 signals indicating readiness to buy>"],
+    "engagementPatterns": ["<how these companies typically engage>"]
+  },
+  "economic": {
+    "budgetRange": "<typical budget range>",
+    "decisionTimeline": "<typical purchasing timeline>"
+  },
+  "criteria": "{}"
+}`;
+}

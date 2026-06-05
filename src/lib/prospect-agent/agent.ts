@@ -12,6 +12,12 @@ import type {
   ProspectResult,
   ICPResult,
   SuggestedAction,
+  InsightItem,
+  NavigationSuggestion,
+  MarketResult,
+  OutreachResult,
+  ScoreResult,
+  ViewType,
 } from './types';
 import { classifyIntent, intentToThinking, type IntentClassification } from './intents';
 import {
@@ -390,6 +396,36 @@ async function processAgentMessageInner(
     }
   }
 
+  // Auto-curate ICP from prospect data if no active ICP exists
+  if (prospectData && !updatedContext.activeICP && (classification.intent === 'research_company' || classification.intent === 'research_url')) {
+    try {
+      const autoICP = await autoCurateICPFromProspect(prospectData, userMessage);
+      if (autoICP) {
+        icpData = autoICP;
+        updatedContext.activeICP = autoICP;
+        // Add an action step for ICP auto-curation
+        actions.push({
+          type: 'build_icp',
+          label: 'Auto-Curated ICP',
+          status: 'completed',
+          message: `Automatically built ICP from ${prospectData.companyName || 'research results'}`,
+        });
+      }
+    } catch (e) {
+      console.warn('[AgentLoop] Auto-ICP curation failed:', e);
+    }
+  }
+  // If we already have an activeICP from a previous step, also include it in icpData
+  if (!icpData && updatedContext.activeICP && (classification.intent === 'research_company' || classification.intent === 'research_url' || classification.intent === 'research_person')) {
+    icpData = updatedContext.activeICP;
+  }
+
+  // Generate actionable insights from collected data
+  const insights = generateInsights(classification.intent, prospectData, icpData, scoreData as ScoreResult | undefined, marketData as MarketResult | undefined, outreachData as OutreachResult | undefined, updatedContext);
+
+  // Generate navigation suggestions based on what was produced
+  const navigation = generateNavigationSuggestions(classification.intent, prospectData, icpData, scoreData as ScoreResult | undefined, outreachData as OutreachResult | undefined, marketData as MarketResult | undefined);
+
   // Step 3: Update context with learned preferences
   updatedContext.lastIntent = classification.intent;
   updatedContext.lastPersona = classification.persona;
@@ -430,9 +466,11 @@ async function processAgentMessageInner(
     actions,
     prospectData,
     icpData,
-    outreachData: outreachData as import('./types').OutreachResult | undefined,
-    marketData: marketData as import('./types').MarketResult | undefined,
-    scoreData: scoreData as import('./types').ScoreResult | undefined,
+    outreachData: outreachData as OutreachResult | undefined,
+    marketData: marketData as MarketResult | undefined,
+    scoreData: scoreData as ScoreResult | undefined,
+    insights: insights.length > 0 ? insights : undefined,
+    navigation: navigation.length > 0 ? navigation : undefined,
   };
 
   // Step 5: Generate suggested actions (proactive)
@@ -619,4 +657,316 @@ function generateSuggestedActions(
   }
 
   return actions.slice(0, 4); // Max 4 suggestions
+}
+
+// ============================================================
+// Auto-ICP Curation & Insight Generation
+// ============================================================
+
+/**
+ * Auto-curate an ICP from prospect research data.
+ * Extracts ICP signals from the discovered company information.
+ */
+async function autoCurateICPFromProspect(prospect: ProspectResult, userQuery: string): Promise<ICPResult | null> {
+  const { callLLMForJSON } = await import('@/lib/llm').then(m => ({ callLLMForJSON: m.callLLMForJSON }));
+
+  const prompt = `Based on this company research data, create an Ideal Customer Profile (ICP) that would help the user find SIMILAR companies. The ICP should capture the key characteristics of this company type.
+
+COMPANY DATA:
+- Name: ${prospect.companyName}
+- Industry: ${prospect.industry}
+- Sub-Industry: ${prospect.subIndustry}
+- Description: ${prospect.description}
+- Employee Count: ${prospect.employeeCount}
+- Revenue: ${prospect.revenueEstimate}
+- Location: ${prospect.city}, ${prospect.stateProvince}, ${prospect.country}
+- Tech Stack: ${prospect.techStack?.join(', ')}
+- Products/Services: ${prospect.productsServices?.join(', ')}
+- Funding: ${prospect.fundingInfo}
+
+USER'S ORIGINAL QUERY: "${userQuery}"
+
+Create an ICP that targets companies SIMILAR to this one. Respond with JSON:
+{
+  "name": "<ICP name based on the company type, e.g. 'Mid-Market HealthTech SaaS'>",
+  "description": "<1-2 sentence description of the ideal customer type>",
+  "firmographic": {
+    "industries": ["<primary industry>", "<related industries>"],
+    "companySizes": ["<size range based on employee count>"],
+    "locations": ["<geographic regions based on company location>"],
+    "revenueRange": "<estimated revenue range>"
+  },
+  "technographic": {
+    "requiredTech": ["<core technologies this type of company uses>"],
+    "preferredTech": ["<nice-to-have technologies>"]
+  },
+  "psychographic": {
+    "values": ["<what this type of company values>"],
+    "challenges": ["<common challenges for this type of company>"],
+    "goals": ["<typical goals and objectives>"]
+  },
+  "behavioral": {
+    "buyingSignals": ["<signals that indicate a similar company is ready to buy>"],
+    "engagementPatterns": ["<how these companies typically engage with vendors>"]
+  },
+  "economic": {
+    "budgetRange": "<typical budget range>",
+    "decisionTimeline": "<typical purchasing timeline>"
+  },
+  "criteria": "{}"
+}`;
+
+  try {
+    const result = await callLLMForJSON<ICPResult>(prompt);
+    return result;
+  } catch {
+    // Fallback: build a simple ICP from the raw data
+    return buildFallbackICP(prospect);
+  }
+}
+
+/**
+ * Build a fallback ICP from raw prospect data when LLM is unavailable.
+ */
+function buildFallbackICP(prospect: ProspectResult): ICPResult {
+  const industry = prospect.industry || 'General Business';
+  const employeeRange = categorizeCompanySize(prospect.employeeCount) || 'Mid-Market (50-199)';
+
+  return {
+    name: `${industry} — Auto-Curated ICP`,
+    description: `Automatically generated ICP based on research of ${prospect.companyName || 'the target company'}. This profile captures the key characteristics to find similar companies.`,
+    firmographic: {
+      industries: [industry, ...(prospect.subIndustry ? [prospect.subIndustry] : [])],
+      companySizes: [employeeRange],
+      locations: [prospect.country || 'North America'],
+      revenueRange: prospect.revenueEstimate || '$1M-$50M',
+    },
+    technographic: {
+      requiredTech: prospect.techStack?.slice(0, 3) || [],
+      preferredTech: prospect.techStack?.slice(3, 6) || [],
+    },
+    psychographic: {
+      values: ['Innovation', 'Growth', 'Efficiency'],
+      challenges: ['Scaling operations', 'Digital transformation', 'Customer acquisition'],
+      goals: ['Revenue growth', 'Market expansion', 'Operational efficiency'],
+    },
+    behavioral: {
+      buyingSignals: extractBuyingSignals(prospect),
+      engagementPatterns: ['Website visits', 'Content downloads', 'Conference attendance'],
+    },
+    economic: {
+      budgetRange: '$10K-$100K',
+      decisionTimeline: '30-90 days',
+    },
+    criteria: JSON.stringify({ source: 'auto-curated', company: prospect.companyName }),
+  };
+}
+
+/**
+ * Generate actionable insights from the collected data.
+ * These are analytical observations with explicit implications.
+ */
+function generateInsights(
+  intent: UserIntent,
+  prospect?: ProspectResult,
+  icp?: ICPResult,
+  score?: ScoreResult,
+  _market?: MarketResult,
+  outreach?: OutreachResult,
+  _context?: ConversationContext,
+): InsightItem[] {
+  const insights: InsightItem[] = [];
+
+  if (prospect) {
+    // Buying signal insights
+    const buyingSignals = extractBuyingSignals(prospect);
+    buyingSignals.forEach((signal, i) => {
+      insights.push({
+        id: `insight-buying-${i}`,
+        type: 'opportunity',
+        icon: 'TrendingUp',
+        title: 'Buying Signal Detected',
+        description: signal,
+        confidence: 0.8,
+        relatedDimension: 'behavioral',
+      });
+    });
+
+    // Tech stack alignment
+    if (icp?.technographic.requiredTech?.length && prospect.techStack?.length) {
+      const matching = icp.technographic.requiredTech.filter(t =>
+        prospect.techStack!.some(pt => pt.toLowerCase().includes(t.toLowerCase()) || t.toLowerCase().includes(pt.toLowerCase()))
+      );
+      if (matching.length > 0) {
+        insights.push({
+          id: 'insight-tech-alignment',
+          type: 'alignment',
+          icon: 'Zap',
+          title: 'Tech Stack Alignment',
+          description: `${matching.length} of your ICP's required technologies (${matching.join(', ')}) are present in their stack. This indicates strong technographic fit.`,
+          confidence: 0.85,
+          relatedDimension: 'technographic',
+        });
+      }
+    }
+
+    // Size/revenue fit
+    if (icp?.firmographic.companySizes?.length && prospect.employeeCount) {
+      const sizeCategory = categorizeCompanySize(prospect.employeeCount);
+      const matches = sizeCategory && icp.firmographic.companySizes.some(s =>
+        s.toLowerCase().includes(sizeCategory.split(' ')[0].toLowerCase())
+      );
+      if (matches) {
+        insights.push({
+          id: 'insight-size-fit',
+          type: 'alignment',
+          icon: 'Users',
+          title: 'Company Size Match',
+          description: `At ${prospect.employeeCount} employees (${sizeCategory}), they match your ICP's target company size range.`,
+          confidence: 0.75,
+          relatedDimension: 'firmographic',
+        });
+      }
+    }
+
+    // Industry alignment
+    if (icp?.firmographic.industries?.length && prospect.industry) {
+      const industryMatch = icp.firmographic.industries.some(i =>
+        prospect.industry!.toLowerCase().includes(i.toLowerCase()) ||
+        i.toLowerCase().includes(prospect.industry!.toLowerCase())
+      );
+      if (industryMatch) {
+        insights.push({
+          id: 'insight-industry-alignment',
+          type: 'alignment',
+          icon: 'Building2',
+          title: 'Industry Match',
+          description: `${prospect.industry} aligns with your ICP's target industries (${icp.firmographic.industries.slice(0, 3).join(', ')}).`,
+          confidence: 0.9,
+          relatedDimension: 'firmographic',
+        });
+      }
+    }
+
+    // Key contact available
+    if (prospect.keyContactEmail || prospect.ceoEmail) {
+      insights.push({
+        id: 'insight-contact',
+        type: 'opportunity',
+        icon: 'Mail',
+        title: 'Direct Contact Available',
+        description: `Key contact${prospect.keyContactName ? ` (${prospect.keyContactName})` : ''} found with email. You can compose personalized outreach directly.`,
+        confidence: 0.95,
+      });
+    }
+
+    // Data completeness
+    if (prospect.dataCompleteness < 50) {
+      insights.push({
+        id: 'insight-data-gap',
+        type: 'gap',
+        icon: 'AlertCircle',
+        title: 'Limited Data Available',
+        description: `Only ${prospect.dataCompleteness}% data completeness. Consider additional research channels to fill gaps before outreach.`,
+        confidence: 0.7,
+      });
+    }
+  }
+
+  if (score) {
+    if (score.overallScore >= 75) {
+      insights.push({
+        id: 'insight-high-score',
+        type: 'opportunity',
+        icon: 'Star',
+        title: 'High-Fit Lead',
+        description: `Scored ${score.overallScore}/100 (${score.tier}). This is a strong match — prioritize for immediate outreach.`,
+        confidence: 0.9,
+      });
+    } else if (score.overallScore < 40) {
+      insights.push({
+        id: 'insight-low-score',
+        type: 'risk',
+        icon: 'AlertCircle',
+        title: 'Low-Fit Lead',
+        description: `Scored only ${score.overallScore}/100 (${score.tier}). Consider deprioritizing or nurturing rather than active outreach.`,
+        confidence: 0.85,
+      });
+    }
+  }
+
+  if (outreach) {
+    insights.push({
+      id: 'insight-outreach-ready',
+      type: 'action',
+      icon: 'Send',
+      title: 'Outreach Ready',
+      description: `Your ${outreach.channel} message is ready with ${outreach.personalizationHooks?.length || 0} personalization hooks. Review and send when ready.`,
+      confidence: 0.95,
+    });
+  }
+
+  return insights.slice(0, 6); // Max 6 insights
+}
+
+/**
+ * Generate navigation suggestions that guide users to relevant tabs.
+ */
+function generateNavigationSuggestions(
+  _intent: UserIntent,
+  prospect?: ProspectResult,
+  icp?: ICPResult,
+  score?: ScoreResult,
+  outreach?: OutreachResult,
+  market?: MarketResult,
+): NavigationSuggestion[] {
+  const nav: NavigationSuggestion[] = [];
+
+  if (icp) {
+    nav.push({
+      targetView: 'icp',
+      label: 'View in ICP Builder',
+      icon: 'Target',
+      reason: 'Your auto-curated ICP is ready — refine it in the ICP Builder',
+      prefillData: { icp },
+    });
+  }
+
+  if (prospect) {
+    nav.push({
+      targetView: 'leads',
+      label: 'View in Leads',
+      icon: 'Users',
+      reason: 'Add this prospect to your lead pipeline and track their progress',
+    });
+  }
+
+  if (score && score.overallScore >= 65) {
+    nav.push({
+      targetView: 'outreach',
+      label: 'Go to Outreach',
+      icon: 'Mail',
+      reason: `This lead scores ${score.overallScore}/100 — start personalized outreach`,
+    });
+  }
+
+  if (outreach) {
+    nav.push({
+      targetView: 'outreach',
+      label: 'View in Outreach',
+      icon: 'Mail',
+      reason: 'Your outreach message is ready — manage it in the Outreach tab',
+    });
+  }
+
+  if (market) {
+    nav.push({
+      targetView: 'reports',
+      label: 'View in Reports',
+      icon: 'BarChart3',
+      reason: 'Market analysis data is available for detailed reporting',
+    });
+  }
+
+  return nav.slice(0, 3); // Max 3 navigation suggestions
 }
