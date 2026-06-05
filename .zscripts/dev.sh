@@ -3,7 +3,6 @@
 set -euo pipefail
 
 # 获取脚本所在目录（.zscripts）
-# 使用 $0 获取脚本路径（与 build.sh 保持一致）
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
@@ -104,15 +103,6 @@ wait_for_service() {
         return 1
 }
 
-cleanup() {
-        if [ -n "${DEV_PID:-}" ] && kill -0 "$DEV_PID" >/dev/null 2>&1; then
-                echo "Stopping Next.js dev server (PID: $DEV_PID)..."
-                kill "$DEV_PID" >/dev/null 2>&1 || true
-        fi
-}
-
-trap cleanup EXIT INT TERM
-
 cd "$PROJECT_DIR"
 
 if ! command -v bun >/dev/null 2>&1; then
@@ -158,7 +148,20 @@ log_step_end "Health check"
 
 start_mini_services
 
-echo "Next.js dev server is running in background (PID: $DEV_PID)."
-echo "Use 'kill $DEV_PID' to stop it."
-disown "$DEV_PID" 2>/dev/null || true
-unset DEV_PID
+echo "Next.js production server is running in background (PID: $DEV_PID)."
+
+# Keep the script alive to prevent the container's process reaper (tini)
+# from killing the Next.js server. Previously, this script would exit,
+# which triggered the cleanup trap that killed the server, and then tini
+# reaped the orphaned process. By using `wait`, we keep this script alive
+# as long as the server is running — when the server exits, we restart it.
+while true; do
+        echo "[PROD] Monitoring server process (PID: $DEV_PID)..."
+        wait "$DEV_PID" 2>/dev/null
+        EXIT_CODE=$?
+        echo "[PROD] Server exited with code $EXIT_CODE, restarting in 3s..."
+        sleep 3
+        node_modules/.bin/next start -p 3000 -H 0.0.0.0 &
+        DEV_PID=$!
+        echo "[PROD] Server restarted (PID: $DEV_PID)"
+done
