@@ -48,7 +48,13 @@ function isPreviewRequest(host: string): boolean {
 // ── Allowed Origins ────────────────────────────────────────────────
 
 const SUPABASE_URL = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-const supabaseOrigin = SUPABASE_URL ? new URL(SUPABASE_URL).origin : '';
+let supabaseOrigin = '';
+try {
+  supabaseOrigin = SUPABASE_URL ? new URL(SUPABASE_URL).origin : '';
+} catch {
+  console.warn('[LeadReach] Invalid SUPABASE_URL — CSP will not include Supabase origin');
+  supabaseOrigin = '';
+}
 
 const ZHIPU_API_URL = 'https://open.bigmodel.cn';
 const STRIPE_JS_URL = 'https://js.stripe.com';

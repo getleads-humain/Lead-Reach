@@ -13,18 +13,19 @@ import { createServerClient } from '@supabase/ssr';
 import { NextResponse, type NextRequest } from 'next/server';
 
 export async function updateSession(request: NextRequest) {
-  let supabaseResponse = NextResponse.next({
-    request,
-  });
-
   // Gracefully handle missing Supabase env vars (e.g., during first setup)
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   if (!supabaseUrl || !supabaseAnonKey) {
     console.warn('[LeadReach] Supabase env vars missing — skipping auth middleware');
-    return supabaseResponse;
+    return NextResponse.next({ request });
   }
+
+  // Accumulate all cookies across multiple setAll calls instead of
+  // creating a new NextResponse each time (which discards previous cookies).
+  // This fixes session refresh failures when Supabase calls setAll more than once.
+  const allCookiesToSet: Array<{ name: string; value: string; options?: Record<string, unknown> }> = [];
 
   const supabase = createServerClient(
     supabaseUrl,
@@ -35,15 +36,14 @@ export async function updateSession(request: NextRequest) {
           return request.cookies.getAll();
         },
         setAll(cookiesToSet) {
+          // Set cookies on the request object so subsequent getUser() sees them
           cookiesToSet.forEach(({ name, value }) =>
             request.cookies.set(name, value)
           );
-          supabaseResponse = NextResponse.next({
-            request,
+          // Accumulate cookies instead of replacing the response
+          cookiesToSet.forEach(({ name, value, options }) => {
+            allCookiesToSet.push({ name, value, options: options as Record<string, unknown> });
           });
-          cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
-          );
         },
       },
     }
@@ -55,6 +55,14 @@ export async function updateSession(request: NextRequest) {
   const {
     data: { user },
   } = await supabase.auth.getUser();
+
+  // Build response AFTER getUser() so all cookies from session refresh are included
+  let supabaseResponse = NextResponse.next({ request });
+
+  // Apply ALL accumulated cookies to the response in one pass
+  for (const { name, value, options } of allCookiesToSet) {
+    supabaseResponse.cookies.set(name, value, options);
+  }
 
   // ─── Route Protection ─────────────────────────────────────────────────
   // Define which routes require authentication
@@ -114,14 +122,30 @@ export async function updateSession(request: NextRequest) {
     url.pathname = '/login';
     // Store the intended destination so we can redirect after login
     url.searchParams.set('redirect', pathname);
-    return NextResponse.redirect(url);
+    // Apply session cookies to the redirect response too
+    const redirectResponse = NextResponse.redirect(url);
+    for (const { name, value, options } of allCookiesToSet) {
+      redirectResponse.cookies.set(name, value, options);
+    }
+    return redirectResponse;
   }
 
-  // If user IS signed in and trying to access login/signup, redirect to app
+  // If user IS signed in and trying to access login/signup, redirect to portal
   if (user && (pathname === '/login' || pathname === '/signup')) {
+    // Check for redirect loop: if redirect param points to login/signup, break the loop
+    const redirectParam = request.nextUrl.searchParams.get('redirect');
+    const targetPath = redirectParam && !['/login', '/signup'].includes(redirectParam)
+      ? redirectParam
+      : '/portal';
     const url = request.nextUrl.clone();
-    url.pathname = '/app';
-    return NextResponse.redirect(url);
+    url.pathname = targetPath;
+    url.searchParams.delete('redirect');
+    // Apply session cookies to the redirect response too
+    const redirectResponse = NextResponse.redirect(url);
+    for (const { name, value, options } of allCookiesToSet) {
+      redirectResponse.cookies.set(name, value, options);
+    }
+    return redirectResponse;
   }
 
   return supabaseResponse;

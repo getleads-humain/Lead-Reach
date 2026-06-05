@@ -12,10 +12,15 @@
  * 1. Refreshes the Supabase auth session cookie on every request
  *    (keeping the JWT fresh without requiring a page reload)
  * 2. Protects authenticated routes — redirects to /login if not signed in
- * 3. Redirects logged-in users away from /login and /signup to /app
+ * 3. Redirects logged-in users away from /login and /signup to /portal
  * 4. Handles the JWKS-based JWT verification dynamically via @supabase/ssr
  * 5. Applies environment-aware security headers to all responses
  *    (relaxed for preview domains, strict for production)
+ *
+ * Error Handling:
+ * - All errors are caught and logged — the proxy NEVER crashes the server
+ * - If the auth check fails, the request still proceeds (fail-open for safety)
+ * - Security headers are applied to all responses, even error responses
  *
  * Preview Environment:
  * - Detects *.space-z.ai and *.space.chatglm.site domains
@@ -28,11 +33,21 @@ import { updateSession } from '@/lib/supabase-middleware';
 import { applySecurityHeaders } from '@/lib/security-headers';
 
 export async function proxy(request: NextRequest) {
-  const response = await updateSession(request);
+  try {
+    const response = await updateSession(request);
 
-  // Pass the request host to security headers for preview detection
-  const host = request.headers.get('host') || undefined;
-  return applySecurityHeaders(response, host);
+    // Pass the request host to security headers for preview detection
+    const host = request.headers.get('host') || undefined;
+    return applySecurityHeaders(response, host);
+  } catch (error) {
+    // CRITICAL: Never let the proxy crash the server.
+    // If anything goes wrong, continue the request without auth checks.
+    console.error('[LeadReach] Proxy error (fail-open):', error);
+
+    const fallbackResponse = NextResponse.next({ request });
+    const host = request.headers.get('host') || undefined;
+    return applySecurityHeaders(fallbackResponse, host);
+  }
 }
 
 export const config = {

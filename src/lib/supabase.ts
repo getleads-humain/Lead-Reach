@@ -11,13 +11,17 @@
 
 import { createClient, SupabaseClient } from '@supabase/supabase-js'
 
-const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL!
-const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY!
+const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL
+const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY
 
 // ── Anonymous client (safe for client-side / frontend) ──────────────────────
 // Has read-only access via RLS policies
-function createAnonClient(): SupabaseClient {
+function createAnonClient(): SupabaseClient | null {
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.warn('[LeadReach] Supabase anon client not created — env vars missing');
+    return null;
+  }
   return createClient(supabaseUrl, supabaseAnonKey, {
     auth: {
       persistSession: false,
@@ -33,7 +37,11 @@ function createAnonClient(): SupabaseClient {
 
 // ── Service role client (server-side only — bypasses RLS) ───────────────────
 // Has full CRUD access — NEVER expose to the frontend
-function createServiceClient(): SupabaseClient {
+function createServiceClient(): SupabaseClient | null {
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.warn('[LeadReach] Supabase service client not created — env vars missing');
+    return null;
+  }
   return createClient(supabaseUrl, supabaseServiceKey, {
     auth: {
       persistSession: false,
@@ -53,15 +61,13 @@ const globalForSupabase = globalThis as unknown as {
   serviceClient: SupabaseClient | undefined
 }
 
-export const supabaseAnon =
-  globalForSupabase.anonClient ?? createAnonClient()
+export const supabaseAnon = globalForSupabase.anonClient ?? createAnonClient()
 
-export const supabaseService =
-  globalForSupabase.serviceClient ?? createServiceClient()
+export const supabaseService = globalForSupabase.serviceClient ?? createServiceClient()
 
 if (process.env.NODE_ENV !== 'production') {
-  globalForSupabase.anonClient = supabaseAnon
-  globalForSupabase.serviceClient = supabaseService
+  if (supabaseAnon) globalForSupabase.anonClient = supabaseAnon
+  if (supabaseService) globalForSupabase.serviceClient = supabaseService
 }
 
 // ── Table names for type-safe access ────────────────────────────────────────

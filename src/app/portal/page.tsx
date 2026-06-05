@@ -72,7 +72,42 @@ export default function PortalPage() {
     );
   }
 
-  if (!user || !profile) return null;
+  // Show proper error state when profile is missing but user exists
+  if (!user || !profile) {
+    // If user exists but profile is missing, try to create it
+    if (user && !profile) {
+      return (
+        <div className="min-h-screen flex items-center justify-center bg-background noise-bg">
+          <div className="flex flex-col items-center gap-4 max-w-md text-center">
+            <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-amber-400 to-orange-500">
+              <Zap className="h-6 w-6 text-black" />
+            </div>
+            <p className="text-sm text-muted-foreground">Setting up your account...</p>
+            <button
+              onClick={async () => {
+                try {
+                  const res = await fetch('/api/auth/profile', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ email: user.email, full_name: user.user_metadata?.full_name || '' }),
+                  });
+                  if (res.ok) {
+                    window.location.reload();
+                  }
+                } catch {
+                  // Will retry on next load
+                }
+              }}
+              className="rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 px-4 py-2 text-sm font-semibold text-black"
+            >
+              Retry Setup
+            </button>
+          </div>
+        </div>
+      );
+    }
+    return null;
+  }
 
   const renderView = () => {
     switch (activeView) {
