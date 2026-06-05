@@ -94,6 +94,8 @@ export async function updateSession(request: NextRequest) {
   const publicApiRoutes = [
     '/api/auth',
     '/api/admin/fix-security',
+    '/api/prospect-discovery/search',  // Allow unauthenticated search for testing
+    '/api/prospect-discovery/chat',    // Allow unauthenticated chat for testing
   ];
 
   // Static assets and Next.js internals
