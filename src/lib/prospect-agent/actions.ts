@@ -46,8 +46,11 @@ function withTimeout<T>(fn: () => Promise<T>, ms: number, label: string): Promis
 // Company Research Action
 // ============================================================
 
+export type ProgressCallback = (event: string, data: any) => void;
+
 export async function executeCompanyResearch(
   companyName: string,
+  onProgress?: ProgressCallback,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [];
@@ -56,6 +59,7 @@ export async function executeCompanyResearch(
 
   // Step 1: Web search
   steps.push({ type: 'research_company', label: 'Web Search', status: 'running', message: `Searching for "${companyName}"...` });
+  onProgress?.('step_start', { stepIndex: 0, label: 'Web Search', message: `Searching for "${companyName}"...` });
   try {
     const searchResult = await withTimeout(
       () => exaSearch(`${companyName} company overview contact information`, 10),
@@ -65,6 +69,7 @@ export async function executeCompanyResearch(
       sources.push(...searchResult.data.map(r => r.url));
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = `Found ${searchResult.data.length} web results`;
+      onProgress?.('step_complete', { stepIndex: 0, status: 'completed', message: `Found ${searchResult.data.length} web results`, partialData: null });
 
       // Read top 5 results (increased from 3 for broader data coverage)
       const topUrls = searchResult.data.slice(0, 5).map(r => r.url);
@@ -80,6 +85,7 @@ export async function executeCompanyResearch(
 
       // Step 2: Extract data with LLM
       steps.push({ type: 'research_company', label: 'AI Extraction', status: 'running', message: 'Extracting company data with AI...' });
+      onProgress?.('step_start', { stepIndex: 1, label: 'AI Extraction', message: 'Extracting company data with AI...' });
       if (webContents.length > 0) {
         let extracted = await withTimeout(
           () => callLLMForJSON<Partial<ProspectResult>>(
@@ -115,6 +121,8 @@ Be precise. Only include information explicitly stated.`,
           safeMerge(prospect, extracted);
           steps[steps.length - 1].status = 'completed';
           steps[steps.length - 1].message = `Extracted company data (${Object.values(extracted).filter(v => v !== null && v !== undefined && v !== '').length} fields)`;
+          onProgress?.('step_complete', { stepIndex: 1, status: 'completed', message: steps[steps.length - 1].message, partialData: prospect });
+          onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
         } else {
           steps[steps.length - 1].status = 'completed';
           steps[steps.length - 1].message = 'AI extraction unavailable — using search snippets';
@@ -155,6 +163,7 @@ Be precise. Only include information explicitly stated.`,
 
   // Step 3: LinkedIn
   steps.push({ type: 'research_company', label: 'LinkedIn Search', status: 'running', message: 'Searching LinkedIn...' });
+  onProgress?.('step_start', { stepIndex: 2, label: 'LinkedIn Search', message: 'Searching LinkedIn...' });
   try {
     const liResult = await withTimeout(
       () => linkedInSearchCompanies(companyName, 3),
@@ -193,6 +202,8 @@ Be precise. Only include information explicitly stated.`,
       sources.push(`linkedin:${company.url || companyName}`);
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'Found LinkedIn profile';
+      onProgress?.('step_complete', { stepIndex: 2, status: 'completed', message: 'Found LinkedIn profile', partialData: prospect });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
     } else {
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'No LinkedIn profile found';
@@ -204,6 +215,7 @@ Be precise. Only include information explicitly stated.`,
 
   // Step 4: Deep contact research
   steps.push({ type: 'research_company', label: 'Deep Research', status: 'running', message: 'Researching key contacts...' });
+  onProgress?.('step_start', { stepIndex: 3, label: 'Deep Research', message: 'Researching key contacts...' });
   try {
     const contactSearch = await withTimeout(
       () => exaSearch(`${companyName} CEO founder leadership team contact email`, 5),
@@ -242,6 +254,8 @@ Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail
       }
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'Found key contacts';
+      onProgress?.('step_complete', { stepIndex: 3, status: 'completed', message: 'Found key contacts', partialData: prospect });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
     } else {
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'Limited contact info';
@@ -253,6 +267,7 @@ Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail
 
   // Step 5: News
   steps.push({ type: 'research_company', label: 'News Search', status: 'running', message: 'Finding recent news...' });
+  onProgress?.('step_start', { stepIndex: 4, label: 'News Search', message: 'Finding recent news...' });
   try {
     const newsSearch = await withTimeout(
       () => exaSearch(`${companyName} news 2024 2025 2026`, 5),
@@ -265,6 +280,8 @@ Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail
       }
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = `Found ${newsSearch.data.length} news items`;
+      onProgress?.('step_complete', { stepIndex: 4, status: 'completed', message: `Found ${newsSearch.data.length} news items`, partialData: prospect });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
     } else {
       steps[steps.length - 1].status = 'completed';
       steps[steps.length - 1].message = 'No recent news found';
@@ -272,6 +289,68 @@ Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail
   } catch {
     steps[steps.length - 1].status = 'completed';
     steps[steps.length - 1].message = 'News search skipped';
+  }
+
+  // Step 6: Gap-Filling — run targeted searches for missing data
+  const gapIdx = 5;
+  const gapSteps: string[] = [];
+  const name = prospect.companyName || companyName;
+
+  if (!prospect.generalEmail && !prospect.supportEmail) gapSteps.push('contact');
+  if (!prospect.phoneMain) gapSteps.push('phone');
+  if (!prospect.ceoName && !prospect.keyContactName) gapSteps.push('people');
+  if (!prospect.employeeCount && !prospect.revenueEstimate) gapSteps.push('firmographics');
+  if (!prospect.linkedinUrl) gapSteps.push('linkedin');
+
+  if (gapSteps.length > 0) {
+    steps.push({ type: 'research_company', label: 'Gap Fill', status: 'running', message: `Filling gaps: ${gapSteps.join(', ')}...` });
+    onProgress?.('step_start', { stepIndex: gapIdx, label: 'Gap Fill', message: `Filling data gaps: ${gapSteps.join(', ')}...` });
+    try {
+      // Run targeted gap searches sequentially to respect rate limits
+      for (const gap of gapSteps) {
+        onProgress?.('step_progress', { stepIndex: gapIdx, message: `Searching for ${gap}...` });
+        let searchQuery = '';
+        if (gap === 'contact') searchQuery = `"${name}" contact email address`;
+        else if (gap === 'phone') searchQuery = `"${name}" phone number contact`;
+        else if (gap === 'people') searchQuery = `"${name}" CEO founder leadership team`;
+        else if (gap === 'firmographics') searchQuery = `"${name}" revenue employees funding Crunchbase`;
+        else if (gap === 'linkedin') searchQuery = `"${name}" LinkedIn company page`;
+
+        const gapResult = await withTimeout(
+          () => exaSearch(searchQuery, 3),
+          20_000, `Gap search: ${gap}`,
+        );
+        if (gapResult?.success && gapResult.data.length > 0) {
+          sources.push(...gapResult.data.map(r => r.url));
+          const topUrl = gapResult.data[0]?.url;
+          if (topUrl) {
+            const readResult = await withTimeout(() => webRead(topUrl), 20_000, `Gap read: ${gap}`);
+            if (readResult?.success) {
+              const gapData = await withTimeout(
+                () => callLLMForJSON<Partial<ProspectResult>>(
+                  `Extract ${gap === 'contact' ? 'email addresses' : gap === 'phone' ? 'phone numbers' : gap === 'people' ? 'CEO and leadership names' : gap === 'firmographics' ? 'revenue, employee count, funding info' : 'LinkedIn URL'} for "${name}" from this content. Return JSON with relevant fields from: generalEmail, supportEmail, phoneMain, ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail, employeeCount, revenueEstimate, fundingInfo, linkedinUrl, boardMembers (array). Use null for not found.`,
+                  readResult.data.content.slice(0, 4000),
+                  { retriesPerModel: 1, useFallback: true },
+                ),
+                30_000, `Gap LLM: ${gap}`,
+              );
+              if (gapData) {
+                safeMerge(prospect, gapData);
+                onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+              }
+            }
+          }
+        }
+      }
+      steps[steps.length - 1].status = 'completed';
+      steps[steps.length - 1].message = `Filled ${gapSteps.length} data gap${gapSteps.length > 1 ? 's' : ''}`;
+      onProgress?.('step_complete', { stepIndex: gapIdx, status: 'completed', message: steps[steps.length - 1].message, partialData: prospect });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+    } catch {
+      steps[steps.length - 1].status = 'completed';
+      steps[steps.length - 1].message = 'Gap fill partially completed';
+      onProgress?.('step_complete', { stepIndex: gapIdx, status: 'completed', message: 'Gap fill partially completed', partialData: prospect });
+    }
   }
 
   prospect.sources = [...new Set(sources)];
@@ -282,9 +361,9 @@ Return JSON: ceoName, keyContactName, keyContactTitle, keyContactEmail, ceoEmail
 // ============================================================
 // Person Research Action
 // ============================================================
-
 export async function executePersonResearch(
   personInput: string,
+  onProgress?: ProgressCallback,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [];
@@ -475,6 +554,7 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
 
 export async function executeUrlResearch(
   url: string,
+  onProgress?: ProgressCallback,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [url];
@@ -482,10 +562,12 @@ export async function executeUrlResearch(
 
   // ─── STEP 1: Deep Crawl — scrape every corner of the website ───
   steps.push({ type: 'research_url', label: 'Deep Site Crawl', status: 'running', message: `Deep-crawling ${url} and all sub-pages...` });
+  onProgress?.('step_start', { stepIndex: 0, label: 'Deep Site Crawl', message: `Deep-crawling ${url}...` });
   try {
     const crawlResult = await withTimeout(
       () => deepCrawlWebsite(url, (msg) => {
         steps[0].message = msg;
+        onProgress?.('step_progress', { stepIndex: 0, message: msg });
       }),
       120_000, 'Deep site crawl',
     );
@@ -493,11 +575,13 @@ export async function executeUrlResearch(
     if (crawlResult.totalPagesCrawled > 0) {
       steps[0].status = 'completed';
       steps[0].message = `Crawled ${crawlResult.totalPagesCrawled} pages (${crawlResult.totalWords.toLocaleString()} words) across ${crawlResult.domain}`;
+      onProgress?.('step_complete', { stepIndex: 0, status: 'completed', message: steps[0].message, partialData: null });
 
       sources.push(...crawlResult.pages.map(p => p.url));
 
       // ─── STEP 2: AI Extraction from ALL crawled content ───
       steps.push({ type: 'research_url', label: 'AI Analysis', status: 'running', message: 'Analyzing all pages with AI...' });
+      onProgress?.('step_start', { stepIndex: 1, label: 'AI Analysis', message: 'Analyzing all pages with AI...' });
       const extracted = await withTimeout(
         () => callLLMForJSON<Partial<ProspectResult>>(
           `You are a B2B intelligence analyst. You have been given content from MULTIPLE pages of a website (including About, Contact, Team, Services pages). Extract comprehensive business/contact information.
@@ -527,14 +611,18 @@ Be thorough — you have data from the entire website, so extract everything you
         if (extracted.companyName) prospect.queryType = 'company';
         steps[steps.length - 1].status = 'completed';
         steps[steps.length - 1].message = `Extracted data from ${crawlResult.totalPagesCrawled} pages (${Object.values(extracted).filter(v => v !== null && v !== undefined && v !== '').length} fields)`;
+        onProgress?.('step_complete', { stepIndex: 1, status: 'completed', message: steps[steps.length - 1].message, partialData: prospect });
+        onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
       } else {
         steps[steps.length - 1].status = 'completed';
         steps[steps.length - 1].message = 'AI extraction partially completed';
+        onProgress?.('step_complete', { stepIndex: 1, status: 'completed', message: 'AI extraction partially completed', partialData: prospect });
       }
 
       // ─── STEP 3: Company Identity Verification ───
       if (prospect.companyName) {
         steps.push({ type: 'research_url', label: 'Company Verification', status: 'running', message: `Verifying "${prospect.companyName}" identity...` });
+        onProgress?.('step_start', { stepIndex: 2, label: 'Company Verification', message: `Verifying "${prospect.companyName}"...` });
         try {
           const identity = await withTimeout(
             () => extractCompanyIdentity(crawlResult),
@@ -551,9 +639,12 @@ Be thorough — you have data from the entire website, so extract everything you
             }
             steps[steps.length - 1].status = 'completed';
             steps[steps.length - 1].message = `Verified: ${identity.verifiedName} (confidence: ${identity.confidence})`;
+            onProgress?.('step_complete', { stepIndex: 2, status: 'completed', message: steps[steps.length - 1].message, partialData: prospect });
+            onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
 
             // ─── STEP 4: Smart Verified Web Search ───
             steps.push({ type: 'research_url', label: 'Verified Web Search', status: 'running', message: `Searching for verified info about ${identity.verifiedName}...` });
+            onProgress?.('step_start', { stepIndex: 3, label: 'Verified Web Search', message: `Searching for verified info about ${identity.verifiedName}...` });
             try {
               const verifiedResults = await withTimeout(
                 () => smartCompanySearch(identity, 10),
@@ -594,6 +685,8 @@ Return JSON: legalName, industry, subIndustry, hqAddress, city, stateProvince, c
               }
               steps[steps.length - 1].status = 'completed';
               steps[steps.length - 1].message = `Found ${matchedResults.length} verified results about ${identity.verifiedName}`;
+              onProgress?.('step_complete', { stepIndex: 3, status: 'completed', message: steps[steps.length - 1].message, partialData: prospect });
+              onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
             } catch {
               steps[steps.length - 1].status = 'completed';
               steps[steps.length - 1].message = 'Verified search partially completed';
@@ -633,6 +726,66 @@ Return JSON: companyName, personName, personTitle, personEmail, personPhone, ind
   } catch {
     steps[0].status = 'failed';
     steps[0].message = 'Error reading URL';
+  }
+
+  // ─── Gap-Filling Phase for URL Research ───
+  const name = prospect.companyName || '';
+  if (name) {
+    const gapSteps: string[] = [];
+    if (!prospect.generalEmail && !prospect.supportEmail && !prospect.phoneMain) gapSteps.push('contact');
+    if (!prospect.ceoName && !prospect.keyContactName) gapSteps.push('people');
+    if (!prospect.employeeCount && !prospect.revenueEstimate) gapSteps.push('firmographics');
+    if (!prospect.linkedinUrl) gapSteps.push('linkedin');
+
+    if (gapSteps.length > 0) {
+      const gapIdx = steps.length;
+      steps.push({ type: 'research_url', label: 'Gap Fill', status: 'running', message: `Filling gaps: ${gapSteps.join(', ')}...` });
+      onProgress?.('step_start', { stepIndex: gapIdx, label: 'Gap Fill', message: `Filling data gaps: ${gapSteps.join(', ')}...` });
+      try {
+        for (const gap of gapSteps) {
+          onProgress?.('step_progress', { stepIndex: gapIdx, message: `Searching for ${gap}...` });
+          let searchQuery = '';
+          if (gap === 'contact') searchQuery = `"${name}" contact email phone`;
+          else if (gap === 'people') searchQuery = `"${name}" CEO founder leadership team`;
+          else if (gap === 'firmographics') searchQuery = `"${name}" revenue employees funding Crunchbase`;
+          else if (gap === 'linkedin') searchQuery = `"${name}" LinkedIn company page`;
+
+          const gapResult = await withTimeout(
+            () => exaSearch(searchQuery, 3),
+            20_000, `Gap search: ${gap}`,
+          );
+          if (gapResult?.success && gapResult.data.length > 0) {
+            sources.push(...gapResult.data.map(r => r.url));
+            const topUrl = gapResult.data[0]?.url;
+            if (topUrl) {
+              const readResult = await withTimeout(() => webRead(topUrl), 20_000, `Gap read: ${gap}`);
+              if (readResult?.success) {
+                const gapData = await withTimeout(
+                  () => callLLMForJSON<Partial<ProspectResult>>(
+                    `Extract ${gap === 'contact' ? 'email addresses and phone numbers' : gap === 'people' ? 'CEO and leadership names' : gap === 'firmographics' ? 'revenue, employee count, funding info' : 'LinkedIn URL'} for "${name}" from this content. Return JSON with relevant fields from: generalEmail, supportEmail, phoneMain, ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail, employeeCount, revenueEstimate, fundingInfo, linkedinUrl, boardMembers (array). Use null for not found.`,
+                    readResult.data.content.slice(0, 4000),
+                    { retriesPerModel: 1, useFallback: true },
+                  ),
+                  30_000, `Gap LLM: ${gap}`,
+                );
+                if (gapData) {
+                  safeMerge(prospect, gapData);
+                  onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+                }
+              }
+            }
+          }
+        }
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = `Filled ${gapSteps.length} data gap${gapSteps.length > 1 ? 's' : ''}`;
+        onProgress?.('step_complete', { stepIndex: gapIdx, status: 'completed', message: steps[steps.length - 1].message, partialData: prospect });
+        onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+      } catch {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = 'Gap fill partially completed';
+        onProgress?.('step_complete', { stepIndex: steps.length - 1, status: 'completed', message: 'Gap fill partially completed', partialData: prospect });
+      }
+    }
   }
 
   prospect.sources = [...new Set(sources)];
@@ -1187,24 +1340,44 @@ function createEmptyProspect(queryType: string, query: string): ProspectResult {
 }
 
 function calculateCompleteness(p: ProspectResult): number {
-  const fields: (string | string[] | null)[] = [
-    // Core company fields
-    p.companyName, p.legalName, p.website, p.industry, p.subIndustry, p.description,
-    p.hqAddress, p.city, p.stateProvince, p.country, p.postalCode,
-    p.phoneMain, p.generalEmail, p.supportEmail,
-    p.ceoName, p.ceoEmail, p.keyContactName, p.keyContactTitle, p.keyContactEmail,
-    p.employeeCount, p.revenueEstimate, p.foundingYear, p.ownershipType,
-    p.linkedinUrl, p.twitterHandle, p.facebookPage, p.fundingInfo,
-    // Person fields
-    p.personName, p.personTitle, p.personEmail, p.personLinkedin,
-    p.personPhone, p.personBio, p.personCompany,
-  ];
-  const arrayFields: string[][] = [p.techStack, p.boardMembers, p.recentNews, p.productsServices, p.partners];
-  let filled = 0;
-  let total = fields.length + arrayFields.length;
-  for (const f of fields) { if (f) filled++; }
-  for (const a of arrayFields) { if (a.length > 0) filled++; }
-  return Math.round((filled / total) * 100);
+  // Weighted, query-type-aware completeness calculation.
+  // Company/URL queries weight company sections higher;
+  // Person queries weight person sections higher.
+  const sections: { name: string; weight: number; fields: (string | null)[]; arrayFields?: string[][] }[] = [];
+
+  if (p.queryType === 'company' || p.queryType === 'url') {
+    sections.push(
+      { name: 'identity', weight: 25, fields: [p.companyName, p.website, p.description, p.industry] },
+      { name: 'contact', weight: 20, fields: [p.phoneMain, p.generalEmail, p.supportEmail, p.hqAddress] },
+      { name: 'location', weight: 10, fields: [p.city, p.stateProvince, p.country, p.postalCode] },
+      { name: 'firmographics', weight: 15, fields: [p.employeeCount, p.revenueEstimate, p.foundingYear, p.ownershipType, p.legalName, p.subIndustry] },
+      { name: 'people', weight: 15, fields: [p.ceoName, p.ceoEmail, p.keyContactName, p.keyContactTitle, p.keyContactEmail], arrayFields: [p.boardMembers] },
+      { name: 'digital', weight: 10, fields: [p.linkedinUrl, p.twitterHandle, p.facebookPage] },
+      { name: 'offerings', weight: 5, fields: [p.fundingInfo], arrayFields: [p.techStack, p.productsServices, p.recentNews, p.partners] },
+    );
+  } else {
+    // Person-focused
+    sections.push(
+      { name: 'identity', weight: 30, fields: [p.personName, p.personTitle, p.personEmail] },
+      { name: 'professional', weight: 25, fields: [p.personCompany, p.personLinkedin, p.personBio, p.personPhone] },
+      { name: 'company', weight: 25, fields: [p.companyName, p.industry, p.website] },
+      { name: 'digital', weight: 10, fields: [p.linkedinUrl, p.twitterHandle] },
+      { name: 'extra', weight: 10, fields: [p.city, p.country], arrayFields: [p.techStack] },
+    );
+  }
+
+  let totalWeight = 0;
+  let earnedWeight = 0;
+  for (const section of sections) {
+    const allFields = [...section.fields, ...(section.arrayFields || [])];
+    let filled = 0;
+    for (const f of section.fields) { if (f) filled++; }
+    for (const a of (section.arrayFields || [])) { if (a.length > 0) filled++; }
+    const sectionScore = filled / allFields.length;
+    earnedWeight += sectionScore * section.weight;
+    totalWeight += section.weight;
+  }
+  return Math.round((earnedWeight / totalWeight) * 100);
 }
 
 function safeMerge(target: ProspectResult, source: Partial<ProspectResult>): void {

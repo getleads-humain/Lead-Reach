@@ -155,15 +155,19 @@ function ThinkingIndicator({ thinking }: { thinking: AgentThinking }) {
 
 function ActionStepIndicator({ action }: { action: AgentAction }) {
   return (
-    <div className="flex items-center gap-2 py-1 px-2.5 rounded-lg bg-secondary/20 text-xs">
-      {action.status === 'running' && <Loader2 className="h-3 w-3 animate-spin text-cyan-400" />}
-      {action.status === 'completed' && <CheckCircle2 className="h-3 w-3 text-emerald-400" />}
-      {action.status === 'failed' && <AlertCircle className="h-3 w-3 text-red-400" />}
-      {action.status === 'pending' && <div className="h-3 w-3 rounded-full border border-muted-foreground/30" />}
-      <span className={action.status === 'running' ? 'text-cyan-400 font-medium' : action.status === 'completed' ? 'text-emerald-400' : 'text-muted-foreground'}>
+    <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-secondary/20 text-xs">
+      {action.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />}
+      {action.status === 'completed' && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+      {action.status === 'failed' && <AlertCircle className="h-3.5 w-3.5 text-red-400" />}
+      {action.status === 'pending' && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30" />}
+      <span className={`font-medium ${
+        action.status === 'running' ? 'text-cyan-400' :
+        action.status === 'completed' ? 'text-emerald-400' :
+        'text-muted-foreground'
+      }`}>
         {action.label}
       </span>
-      <span className="text-muted-foreground/60 text-[10px]">{action.message}</span>
+      <span className="text-muted-foreground/60 text-[10px] flex-1 truncate">{action.message}</span>
     </div>
   );
 }
@@ -730,11 +734,149 @@ export function ProspectDiscoveryView() {
     setMessages(prev => [...prev, userMsg]);
     setIsSearching(true);
 
-    // Retry logic for transient 502/503 errors
-    const MAX_RETRIES = 2;
-    let lastError: string | null = null;
+    // Create a placeholder agent message that will be updated in real-time via SSE
+    const agentMsgId = `agent-${Date.now()}`;
+    const liveAgentMsg: AgentMessage = {
+      id: agentMsgId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+      persona: 'scout',
+      thinking: undefined,
+      actions: [],
+      prospectData: undefined,
+    };
+    setMessages(prev => [...prev, liveAgentMsg]);
 
-    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+    // Helper: merge partial prospect data into the live agent message
+    const mergeProspectData = (existing: ProspectResult | undefined, partial: Partial<ProspectResult> | undefined): ProspectResult | undefined => {
+      if (!partial) return existing;
+      if (!existing) return partial as ProspectResult;
+      const merged = { ...existing };
+      for (const [key, value] of Object.entries(partial)) {
+        if (value !== null && value !== undefined && value !== '') {
+          const existingVal = (merged as Record<string, unknown>)[key];
+          if (existingVal === null || existingVal === undefined || existingVal === '' ||
+              (Array.isArray(existingVal) && (existingVal as unknown[]).length === 0)) {
+            (merged as Record<string, unknown>)[key] = value;
+          }
+        }
+      }
+      return merged;
+    };
+
+    try {
+      // Try SSE streaming first for real-time progress
+      const response = await fetch('/api/prospect-discovery/stream', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ message: text, context }),
+      });
+
+      if (!response.ok || !response.body) {
+        throw new Error(`Stream failed: ${response.status}`);
+      }
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let currentEventType = '';
+      // Track live step data for the real-time progress panel
+      const liveSteps: AgentAction[] = [];
+      let liveProspect: ProspectResult | undefined;
+      let liveInsights: InsightItem[] = [];
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
+
+        for (const line of lines) {
+          if (line.startsWith('event: ')) {
+            currentEventType = line.slice(7).trim();
+          } else if (line.startsWith('data: ')) {
+            let data: any;
+            try { data = JSON.parse(line.slice(6)); } catch { continue; }
+
+            // Update the live agent message based on event type
+            if (currentEventType === 'thinking' && data) {
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, persona: data.persona || 'scout', thinking: data } : m
+              ));
+            } else if (currentEventType === 'step_start' && data) {
+              liveSteps.push({ type: data.label || 'research', label: data.label || 'Research', status: 'running', message: data.message || 'Starting...' });
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, actions: [...liveSteps] } : m
+              ));
+            } else if (currentEventType === 'step_progress' && data) {
+              const stepIdx = data.stepIndex ?? (liveSteps.length - 1);
+              if (liveSteps[stepIdx]) {
+                liveSteps[stepIdx] = { ...liveSteps[stepIdx], message: data.message || liveSteps[stepIdx].message };
+                setMessages(prev => prev.map(m =>
+                  m.id === agentMsgId ? { ...m, actions: [...liveSteps] } : m
+                ));
+              }
+            } else if (currentEventType === 'step_complete' && data) {
+              const stepIdx = data.stepIndex ?? (liveSteps.length - 1);
+              if (liveSteps[stepIdx]) {
+                liveSteps[stepIdx] = { ...liveSteps[stepIdx], status: data.status || 'completed', message: data.message || liveSteps[stepIdx].message };
+              }
+              // Merge partial data if provided
+              if (data.partialData) {
+                liveProspect = mergeProspectData(liveProspect, data.partialData);
+              }
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, actions: [...liveSteps], prospectData: liveProspect } : m
+              ));
+            } else if (currentEventType === 'data_update' && data) {
+              liveProspect = mergeProspectData(liveProspect, data.prospect);
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, prospectData: liveProspect } : m
+              ));
+            } else if (currentEventType === 'insight' && data?.insight) {
+              liveInsights = [...liveInsights, data.insight];
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, insights: liveInsights.length > 0 ? liveInsights : undefined } : m
+              ));
+            } else if (currentEventType === 'error' && data) {
+              setMessages(prev => prev.map(m =>
+                m.id === agentMsgId ? { ...m, content: `Error: ${data.message || 'Unknown error'}. Please try again.` } : m
+              ));
+            } else if (currentEventType === 'done' && data) {
+              // Final message — replace the live message with the complete one
+              const finalMsg = data.message as AgentMessage;
+              if (finalMsg) {
+                // Preserve the converted/leadId state if the user already clicked "Add to Leads" during streaming
+                setMessages(prev => prev.map(m => {
+                  if (m.id !== agentMsgId) return m;
+                  return {
+                    ...finalMsg,
+                    id: agentMsgId, // Keep the same ID so React doesn't duplicate
+                    converted: m.converted,
+                    leadId: m.leadId,
+                  };
+                }));
+              }
+              if (data.updatedContext) setContext(data.updatedContext);
+              if (data.suggestedActions) setSuggestedActions(data.suggestedActions);
+            }
+          }
+          // Reset event type after processing data line
+          if (!line.startsWith('event: ') && !line.startsWith('data: ') && !line.startsWith(': ')) {
+            currentEventType = '';
+          }
+        }
+      }
+    } catch (streamError) {
+      // SSE streaming failed — fall back to the blocking chat API
+      console.warn('[ProspectDiscovery] SSE stream failed, falling back to chat API:', streamError instanceof Error ? streamError.message : 'Unknown');
+
+      // Remove the placeholder and try the chat API
+      setMessages(prev => prev.filter(m => m.id !== agentMsgId));
+
       try {
         const result = await safeFetchJSON<{
           success: boolean;
@@ -757,20 +899,7 @@ export function ProspectDiscoveryView() {
           setMessages(prev => [...prev, result.message]);
           setContext(result.updatedContext);
           setSuggestedActions(result.suggestedActions || []);
-          lastError = null;
-          break; // Success — exit retry loop
         } else {
-          // Agent returned a structured error
-          const isRetryable = result.retryable || false;
-          if (isRetryable && attempt < MAX_RETRIES) {
-            // Wait before retrying
-            const backoff = (attempt + 1) * 3000;
-            console.warn(`[ProspectDiscovery] Retryable error, waiting ${backoff}ms before retry ${attempt + 1}...`);
-            await new Promise(r => setTimeout(r, backoff));
-            lastError = result.error || 'Retryable error';
-            continue;
-          }
-          // Non-retryable or exhausted retries — show error
           const errorMsg: AgentMessage = {
             id: `error-${Date.now()}`,
             role: 'system',
@@ -778,38 +907,15 @@ export function ProspectDiscoveryView() {
             timestamp: new Date(),
           };
           setMessages(prev => [...prev, errorMsg]);
-          lastError = null;
-          break;
         }
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : 'Unknown error';
-        // Only treat genuine LLM gateway errors as transient (not search failures)
-        const isTransientError = (
-          (msg.includes('502') || msg.includes('Bad Gateway') || msg.includes('503'))
-          && !msg.includes('search') && !msg.includes('DuckDuckGo')
-        ) || msg.includes('429') || msg.includes('Too many requests');
-
-        if (isTransientError && attempt < MAX_RETRIES) {
-          // Wait before retrying
-          const backoff = (attempt + 1) * 4000;
-          console.warn(`[ProspectDiscovery] Transient error (${msg.slice(0, 80)}), waiting ${backoff}ms before retry ${attempt + 1}...`);
-          await new Promise(r => setTimeout(r, backoff));
-          lastError = msg;
-          continue;
-        }
-
-        // Non-transient or exhausted retries — show helpful error
+      } catch (chatError) {
         const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
           role: 'system',
-          content: isTransientError
-            ? 'The AI service is temporarily busy. Please try again in a few seconds.'
-            : "I encountered an issue processing your request. Please try again or rephrase your question. You can ask me to research a company, find a person, analyze a market, build an ICP, score a lead, or compose outreach.",
+          content: "I encountered an issue processing your request. Please try again or rephrase your question. You can ask me to research a company, find a person, analyze a market, build an ICP, score a lead, or compose outreach.",
           timestamp: new Date(),
         };
         setMessages(prev => [...prev, errorMsg]);
-        lastError = null;
-        break;
       }
     }
 
@@ -980,9 +1086,23 @@ export function ProspectDiscoveryView() {
                         </div>
                       )}
 
-                      {/* Action Steps */}
+                      {/* Discovery Progress Panel — shown during streaming or with steps */}
                       {msg.actions && msg.actions.length > 0 && (
-                        <div className="space-y-1 ml-9">
+                        <div className="ml-9 rounded-lg border border-cyan-500/20 bg-cyan-500/5 p-3 space-y-2">
+                          <div className="flex items-center gap-2 mb-1">
+                            <Search className="h-3.5 w-3.5 text-cyan-400" />
+                            <span className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">
+                              {isSearching && msg.id === messages[messages.length - 1]?.id ? 'Discovery in Progress' : 'Discovery Steps'}
+                            </span>
+                            {msg.prospectData && (
+                              <span className={`text-[9px] font-bold ml-auto ${
+                                msg.prospectData.dataCompleteness >= 70 ? 'text-emerald-400' :
+                                msg.prospectData.dataCompleteness >= 40 ? 'text-amber-400' : 'text-red-400'
+                              }`}>
+                                {msg.prospectData.dataCompleteness}% complete
+                              </span>
+                            )}
+                          </div>
                           {msg.actions.map((action, i) => (
                             <ActionStepIndicator key={i} action={action} />
                           ))}
@@ -993,6 +1113,14 @@ export function ProspectDiscoveryView() {
                       {msg.content && (
                         <div className="ml-9 rounded-2xl rounded-bl-md bg-secondary/20 border border-border/30 px-4 py-3">
                           <p className="text-sm text-foreground/85 whitespace-pre-wrap leading-relaxed">{msg.content}</p>
+                        </div>
+                      )}
+
+                      {/* Streaming loading indicator — when still searching but no content yet */}
+                      {isSearching && msg.id === messages[messages.length - 1]?.id && !msg.content && (!msg.prospectData || !msg.prospectData.companyName) && (
+                        <div className="ml-9 flex items-center gap-2 text-muted-foreground/50">
+                          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          <span className="text-xs">Agent is working...</span>
                         </div>
                       )}
 

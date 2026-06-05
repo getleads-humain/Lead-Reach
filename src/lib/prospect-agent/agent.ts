@@ -30,6 +30,7 @@ import {
   executeLeadScoring,
   executeOutreachComposition,
   generateConversationResponse,
+  type ProgressCallback,
 } from './actions';
 import { PERSONA_META } from './types';
 
@@ -49,6 +50,7 @@ export async function processAgentMessage(
   userMessage: string,
   context?: ConversationContext,
   forceIntent?: UserIntent,
+  onProgress?: ProgressCallback,
 ): Promise<{
   message: AgentMessage;
   updatedContext: ConversationContext;
@@ -57,7 +59,7 @@ export async function processAgentMessage(
   const startTime = Date.now();
 
   try {
-    return await processAgentMessageInner(userMessage, context, forceIntent, startTime);
+    return await processAgentMessageInner(userMessage, context, forceIntent, startTime, onProgress);
   } catch (error) {
     // Top-level safety net: never let an unhandled error escape.
     // This ensures the chat route always gets a valid result to return.
@@ -111,6 +113,7 @@ async function processAgentMessageInner(
   context: ConversationContext | undefined,
   forceIntent: UserIntent | undefined,
   startTime: number,
+  onProgress?: ProgressCallback,
 ): Promise<{
   message: AgentMessage;
   updatedContext: ConversationContext;
@@ -149,6 +152,9 @@ async function processAgentMessageInner(
 
   const thinking: AgentThinking = intentToThinking(classification);
 
+  // Emit thinking event if progress callback is provided
+  onProgress?.('thinking', thinking);
+
   // Step 2: Execute actions based on intent
   let actions: AgentAction[] = [];
   let prospectData: ProspectResult | undefined;
@@ -168,7 +174,7 @@ async function processAgentMessageInner(
   switch (classification.intent) {
     case 'research_company': {
       const companyName = classification.extractedEntities.companyName || userMessage.trim();
-      const result = await executeCompanyResearch(companyName);
+      const result = await executeCompanyResearch(companyName, onProgress);
       actions = result.steps;
       if (result.prospect) {
         prospectData = result.prospect;
@@ -202,7 +208,7 @@ async function processAgentMessageInner(
 
     case 'research_person': {
       const personName = classification.extractedEntities.personName || userMessage.trim();
-      const result = await executePersonResearch(personName);
+      const result = await executePersonResearch(personName, onProgress);
       actions = result.steps;
       if (result.prospect) {
         prospectData = result.prospect;
@@ -226,7 +232,7 @@ async function processAgentMessageInner(
 
     case 'research_url': {
       const url = classification.extractedEntities.url || userMessage.trim();
-      const result = await executeUrlResearch(url);
+      const result = await executeUrlResearch(url, onProgress);
       actions = result.steps;
       if (result.prospect) {
         prospectData = result.prospect;
@@ -422,6 +428,13 @@ async function processAgentMessageInner(
 
   // Generate actionable insights from collected data
   const insights = generateInsights(classification.intent, prospectData, icpData, scoreData as ScoreResult | undefined, marketData as MarketResult | undefined, outreachData as OutreachResult | undefined, updatedContext);
+
+  // Emit insights via progress callback
+  if (onProgress && insights.length > 0) {
+    for (const insight of insights) {
+      onProgress('insight', { insight });
+    }
+  }
 
   // Generate navigation suggestions based on what was produced
   const navigation = generateNavigationSuggestions(classification.intent, prospectData, icpData, scoreData as ScoreResult | undefined, outreachData as OutreachResult | undefined, marketData as MarketResult | undefined);
