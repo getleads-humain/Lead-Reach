@@ -1,8 +1,9 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAppStore } from '@/lib/store';
-import type { PortfolioItem } from '@/lib/types';
+import type { PortfolioItem, UserProfile } from '@/lib/types';
+import { EMPTY_USER_PROFILE } from '@/lib/types';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -48,7 +49,12 @@ import {
   Image,
   FileText,
   Award,
+  Loader2,
+  CheckCircle2,
+  AlertCircle,
 } from 'lucide-react';
+
+type SaveState = 'idle' | 'saving' | 'saved' | 'error';
 
 export function IdentityView() {
   const { userProfile, setUserProfile, addPortfolioItem, removePortfolioItem, updatePortfolioItem } = useAppStore();
@@ -61,12 +67,84 @@ export function IdentityView() {
     imageUrl: '',
     category: 'project',
   });
-  const [saveFeedback, setSaveFeedback] = useState(false);
+  const [saveState, setSaveState] = useState<SaveState>('idle');
+  const [isLoading, setIsLoading] = useState(true);
+  const [lastSavedAt, setLastSavedAt] = useState<string | null>(null);
 
-  const handleSave = () => {
-    setSaveFeedback(true);
-    setTimeout(() => setSaveFeedback(false), 2000);
-  };
+  // ── Load profile from database on mount ──────────────────────
+  useEffect(() => {
+    let mounted = true;
+
+    async function loadProfile() {
+      try {
+        const response = await fetch('/api/identity');
+        if (response.ok) {
+          const data = await response.json();
+          if (data.profile && mounted) {
+            // Merge DB profile into Zustand store (which may already have localStorage data)
+            const dbProfile = data.profile as UserProfile;
+            // Use DB as source of truth — it's the persistent record
+            setUserProfile(dbProfile);
+            setLastSavedAt(new Date().toISOString());
+          }
+        }
+      } catch (error) {
+        console.error('Failed to load identity profile from DB:', error);
+        // Zustand persist will have already hydrated from localStorage,
+        // so the user still sees their data even if the API call fails
+      } finally {
+        if (mounted) setIsLoading(false);
+      }
+    }
+
+    loadProfile();
+    return () => { mounted = false; };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Save profile to database ────────────────────────────────
+  const handleSave = useCallback(async () => {
+    setSaveState('saving');
+
+    try {
+      const response = await fetch('/api/identity', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ profile: userProfile }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Save failed with status ${response.status}`);
+      }
+
+      const data = await response.json();
+      setSaveState('saved');
+      setLastSavedAt(new Date().toISOString());
+
+      // If the server returned the saved profile, sync it back
+      if (data.profile) {
+        setUserProfile(data.profile as Partial<UserProfile>);
+      }
+
+      // Reset to idle after 3 seconds
+      setTimeout(() => setSaveState('idle'), 3000);
+    } catch (error) {
+      console.error('Failed to save identity profile:', error);
+      setSaveState('error');
+      setTimeout(() => setSaveState('idle'), 5000);
+    }
+  }, [userProfile, setUserProfile]);
+
+  // ── Auto-save with debounce (saves 2s after last change) ────
+  useEffect(() => {
+    // Don't auto-save while initially loading
+    if (isLoading) return;
+
+    const timer = setTimeout(() => {
+      handleSave();
+    }, 2000);
+
+    return () => clearTimeout(timer);
+  }, [userProfile, isLoading, handleSave]);
 
   const handleAddPortfolioItem = () => {
     if (!newItem.title) return;
@@ -104,6 +182,23 @@ export function IdentityView() {
     if (!name) return 'U';
     return name.split(' ').map((n) => n[0]).join('').toUpperCase().slice(0, 2);
   };
+
+  const formatLastSaved = () => {
+    if (!lastSavedAt) return null;
+    const date = new Date(lastSavedAt);
+    return date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="flex flex-col items-center gap-3">
+          <Loader2 className="h-8 w-8 text-emerald-400 animate-spin" />
+          <span className="text-sm text-muted-foreground">Loading your profile...</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 max-w-5xl mx-auto">
@@ -737,23 +832,61 @@ export function IdentityView() {
         </TabsContent>
       </Tabs>
 
-      {/* Save Button */}
+      {/* Save Button + Status */}
       <div className="flex items-center justify-between py-4">
-        <p className="text-sm text-muted-foreground">
-          Your identity profile powers personalized outreach and strengthens your brand across all campaigns.
-        </p>
+        <div className="flex items-center gap-3">
+          <p className="text-sm text-muted-foreground">
+            Your identity profile powers personalized outreach and strengthens your brand across all campaigns.
+          </p>
+          {saveState === 'saving' && (
+            <Badge variant="outline" className="text-[10px] border-amber-500/20 text-amber-400 bg-amber-500/5">
+              <Loader2 className="h-2.5 w-2.5 mr-1 animate-spin" />
+              Saving...
+            </Badge>
+          )}
+          {saveState === 'saved' && (
+            <Badge variant="outline" className="text-[10px] border-emerald-500/20 text-emerald-400 bg-emerald-500/5">
+              <CheckCircle2 className="h-2.5 w-2.5 mr-1" />
+              Saved
+            </Badge>
+          )}
+          {saveState === 'error' && (
+            <Badge variant="outline" className="text-[10px] border-red-500/20 text-red-400 bg-red-500/5">
+              <AlertCircle className="h-2.5 w-2.5 mr-1" />
+              Save failed
+            </Badge>
+          )}
+          {lastSavedAt && saveState === 'idle' && (
+            <span className="text-[10px] text-muted-foreground/50">
+              Last saved: {formatLastSaved()}
+            </span>
+          )}
+        </div>
         <Button
           onClick={handleSave}
+          disabled={saveState === 'saving'}
           className={`gap-2 font-semibold transition-all duration-300 ${
-            saveFeedback
+            saveState === 'saved'
               ? 'bg-emerald-500 text-black'
+              : saveState === 'error'
+              ? 'bg-red-500/80 text-white'
               : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-black'
           }`}
         >
-          {saveFeedback ? (
+          {saveState === 'saving' ? (
             <>
-              <Sparkles className="h-4 w-4" />
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Saving...
+            </>
+          ) : saveState === 'saved' ? (
+            <>
+              <CheckCircle2 className="h-4 w-4" />
               Profile Saved!
+            </>
+          ) : saveState === 'error' ? (
+            <>
+              <AlertCircle className="h-4 w-4" />
+              Retry Save
             </>
           ) : (
             <>

@@ -1,4 +1,5 @@
 import { create } from 'zustand';
+import { persist } from 'zustand/middleware';
 import type { ViewType, AgentInfo, Notification, AgentName, UserProfile, PortfolioItem } from './types';
 import { AGENT_DEFINITIONS, EMPTY_USER_PROFILE } from './types';
 
@@ -25,6 +26,7 @@ interface AppState {
   addPortfolioItem: (item: PortfolioItem) => void;
   removePortfolioItem: (id: string) => void;
   updatePortfolioItem: (id: string, update: Partial<PortfolioItem>) => void;
+  resetUserProfile: () => void;
 }
 
 const initialAgentStatuses: Record<AgentName, AgentInfo> = Object.fromEntries(
@@ -42,72 +44,84 @@ const initialAgentStatuses: Record<AgentName, AgentInfo> = Object.fromEntries(
   ])
 ) as Record<AgentName, AgentInfo>;
 
-export const useAppStore = create<AppState>((set) => ({
-  activeView: 'dashboard',
-  selectedCampaignId: null,
-  selectedLeadId: null,
-  sidebarOpen: true,
-  sidebarCollapsed: false,
-  agentStatuses: initialAgentStatuses,
-  notifications: [],
-  userProfile: EMPTY_USER_PROFILE,
+export const useAppStore = create<AppState>()(
+  persist(
+    (set) => ({
+      activeView: 'dashboard',
+      selectedCampaignId: null,
+      selectedLeadId: null,
+      sidebarOpen: true,
+      sidebarCollapsed: false,
+      agentStatuses: initialAgentStatuses,
+      notifications: [],
+      userProfile: EMPTY_USER_PROFILE,
 
-  setActiveView: (view) => set({ activeView: view }),
-  setSelectedCampaignId: (id) => set({ selectedCampaignId: id }),
-  setSelectedLeadId: (id) => set({ selectedLeadId: id }),
-  setSidebarOpen: (open) => set({ sidebarOpen: open }),
-  setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
-  updateAgentStatus: (name, update) =>
-    set((state) => ({
-      agentStatuses: {
-        ...state.agentStatuses,
-        [name]: { ...state.agentStatuses[name], ...update },
-      },
-    })),
-  addNotification: (notification) =>
-    set((state) => ({
-      notifications: [
-        {
-          ...notification,
-          id: Math.random().toString(36).substring(2, 9),
-          timestamp: new Date().toISOString(),
-          read: false,
-        },
-        ...state.notifications,
-      ],
-    })),
-  markNotificationRead: (id) =>
-    set((state) => ({
-      notifications: state.notifications.map((n) =>
-        n.id === id ? { ...n, read: true } : n
-      ),
-    })),
-  clearNotifications: () => set({ notifications: [] }),
-  setUserProfile: (profile) =>
-    set((state) => ({
-      userProfile: { ...state.userProfile, ...profile },
-    })),
-  addPortfolioItem: (item) =>
-    set((state) => ({
-      userProfile: {
-        ...state.userProfile,
-        portfolioItems: [...state.userProfile.portfolioItems, item],
-      },
-    })),
-  removePortfolioItem: (id) =>
-    set((state) => ({
-      userProfile: {
-        ...state.userProfile,
-        portfolioItems: state.userProfile.portfolioItems.filter((i) => i.id !== id),
-      },
-    })),
-  updatePortfolioItem: (id, update) =>
-    set((state) => ({
-      userProfile: {
-        ...state.userProfile,
-        portfolioItems: state.userProfile.portfolioItems.map((i) =>
-          i.id === id ? { ...i, ...update } : i
-        ),
-      },
-    })),
-}));
+      setActiveView: (view) => set({ activeView: view }),
+      setSelectedCampaignId: (id) => set({ selectedCampaignId: id }),
+      setSelectedLeadId: (id) => set({ selectedLeadId: id }),
+      setSidebarOpen: (open) => set({ sidebarOpen: open }),
+      setSidebarCollapsed: (collapsed) => set({ sidebarCollapsed: collapsed }),
+      updateAgentStatus: (name, update) =>
+        set((state) => ({
+          agentStatuses: {
+            ...state.agentStatuses,
+            [name]: { ...state.agentStatuses[name], ...update },
+          },
+        })),
+      addNotification: (notification) =>
+        set((state) => ({
+          notifications: [
+            {
+              ...notification,
+              id: Math.random().toString(36).substring(2, 9),
+              timestamp: new Date().toISOString(),
+              read: false,
+            },
+            ...state.notifications,
+          ],
+        })),
+      markNotificationRead: (id) =>
+        set((state) => ({
+          notifications: state.notifications.map((n) =>
+            n.id === id ? { ...n, read: true } : n
+          ),
+        })),
+      clearNotifications: () => set({ notifications: [] }),
+      setUserProfile: (profile) =>
+        set((state) => ({
+          userProfile: { ...state.userProfile, ...profile },
+        })),
+      addPortfolioItem: (item) =>
+        set((state) => ({
+          userProfile: {
+            ...state.userProfile,
+            portfolioItems: [...state.userProfile.portfolioItems, item],
+          },
+        })),
+      removePortfolioItem: (id) =>
+        set((state) => ({
+          userProfile: {
+            ...state.userProfile,
+            portfolioItems: state.userProfile.portfolioItems.filter((i) => i.id !== id),
+          },
+        })),
+      updatePortfolioItem: (id, update) =>
+        set((state) => ({
+          userProfile: {
+            ...state.userProfile,
+            portfolioItems: state.userProfile.portfolioItems.map((i) =>
+              i.id === id ? { ...i, ...update } : i
+            ),
+          },
+        })),
+      resetUserProfile: () => set({ userProfile: EMPTY_USER_PROFILE }),
+    }),
+    {
+      name: 'leadreach-store',
+      // Only persist the userProfile — other state is session-only
+      partialize: (state) => ({
+        userProfile: state.userProfile,
+      }),
+    }
+  )
+);

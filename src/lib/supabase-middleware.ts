@@ -99,6 +99,7 @@ export async function updateSession(request: NextRequest) {
     '/api/ai-assistant/chat',          // AI chat endpoint
     '/api/ai-assistant/deep-research', // AI deep research endpoint
     '/api/ai-assistant/smart-chat',    // AI smart chat endpoint
+    '/api/identity',                   // Identity profile save/load
   ];
 
   // Static assets and Next.js internals

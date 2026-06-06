@@ -618,6 +618,41 @@ model AgentKey {
   @@unique([agentName, keyName, environment])
 }
 
+// ─── User Identity Profile ────────────────────────────────
+
+model UserProfile {
+  id          String   @id @default("default")
+  
+  // Personal Identity
+  fullName    String   @default("")
+  jobTitle    String   @default("")
+  email       String   @default("")
+  phone       String   @default("")
+  bio         String   @default("")
+  location    String   @default("")
+  avatarUrl   String   @default("")
+  socialLinks String   @default("{}") // JSON: { linkedin, twitter, github, website }
+  
+  // Company
+  companyName        String @default("")
+  companyRole        String @default("")
+  companyIndustry    String @default("")
+  companySize        String @default("")
+  companyWebsite     String @default("")
+  companyDescription String @default("")
+  companyLogoUrl     String @default("")
+  
+  // Portfolio
+  portfolioUrl   String @default("")
+  portfolioItems String @default("[]") // JSON array of PortfolioItem objects
+  
+  // Metadata
+  onboardingComplete Boolean @default(false)
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
 model AgentDocumentation {
   id          String   @id @default(cuid())
   agentName   String
