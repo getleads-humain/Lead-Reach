@@ -96,6 +96,9 @@ export async function updateSession(request: NextRequest) {
     '/api/admin/fix-security',
     '/api/prospect-discovery/search',  // Allow unauthenticated search for testing
     '/api/prospect-discovery/chat',    // Allow unauthenticated chat for testing
+    '/api/ai-assistant/chat',          // AI chat endpoint
+    '/api/ai-assistant/deep-research', // AI deep research endpoint
+    '/api/ai-assistant/smart-chat',    // AI smart chat endpoint
   ];
 
   // Static assets and Next.js internals
