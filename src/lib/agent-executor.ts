@@ -92,6 +92,7 @@ export interface FullPipelineResult {
 // ============================================================
 
 import { callLLM as centralizedCallLLM, callLLMForJSON as centralizedCallLLMForJSON, MODEL_PRIMARY, MODEL_VISION } from './llm';
+import { detectDomain, isDomainSpecificQuery, getDomainThinkModePrompt, getDomainSearchQueries, getFinancialValidationPrompt, getOutputFormatPrompt, type DomainType } from './prospect-agent/domain-intelligence';
 
 /**
  * Call the LLM to process/extract/analyze data.

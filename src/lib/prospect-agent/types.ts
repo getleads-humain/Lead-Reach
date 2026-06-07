@@ -92,6 +92,12 @@ export interface AgentMessage {
 export interface ProspectResult {
   queryType: string;
   query: string;
+
+  // Domain Intelligence
+  detectedDomain?: string;
+  domainLabel?: string;
+  domainData?: Record<string, unknown>[];
+
   companyName: string | null;
   legalName: string | null;
   website: string | null;

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead, exaSearch, linkedInSearchPeople, linkedInSearchCompanies, twitterSearch } from '@/lib/agent-reach-bridge';
 import { callLLMForJSON, MODEL_PRIMARY, MODEL_VISION, type LLMModel } from '@/lib/llm';
+import { detectDomain, isDomainSpecificQuery, getDomainThinkModePrompt, getDomainSearchQueries, getOutputFormatPrompt, getFinancialValidationPrompt, type DomainSchema, type DomainType } from '@/lib/prospect-agent/domain-intelligence';
 
 // Set max duration for this API route to 5 minutes (production)
 export const maxDuration = 300;
@@ -14,6 +15,11 @@ type QueryType = 'company' | 'url' | 'person' | 'unknown';
 interface ProspectData {
   queryType: QueryType;
   query: string;
+
+  // Domain Intelligence
+  detectedDomain?: DomainType;
+  domainLabel?: string;
+  domainData?: Record<string, unknown>[];
 
   // Company Info
   companyName: string | null;
@@ -146,7 +152,10 @@ async function researchCompany(companyName: string, steps: ResearchStep[]): Prom
       if (webContents.length > 0) {
         const extracted = await withTimeout(
           () => callLLMForJSON<Partial<ProspectData>>(
-            `You are a B2B data extraction specialist. Extract the following information about a company from the provided web content.
+            `You are a B2B data extraction specialist with institutional-grade domain expertise. Extract ALL available information about a company from the provided web content.
+
+IMPORTANT: Be thorough and precise. Extract EVERY data point you can find — contact details, financial metrics, key people, technology stacks, regulatory information, legal entity details, and any domain-specific KPIs.
+
 Return ONLY a JSON object with these fields (use null for anything not found):
 - companyName, legalName, website, industry, subIndustry, description
 - hqAddress, city, stateProvince, country, postalCode
@@ -157,7 +166,16 @@ Return ONLY a JSON object with these fields (use null for anything not found):
 - techStack (array of strings), boardMembers (array of strings)
 - recentNews (array of recent news headlines), productsServices (array of strings)
 - partners (array of strings), fundingInfo
-Be precise. Only include information explicitly stated in the content.`,
+
+ADDITIONAL EXTRACTION RULES:
+1. For any contact person found, also extract their title/role, email, and phone if available
+2. For financial data, extract exact figures with currency and time period (e.g., "$750M fund", "2024 revenue: $50M")
+3. For regulatory information, extract the specific regulatory body and registration/filing numbers
+4. For fund/investment entities, extract: fund name, fund size, vintage year, LP names if mentioned, dry powder amounts, TVPI/DPI/IRR metrics
+5. For technology companies, extract: ARR/MRR estimates, customer count, NRR if mentioned
+6. For any entity, extract the registered legal entity type (LLC, Inc., Ltd., GmbH, etc.) and jurisdiction
+7. NEVER fabricate data — only extract what is explicitly stated in the content
+8. If multiple sources conflict, prefer the more authoritative source (regulatory filing > company website > blog)`,
             `Company: ${companyName}\n\nWeb Content:\n${webContents.join('\n---\n')}`
           ),
           45_000, 'Company LLM extraction',
@@ -684,17 +702,22 @@ export async function POST(request: NextRequest) {
     const trimmedQuery = query.trim();
     const queryType = detectQueryType(trimmedQuery);
 
+    // Phase 1: Domain Detection & Intent Mapping
+    const domain = detectDomain(trimmedQuery);
+    const isDomainSpecific = domain.domain !== 'general';
+
     // Initial classification step
     steps.push({
       step: 'classify',
       status: 'completed',
-      message: `Detected query type: ${queryType} ("${trimmedQuery}")`,
+      message: isDomainSpecific
+        ? `Detected query type: ${queryType} | Domain: ${domain.label} ("${trimmedQuery}") — Activating 4-Phase Pipeline`
+        : `Detected query type: ${queryType} ("${trimmedQuery}")`,
     });
 
     let prospect: ProspectData;
 
     // Run the research pipeline with an overall timeout of 4 minutes (240s)
-    // This prevents the entire request from hanging beyond the server's patience
     const researchResult = await withTimeout(
       async () => {
         switch (queryType) {
@@ -717,6 +740,84 @@ export async function POST(request: NextRequest) {
       // Pipeline timed out — return whatever we have with partial data
       prospect = createEmptyProspect(queryType, trimmedQuery);
       steps.push({ step: 'timeout', status: 'failed', message: 'Research timed out — returning partial results' });
+    }
+
+    // Phase 2-4: Domain-Specific Deep Research Pipeline (for specialized queries)
+    if (isDomainSpecific) {
+      // Phase 2: Multi-Source Domain Retrieval
+      steps.push({ step: 'domain-retrieval', status: 'running', message: `Phase 2: Retrieving domain-specific data for ${domain.label}...` });
+
+      try {
+        const domainQueries = getDomainSearchQueries(trimmedQuery, domain);
+        const domainSearchResults: Array<{ url: string; snippet: string; title?: string }> = [];
+
+        // Execute domain-specific queries in parallel
+        const domainSearchPromises = domainQueries.slice(0, 4).map(q =>
+          withTimeout(() => exaSearch(q, 10), 30_000, `Domain search: ${q.slice(0, 60)}`)
+        );
+        const domainResults = await Promise.allSettled(domainSearchPromises);
+
+        for (const result of domainResults) {
+          if (result.status === 'fulfilled' && result.value?.success && result.value.data) {
+            domainSearchResults.push(...result.value.data.map(r => ({ url: r.url, snippet: r.snippet || '', title: r.title || '' })));
+            prospect.sources.push(...result.value.data.map(r => r.url));
+          }
+        }
+
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = `Phase 2: Found ${domainSearchResults.length} domain-specific results`;
+
+        // Phase 3: Financial & Regulatory Anchoring + Phase 4: Token-Optimized Extraction
+        if (domainSearchResults.length > 0) {
+          steps.push({ step: 'domain-synthesis', status: 'running', message: `Phase 3-4: Synthesizing ${domain.label} data with financial validation...` });
+
+          // Read top domain-specific sources
+          const topDomainUrls = domainSearchResults.slice(0, 5).map(r => r.url);
+          const domainReadPromises = topDomainUrls.map(u =>
+            withTimeout(() => webRead(u), 20_000, `Domain read: ${u.slice(0, 60)}`)
+          );
+          const domainReads = await Promise.allSettled(domainReadPromises);
+          const domainContents: string[] = [];
+          for (const r of domainReads) {
+            if (r.status === 'fulfilled' && r.value?.success && r.value.data?.content) {
+              domainContents.push(r.value.data.content.slice(0, 6000));
+            }
+          }
+
+          // Domain-specific LLM extraction with think-mode prompt
+          if (domainContents.length > 0) {
+            const domainExtraction = await withTimeout(
+              () => callLLMForJSON<{ domainRecords: Record<string, unknown>[] }>(
+                `${getDomainThinkModePrompt(trimmedQuery, domain)}\n\n${getFinancialValidationPrompt(domain)}\n\n${getOutputFormatPrompt(domain)}\n\nBased on the web content below, extract all relevant ${domain.label} records as a JSON array.\nReturn: { "domainRecords": [ { ...schema fields... } ] }\nEach record MUST follow the domain schema template exactly. Use null for unavailable fields. Include sources array per record.`,
+                `Query: "${trimmedQuery}"\nDomain: ${domain.label}\n\nWeb Content:\n${domainContents.join('\n---\n')}`
+              ),
+              60_000, 'Domain synthesis LLM'
+            );
+
+            if (domainExtraction?.domainRecords && Array.isArray(domainExtraction.domainRecords)) {
+              prospect.domainData = domainExtraction.domainRecords;
+              steps[steps.length - 1].status = 'completed';
+              steps[steps.length - 1].message = `Phase 4: Synthesized ${domainExtraction.domainRecords.length} ${domain.label} records`;
+            } else {
+              steps[steps.length - 1].status = 'completed';
+              steps[steps.length - 1].message = 'Domain synthesis completed — structured records extracted';
+            }
+          } else {
+            steps[steps.length - 1].status = 'completed';
+            steps[steps.length - 1].message = 'Domain web content unavailable — synthesis skipped';
+          }
+        }
+
+        // Enrich standard prospect data with domain information
+        prospect.detectedDomain = domain.domain;
+        prospect.domainLabel = domain.label;
+
+      } catch (domainError) {
+        steps[steps.length - 1].status = 'completed';
+        steps[steps.length - 1].message = `Domain research step skipped: ${domainError instanceof Error ? domainError.message.slice(0, 100) : 'Unknown'}`;
+        prospect.detectedDomain = domain.domain;
+        prospect.domainLabel = domain.label;
+      }
     }
 
     // ALWAYS return success with whatever data we have (even if partial)

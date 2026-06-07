@@ -380,6 +380,95 @@ function ProspectDataCard({
           </SectionCard>
         )}
 
+        {/* Domain-Specific Intelligence Section */}
+        {prospect.detectedDomain && prospect.detectedDomain !== 'general' && (
+          <div className="rounded-md bg-violet-500/5 border border-violet-500/15 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <Zap className="h-3.5 w-3.5 text-violet-400" />
+              <span className="text-xs font-semibold text-violet-400">
+                {prospect.domainLabel || 'Domain Intelligence'} — 4-Phase Pipeline Active
+              </span>
+            </div>
+            {prospect.domainData && prospect.domainData.length > 0 ? (
+              <div className="space-y-2">
+                {prospect.domainData.map((record, idx) => (
+                  <div key={idx} className="rounded bg-background/50 border border-border/20 p-2 space-y-1.5">
+                    {/* Render record name/title */}
+                    {(record.vc_firm_name || record.pe_firm_name || record.fund_name || record.company_name || record.entity_name || record.firm_name || record.contractor_name || record.manager_name) && (
+                      <h5 className="text-xs font-bold text-foreground/90">
+                        {String(record.vc_firm_name || record.pe_firm_name || record.fund_name || record.company_name || record.entity_name || record.firm_name || record.contractor_name || record.manager_name || `Record ${idx + 1}`)}
+                      </h5>
+                    )}
+                    {/* Render key fields in a compact grid */}
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1">
+                      {Object.entries(record).filter(([k, v]) => v !== null && v !== undefined && k !== 'sources' && k !== 'limited_partners' && k !== 'stages_contact_matrix' && k !== 'kpis' && typeof v !== 'object').slice(0, 8).map(([key, val]) => (
+                        <div key={key} className="flex flex-col">
+                          <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wider">{key.replace(/_/g, ' ')}</span>
+                          <span className="text-[11px] text-foreground/80 truncate">{String(val)}</span>
+                        </div>
+                      ))}
+                    </div>
+                    {/* Render KPIs if present */}
+                    {record.kpis && typeof record.kpis === 'object' && (
+                      <div className="grid grid-cols-3 gap-x-3 gap-y-1 mt-1 pt-1 border-t border-border/10">
+                        {Object.entries(record.kpis as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined).map(([key, val]) => (
+                          <div key={key} className="flex flex-col">
+                            <span className="text-[9px] text-emerald-400/60 uppercase tracking-wider">{key.replace(/_/g, ' ')}</span>
+                            <span className="text-[11px] text-emerald-300/90">{typeof val === 'number' ? val.toLocaleString() : String(val)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Render Contact Stage Matrix if present */}
+                    {record.stages_contact_matrix && typeof record.stages_contact_matrix === 'object' && (
+                      <div className="mt-1 pt-1 border-t border-border/10 space-y-1">
+                        <span className="text-[9px] text-cyan-400/60 uppercase tracking-wider">Contact Stage Matrix</span>
+                        {Object.entries(record.stages_contact_matrix as Record<string, unknown>).map(([stage, details]) => (
+                          <div key={stage} className="rounded bg-background/30 p-1.5">
+                            <span className="text-[9px] font-semibold text-cyan-400 uppercase">{stage.replace(/_/g, ' ')}</span>
+                            {details && typeof details === 'object' && (
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 mt-0.5">
+                                {Object.entries(details as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => (
+                                  <div key={k} className="flex items-center gap-1">
+                                    <span className="text-[8px] text-muted-foreground/50">{k.replace(/_/g, ' ')}:</span>
+                                    <span className="text-[10px] text-foreground/70 truncate">{String(v)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    {/* Render Limited Partners if present */}
+                    {record.limited_partners && Array.isArray(record.limited_partners) && record.limited_partners.length > 0 && (
+                      <div className="mt-1 pt-1 border-t border-border/10 space-y-1">
+                        <span className="text-[9px] text-amber-400/60 uppercase tracking-wider">Limited Partners ({record.limited_partners.length})</span>
+                        {record.limited_partners.map((lp: unknown, lpIdx: number) => (
+                          <div key={lpIdx} className="rounded bg-background/30 p-1.5">
+                            {lp && typeof lp === 'object' && (
+                              <div className="grid grid-cols-2 gap-x-3 gap-y-0.5">
+                                {Object.entries(lp as Record<string, unknown>).filter(([, v]) => v !== null && v !== undefined).map(([k, v]) => (
+                                  <div key={k} className="flex items-center gap-1">
+                                    <span className="text-[8px] text-muted-foreground/50">{k.replace(/_/g, ' ')}:</span>
+                                    <span className="text-[10px] text-foreground/70 truncate">{typeof v === 'number' ? v.toLocaleString() : String(v)}</span>
+                                  </div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-[11px] text-muted-foreground">Domain-specific research completed. Structured records available in API response.</p>
+            )}
+          </div>
+        )}
+
         {prospect.sources?.length > 0 && (
           <div className="flex items-center gap-1 flex-wrap">
             <span className="text-[9px] text-muted-foreground/50">Sources:</span>
