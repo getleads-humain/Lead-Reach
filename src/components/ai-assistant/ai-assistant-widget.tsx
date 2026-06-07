@@ -28,8 +28,6 @@ import {
   Globe,
   Building2,
   UserCheck,
-  Newspaper,
-  Code2,
   Copy,
   ThumbsUp,
   ThumbsDown,
@@ -37,9 +35,25 @@ import {
   Users,
   MessageSquare,
   TrendingUp,
+  Save,
+  CheckCircle,
+  ExternalLink,
+  MapPin,
+  DollarSign,
+  Clock,
+  Briefcase,
+  Tag,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
-import { useChatEngine, type ChatMessage, type ResearchStageInfo } from '@/hooks/use-chat-engine';
+import {
+  useChatEngine,
+  type ChatMessage,
+  type ResearchStageInfo,
+  type SaveTarget,
+  type LeadDataItem,
+  type ICPData,
+  type OutreachMessage,
+} from '@/hooks/use-chat-engine';
 import { MarkdownRenderer } from './markdown-renderer';
 import type { ViewType } from '@/lib/types';
 import { cn } from '@/lib/utils';
@@ -66,12 +80,12 @@ const VIEW_LABELS: Record<ViewType, string> = {
 };
 
 const SUGGESTED_PROMPTS = [
-  { icon: Search, label: 'Find leads', prompt: 'I want to discover new leads for my business', color: 'from-emerald-500/10 to-cyan-500/10 border-emerald-500/15' },
-  { icon: Mail, label: 'Draft outreach', prompt: 'Help me draft personalized outreach messages for my top leads', color: 'from-violet-500/10 to-fuchsia-500/10 border-violet-500/15' },
-  { icon: BarChart3, label: 'Analyze pipeline', prompt: 'Analyze my current pipeline and suggest improvements', color: 'from-amber-500/10 to-orange-500/10 border-amber-500/15' },
-  { icon: Target, label: 'Score leads', prompt: 'Help me understand how to improve lead scores across my pipeline', color: 'from-rose-500/10 to-pink-500/10 border-rose-500/15' },
-  { icon: Lightbulb, label: 'Get insights', prompt: 'Give me insights about my lead generation performance', color: 'from-sky-500/10 to-blue-500/10 border-sky-500/15' },
-  { icon: TrendingUp, label: 'Optimize', prompt: 'Suggest optimizations to improve my conversion rates', color: 'from-teal-500/10 to-emerald-500/10 border-teal-500/15' },
+  { icon: Search, label: 'Find SaaS companies in NYC', prompt: 'Find SaaS companies in New York City that would be good prospects', color: 'from-emerald-500/10 to-cyan-500/10 border-emerald-500/15', action: 'discover_leads' },
+  { icon: Mail, label: 'Draft cold emails', prompt: 'Draft cold emails for my top leads', color: 'from-pink-500/10 to-rose-500/10 border-pink-500/15', action: 'compose_outreach' },
+  { icon: Target, label: 'Build my ICP', prompt: 'Build my ideal customer profile for a B2B SaaS product', color: 'from-amber-500/10 to-orange-500/10 border-amber-500/15', action: 'build_icp' },
+  { icon: Globe, label: 'Research fintech market', prompt: 'Research the fintech market and key trends for 2025', color: 'from-cyan-500/10 to-teal-500/10 border-cyan-500/15', action: 'research_market' },
+  { icon: BarChart3, label: 'Analyze pipeline', prompt: 'Analyze my pipeline performance and suggest improvements', color: 'from-red-500/10 to-orange-500/10 border-red-500/15', action: 'analyze_pipeline' },
+  { icon: Building2, label: 'Enrich lead data', prompt: 'Help me enrich my lead data with more contact and firmographic information', color: 'from-blue-500/10 to-indigo-500/10 border-blue-500/15', action: 'enrich_data' },
 ];
 
 const SYSTEM_PROMPT = `You are LeadReach AI, an institutional-grade intelligence engine for B2B lead generation. You deliver production-ready data synthesis with domain-specific expertise.
@@ -80,19 +94,26 @@ const SYSTEM_PROMPT = `You are LeadReach AI, an institutional-grade intelligence
 2. **Domain-Specific Intelligence** — 4-phase pipeline for specialized domains (VC/PE, hedge funds, real estate, government contracting, pharma/biotech, insurance, investment banking, energy, manufacturing, fintech, healthcare, edtech)
 3. **Data Enrichment** — Deep website reading, contact extraction, firmographic data, financial metrics, regulatory filings
 4. **Lead Qualification** — AI-powered scoring with domain-specific criteria and intent signal detection
-5. **Outreach** — Personalized messages with stage-specific contact matrices (scouting → due diligence → IC approval → post-investment) using BANT, Observation-Ask, Problem-Proof-Ask
+5. **Outreach** — Personalized messages with stage-specific contact matrices using BANT, Observation-Ask, Problem-Proof-Ask
 6. **Pipeline Management** — Track leads through stages from discovery to close
 7. **Reports & Analytics** — Campaign analytics and pipeline insights
 8. **ICP Building** — Define and refine Ideal Customer Profiles with multi-dimensional scoring
 9. **Multi-channel Messaging** — SMS, WhatsApp, Instagram, Facebook, Email
 
-DOMAIN EXPERTISE: Venture Capital (dry powder, TVPI/DPI/IRR, LP composition, SEC filings), Private Equity (EBITDA multiples, leverage ratios, operating partners), Hedge Funds (AUM, Sharpe, prime brokerage), Real Estate (cap rates, NOI, REITs), Government Contracting (NAICS, SAM.gov, procurement), and 9 more specialized domains.
-
-OUTPUT STANDARDS: Structured JSON with uniform schemas, validated financial metrics, jurisdiction-matched legal entities, stage-specific contact matrices. Zero conversational padding for data queries. Financial consistency enforced (TVPI >= DPI, dry powder <= fund size).
-
-You are currently on the {currentPage} page. Tailor your responses to be context-aware. If the user asks to do something that belongs on a different page (e.g., "research Stripe" while on Dashboard), suggest navigating to the appropriate page.
+You are currently on the {currentPage} page. Tailor your responses to be context-aware.
 
 Be concise, actionable, and helpful. Use bullet points for lists. If you don't know something, say so honestly.`;
+
+// Action badge config
+const ACTION_CONFIG: Record<string, { emoji: string; color: string; bgColor: string; borderColor: string }> = {
+  discover_leads: { emoji: '🔍', color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500/20' },
+  enrich_data: { emoji: '📊', color: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500/20' },
+  compose_outreach: { emoji: '✉️', color: 'text-pink-400', bgColor: 'bg-pink-500/10', borderColor: 'border-pink-500/20' },
+  build_icp: { emoji: '🎯', color: 'text-amber-400', bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20' },
+  analyze_pipeline: { emoji: '📈', color: 'text-red-400', bgColor: 'bg-red-500/10', borderColor: 'border-red-500/20' },
+  research_market: { emoji: '🌐', color: 'text-cyan-400', bgColor: 'bg-cyan-500/10', borderColor: 'border-cyan-500/20' },
+  general_chat: { emoji: '💡', color: 'text-violet-400', bgColor: 'bg-violet-500/10', borderColor: 'border-violet-500/20' },
+};
 
 // Stage icons for research progress
 const stageIcons: Record<string, React.ElementType> = {
@@ -100,8 +121,8 @@ const stageIcons: Record<string, React.ElementType> = {
   'website_read': Globe,
   'company_search': Building2,
   'people_search': UserCheck,
-  'news_social': Newspaper,
-  'tech_analysis': Code2,
+  'news_social': MessageSquare,
+  'tech_analysis': Zap,
   'intent_signals': Target,
   'synthesis': Sparkles,
   'complete': CheckCircle2,
@@ -137,7 +158,6 @@ function ResearchProgress({ stages }: { stages: ResearchStageInfo[] }) {
             const Icon = stageIcons[stage.stage] || Loader2;
             const isActive = stage.status === 'running';
             const isDone = stage.status === 'completed';
-            const isFailed = stage.status === 'failed';
 
             return (
               <div
@@ -146,7 +166,6 @@ function ResearchProgress({ stages }: { stages: ResearchStageInfo[] }) {
                   'flex items-center gap-2 px-2 py-1 rounded-md transition-all duration-300',
                   isActive && 'bg-violet-500/10 border border-violet-500/20',
                   isDone && 'bg-emerald-500/5 border border-emerald-500/10',
-                  isFailed && 'bg-red-500/5 border border-red-500/10',
                   stage.status === 'pending' && 'opacity-40',
                 )}
               >
@@ -154,8 +173,6 @@ function ResearchProgress({ stages }: { stages: ResearchStageInfo[] }) {
                   <Loader2 className="h-3 w-3 text-violet-400 animate-spin shrink-0" />
                 ) : isDone ? (
                   <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0" />
-                ) : isFailed ? (
-                  <AlertCircle className="h-3 w-3 text-red-400 shrink-0" />
                 ) : (
                   <Icon className="h-3 w-3 text-muted-foreground/50 shrink-0" />
                 )}
@@ -163,7 +180,6 @@ function ResearchProgress({ stages }: { stages: ResearchStageInfo[] }) {
                   'text-[10px] font-medium flex-1',
                   isActive && 'text-violet-300',
                   isDone && 'text-emerald-300/80',
-                  isFailed && 'text-red-300/80',
                   stage.status === 'pending' && 'text-muted-foreground/50',
                 )}>
                   {stage.label}
@@ -196,11 +212,11 @@ function LeadScoreBadge({ score, tier }: { score: number; tier: string }) {
   const config = tierConfig[tier as keyof typeof tierConfig] || tierConfig.cold;
 
   return (
-    <div className="flex items-center gap-2 mb-2">
+    <div className="flex items-center gap-2">
       <div className={cn('px-2 py-0.5 rounded-md border text-[10px] font-bold', config.color)}>
         {config.label}
       </div>
-      <div className="flex-1 max-w-[120px]">
+      <div className="flex-1 max-w-[100px]">
         <div className="h-1.5 bg-secondary/30 rounded-full overflow-hidden">
           <div
             className={cn(
@@ -217,6 +233,322 @@ function LeadScoreBadge({ score, tier }: { score: number; tier: string }) {
 }
 
 // ============================================================
+// Lead Card Component
+// ============================================================
+
+function LeadCard({ lead, onSave }: { lead: LeadDataItem; onSave?: () => void }) {
+  return (
+    <div className="rounded-lg border border-border/25 bg-secondary/10 p-3 space-y-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-foreground/90 truncate">{lead.name}</div>
+          <div className="text-[11px] text-muted-foreground/70 truncate">{lead.title}</div>
+        </div>
+        {lead.score !== undefined && lead.tier && (
+          <LeadScoreBadge score={lead.score} tier={lead.tier} />
+        )}
+      </div>
+      <div className="flex items-center gap-2 text-[11px] text-muted-foreground/60">
+        <Building2 className="h-3 w-3 shrink-0" />
+        <span className="truncate">{lead.company}</span>
+      </div>
+      {lead.source && (
+        <div className="text-[10px] text-muted-foreground/40 italic">via {lead.source}</div>
+      )}
+      {onSave && (
+        <Button
+          size="sm"
+          variant="outline"
+          onClick={onSave}
+          className="h-6 text-[10px] border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+        >
+          <Save className="h-2.5 w-2.5 mr-1" />
+          Save Lead
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// ICP Summary Card
+// ============================================================
+
+function ICPSummaryCard({ icp, onSave }: { icp: ICPData; onSave?: () => void }) {
+  return (
+    <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Target className="h-4 w-4 text-amber-400" />
+        <span className="text-sm font-semibold text-amber-400">Ideal Customer Profile</span>
+      </div>
+      {icp.description && (
+        <p className="text-xs text-foreground/70">{icp.description}</p>
+      )}
+      <div className="grid grid-cols-2 gap-2 text-xs">
+        {icp.industry && icp.industry.length > 0 && (
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider">Industries</span>
+            <div className="flex flex-wrap gap-1">
+              {icp.industry.slice(0, 3).map((ind, i) => (
+                <Badge key={i} className="text-[9px] bg-amber-500/10 text-amber-400 border-amber-500/15">
+                  {ind}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        {icp.companySize && icp.companySize.length > 0 && (
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider flex items-center gap-1"><Users className="h-2.5 w-2.5" />Size</span>
+            <div className="flex flex-wrap gap-1">
+              {icp.companySize.slice(0, 3).map((sz, i) => (
+                <Badge key={i} className="text-[9px] bg-emerald-500/10 text-emerald-400 border-emerald-500/15">
+                  {sz}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        {icp.location && icp.location.length > 0 && (
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider flex items-center gap-1"><MapPin className="h-2.5 w-2.5" />Location</span>
+            <div className="flex flex-wrap gap-1">
+              {icp.location.slice(0, 3).map((loc, i) => (
+                <Badge key={i} className="text-[9px] bg-cyan-500/10 text-cyan-400 border-cyan-500/15">
+                  {loc}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+        {icp.role && icp.role.length > 0 && (
+          <div className="space-y-1">
+            <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider flex items-center gap-1"><Briefcase className="h-2.5 w-2.5" />Roles</span>
+            <div className="flex flex-wrap gap-1">
+              {icp.role.slice(0, 3).map((role, i) => (
+                <Badge key={i} className="text-[9px] bg-pink-500/10 text-pink-400 border-pink-500/15">
+                  {role}
+                </Badge>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+      {icp.painPoints && icp.painPoints.length > 0 && (
+        <div className="space-y-1 pt-2 border-t border-amber-500/10">
+          <span className="text-[10px] text-muted-foreground/50 uppercase tracking-wider flex items-center gap-1"><Tag className="h-2.5 w-2.5" />Pain Points</span>
+          <div className="flex flex-wrap gap-1">
+            {icp.painPoints.map((pp, i) => (
+              <Badge key={i} className="text-[9px] bg-red-500/10 text-red-400 border-red-500/15">
+                {pp}
+              </Badge>
+            ))}
+          </div>
+        </div>
+      )}
+      {(icp.budgetRange || icp.decisionTimeline) && (
+        <div className="flex gap-4 text-[11px] text-muted-foreground/60 pt-1">
+          {icp.budgetRange && (
+            <span className="flex items-center gap-1"><DollarSign className="h-3 w-3" />{icp.budgetRange}</span>
+          )}
+          {icp.decisionTimeline && (
+            <span className="flex items-center gap-1"><Clock className="h-3 w-3" />{icp.decisionTimeline}</span>
+          )}
+        </div>
+      )}
+      {onSave && (
+        <Button
+          size="sm"
+          className="w-full h-7 text-[11px] bg-amber-500 hover:bg-amber-400 text-black"
+          onClick={onSave}
+        >
+          <Save className="h-3 w-3 mr-1" />
+          Save ICP Profile
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Outreach Preview Component
+// ============================================================
+
+function OutreachPreview({ message, onSave }: { message: OutreachMessage; onSave?: () => void }) {
+  const isEmail = message.channel === 'email';
+  return (
+    <div className="rounded-lg border border-pink-500/20 bg-pink-500/5 p-3 space-y-2">
+      <div className="flex items-center gap-2">
+        <Badge className={cn(
+          'text-[9px] border',
+          isEmail
+            ? 'bg-blue-500/10 text-blue-400 border-blue-500/20'
+            : 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20'
+        )}>
+          {isEmail ? '✉️ Email' : '🔗 LinkedIn'}
+        </Badge>
+        <Badge className="text-[9px] bg-secondary/20 text-muted-foreground/60 border-border/20">
+          {message.tone}
+        </Badge>
+      </div>
+      {message.subject && (
+        <div className="text-xs font-medium text-foreground/80">Subject: {message.subject}</div>
+      )}
+      <div className="text-[11px] text-foreground/60 leading-relaxed line-clamp-3">
+        {message.body.slice(0, 200)}{message.body.length > 200 ? '...' : ''}
+      </div>
+      {onSave && (
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-6 text-[10px] border-pink-500/20 text-pink-400 hover:bg-pink-500/10 hover:text-pink-300"
+          onClick={onSave}
+        >
+          <Save className="h-2.5 w-2.5 mr-1" />
+          Save Template
+        </Button>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
+// Save Target Button
+// ============================================================
+
+function SaveTargetButton({
+  saveTarget,
+  isSaved,
+  isSaving,
+  onSave,
+}: {
+  saveTarget: SaveTarget;
+  isSaved: boolean;
+  isSaving: boolean;
+  onSave: (st: SaveTarget) => void;
+}) {
+  const viewLabel = VIEW_LABELS[saveTarget.viewTarget] || saveTarget.viewTarget;
+  const viewIconMap: Record<string, React.ElementType> = {
+    leads: Users,
+    icp: Target,
+    outreach: Mail,
+    'data-enrichment': Building2,
+    analytics: BarChart3,
+    reports: TrendingUp,
+    'prospect-discovery': Search,
+  };
+  const Icon = viewIconMap[saveTarget.viewTarget] || Save;
+
+  return (
+    <Button
+      size="sm"
+      className={cn(
+        'h-7 text-[10px] gap-1.5 transition-all',
+        isSaved
+          ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30'
+          : 'bg-emerald-500 hover:bg-emerald-400 text-black'
+      )}
+      disabled={isSaving || isSaved}
+      onClick={() => !isSaved && onSave(saveTarget)}
+    >
+      {isSaving ? (
+        <Loader2 className="h-3 w-3 animate-spin" />
+      ) : isSaved ? (
+        <CheckCircle className="h-3 w-3" />
+      ) : (
+        <Icon className="h-3 w-3" />
+      )}
+      {isSaved ? `Saved to ${viewLabel}` : `${saveTarget.label} → ${viewLabel}`}
+    </Button>
+  );
+}
+
+// ============================================================
+// Action Results Section
+// ============================================================
+
+function ActionResultsSection({
+  message,
+  onSaveTarget,
+}: {
+  message: ChatMessage;
+  onSaveTarget: (messageId: string, saveTarget: SaveTarget) => void;
+}) {
+  const [savingTargetId, setSavingTargetId] = useState<string | null>(null);
+  const hasAnyData = (message.leadData && message.leadData.length > 0) ||
+    message.icpData ||
+    (message.outreachData && message.outreachData.length > 0) ||
+    (message.saveTargets && message.saveTargets.length > 0);
+
+  if (!hasAnyData) return null;
+
+  const handleSave = async (st: SaveTarget) => {
+    setSavingTargetId(st.id);
+    try {
+      await onSaveTarget(message.id, st);
+    } catch (err) {
+      console.error('Save failed:', err);
+    } finally {
+      setSavingTargetId(null);
+    }
+  };
+
+  return (
+    <div className="mt-3 pt-3 border-t border-border/15 space-y-3">
+      {/* Save Buttons */}
+      {message.saveTargets && message.saveTargets.length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {message.saveTargets.map((st) => (
+            <SaveTargetButton
+              key={st.id}
+              saveTarget={st}
+              isSaved={message.savedTargets?.includes(st.id) || false}
+              isSaving={savingTargetId === st.id}
+              onSave={handleSave}
+            />
+          ))}
+        </div>
+      )}
+
+      {/* Lead Cards */}
+      {message.leadData && message.leadData.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
+            <Search className="h-3 w-3" />
+            Discovered Leads ({message.leadData.length})
+          </div>
+          <div className="grid gap-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+            {message.leadData.map((lead, i) => (
+              <LeadCard key={`${lead.name}-${i}`} lead={lead} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ICP Card */}
+      {message.icpData && (
+        <ICPSummaryCard icp={message.icpData} />
+      )}
+
+      {/* Outreach Previews */}
+      {message.outreachData && message.outreachData.length > 0 && (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 text-[10px] font-semibold text-pink-400 uppercase tracking-wider">
+            <Mail className="h-3 w-3" />
+            Outreach Messages ({message.outreachData.length})
+          </div>
+          <div className="grid gap-2 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+            {message.outreachData.map((msg, i) => (
+              <OutreachPreview key={`outreach-${i}`} message={msg} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================
 // Message Bubble Component
 // ============================================================
 
@@ -225,22 +557,32 @@ function MessageBubble({
   onCopy,
   onFeedback,
   onRegenerate,
+  onSaveTarget,
 }: {
   message: ChatMessage;
   onCopy: (id: string) => void;
   onFeedback: (id: string, type: 'up' | 'down') => void;
   onRegenerate: (id: string) => void;
+  onSaveTarget: (messageId: string, saveTarget: SaveTarget) => void;
 }) {
   const isUser = message.role === 'user';
   const [showActions, setShowActions] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
+  const [showResults, setShowResults] = useState(true);
 
   const handleCopy = () => {
     onCopy(message.id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
+
+  const actionConfig = message.actionType ? ACTION_CONFIG[message.actionType] : null;
+
+  const hasActionData = (message.leadData && message.leadData.length > 0) ||
+    message.icpData ||
+    (message.outreachData && message.outreachData.length > 0) ||
+    (message.saveTargets && message.saveTargets.length > 0);
 
   return (
     <div
@@ -256,7 +598,7 @@ function MessageBubble({
             ? 'bg-emerald-500/15 border border-emerald-500/20'
             : message.isError
             ? 'bg-red-500/10 border border-red-500/20'
-            : message.isResearchReport
+            : message.isResearchReport || actionConfig
             ? 'bg-gradient-to-br from-violet-500/20 to-emerald-500/20 border border-violet-500/20'
             : 'bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/15',
         )}
@@ -265,7 +607,7 @@ function MessageBubble({
           <span className="text-xs font-bold text-emerald-400">U</span>
         ) : message.isError ? (
           <AlertCircle className="h-4 w-4 text-red-400" />
-        ) : message.isResearchReport ? (
+        ) : message.isResearchReport || actionConfig ? (
           <Sparkles className="h-4 w-4 text-violet-400" />
         ) : (
           <Bot className="h-4 w-4 text-emerald-400" />
@@ -284,6 +626,20 @@ function MessageBubble({
           </span>
         </div>
 
+        {/* Action Badge */}
+        {actionConfig && !message.isLoading && (
+          <div className={cn(
+            'flex items-center gap-1.5 mb-2 px-2.5 py-1 rounded-full border text-[10px] font-semibold',
+            actionConfig.bgColor, actionConfig.color, actionConfig.borderColor
+          )}>
+            <span>{actionConfig.emoji}</span>
+            <span>{message.actionLabel}</span>
+            {message.isStreaming && (
+              <Loader2 className="h-2.5 w-2.5 animate-spin ml-1" />
+            )}
+          </div>
+        )}
+
         {/* Bubble */}
         <div
           className={cn(
@@ -292,7 +648,7 @@ function MessageBubble({
               ? 'bg-emerald-500/10 border border-emerald-500/15 text-foreground/90 rounded-tr-md'
               : message.isError
               ? 'bg-red-500/5 border border-red-500/15 text-red-300/80 rounded-tl-md'
-              : message.isResearchReport
+              : message.isResearchReport || actionConfig
               ? 'bg-secondary/15 border border-violet-500/10 rounded-tl-md'
               : 'bg-secondary/15 border border-border/15 rounded-tl-md',
           )}
@@ -343,6 +699,22 @@ function MessageBubble({
             </>
           )}
         </div>
+
+        {/* Action Results Section (below the bubble) */}
+        {!message.isLoading && hasActionData && (
+          <div className="w-full mt-2">
+            <button
+              onClick={() => setShowResults(!showResults)}
+              className="flex items-center gap-1.5 text-[10px] text-emerald-400/70 hover:text-emerald-400 transition-colors mb-2"
+            >
+              <ChevronDown className={cn('h-2.5 w-2.5 transition-transform', showResults && 'rotate-180')} />
+              <span>{showResults ? 'Hide' : 'Show'} results & actions</span>
+            </button>
+            {showResults && (
+              <ActionResultsSection message={message} onSaveTarget={onSaveTarget} />
+            )}
+          </div>
+        )}
 
         {/* Action buttons */}
         {!message.isLoading && showActions && !isUser && (
@@ -450,16 +822,15 @@ export function AIAssistantWidget() {
     setInput(e.target.value);
     const textarea = e.target;
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 144) + 'px'; // max ~6 lines
+    textarea.style.height = Math.min(textarea.scrollHeight, 144) + 'px';
   };
 
   const handleSend = async () => {
     if (!input.trim() || engine.isStreaming || engine.isThinking) return;
     const msg = input.trim();
     setInput('');
-    // Reset textarea height
     if (inputRef.current) inputRef.current.style.height = 'auto';
-    await engine.sendMessage(msg, systemPromptWithCtx);
+    await engine.sendMessage(msg, systemPromptWithCtx, currentViewLabel);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -471,7 +842,7 @@ export function AIAssistantWidget() {
 
   const handleQuickAction = async (prompt: string) => {
     setInput('');
-    await engine.sendMessage(prompt, systemPromptWithCtx);
+    await engine.sendMessage(prompt, systemPromptWithCtx, currentViewLabel);
   };
 
   const handleNavigate = (view: ViewType) => {
@@ -480,12 +851,21 @@ export function AIAssistantWidget() {
   };
 
   const handleRegenerate = async (messageId: string) => {
-    await engine.regenerateLastMessage(systemPromptWithCtx);
+    await engine.regenerateLastMessage(systemPromptWithCtx, currentViewLabel);
+  };
+
+  const handleSaveTarget = async (messageId: string, saveTarget: SaveTarget) => {
+    try {
+      await engine.saveToSection(messageId, saveTarget);
+      // Navigate to the target view after saving
+      setActiveView(saveTarget.viewTarget);
+    } catch (err) {
+      console.error('Failed to save:', err);
+    }
   };
 
   const handleExpand = () => {
     setActiveView('dashboard' as ViewType);
-    // For now, just maximize the panel — in a real app, this would navigate to the full view
   };
 
   return (
@@ -524,7 +904,7 @@ export function AIAssistantWidget() {
           'bg-card/95 backdrop-blur-xl border-l border-border/30',
           'shadow-2xl shadow-black/30',
           'transition-transform duration-300 ease-out',
-          'w-full md:w-[420px]',
+          'w-full md:w-[480px]',
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
       >
@@ -595,7 +975,7 @@ export function AIAssistantWidget() {
         <div
           ref={scrollAreaRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto py-2"
+          className="flex-1 overflow-y-auto py-2 custom-scrollbar"
           style={{ scrollBehavior: 'smooth' }}
         >
           {engine.messages.length === 0 ? (
@@ -664,6 +1044,7 @@ export function AIAssistantWidget() {
                   onCopy={engine.copyMessage}
                   onFeedback={engine.feedbackMessage}
                   onRegenerate={handleRegenerate}
+                  onSaveTarget={handleSaveTarget}
                 />
               ))}
 
@@ -762,7 +1143,7 @@ export function AIAssistantWidget() {
             </span>
             <Badge variant="outline" className="text-[8px] border-emerald-500/15 text-emerald-400/60 bg-emerald-500/5 h-4 px-1.5">
               <Zap className="h-2 w-2 mr-0.5" />
-              AI
+              Smart AI
             </Badge>
           </div>
         </div>

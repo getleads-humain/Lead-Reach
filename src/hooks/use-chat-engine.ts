@@ -1,7 +1,7 @@
 'use client';
 
 import { useState, useCallback, useRef, useEffect } from 'react';
-import { safeFetchJSON } from '@/lib/utils';
+import type { ViewType } from '@/lib/types';
 
 // ============================================================
 // Types
@@ -12,6 +12,47 @@ export interface ResearchStageInfo {
   label: string;
   status: 'pending' | 'running' | 'completed' | 'failed';
   detail?: string;
+}
+
+export interface LeadDataItem {
+  name: string;
+  company: string;
+  title: string;
+  email?: string;
+  phone?: string;
+  score?: number;
+  tier?: 'hot' | 'warm' | 'cold';
+  source?: string;
+  reason?: string;
+  website?: string;
+  linkedin?: string;
+}
+
+export interface ICPData {
+  industry?: string[];
+  companySize?: string[];
+  location?: string[];
+  role?: string[];
+  painPoints?: string[];
+  signals?: string[];
+  budgetRange?: string;
+  decisionTimeline?: string;
+  description?: string;
+}
+
+export interface OutreachMessage {
+  channel: string;
+  subject: string;
+  body: string;
+  tone: string;
+}
+
+export interface SaveTarget {
+  id: string;
+  type: 'leads' | 'icp' | 'outreach' | 'campaign' | 'report';
+  label: string;
+  viewTarget: ViewType;
+  data: unknown;
 }
 
 export interface ChatMessage {
@@ -32,6 +73,14 @@ export interface ChatMessage {
   leadScore?: number;
   leadTier?: 'hot' | 'warm' | 'cold';
   feedback?: 'up' | 'down' | null;
+  // New smart-chat fields
+  actionType?: string;
+  actionLabel?: string;
+  saveTargets?: SaveTarget[];
+  savedTargets?: string[];
+  leadData?: LeadDataItem[];
+  icpData?: ICPData;
+  outreachData?: OutreachMessage[];
 }
 
 export interface Conversation {
@@ -52,9 +101,9 @@ export interface ChatEngine {
   streamingContent: string;
   error: string | null;
   researchStages: ResearchStageInfo[];
-  sendMessage: (content: string, systemPrompt?: string) => Promise<void>;
+  sendMessage: (content: string, systemPrompt?: string, currentPage?: string) => Promise<void>;
   stopStreaming: () => void;
-  regenerateLastMessage: (systemPrompt?: string) => Promise<void>;
+  regenerateLastMessage: (systemPrompt?: string, currentPage?: string) => Promise<void>;
   createConversation: () => void;
   switchConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
@@ -62,6 +111,7 @@ export interface ChatEngine {
   clearActiveConversation: () => void;
   copyMessage: (messageId: string) => void;
   feedbackMessage: (messageId: string, type: 'up' | 'down') => void;
+  saveToSection: (messageId: string, saveTarget: SaveTarget) => Promise<void>;
 }
 
 // ============================================================
@@ -70,8 +120,6 @@ export interface ChatEngine {
 
 const STORAGE_KEY = 'leadreach-chat-conversations';
 const MAX_CONVERSATIONS = 50;
-const STREAMING_SPEED = 12; // ms per character for typewriter effect
-const STREAMING_CHUNK_SIZE = 3; // characters per tick
 
 // ============================================================
 // Helpers
@@ -112,7 +160,6 @@ export function useChatEngine(): ChatEngine {
   const [conversations, setConversations] = useState<Conversation[]>(() => {
     const loaded = loadConversations();
     if (loaded.length > 0) return loaded;
-    // Create initial conversation
     const initial: Conversation = {
       id: generateId(),
       title: 'New Conversation',
@@ -136,8 +183,6 @@ export function useChatEngine(): ChatEngine {
   const [researchStages, setResearchStages] = useState<ResearchStageInfo[]>([]);
 
   const abortRef = useRef<AbortController | null>(null);
-  const streamingTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const streamingFullContentRef = useRef('');
 
   // Get active messages
   const activeConversation = conversations.find(c => c.id === activeConversationId);
@@ -148,79 +193,34 @@ export function useChatEngine(): ChatEngine {
     saveConversations(conversations);
   }, [conversations]);
 
-  // Cleanup streaming on unmount
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      if (streamingTimerRef.current) clearTimeout(streamingTimerRef.current);
       if (abortRef.current) abortRef.current.abort();
     };
   }, []);
 
   // ============================================================
-  // Simulated streaming typewriter effect
+  // Update a specific message in the active conversation
   // ============================================================
 
-  const startStreamingEffect = useCallback((fullContent: string, messageId: string) => {
-    streamingFullContentRef.current = fullContent;
-    let currentIndex = 0;
-
-    const tick = () => {
-      currentIndex = Math.min(currentIndex + STREAMING_CHUNK_SIZE, fullContent.length);
-      const currentContent = fullContent.slice(0, currentIndex);
-      setStreamingContent(currentContent);
-
-      // Also update the message in conversations
-      setConversations(prev => prev.map(c => {
-        if (c.id !== activeConversationId) return c;
-        return {
-          ...c,
-          messages: c.messages.map(m =>
-            m.id === messageId
-              ? { ...m, content: currentContent, isStreaming: currentIndex < fullContent.length }
-              : m
-          ),
-        };
-      }));
-
-      if (currentIndex < fullContent.length) {
-        streamingTimerRef.current = setTimeout(tick, STREAMING_SPEED);
-      } else {
-        // Streaming complete
-        setIsStreaming(false);
-        setStreamingContent('');
-        setConversations(prev => prev.map(c => {
-          if (c.id !== activeConversationId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === messageId ? { ...m, isStreaming: false } : m
-            ),
-          };
-        }));
-      }
-    };
-
-    setIsStreaming(true);
-    tick();
+  const updateMessage = useCallback((messageId: string, updates: Partial<ChatMessage>) => {
+    setConversations(prev => prev.map(c => {
+      if (c.id !== activeConversationId) return c;
+      return {
+        ...c,
+        messages: c.messages.map(m =>
+          m.id === messageId ? { ...m, ...updates } : m
+        ),
+      };
+    }));
   }, [activeConversationId]);
 
-  const stopStreamingEffect = useCallback(() => {
-    if (streamingTimerRef.current) {
-      clearTimeout(streamingTimerRef.current);
-      streamingTimerRef.current = null;
-    }
-    // Finalize the message with full content
-    const fullContent = streamingFullContentRef.current;
-    setStreamingContent('');
-    setIsStreaming(false);
-    return fullContent;
-  }, []);
-
   // ============================================================
-  // Send Message
+  // Send Message — calls /api/ai-assistant/smart-chat with SSE
   // ============================================================
 
-  const sendMessage = useCallback(async (content: string, systemPrompt?: string) => {
+  const sendMessage = useCallback(async (content: string, systemPrompt?: string, currentPage?: string) => {
     if (!content.trim() || isStreaming) return;
 
     const convId = activeConversationId;
@@ -257,6 +257,7 @@ export function useChatEngine(): ChatEngine {
     }));
 
     setIsThinking(true);
+    setIsStreaming(true);
     setError(null);
     setResearchStages([]);
 
@@ -276,174 +277,96 @@ export function useChatEngine(): ChatEngine {
         { role: userMessage.role, content: userMessage.content },
       ];
 
-      const data = await safeFetchJSON<{ response?: string; error?: string; deepResearch?: boolean; researchQuery?: string; pipeline?: any }>(
-        '/api/ai-assistant/chat',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            messages: historyMessages,
-            systemPrompt: systemPrompt || 'You are LeadReach AI, an intelligent assistant for B2B lead generation.',
-          }),
-          signal: controller.signal,
-        }
-      );
-
-      if (controller.signal.aborted) return;
-
-      // Check for deep research trigger
-      if (data.deepResearch) {
-        const researchQuery = data.researchQuery || content.trim();
-        setConversations(prev => prev.map(c => {
-          if (c.id !== convId) return c;
-          return {
-            ...c,
-            messages: c.messages.map(m =>
-              m.id === thinkingMessage.id
-                ? { ...m, content: 'Initiating deep research pipeline...', isLoading: true }
-                : m
-            ),
-          };
-        }));
-        await executeDeepResearch(researchQuery, thinkingMessage.id, convId, controller);
-        return;
-      }
-
-      const responseText = data.response || data.error || 'No response received.';
-
-      // Remove thinking message and add real AI message with streaming
-      const aiMessageId = generateId();
-      setConversations(prev => prev.map(c => {
-        if (c.id !== convId) return c;
-        const filtered = c.messages.filter(m => m.id !== thinkingMessage.id);
-        const aiMessage: ChatMessage = {
-          id: aiMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          isError: !!data.error,
-          isStreaming: true,
-          pipelineTriggered: data.pipeline || null,
-        };
-        return { ...c, messages: [...filtered, aiMessage] };
-      }));
-
-      setIsThinking(false);
-      startStreamingEffect(responseText, aiMessageId);
-
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return;
-
-      const errMsg = err instanceof Error ? err.message : 'Failed to get AI response';
-      const isRateLimitError = errMsg.includes('429') || errMsg.includes('rate limit') || errMsg.includes('high demand');
-      const errorContent = isRateLimitError
-        ? 'The AI service is currently experiencing high demand. Please wait a moment and try again.'
-        : `I encountered an error: ${errMsg}. Please try again.`;
-
-      setError(errorContent);
-
-      // Replace thinking message with error
-      setConversations(prev => prev.map(c => {
-        if (c.id !== convId) return c;
-        return {
-          ...c,
-          messages: c.messages.map(m =>
-            m.id === thinkingMessage.id
-              ? { ...m, content: errorContent, isLoading: false, isError: true }
-              : m
-          ),
-        };
-      }));
-      setIsThinking(false);
-    }
-  }, [activeConversationId, conversations, isStreaming, startStreamingEffect]);
-
-  // ============================================================
-  // Deep Research SSE Handler
-  // ============================================================
-
-  const executeDeepResearch = useCallback(async (
-    query: string,
-    loadingMessageId: string,
-    convId: string,
-    parentController: AbortController,
-    retryCount = 0,
-  ) => {
-    let finalMarkdown = '';
-    let finalLeadScore = 0;
-    let finalLeadTier: 'hot' | 'warm' | 'cold' = 'cold';
-    const collectedStages: ResearchStageInfo[] = [];
-    const MAX_RETRIES = 2;
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 180_000);
-
-      const response = await fetch('/api/ai-assistant/deep-research', {
+      const response = await fetch('/api/ai-assistant/smart-chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ query }),
+        body: JSON.stringify({
+          messages: historyMessages,
+          systemPrompt: systemPrompt || 'You are LeadReach AI, an intelligent assistant for B2B lead generation.',
+          currentPage: currentPage || '',
+        }),
         signal: controller.signal,
       });
 
-      clearTimeout(timeoutId);
-
       if (!response.ok) {
-        let errorDetail = `Deep research API returned ${response.status}`;
-        try {
-          const errorBody = await response.json();
-          if (errorBody.error) errorDetail = errorBody.error;
-          if (errorBody.details) errorDetail += ` — ${errorBody.details}`;
-        } catch {
-          errorDetail = `Deep research API returned ${response.status}: ${response.statusText}`;
-        }
-
-        if ((response.status === 502 || response.status === 503) && retryCount < MAX_RETRIES) {
-          const delay = (retryCount + 1) * 2000;
-          setConversations(prev => prev.map(c => {
-            if (c.id !== convId) return c;
-            return {
-              ...c,
-              messages: c.messages.map(m =>
-                m.id === loadingMessageId
-                  ? { ...m, content: `Retrying research pipeline (attempt ${retryCount + 2})...` }
-                  : m
-              ),
-            };
-          }));
-          await new Promise(r => setTimeout(r, delay));
-          return executeDeepResearch(query, loadingMessageId, convId, parentController, retryCount + 1);
-        }
-        throw new Error(errorDetail);
+        throw new Error(`API returned ${response.status}`);
       }
+
+      if (controller.signal.aborted) return;
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error('No readable stream');
 
       const decoder = new TextDecoder();
       let buffer = '';
+      let accumulatedContent = '';
+      let actionType = '';
+      let actionLabel = '';
+      const collectedSaveTargets: SaveTarget[] = [];
+      const collectedLeads: LeadDataItem[] = [];
+      let collectedICP: ICPData | undefined;
+      const collectedOutreach: OutreachMessage[] = [];
+      const collectedStages: ResearchStageInfo[] = [];
+
+      // Transition from loading to streaming
+      updateMessage(thinkingMessage.id, {
+        isLoading: false,
+        isStreaming: true,
+        content: '',
+      });
+
+      setIsThinking(false);
 
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
+
         buffer += decoder.decode(value, { stream: true });
         const events = buffer.split('\n\n');
         buffer = events.pop() || '';
 
         for (const event of events) {
           const lines = event.split('\n');
+          let eventType = '';
+          let eventData = '';
+
           for (const line of lines) {
-            if (line.startsWith(':')) continue;
-            if (!line.startsWith('data: ')) continue;
+            if (line.startsWith('event: ')) {
+              eventType = line.slice(7).trim();
+            } else if (line.startsWith('data: ')) {
+              eventData = line.slice(6);
+            }
+          }
 
-            try {
-              const data = JSON.parse(line.slice(6));
+          if (!eventData) continue;
 
-              if (data.type === 'progress') {
+          try {
+            const data = JSON.parse(eventData);
+
+            switch (eventType) {
+              case 'thinking': {
+                updateMessage(thinkingMessage.id, {
+                  content: data.content || 'Thinking...',
+                });
+                break;
+              }
+
+              case 'action_detected': {
+                actionType = data.action || '';
+                actionLabel = data.label || '';
+                updateMessage(thinkingMessage.id, {
+                  actionType,
+                  actionLabel,
+                  content: '',
+                });
+                break;
+              }
+
+              case 'progress': {
                 const stageInfo: ResearchStageInfo = {
-                  stage: data.stage,
-                  label: data.label,
-                  status: data.status,
+                  stage: data.stage || '',
+                  label: data.label || '',
+                  status: 'completed' as const,
                   detail: data.detail,
                 };
                 const existingIdx = collectedStages.findIndex(s => s.stage === data.stage);
@@ -459,91 +382,164 @@ export function useChatEngine(): ChatEngine {
                   }
                   return [...prev, stageInfo];
                 });
+                break;
+              }
 
-                setConversations(prev => prev.map(c => {
-                  if (c.id !== convId) return c;
-                  return {
-                    ...c,
-                    messages: c.messages.map(m =>
-                      m.id === loadingMessageId
-                        ? { ...m, content: `Researching: ${data.label}...` }
-                        : m
-                    ),
+              case 'content': {
+                accumulatedContent += data.chunk || '';
+                updateMessage(thinkingMessage.id, {
+                  content: accumulatedContent,
+                  isStreaming: true,
+                  actionType: actionType || undefined,
+                  actionLabel: actionLabel || undefined,
+                  researchStages: [...collectedStages],
+                });
+                break;
+              }
+
+              case 'lead_data': {
+                const leads = (data.leads || []) as LeadDataItem[];
+                collectedLeads.push(...leads);
+                updateMessage(thinkingMessage.id, {
+                  leadData: [...collectedLeads],
+                });
+                break;
+              }
+
+              case 'icp_data': {
+                collectedICP = data.icp as ICPData;
+                updateMessage(thinkingMessage.id, {
+                  icpData: collectedICP,
+                });
+                break;
+              }
+
+              case 'outreach_data': {
+                const outreachMsgs = (data.messages || []) as OutreachMessage[];
+                collectedOutreach.push(...outreachMsgs);
+                updateMessage(thinkingMessage.id, {
+                  outreachData: [...collectedOutreach],
+                });
+                break;
+              }
+
+              case 'action_result': {
+                const saveTarget = data.saveTarget as ViewType | null;
+                const action = data.action as string;
+                const resultData = data.data;
+
+                if (saveTarget) {
+                  const targetId = generateId();
+                  let type: SaveTarget['type'] = 'report';
+                  let label = 'Save Results';
+
+                  if (action === 'discover_leads') {
+                    type = 'leads';
+                    label = `Save ${collectedLeads.length} Lead${collectedLeads.length !== 1 ? 's' : ''}`;
+                  } else if (action === 'build_icp') {
+                    type = 'icp';
+                    label = 'Save ICP Profile';
+                  } else if (action === 'compose_outreach') {
+                    type = 'outreach';
+                    label = 'Save Outreach Templates';
+                  } else if (action === 'enrich_data') {
+                    type = 'report';
+                    label = 'Save Enrichment Data';
+                  }
+
+                  const st: SaveTarget = {
+                    id: targetId,
+                    type,
+                    label,
+                    viewTarget: saveTarget,
+                    data: resultData,
                   };
-                }));
+                  collectedSaveTargets.push(st);
+                }
+
+                updateMessage(thinkingMessage.id, {
+                  saveTargets: [...collectedSaveTargets],
+                  leadData: collectedLeads.length > 0 ? [...collectedLeads] : undefined,
+                  icpData: collectedICP,
+                  outreachData: collectedOutreach.length > 0 ? [...collectedOutreach] : undefined,
+                });
+                break;
               }
 
-              if (data.type === 'report') {
-                finalMarkdown = data.markdown;
-                finalLeadScore = data.leadScore || 0;
-                finalLeadTier = data.leadTier || 'cold';
+              case 'done': {
+                // Finalize the message
+                updateMessage(thinkingMessage.id, {
+                  isStreaming: false,
+                  isLoading: false,
+                  content: accumulatedContent,
+                  actionType: actionType || undefined,
+                  actionLabel: actionLabel || undefined,
+                  saveTargets: collectedSaveTargets.length > 0 ? [...collectedSaveTargets] : undefined,
+                  leadData: collectedLeads.length > 0 ? [...collectedLeads] : undefined,
+                  icpData: collectedICP,
+                  outreachData: collectedOutreach.length > 0 ? [...collectedOutreach] : undefined,
+                  researchStages: [...collectedStages],
+                  isResearchReport: collectedStages.length > 0,
+                });
+                break;
               }
 
-              if (data.type === 'error') {
-                throw new Error(data.message || 'Deep research failed');
-              }
-            } catch (parseError) {
-              if (parseError instanceof Error && !parseError.message.includes('JSON')) {
-                throw parseError;
+              case 'error': {
+                updateMessage(thinkingMessage.id, {
+                  isStreaming: false,
+                  isLoading: false,
+                  isError: true,
+                  content: data.message || 'An error occurred during processing.',
+                });
+                break;
               }
             }
+          } catch {
+            // Ignore JSON parse errors for individual events
           }
         }
       }
 
-      // Replace loading message with streamed report
-      const aiMessageId = generateId();
-      setConversations(prev => prev.map(c => {
-        if (c.id !== convId) return c;
-        const filtered = c.messages.filter(m => m.id !== loadingMessageId);
-        const aiMessage: ChatMessage = {
-          id: aiMessageId,
-          role: 'assistant',
-          content: '',
-          timestamp: Date.now(),
-          isStreaming: true,
-          researchStages: collectedStages,
-          isResearchReport: true,
-          leadScore: finalLeadScore,
-          leadTier: finalLeadTier,
-        };
-        return { ...c, messages: [...filtered, aiMessage] };
-      }));
+      // Ensure message is finalized
+      updateMessage(thinkingMessage.id, {
+        isStreaming: false,
+        isLoading: false,
+        content: accumulatedContent,
+        actionType: actionType || undefined,
+        actionLabel: actionLabel || undefined,
+        saveTargets: collectedSaveTargets.length > 0 ? [...collectedSaveTargets] : undefined,
+        leadData: collectedLeads.length > 0 ? [...collectedLeads] : undefined,
+        icpData: collectedICP,
+        outreachData: collectedOutreach.length > 0 ? [...collectedOutreach] : undefined,
+        researchStages: [...collectedStages],
+      });
 
+      setStreamingContent('');
+      setIsStreaming(false);
       setResearchStages([]);
+    } catch (err) {
+      if ((err as Error).name === 'AbortError') return;
+
+      const errMsg = err instanceof Error ? err.message : 'Failed to get AI response';
+      const isRateLimitError = errMsg.includes('429') || errMsg.includes('rate limit') || errMsg.includes('high demand');
+      const errorContent = isRateLimitError
+        ? 'The AI service is currently experiencing high demand. Please wait a moment and try again.'
+        : `I encountered an error: ${errMsg}. Please try again.`;
+
+      setError(errorContent);
+
+      // Replace thinking message with error
+      updateMessage(thinkingMessage.id, {
+        content: errorContent,
+        isLoading: false,
+        isStreaming: false,
+        isError: true,
+      });
+
       setIsThinking(false);
-      startStreamingEffect(
-        finalMarkdown || 'Research completed but no report was generated. Please try again.',
-        aiMessageId,
-      );
-
-    } catch (error) {
-      const errMsg = error instanceof Error ? error.message : 'Unknown error';
-      let userMessage: string;
-
-      if (error instanceof DOMException && error.name === 'AbortError') {
-        userMessage = 'The research pipeline timed out. Try being more specific with your query.';
-      } else if (errMsg.includes('502') || errMsg.includes('503')) {
-        userMessage = 'The research service is temporarily unavailable. Please try again.';
-      } else {
-        userMessage = `Deep research encountered an error: ${errMsg}`;
-      }
-
-      setConversations(prev => prev.map(c => {
-        if (c.id !== convId) return c;
-        return {
-          ...c,
-          messages: c.messages.map(m =>
-            m.id === loadingMessageId
-              ? { ...m, content: userMessage, isLoading: false, isError: true }
-              : m
-          ),
-        };
-      }));
-      setResearchStages([]);
-      setIsThinking(false);
+      setIsStreaming(false);
     }
-  }, [startStreamingEffect]);
+  }, [activeConversationId, conversations, isStreaming, updateMessage]);
 
   // ============================================================
   // Stop Streaming
@@ -554,15 +550,16 @@ export function useChatEngine(): ChatEngine {
       abortRef.current.abort();
       abortRef.current = null;
     }
-    stopStreamingEffect();
     setIsThinking(false);
-  }, [stopStreamingEffect]);
+    setIsStreaming(false);
+    setStreamingContent('');
+  }, []);
 
   // ============================================================
   // Regenerate Last Message
   // ============================================================
 
-  const regenerateLastMessage = useCallback(async (systemPrompt?: string) => {
+  const regenerateLastMessage = useCallback(async (systemPrompt?: string, currentPage?: string) => {
     const conv = conversations.find(c => c.id === activeConversationId);
     if (!conv) return;
 
@@ -580,8 +577,54 @@ export function useChatEngine(): ChatEngine {
     }));
 
     // Re-send
-    await sendMessage(lastUserMsg.content, systemPrompt);
+    await sendMessage(lastUserMsg.content, systemPrompt, currentPage);
   }, [conversations, activeConversationId, sendMessage]);
+
+  // ============================================================
+  // Save To Section
+  // ============================================================
+
+  const saveToSection = useCallback(async (messageId: string, saveTarget: SaveTarget): Promise<void> => {
+    try {
+      const response = await fetch('/api/ai-assistant/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: saveTarget.type,
+          data: saveTarget.data,
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: 'Save failed' }));
+        throw new Error(errorData.error || `Save failed with status ${response.status}`);
+      }
+
+      const result = await response.json();
+
+      // Update the message's savedTargets
+      setConversations(prev => prev.map(c => {
+        if (c.id !== activeConversationId) return c;
+        return {
+          ...c,
+          messages: c.messages.map(m =>
+            m.id === messageId
+              ? {
+                  ...m,
+                  savedTargets: [...(m.savedTargets || []), saveTarget.id],
+                  saveTargets: m.saveTargets?.filter(st => st.id !== saveTarget.id),
+                }
+              : m
+          ),
+        };
+      }));
+
+      return result;
+    } catch (error) {
+      console.error('[saveToSection] Error:', error);
+      throw error;
+    }
+  }, [activeConversationId]);
 
   // ============================================================
   // Conversation Management
@@ -688,5 +731,6 @@ export function useChatEngine(): ChatEngine {
     clearActiveConversation,
     copyMessage,
     feedbackMessage,
+    saveToSection,
   };
 }
