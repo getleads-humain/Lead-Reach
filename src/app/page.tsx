@@ -282,7 +282,8 @@ export default function LandingPage() {
               How It Works
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Three steps to <span className="text-gradient">autonomous lead generation</span>
+              Three steps to{' '}
+              <span className="text-gradient">autonomous lead generation</span>
             </h2>
             <p className="mt-4 text-muted-foreground">
               Set up once, let AI agents handle the rest. Your pipeline runs 24/7.
@@ -348,7 +349,8 @@ export default function LandingPage() {
               AI Setter Advantage
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Outperform human setters. <span className="text-gradient">At a fraction of the cost.</span>
+              Outperform human setters.{' '}
+              <span className="text-gradient">At a fraction of the cost.</span>
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -430,7 +432,8 @@ export default function LandingPage() {
               Conversational Booking
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Say goodbye to booking links. <span className="text-gradient">Hello, conversational booking.</span>
+              Say goodbye to booking links.{' '}
+              <span className="text-gradient">Hello, conversational booking.</span>
             </h2>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
@@ -462,7 +465,8 @@ export default function LandingPage() {
                 Multi-Channel
               </Badge>
               <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
-                Every channel connected. <span className="text-gradient">One unified inbox.</span>
+                Every channel connected.{' '}
+              <span className="text-gradient">One unified inbox.</span>
               </h2>
               <p className="text-muted-foreground mb-8">
                 SMS, WhatsApp, Instagram, and Facebook Messenger — all in one place. Native GoHighLevel integration means setup in minutes, not hours.
@@ -534,7 +538,8 @@ export default function LandingPage() {
               Features
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Everything you need for <span className="text-gradient">intelligent lead generation</span>
+              Everything you need for{' '}
+              <span className="text-gradient">intelligent lead generation</span>
             </h2>
             <p className="mt-4 text-muted-foreground">
               A complete platform powered by AI agents that work together autonomously.
@@ -568,7 +573,8 @@ export default function LandingPage() {
               AI Workforce
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Meet your <span className="text-gradient">AI workforce</span>
+              Meet your{' '}
+              <span className="text-gradient">AI workforce</span>
             </h2>
             <p className="mt-4 text-muted-foreground">
               8 specialized agents that collaborate autonomously to deliver qualified leads.
@@ -611,7 +617,8 @@ export default function LandingPage() {
               Pricing
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Simple, transparent <span className="text-gradient">pricing</span>
+              Simple, transparent{' '}
+              <span className="text-gradient">pricing</span>
             </h2>
             <p className="mt-4 text-muted-foreground">
               Start free, scale as you grow. No hidden fees, no long-term contracts.
@@ -680,7 +687,8 @@ export default function LandingPage() {
               Testimonials
             </Badge>
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
-              Loved by <span className="text-gradient">sales teams</span>
+              Loved by{' '}
+              <span className="text-gradient">sales teams</span>
             </h2>
             <p className="mt-4 text-muted-foreground">
               Hear from teams that transformed their lead generation with LeadReach AI.
@@ -725,7 +733,7 @@ export default function LandingPage() {
             <div className="relative">
               <h2 className="text-3xl sm:text-4xl lg:text-5xl font-bold text-foreground">
                 Ready to Transform Your{' '}
-                <span className="text-gradient">Lead Generation?</span>
+                <span className="text-gradient"> Lead Generation?</span>
               </h2>
               <p className="mt-4 text-lg text-muted-foreground max-w-xl mx-auto">
                 Join hundreds of sales teams using autonomous AI agents to fill their pipeline with qualified leads on autopilot.
