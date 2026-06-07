@@ -3,7 +3,23 @@
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
-import { Zap, Menu, X, Github, Twitter, Linkedin } from 'lucide-react';
+import { Zap, Menu, X, Github, Linkedin } from 'lucide-react';
+
+// Custom ORCID icon (not available in lucide-react)
+function OrcidIcon({ className }: { className?: string }) {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 256 256"
+      className={className}
+      fill="currentColor"
+    >
+      <path d="M256 128c0 70.7-57.3 128-128 128S0 198.7 0 128 57.3 0 128 0s128 57.3 128 128Z" fill="currentColor" opacity="0" />
+      <path d="M86.3 186.2H70.9V79.1h15.4v107.1Zm-7.7-120c-5.7 0-10.3-4.6-10.3-10.3S73 45.6 78.6 45.6c5.7 0 10.3 4.6 10.3 10.3 0 5.7-4.6 10.3-10.3 10.3Zm80.1 120c-3.4 0-6.2-2.8-6.2-6.2v-48c0-18.5-9.9-28.6-26.4-28.6-12.4 0-21.3 6.8-25.3 15.3V79.1H85.4v107.1h15.4v-44.2c0-12.2 8.3-21.8 20.4-21.8 11.2 0 17.2 7.1 17.2 19.8v46.2c0 3.4 2.8 6.2 6.2 6.2h8.1v-.2Z" fill="currentColor" />
+      <circle cx="78.6" cy="55.9" r="10.3" fill="currentColor" />
+    </svg>
+  );
+}
 
 const NAV_LINKS = [
   { href: '/#features', label: 'Features' },
@@ -109,14 +125,14 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
                 Autonomous AI agents that discover, enrich, qualify, and engage leads while you sleep.
               </p>
               <div className="mt-4 flex items-center gap-3">
-                <a href="https://twitter.com/LeadReachAI" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="Twitter">
-                  <Twitter className="h-4 w-4" />
+                <a href="https://orcid.org/0009-0000-3925-4823" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-[#A6CE39] transition-colors" aria-label="ORCID">
+                  <OrcidIcon className="h-4 w-4" />
                 </a>
-                <a href="https://linkedin.com/company/leadreach-ai" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="LinkedIn">
-                  <Linkedin className="h-4 w-4" />
-                </a>
-                <a href="https://github.com/LeadReachAI" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
+                <a href="https://github.com/getleads-humain/Lead-Reach" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-foreground transition-colors" aria-label="GitHub">
                   <Github className="h-4 w-4" />
+                </a>
+                <a href="https://www.linkedin.com/showcase/lead-reach-ai-corp/" target="_blank" rel="noopener noreferrer" className="text-muted-foreground hover:text-[#0A66C2] transition-colors" aria-label="LinkedIn">
+                  <Linkedin className="h-4 w-4" />
                 </a>
               </div>
             </div>

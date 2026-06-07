@@ -196,7 +196,7 @@ export interface UserProfile {
   avatarUrl: string;
   socialLinks: {
     linkedin: string;
-    twitter: string;
+    orcid: string;
     github: string;
     website: string;
   };
@@ -232,7 +232,7 @@ export const EMPTY_USER_PROFILE: UserProfile = {
   bio: '',
   location: '',
   avatarUrl: '',
-  socialLinks: { linkedin: '', twitter: '', github: '', website: '' },
+  socialLinks: { linkedin: '', orcid: '', github: '', website: '' },
   companyName: '',
   companyRole: '',
   companyIndustry: '',

@@ -25,7 +25,7 @@ interface IdentityProfileData {
   avatarUrl: string;
   socialLinks: {
     linkedin: string;
-    twitter: string;
+    orcid: string;
     github: string;
     website: string;
   };
@@ -70,7 +70,7 @@ export async function GET() {
       bio: profile.bio,
       location: profile.location,
       avatarUrl: profile.avatarUrl,
-      socialLinks: safeJsonParse(profile.socialLinks, { linkedin: '', twitter: '', github: '', website: '' }),
+      socialLinks: safeJsonParse(profile.socialLinks, { linkedin: '', orcid: '', github: '', website: '' }),
       companyName: profile.companyName,
       companyRole: profile.companyRole,
       companyIndustry: profile.companyIndustry,
@@ -101,7 +101,7 @@ export async function PUT(request: NextRequest) {
     const data: IdentityProfileData = body.profile || body;
 
     // Serialize complex fields to JSON strings for SQLite storage
-    const socialLinksJson = JSON.stringify(data.socialLinks || { linkedin: '', twitter: '', github: '', website: '' });
+    const socialLinksJson = JSON.stringify(data.socialLinks || { linkedin: '', orcid: '', github: '', website: '' });
     const portfolioItemsJson = JSON.stringify(data.portfolioItems || []);
 
     const profile = await prisma.userProfile.upsert({
@@ -158,7 +158,7 @@ export async function PUT(request: NextRequest) {
       bio: profile.bio,
       location: profile.location,
       avatarUrl: profile.avatarUrl,
-      socialLinks: safeJsonParse(profile.socialLinks, { linkedin: '', twitter: '', github: '', website: '' }),
+      socialLinks: safeJsonParse(profile.socialLinks, { linkedin: '', orcid: '', github: '', website: '' }),
       companyName: profile.companyName,
       companyRole: profile.companyRole,
       companyIndustry: profile.companyIndustry,

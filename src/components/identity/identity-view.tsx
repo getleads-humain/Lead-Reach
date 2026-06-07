@@ -32,7 +32,6 @@ import {
   Building2,
   Globe,
   Linkedin,
-  Twitter,
   Github,
   Plus,
   Trash2,
@@ -465,15 +464,18 @@ export function IdentityView() {
                   </div>
                   <div className="space-y-2">
                     <Label className="flex items-center gap-1.5 text-xs">
-                      <Twitter className="h-3.5 w-3.5 text-sky-400" />
-                      Twitter / X
+                      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256" className="h-3.5 w-3.5 text-[#A6CE39]" fill="currentColor">
+                        <path d="M86.3 186.2H70.9V79.1h15.4v107.1Zm-7.7-120c-5.7 0-10.3-4.6-10.3-10.3S73 45.6 78.6 45.6c5.7 0 10.3 4.6 10.3 10.3 0 5.7-4.6 10.3-10.3 10.3Zm80.1 120c-3.4 0-6.2-2.8-6.2-6.2v-48c0-18.5-9.9-28.6-26.4-28.6-12.4 0-21.3 6.8-25.3 15.3V79.1H85.4v107.1h15.4v-44.2c0-12.2 8.3-21.8 20.4-21.8 11.2 0 17.2 7.1 17.2 19.8v46.2c0 3.4 2.8 6.2 6.2 6.2h8.1v-.2Z" fill="currentColor" />
+                        <circle cx="78.6" cy="55.9" r="10.3" fill="currentColor" />
+                      </svg>
+                      ORCID
                     </Label>
                     <Input
-                      placeholder="https://x.com/yourhandle"
-                      value={userProfile.socialLinks.twitter}
+                      placeholder="https://orcid.org/0000-0000-0000-0000"
+                      value={userProfile.socialLinks.orcid}
                       onChange={(e) =>
                         setUserProfile({
-                          socialLinks: { ...userProfile.socialLinks, twitter: e.target.value },
+                          socialLinks: { ...userProfile.socialLinks, orcid: e.target.value },
                         })
                       }
                       className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
