@@ -77,6 +77,7 @@ const VIEW_LABELS: Record<ViewType, string> = {
   'prospect-discovery': 'Prospect Discovery',
   identity: 'Identity',
   icp: 'ICP Builder',
+  'ai-assistant': 'AI Assistant',
 };
 
 const SUGGESTED_PROMPTS = [
@@ -865,7 +866,8 @@ export function AIAssistantWidget() {
   };
 
   const handleExpand = () => {
-    setActiveView('dashboard' as ViewType);
+    setIsOpen(false);
+    setActiveView('ai-assistant' as ViewType);
   };
 
   return (

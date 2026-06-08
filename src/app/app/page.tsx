@@ -26,6 +26,7 @@ import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment
 import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
 import { IdentityView } from '@/components/identity/identity-view';
 import { ICPView } from '@/components/icp/icp-view';
+import { AIAssistantView } from '@/components/ai-assistant/ai-assistant-view';
 import { useAppStore } from '@/lib/store';
 import { usePlanAccess, type ViewType } from '@/hooks/use-plan-access';
 import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
@@ -160,6 +161,8 @@ export default function AppPage() {
         return <IdentityView />;
       case 'icp':
         return <ICPView />;
+      case 'ai-assistant':
+        return <AIAssistantView />;
       default:
         return <DashboardView />;
     }
