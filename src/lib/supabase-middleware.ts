@@ -76,6 +76,10 @@ export async function updateSession(request: NextRequest) {
     '/reset-password',
     '/auth/callback',
     '/about',
+    '/culture',            // Company culture page
+    '/agentic-framework',  // Full agentic system framework page
+    '/agent',              // Agent showcase page
+    '/api-docs',           // API documentation page
     '/blog',
     '/careers',
     '/contact',
