@@ -365,27 +365,66 @@ async function handleEnrichData(
 ): Promise<void> {
   send('progress', { type: 'progress', stage: 'enriching', label: 'Enriching lead data', detail: 'Adding firmographic and contact details...' });
 
-  const result = await callLLM({
-    systemPrompt: `You are a B2B data enrichment specialist working for LeadReach. Help the user enrich their lead/company data. 
-Provide specific, actionable enrichment suggestions. If they mention a specific company, suggest what data points could be added (contact info, firmographics, tech stack, etc.).
-Format your response in markdown with clear sections.`,
+  // Try to generate structured enrichment data
+  const enrichmentResult = await callLLMForJSON<{
+    enrichedLeads: Array<Record<string, unknown>>;
+  }>(
+    `You are a B2B data enrichment specialist. Based on the user's request, generate enriched lead profiles with as much detail as possible.
+
+Return JSON: { "enrichedLeads": [...] }
+Each lead should include as many of these fields as possible:
+- name: Full name of contact
+- title: Job title
+- company: Company name
+- email: Email address (use standard formats like first.last@company.com)
+- phone: Phone number with area code
+- website: Company website
+- location: City, State/Country
+- industry: Primary industry
+- companySize: Employee range (e.g., "51-200")
+- revenue: Estimated annual revenue
+- techStack: Array of technologies used
+- score: Fit score 0-100
+- tier: "hot", "warm", or "cold"
+- source: "AI Enrichment"
+
+Generate 3-5 enriched profiles. Be as specific and detailed as possible.`,
     userMessage,
+    { temperature: 0.4, thinkingBudget: 'standard' }
+  );
+
+  // Generate explanation
+  const explanation = await callLLM({
+    systemPrompt: `You are a B2B data enrichment specialist working for LeadReach. Explain the enrichment results and suggest next steps.
+
+Always include a tool navigation hint at the end like:
+- "Head over to **Data Enrichment** to enrich more leads in bulk"
+- "Use **Prospect Discovery** to find additional contacts"
+
+Format your response in markdown with clear sections.`,
+    userMessage: `I've enriched ${enrichmentResult?.enrichedLeads?.length || 0} leads for the query: "${userMessage}". Enrichment data: ${JSON.stringify(enrichmentResult?.enrichedLeads?.slice(0, 2) || [])}. Explain the results and suggest next steps.`,
     temperature: 0.4,
     model: MODEL_PRIMARY,
     useFallback: true,
   });
 
-  if (result) {
-    for (let i = 0; i < result.length; i += 20) {
-      send('content', { type: 'content', chunk: result.slice(i, i + 20) });
+  if (explanation) {
+    for (let i = 0; i < explanation.length; i += 20) {
+      send('content', { type: 'content', chunk: explanation.slice(i, i + 20) });
     }
+  }
+
+  // Send structured lead data if we got it
+  const leads = enrichmentResult?.enrichedLeads || [];
+  if (leads.length > 0) {
+    send('lead_data', { type: 'lead_data', leads });
   }
 
   send('action_result', {
     type: 'action_result',
     action: 'enrich_data',
-    data: { enrichmentSuggestions: result },
-    saveTarget: 'data-enrichment',
+    data: { enrichmentSuggestions: explanation, enrichedLeads: leads },
+    saveTarget: leads.length > 0 ? 'leads' : 'data-enrichment',
   });
 }
 
@@ -418,10 +457,14 @@ Use best practices: clear value proposition, social proof, soft CTA, short parag
     { temperature: 0.5, thinkingBudget: 'standard' }
   );
 
-  // Generate explanation text
+  // Generate explanation text with tool navigation
   const explanation = await callLLM({
-    systemPrompt: 'You are an outreach consultant. Briefly explain the outreach strategy and why these messages work. Use markdown. Keep it concise.',
-    userMessage: `I've generated ${result?.messages?.length || 0} outreach messages for the request: "${userMessage}". Briefly explain the approach.`,
+    systemPrompt: `You are an outreach consultant. Explain the outreach strategy and why these messages work. Use markdown. Keep it concise.
+
+Always include a tool navigation hint at the end like:
+- "Head over to **Outreach** to send these messages and set up sequences"
+- "Use **ICP Builder** to refine your targeting for better response rates"`,
+    userMessage: `I've generated ${result?.messages?.length || 0} outreach messages for the request: "${userMessage}". Briefly explain the approach and suggest next steps.`,
     temperature: 0.3,
     model: MODEL_PRIMARY,
     useFallback: true,
@@ -498,9 +541,14 @@ Be specific and actionable. Think about what makes a company a great fit, not ju
     { temperature: 0.3, thinkingBudget: 'standard' }
   );
 
-  // Generate explanation
+  // Generate explanation with tool navigation
   const explanation = await callLLM({
-    systemPrompt: 'You are an ICP consultant. Explain the ICP profile you built and suggest how to use it. Use markdown.',
+    systemPrompt: `You are an ICP consultant. Explain the ICP profile you built and suggest how to use it. Use markdown.
+
+Always include tool navigation hints like:
+- "Head over to **ICP Builder** to refine and save this profile"
+- "Use **Prospect Discovery** to find companies matching this ICP"
+- "Check **Outreach** to craft messages tailored to this profile"`,
     userMessage: `I've built an ICP profile: ${JSON.stringify(result?.icp || {})}. Explain it briefly and suggest next steps.`,
     temperature: 0.3,
     model: MODEL_PRIMARY,
@@ -532,12 +580,20 @@ async function handleAnalyzePipeline(
 
   const result = await callLLM({
     systemPrompt: `You are a B2B pipeline analytics expert working for LeadReach. Help the user analyze their pipeline performance, identify bottlenecks, and suggest improvements.
+
 Use markdown formatting. Include:
-- Key metrics to track
-- Common pipeline bottlenecks
-- Specific recommendations for improvement
-- Benchmark comparisons where relevant
-Be specific and actionable.`,
+- **Key Metrics**: Conversion rates, average deal size, cycle time
+- **Pipeline Health**: Stage-by-stage analysis
+- **Bottlenecks**: Where leads are getting stuck
+- **Recommendations**: Specific, actionable improvements with expected impact
+- **Benchmarks**: Industry averages for comparison
+
+Always include tool navigation hints like:
+- "Check your **Analytics** dashboard for real-time metrics"
+- "Use **Prospect Discovery** to refill the top of your funnel"
+- "Head to **Outreach** to optimize your follow-up sequences"
+
+Be specific and actionable. Use data-driven insights.`,
     userMessage,
     temperature: 0.4,
     model: MODEL_PRIMARY,
@@ -601,11 +657,16 @@ async function handleResearchMarket(
   const result = await callLLM({
     systemPrompt: `You are a market research analyst specializing in B2B markets. Provide comprehensive market research and analysis.
 Use markdown formatting with:
-- Market overview and size
-- Key trends and dynamics
-- Competitive landscape
-- Opportunities and threats
-- Strategic recommendations
+- **Market Overview**: Size, growth rate, key segments
+- **Key Trends**: Current dynamics shaping the market
+- **Competitive Landscape**: Major players and their positioning
+- **Opportunities**: Where the best prospects are
+- **Strategic Recommendations**: Actionable next steps
+
+Always include tool navigation hints like:
+- "Use **Prospect Discovery** to find companies in this market"
+- "Head to **Reports** to save this analysis for your team"
+
 Be thorough but concise.`,
     userMessage,
     temperature: 0.3,
@@ -646,7 +707,14 @@ async function handleGeneralChat(
 
   const result = await callLLM({
     systemPrompt: (systemPrompt || 'You are LeadReach AI, a helpful assistant for B2B lead generation.') +
-      '\n\nIMPORTANT: Always respond in English. Be concise, helpful, and actionable.',
+      '\n\nIMPORTANT: Always respond in English. Be concise, helpful, and actionable.' +
+      '\n\nWhen relevant, naturally suggest platform tools the user could benefit from:' +
+      '\n- "You can explore more leads in **Prospect Discovery**"' +
+      '\n- "Head over to **ICP Builder** to refine your targeting"' +
+      '\n- "Check **Outreach** to craft personalized messages"' +
+      '\n- "Your **Analytics** dashboard has pipeline insights"' +
+      '\n- "Use **Data Enrichment** to fill in missing contact details"' +
+      '\nOnly suggest tools when genuinely relevant to the conversation.',
     userMessage: fullUserMessage,
     temperature: 0.7,
     model: MODEL_PRIMARY,
