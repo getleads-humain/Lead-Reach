@@ -16,6 +16,7 @@ import {
   Target,
   Zap,
   ArrowRight,
+  ArrowUp,
   Square,
   Paperclip,
   Maximize2,
@@ -43,6 +44,7 @@ import {
   Clock,
   Briefcase,
   Tag,
+  Check,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import {
@@ -550,7 +552,7 @@ function ActionResultsSection({
 }
 
 // ============================================================
-// Message Bubble Component
+// Message Bubble Component — ChatGPT-style
 // ============================================================
 
 function MessageBubble({
@@ -567,7 +569,6 @@ function MessageBubble({
   onSaveTarget: (messageId: string, saveTarget: SaveTarget) => void;
 }) {
   const isUser = message.role === 'user';
-  const [showActions, setShowActions] = useState(false);
   const [copied, setCopied] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
   const [showResults, setShowResults] = useState(true);
@@ -585,48 +586,55 @@ function MessageBubble({
     (message.outreachData && message.outreachData.length > 0) ||
     (message.saveTargets && message.saveTargets.length > 0);
 
+  // ChatGPT-style: no avatar for user, simple layout
+  if (isUser) {
+    return (
+      <div className="group flex justify-end px-4 py-2">
+        <div className="max-w-[85%] flex flex-col items-end">
+          <div className="rounded-2xl rounded-tr-sm bg-emerald-500/10 border border-emerald-500/15 px-4 py-3 text-foreground/90 text-sm">
+            <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
+          </div>
+          {/* Copy button on hover for user messages */}
+          <div className="flex items-center gap-0.5 mt-1 opacity-0 group-hover:opacity-100 transition-opacity duration-200">
+            <button
+              onClick={handleCopy}
+              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
+              title="Copy"
+            >
+              {copied ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+              {copied && <span className="text-emerald-400">Copied!</span>}
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // AI message — ChatGPT-style: avatar on left, content, always-visible action buttons below
   return (
-    <div
-      className={cn('group flex gap-3 px-4 py-2', isUser ? 'flex-row-reverse' : 'flex-row')}
-      onMouseEnter={() => setShowActions(true)}
-      onMouseLeave={() => setShowActions(false)}
-    >
+    <div className="flex gap-3 px-4 py-2">
       {/* Avatar */}
       <div
         className={cn(
-          'flex h-8 w-8 items-center justify-center rounded-lg shrink-0 mt-0.5',
-          isUser
-            ? 'bg-emerald-500/15 border border-emerald-500/20'
-            : message.isError
+          'flex h-7 w-7 items-center justify-center rounded-full shrink-0 mt-0.5',
+          message.isError
             ? 'bg-red-500/10 border border-red-500/20'
             : message.isResearchReport || actionConfig
             ? 'bg-gradient-to-br from-violet-500/20 to-emerald-500/20 border border-violet-500/20'
             : 'bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/15',
         )}
       >
-        {isUser ? (
-          <span className="text-xs font-bold text-emerald-400">U</span>
-        ) : message.isError ? (
-          <AlertCircle className="h-4 w-4 text-red-400" />
+        {message.isError ? (
+          <AlertCircle className="h-3.5 w-3.5 text-red-400" />
         ) : message.isResearchReport || actionConfig ? (
-          <Sparkles className="h-4 w-4 text-violet-400" />
+          <Sparkles className="h-3.5 w-3.5 text-violet-400" />
         ) : (
-          <Bot className="h-4 w-4 text-emerald-400" />
+          <Bot className="h-3.5 w-3.5 text-emerald-400" />
         )}
       </div>
 
       {/* Message Content */}
-      <div className={cn('max-w-[85%] flex flex-col', isUser ? 'items-end' : 'items-start')}>
-        {/* Name label */}
-        <div className="flex items-center gap-2 mb-1">
-          <span className={cn('text-[11px] font-medium', isUser ? 'text-emerald-400' : 'text-foreground/60')}>
-            {isUser ? 'You' : 'LeadReach AI'}
-          </span>
-          <span className="text-[10px] text-muted-foreground/30">
-            {new Date(message.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-          </span>
-        </div>
-
+      <div className="flex-1 min-w-0 flex flex-col items-start">
         {/* Action Badge */}
         {actionConfig && !message.isLoading && (
           <div className={cn(
@@ -641,21 +649,10 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Bubble */}
-        <div
-          className={cn(
-            'rounded-2xl px-4 py-3 relative',
-            isUser
-              ? 'bg-emerald-500/10 border border-emerald-500/15 text-foreground/90 rounded-tr-md'
-              : message.isError
-              ? 'bg-red-500/5 border border-red-500/15 text-red-300/80 rounded-tl-md'
-              : message.isResearchReport || actionConfig
-              ? 'bg-secondary/15 border border-violet-500/10 rounded-tl-md'
-              : 'bg-secondary/15 border border-border/15 rounded-tl-md',
-          )}
-        >
+        {/* Content area — no bubble wrapper for ChatGPT style, just text */}
+        <div className="w-full">
           {message.isLoading ? (
-            <div className="flex items-center gap-2.5">
+            <div className="flex items-center gap-2.5 py-1">
               <div className="flex gap-1">
                 <div className="h-2 w-2 rounded-full bg-emerald-400/60 animate-bounce [animation-delay:0ms]" />
                 <div className="h-2 w-2 rounded-full bg-emerald-400/40 animate-bounce [animation-delay:150ms]" />
@@ -686,7 +683,9 @@ function MessageBubble({
                 </div>
               )}
 
-              <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
+              <div className="text-sm text-foreground/90 leading-relaxed">
+                <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
+              </div>
 
               {/* Pipeline triggered indicator */}
               {message.pipelineTriggered?.started && (
@@ -701,7 +700,7 @@ function MessageBubble({
           )}
         </div>
 
-        {/* Action Results Section (below the bubble) */}
+        {/* Action Results Section (below the content) */}
         {!message.isLoading && hasActionData && (
           <div className="w-full mt-2">
             <button
@@ -717,55 +716,42 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Action buttons */}
-        {!message.isLoading && showActions && !isUser && (
-          <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
+        {/* Always-visible action buttons for AI messages — ChatGPT style */}
+        {!message.isLoading && (
+          <div className="flex items-center gap-1 mt-2">
             <button
               onClick={handleCopy}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/50 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
+              className="p-1 rounded-md text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
               title="Copy"
             >
-              <Copy className="h-3 w-3" />
-              {copied && <span className="text-emerald-400">Copied!</span>}
+              {copied ? <Check className="h-3.5 w-3.5 text-emerald-400" /> : <Copy className="h-3.5 w-3.5" />}
             </button>
             <button
               onClick={() => onRegenerate(message.id)}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/50 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
+              className="p-1 rounded-md text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
               title="Regenerate"
             >
-              <RotateCcw className="h-3 w-3" />
+              <RotateCcw className="h-3.5 w-3.5" />
             </button>
             <button
               onClick={() => onFeedback(message.id, 'up')}
               className={cn(
-                'p-0.5 rounded-md transition-all',
-                message.feedback === 'up' ? 'text-emerald-400' : 'text-muted-foreground/50 hover:text-foreground/70 hover:bg-secondary/20'
+                'p-1 rounded-md transition-all',
+                message.feedback === 'up' ? 'text-emerald-400' : 'text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20'
               )}
               title="Good response"
             >
-              <ThumbsUp className="h-3 w-3" />
+              <ThumbsUp className="h-3.5 w-3.5" />
             </button>
             <button
               onClick={() => onFeedback(message.id, 'down')}
               className={cn(
-                'p-0.5 rounded-md transition-all',
-                message.feedback === 'down' ? 'text-red-400' : 'text-muted-foreground/50 hover:text-foreground/70 hover:bg-secondary/20'
+                'p-1 rounded-md transition-all',
+                message.feedback === 'down' ? 'text-red-400' : 'text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20'
               )}
               title="Bad response"
             >
-              <ThumbsDown className="h-3 w-3" />
-            </button>
-          </div>
-        )}
-
-        {!message.isLoading && showActions && isUser && (
-          <div className="flex items-center gap-0.5 mt-1.5 opacity-0 group-hover:opacity-100 transition-opacity">
-            <button
-              onClick={handleCopy}
-              className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/50 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
-              title="Copy"
-            >
-              <Copy className="h-3 w-3" />
+              <ThumbsDown className="h-3.5 w-3.5" />
             </button>
           </div>
         )}
@@ -775,23 +761,47 @@ function MessageBubble({
 }
 
 // ============================================================
-// Main Widget
+// Main Widget — ChatGPT-style
 // ============================================================
+
+const CHAT_MODES = [
+  { id: 'standard', label: 'Standard', icon: Zap },
+  { id: 'deep-research', label: 'Deep Research', icon: Brain },
+  { id: 'quick', label: 'Quick', icon: Sparkles },
+] as const;
+
+type ChatMode = typeof CHAT_MODES[number]['id'];
 
 export function AIAssistantWidget() {
   const [isOpen, setIsOpen] = useState(false);
   const [input, setInput] = useState('');
   const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [chatMode, setChatMode] = useState<ChatMode>('standard');
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
   const { activeView, setActiveView } = useAppStore();
 
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modeDropdownRef = useRef<HTMLDivElement>(null);
 
   const currentViewLabel = VIEW_LABELS[activeView] || 'Dashboard';
   const systemPromptWithCtx = SYSTEM_PROMPT.replace('{currentPage}', currentViewLabel);
 
   const engine = useChatEngine();
+
+  // Close mode dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modeDropdownRef.current && !modeDropdownRef.current.contains(e.target as Node)) {
+        setShowModeDropdown(false);
+      }
+    };
+    if (showModeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showModeDropdown]);
 
   // Auto-scroll
   const scrollToBottom = useCallback(() => {
@@ -823,7 +833,7 @@ export function AIAssistantWidget() {
     setInput(e.target.value);
     const textarea = e.target;
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 144) + 'px';
+    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
   };
 
   const handleSend = async () => {
@@ -858,7 +868,6 @@ export function AIAssistantWidget() {
   const handleSaveTarget = async (messageId: string, saveTarget: SaveTarget) => {
     try {
       await engine.saveToSection(messageId, saveTarget);
-      // Navigate to the target view after saving
       setActiveView(saveTarget.viewTarget);
     } catch (err) {
       console.error('Failed to save:', err);
@@ -869,6 +878,15 @@ export function AIAssistantWidget() {
     setIsOpen(false);
     setActiveView('ai-assistant' as ViewType);
   };
+
+  const currentMode = CHAT_MODES.find(m => m.id === chatMode) || CHAT_MODES[0];
+  const ModeIcon = currentMode.icon;
+
+  // Pick first 4 prompts for the 2x2 grid
+  const welcomePrompts = SUGGESTED_PROMPTS.slice(0, 4);
+
+  const isStreaming = engine.isStreaming || engine.isThinking;
+  const hasInput = input.trim().length > 0;
 
   return (
     <>
@@ -910,40 +928,73 @@ export function AIAssistantWidget() {
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
       >
-        {/* Header */}
+        {/* Header — ChatGPT style: clean, simple */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-border/20 shrink-0">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-md shadow-emerald-500/20">
-              <Bot className="h-5 w-5" />
+          <div className="flex items-center gap-2.5">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500 to-cyan-500 text-white shadow-md shadow-emerald-500/20">
+              <Bot className="h-4.5 w-4.5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <span className="text-sm font-semibold text-foreground/90">LeadReach AI</span>
-                <Badge
-                  className={cn(
-                    'h-4 px-1.5 text-[8px] border',
-                    engine.isThinking || engine.isStreaming
-                      ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
-                      : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
-                  )}
-                >
-                  {engine.isThinking || engine.isStreaming ? (
-                    <>
-                      <span className="h-1 w-1 rounded-full bg-amber-400 animate-pulse mr-1" />
-                      {engine.researchStages.length > 0 ? 'Researching' : 'Thinking'}
-                    </>
-                  ) : (
-                    <>
-                      <span className="h-1 w-1 rounded-full bg-emerald-400 mr-1" />
-                      Online
-                    </>
-                  )}
-                </Badge>
-              </div>
-              <span className="text-[10px] text-muted-foreground/50">On {currentViewLabel}</span>
-            </div>
+            <span className="text-sm font-semibold text-foreground/90">LeadReach AI</span>
+
+            {/* Status badge */}
+            <Badge
+              className={cn(
+                'h-4 px-1.5 text-[8px] border',
+                isStreaming
+                  ? 'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                  : 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+              )}
+            >
+              {isStreaming ? (
+                <>
+                  <span className="h-1 w-1 rounded-full bg-amber-400 animate-pulse mr-1" />
+                  {engine.researchStages.length > 0 ? 'Researching' : 'Thinking'}
+                </>
+              ) : (
+                <>
+                  <span className="h-1 w-1 rounded-full bg-emerald-400 mr-1" />
+                  Online
+                </>
+              )}
+            </Badge>
           </div>
-          <div className="flex items-center gap-1">
+
+          <div className="flex items-center gap-0.5">
+            {/* Mode selector */}
+            <div ref={modeDropdownRef} className="relative">
+              <button
+                onClick={() => setShowModeDropdown(!showModeDropdown)}
+                className="flex items-center gap-1.5 h-7 px-2 rounded-lg text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-secondary/20 transition-all"
+              >
+                <ModeIcon className="h-3 w-3" />
+                <span className="hidden sm:inline">{currentMode.label}</span>
+                <ChevronDown className={cn('h-2.5 w-2.5 transition-transform', showModeDropdown && 'rotate-180')} />
+              </button>
+              {showModeDropdown && (
+                <div className="absolute right-0 top-full mt-1 w-40 rounded-xl border border-border/30 bg-card/95 backdrop-blur-xl shadow-xl z-50 overflow-hidden">
+                  {CHAT_MODES.map((mode) => {
+                    const Icon = mode.icon;
+                    return (
+                      <button
+                        key={mode.id}
+                        onClick={() => { setChatMode(mode.id); setShowModeDropdown(false); }}
+                        className={cn(
+                          'flex items-center gap-2 w-full px-3 py-2 text-[11px] transition-colors',
+                          chatMode === mode.id
+                            ? 'bg-emerald-500/10 text-emerald-400 font-medium'
+                            : 'text-muted-foreground/70 hover:text-foreground hover:bg-secondary/10'
+                        )}
+                      >
+                        <Icon className="h-3.5 w-3.5" />
+                        {mode.label}
+                        {chatMode === mode.id && <Check className="h-3 w-3 ml-auto" />}
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
             <Button
               variant="ghost"
               size="icon"
@@ -951,7 +1002,7 @@ export function AIAssistantWidget() {
               onClick={engine.clearActiveConversation}
               title="New chat"
             >
-              <ChevronUp className="h-3.5 w-3.5" />
+              <Sparkles className="h-3.5 w-3.5" />
             </Button>
             <Button
               variant="ghost"
@@ -977,47 +1028,44 @@ export function AIAssistantWidget() {
         <div
           ref={scrollAreaRef}
           onScroll={handleScroll}
-          className="flex-1 overflow-y-auto py-2 custom-scrollbar"
+          className="flex-1 overflow-y-auto custom-scrollbar"
           style={{ scrollBehavior: 'smooth' }}
         >
           {engine.messages.length === 0 ? (
-            /* Welcome Screen */
-            <div className="flex flex-col items-center justify-center h-full px-6 gap-6">
+            /* Welcome Screen — ChatGPT style */
+            <div className="flex flex-col items-center justify-center h-full px-6 gap-5">
               {/* Logo */}
-              <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 border border-emerald-500/20 shadow-lg shadow-emerald-500/10">
-                <Sparkles className="h-8 w-8 text-emerald-400" />
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 border border-emerald-500/20">
+                <Sparkles className="h-7 w-7 text-emerald-400" />
               </div>
 
               {/* Heading */}
-              <div className="text-center">
-                <h2 className="text-lg font-semibold text-foreground/90">How can I help you today?</h2>
-                <p className="text-xs text-muted-foreground/50 mt-1">Ask about leads, outreach, pipeline, or anything else</p>
-              </div>
+              <h2 className="text-lg font-semibold text-foreground/90">What can I help you with?</h2>
 
-              {/* Suggested Prompts Grid */}
+              {/* 2x2 Prompt suggestion cards */}
               <div className="grid grid-cols-2 gap-2 w-full max-w-sm">
-                {SUGGESTED_PROMPTS.map((prompt) => {
+                {welcomePrompts.map((prompt) => {
                   const Icon = prompt.icon;
                   return (
                     <button
                       key={prompt.label}
                       onClick={() => handleQuickAction(prompt.prompt)}
                       className={cn(
-                        'flex items-center gap-2.5 rounded-xl border px-3 py-2.5 text-left transition-all duration-200',
+                        'flex flex-col items-start gap-1.5 rounded-xl border px-3 py-3 text-left transition-all duration-200',
                         'bg-gradient-to-br hover:scale-[1.02] hover:shadow-md',
                         prompt.color,
                         'hover:border-emerald-500/25',
                       )}
                     >
                       <Icon className="h-4 w-4 text-emerald-400 shrink-0" />
-                      <span className="text-xs font-medium text-foreground/70">{prompt.label}</span>
+                      <span className="text-[11px] font-medium text-foreground/70 leading-tight">{prompt.label}</span>
                     </button>
                   );
                 })}
               </div>
 
               {/* Quick Navigate */}
-              <div className="w-full space-y-2">
+              <div className="w-full space-y-2 pt-2">
                 <p className="text-[10px] text-muted-foreground/40 uppercase tracking-wider px-1">Navigate to</p>
                 <div className="flex flex-wrap gap-1.5">
                   {(['prospect-discovery', 'leads', 'outreach', 'reports', 'icp'] as ViewType[]).map((view) => (
@@ -1038,7 +1086,7 @@ export function AIAssistantWidget() {
             </div>
           ) : (
             /* Messages List */
-            <>
+            <div className="py-2">
               {engine.messages.map(msg => (
                 <MessageBubble
                   key={msg.id}
@@ -1053,10 +1101,10 @@ export function AIAssistantWidget() {
               {/* Thinking indicator (shown below messages when not loading) */}
               {engine.isThinking && !engine.messages.some(m => m.isLoading) && (
                 <div className="flex gap-3 px-4 py-2">
-                  <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/15 shrink-0">
-                    <Bot className="h-4 w-4 text-emerald-400" />
+                  <div className="flex h-7 w-7 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/15 shrink-0">
+                    <Bot className="h-3.5 w-3.5 text-emerald-400" />
                   </div>
-                  <div className="flex items-center gap-2.5 rounded-2xl rounded-tl-md bg-secondary/15 border border-border/15 px-4 py-3">
+                  <div className="flex items-center gap-2.5 py-1">
                     <div className="flex gap-1">
                       <div className="h-2 w-2 rounded-full bg-emerald-400/60 animate-bounce [animation-delay:0ms]" />
                       <div className="h-2 w-2 rounded-full bg-emerald-400/40 animate-bounce [animation-delay:150ms]" />
@@ -1075,13 +1123,13 @@ export function AIAssistantWidget() {
               )}
 
               <div ref={messagesEndRef} />
-            </>
+            </div>
           )}
         </div>
 
         {/* Scroll to bottom button */}
         {showScrollBtn && (
-          <div className="absolute bottom-24 right-4">
+          <div className="absolute bottom-28 right-4 z-10">
             <button
               onClick={scrollToBottom}
               className="flex h-8 w-8 items-center justify-center rounded-full bg-card/90 border border-border/30 shadow-lg hover:bg-secondary/20 transition-all"
@@ -1091,8 +1139,8 @@ export function AIAssistantWidget() {
           </div>
         )}
 
-        {/* Input Area */}
-        <div className="border-t border-border/20 px-4 py-3 shrink-0">
+        {/* Input Area — ChatGPT-style pill container */}
+        <div className="shrink-0 px-3 pb-3 pt-2">
           {/* Research stages indicator */}
           {engine.researchStages.length > 0 && (
             <div className="mb-2 rounded-lg border border-violet-500/15 bg-violet-500/5 px-3 py-2">
@@ -1100,53 +1148,66 @@ export function AIAssistantWidget() {
             </div>
           )}
 
-          <div className="flex items-end gap-2">
-            <div className="flex-1 relative">
-              {/* Attachment hint */}
-              <div className="absolute left-3 bottom-2.5 z-10">
-                <button className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" title="Attach file (coming soon)">
-                  <Paperclip className="h-4 w-4" />
-                </button>
-              </div>
-              <textarea
-                ref={inputRef}
-                value={input}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder="Ask anything about your leads..."
-                rows={1}
-                className="w-full resize-none bg-secondary/15 border border-border/25 rounded-xl pl-10 pr-3 py-2.5 text-sm text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none focus:border-emerald-500/30 focus:ring-1 focus:ring-emerald-500/10 min-h-[42px] max-h-[144px] transition-colors"
-              />
+          {/* Pill input container */}
+          <div className="relative rounded-2xl border border-border/30 bg-secondary/20 focus-within:border-emerald-500/30 focus-within:ring-1 focus-within:ring-emerald-500/10 transition-all">
+            {/* Attachment button on the left */}
+            <div className="absolute left-3 bottom-2.5 z-10">
+              <button
+                className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors"
+                title="Attach file (coming soon)"
+              >
+                <Paperclip className="h-4 w-4" />
+              </button>
             </div>
-            {engine.isStreaming || engine.isThinking ? (
-              <Button
-                size="icon"
-                onClick={engine.stopStreaming}
-                className="h-[42px] w-[42px] rounded-xl bg-red-500/80 hover:bg-red-500 text-white shrink-0 transition-colors"
-                title="Stop generating"
-              >
-                <Square className="h-4 w-4" fill="currentColor" />
-              </Button>
-            ) : (
-              <Button
-                size="icon"
-                onClick={handleSend}
-                disabled={!input.trim()}
-                className="h-[42px] w-[42px] rounded-xl bg-emerald-500 hover:bg-emerald-400 text-black shrink-0 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
-              >
-                <Send className="h-4 w-4" />
-              </Button>
-            )}
+
+            {/* Textarea */}
+            <textarea
+              ref={inputRef}
+              value={input}
+              onChange={handleInputChange}
+              onKeyDown={handleKeyDown}
+              placeholder="Message LeadReach AI..."
+              rows={1}
+              className="w-full resize-none bg-transparent pl-10 pr-11 py-2.5 text-sm text-foreground/90 placeholder:text-muted-foreground/40 focus:outline-none min-h-[42px] max-h-[200px] transition-colors"
+            />
+
+            {/* Send / Stop button inside the pill on the right */}
+            <div className="absolute right-2 bottom-2 z-10">
+              {isStreaming ? (
+                <button
+                  onClick={engine.stopStreaming}
+                  className="flex h-7 w-7 items-center justify-center rounded-full bg-foreground/80 hover:bg-foreground text-background transition-all"
+                  title="Stop generating"
+                >
+                  <Square className="h-3 w-3" fill="currentColor" />
+                </button>
+              ) : (
+                <button
+                  onClick={handleSend}
+                  disabled={!hasInput}
+                  className={cn(
+                    'flex h-7 w-7 items-center justify-center rounded-full transition-all',
+                    hasInput
+                      ? 'bg-foreground/80 hover:bg-foreground text-background cursor-pointer'
+                      : 'bg-foreground/10 text-foreground/20 cursor-not-allowed'
+                  )}
+                  title="Send message"
+                >
+                  <ArrowUp className="h-4 w-4" />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Below input: hint text + context chip */}
           <div className="flex items-center justify-between mt-1.5 px-1">
             <span className="text-[10px] text-muted-foreground/30">
-              {input.length > 0 && `${input.length} chars`}
-              {input.length === 0 && 'Shift+Enter for new line'}
+              LeadReach AI can make mistakes. Verify important info.
             </span>
-            <Badge variant="outline" className="text-[8px] border-emerald-500/15 text-emerald-400/60 bg-emerald-500/5 h-4 px-1.5">
-              <Zap className="h-2 w-2 mr-0.5" />
-              Smart AI
-            </Badge>
+            <div className="flex items-center gap-1 text-[9px] text-muted-foreground/40">
+              <MapPin className="h-2.5 w-2.5" />
+              <span>{currentViewLabel}</span>
+            </div>
           </div>
         </div>
       </div>
