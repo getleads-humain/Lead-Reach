@@ -110,7 +110,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
       {/* Footer */}
       <footer className="border-t border-border/30 bg-card/50 marketing-footer">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-12 lg:py-16">
-          <div className="grid grid-cols-2 md:grid-cols-5 gap-8 lg:gap-12">
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-8 lg:gap-12">
             {/* Brand Column */}
             <div className="col-span-2 md:col-span-1">
               <Link href="/" className="flex items-center gap-2 group">
@@ -164,9 +164,21 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
               <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Company</h4>
               <ul className="mt-4 space-y-2.5">
                 <li><Link href="/about" className="text-xs text-muted-foreground hover:text-foreground transition-colors">About</Link></li>
+                <li><Link href="/culture" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Culture</Link></li>
                 <li><Link href="/careers" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Careers</Link></li>
                 <li><Link href="/press" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Press</Link></li>
                 <li><Link href="/contact" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Contact</Link></li>
+              </ul>
+            </div>
+
+            {/* Framework */}
+            <div>
+              <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Framework</h4>
+              <ul className="mt-4 space-y-2.5">
+                <li><Link href="/agentic-framework" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Agentic System</Link></li>
+                <li><Link href="/agentic-framework#decision-framework" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Decision Making</Link></li>
+                <li><Link href="/agentic-framework#channel-system" className="text-xs text-muted-foreground hover:text-foreground transition-colors">17+ Channels</Link></li>
+                <li><Link href="/agent" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Agent Showcase</Link></li>
               </ul>
             </div>
 
