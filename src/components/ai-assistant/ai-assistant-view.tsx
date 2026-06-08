@@ -165,7 +165,6 @@ const stageIcons: Record<string, React.ElementType> = {
   'complete': CheckCircle2,
 };
 
-// Related tools for each action type — used in the right panel
 const RELATED_TOOLS: Record<string, string[]> = {
   discover_leads: ['enrich_data', 'build_icp', 'compose_outreach', 'analyze_pipeline'],
   enrich_data: ['discover_leads', 'build_icp', 'analyze_pipeline'],
@@ -213,6 +212,28 @@ const PLATFORM_TIPS: Record<string, string[]> = {
     'Cross-reference multiple data sources',
   ],
 };
+
+const CHAT_MODES = [
+  { id: 'standard', label: 'Standard', icon: Zap, description: 'Fast, balanced responses' },
+  { id: 'deep-research', label: 'Deep Research', icon: Brain, description: 'Thorough multi-source analysis' },
+  { id: 'quick', label: 'Quick', icon: Sparkles, description: 'Brief, concise answers' },
+] as const;
+
+type ChatMode = typeof CHAT_MODES[number]['id'];
+
+// ============================================================
+// Helper: time grouping for conversations
+// ============================================================
+
+function getTimeGroup(timestamp: number): string {
+  const now = Date.now();
+  const diff = now - timestamp;
+  const oneDay = 86400000;
+  if (diff < oneDay) return 'Today';
+  if (diff < 2 * oneDay) return 'Yesterday';
+  if (diff < 7 * oneDay) return 'Previous 7 Days';
+  return 'Older';
+}
 
 // ============================================================
 // Research Progress
@@ -582,7 +603,6 @@ function ActionResultsSection({
 
   return (
     <div className="mt-3 pt-3 border-t border-border/15 space-y-3">
-      {/* Save Buttons */}
       {message.saveTargets && message.saveTargets.length > 0 && (
         <div className="flex flex-wrap gap-2">
           {message.saveTargets.map((st) => (
@@ -598,7 +618,6 @@ function ActionResultsSection({
         </div>
       )}
 
-      {/* Lead Cards */}
       {message.leadData && message.leadData.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">
@@ -613,12 +632,10 @@ function ActionResultsSection({
         </div>
       )}
 
-      {/* ICP Card */}
       {message.icpData && (
         <ICPSummaryCard icp={message.icpData} />
       )}
 
-      {/* Outreach Previews */}
       {message.outreachData && message.outreachData.length > 0 && (
         <div className="space-y-2">
           <div className="flex items-center gap-2 text-[10px] font-semibold text-pink-400 uppercase tracking-wider">
@@ -637,7 +654,7 @@ function ActionResultsSection({
 }
 
 // ============================================================
-// Tool Navigation Chips (inside message bubbles)
+// Tool Navigation Chips
 // ============================================================
 
 function ToolNavChips({
@@ -658,7 +675,6 @@ function ToolNavChips({
 
   return (
     <div className="mt-3 pt-3 border-t border-border/10 space-y-2">
-      {/* Primary navigation chip */}
       <button
         onClick={() => onNavigate(navItem.view)}
         className={cn(
@@ -673,7 +689,6 @@ function ToolNavChips({
         <ArrowRight className="h-3 w-3 ml-auto opacity-50 group-hover:opacity-100 group-hover:translate-x-0.5 transition-all" />
       </button>
 
-      {/* Related tools chips */}
       {relatedItems.length > 0 && (
         <div className="flex flex-wrap gap-1.5">
           {relatedItems.map((item) => {
@@ -700,7 +715,7 @@ function ToolNavChips({
 }
 
 // ============================================================
-// Message Bubble
+// Message Bubble — ChatGPT-style with edit support
 // ============================================================
 
 function MessageBubble({
@@ -710,6 +725,7 @@ function MessageBubble({
   onRegenerate,
   onSaveTarget,
   onNavigate,
+  onEditMessage,
 }: {
   message: ChatMessage;
   onCopy: (id: string) => void;
@@ -717,16 +733,56 @@ function MessageBubble({
   onRegenerate: (id: string) => void;
   onSaveTarget: (messageId: string, saveTarget: SaveTarget) => void;
   onNavigate: (view: ViewType) => void;
+  onEditMessage: (id: string, newContent: string) => void;
 }) {
   const isUser = message.role === 'user';
   const [copied, setCopied] = useState(false);
   const [showThinking, setShowThinking] = useState(false);
   const [showResults, setShowResults] = useState(true);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editContent, setEditContent] = useState(message.content);
+  const editRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (isEditing && editRef.current) {
+      editRef.current.focus();
+      editRef.current.style.height = 'auto';
+      editRef.current.style.height = editRef.current.scrollHeight + 'px';
+    }
+  }, [isEditing]);
 
   const handleCopy = () => {
     onCopy(message.id);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleDoubleClick = () => {
+    if (isUser && !message.isLoading) {
+      setEditContent(message.content);
+      setIsEditing(true);
+    }
+  };
+
+  const handleEditSave = () => {
+    if (editContent.trim() && editContent.trim() !== message.content) {
+      onEditMessage(message.id, editContent.trim());
+    }
+    setIsEditing(false);
+  };
+
+  const handleEditCancel = () => {
+    setEditContent(message.content);
+    setIsEditing(false);
+  };
+
+  const handleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleEditSave();
+    } else if (e.key === 'Escape') {
+      handleEditCancel();
+    }
   };
 
   const actionConfig = message.actionType ? ACTION_CONFIG[message.actionType] : null;
@@ -736,28 +792,64 @@ function MessageBubble({
     (message.outreachData && message.outreachData.length > 0) ||
     (message.saveTargets && message.saveTargets.length > 0);
 
-  // ChatGPT-style layout: AI messages have icon on left with name above content, user messages are right-aligned pills
+  // User messages: right-aligned ChatGPT-style
   if (isUser) {
     return (
-      <div className="flex justify-end py-3">
-        <div className="max-w-[85%] bg-emerald-500/15 text-foreground/90 rounded-3xl px-5 py-3 leading-relaxed">
-          {message.isLoading ? (
-            <div className="flex items-center gap-2">
-              <div className="flex gap-1">
-                <div className="h-2 w-2 rounded-full bg-emerald-400/60 animate-bounce [animation-delay:0ms]" />
-                <div className="h-2 w-2 rounded-full bg-emerald-400/40 animate-bounce [animation-delay:150ms]" />
-                <div className="h-2 w-2 rounded-full bg-emerald-400/20 animate-bounce [animation-delay:300ms]" />
+      <div className="flex justify-end py-3 group" onDoubleClick={handleDoubleClick}>
+        <div className="max-w-[85%]">
+          {isEditing ? (
+            <div className="space-y-2">
+              <textarea
+                ref={editRef}
+                value={editContent}
+                onChange={(e) => setEditContent(e.target.value)}
+                onKeyDown={handleEditKeyDown}
+                className="w-full rounded-2xl bg-emerald-500/10 border border-emerald-500/20 px-4 py-3 text-sm text-foreground/90 resize-none focus:outline-none focus:ring-2 focus:ring-emerald-500/30"
+                rows={1}
+              />
+              <div className="flex items-center gap-2 justify-end">
+                <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={handleEditCancel}>
+                  Cancel
+                </Button>
+                <Button size="sm" className="h-7 text-xs bg-emerald-500 hover:bg-emerald-400 text-black" onClick={handleEditSave}>
+                  <Check className="h-3 w-3 mr-1" /> Save
+                </Button>
               </div>
             </div>
           ) : (
-            <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
+            <div className="bg-emerald-500/10 border border-emerald-500/10 text-foreground/90 rounded-2xl px-5 py-3 leading-relaxed">
+              {message.isLoading ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex gap-1">
+                    <div className="h-2 w-2 rounded-full bg-emerald-400/60 animate-bounce [animation-delay:0ms]" />
+                    <div className="h-2 w-2 rounded-full bg-emerald-400/40 animate-bounce [animation-delay:150ms]" />
+                    <div className="h-2 w-2 rounded-full bg-emerald-400/20 animate-bounce [animation-delay:300ms]" />
+                  </div>
+                </div>
+              ) : (
+                <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
+              )}
+            </div>
+          )}
+          {/* Edit hint on hover */}
+          {!isEditing && !message.isLoading && (
+            <div className="flex items-center gap-1 mt-1 opacity-0 group-hover:opacity-100 transition-opacity justify-end">
+              <button
+                onClick={() => { setEditContent(message.content); setIsEditing(true); }}
+                className="flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
+                title="Edit message"
+              >
+                <Pencil className="h-2.5 w-2.5" />
+                Edit
+              </button>
+            </div>
           )}
         </div>
       </div>
     );
   }
 
-  // AI message - ChatGPT style with avatar on left, name above, content below
+  // AI message - ChatGPT style with avatar on left, name above, content below (no bubble)
   return (
     <div className="flex gap-3 py-4">
       {/* Avatar */}
@@ -799,7 +891,7 @@ function MessageBubble({
           )}
         </div>
 
-        {/* Content area */}
+        {/* Content area - no bubble wrapper, just text */}
         <div className="text-foreground/85 leading-relaxed">
           {message.isLoading ? (
             <div className="flex items-center gap-3">
@@ -818,7 +910,6 @@ function MessageBubble({
                 <LeadScoreBadge score={message.leadScore} tier={message.leadTier || 'cold'} />
               )}
 
-              {/* Thinking toggle */}
               {message.researchStages && message.researchStages.length > 0 && (
                 <div className="mb-3">
                   <button
@@ -835,7 +926,6 @@ function MessageBubble({
 
               <MarkdownRenderer content={message.content} isStreaming={message.isStreaming} />
 
-              {/* Pipeline triggered */}
               {message.pipelineTriggered?.started && (
                 <div className="mt-3 pt-2 border-t border-border/15">
                   <div className="flex items-center gap-2 text-[11px]">
@@ -877,7 +967,7 @@ function MessageBubble({
           </div>
         )}
 
-        {/* Action buttons - always visible like modern ChatGPT */}
+        {/* Action buttons - ChatGPT style */}
         {!message.isLoading && (
           <div className="flex items-center gap-1 mt-2">
             <button
@@ -927,7 +1017,7 @@ function MessageBubble({
 }
 
 // ============================================================
-// Conversation Item (ChatGPT-style)
+// Conversation Item (ChatGPT-style with rename)
 // ============================================================
 
 function ConversationItem({
@@ -936,14 +1026,42 @@ function ConversationItem({
   onSelect,
   onDelete,
   onPin,
+  onRename,
 }: {
   conversation: Conversation;
   isActive: boolean;
   onSelect: (id: string) => void;
   onDelete: (id: string) => void;
   onPin: (id: string) => void;
+  onRename: (id: string, newTitle: string) => void;
 }) {
   const [isHovered, setIsHovered] = useState(false);
+  const [isRenaming, setIsRenaming] = useState(false);
+  const [renameValue, setRenameValue] = useState(conversation.title);
+  const renameRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    if (isRenaming && renameRef.current) {
+      renameRef.current.focus();
+      renameRef.current.select();
+    }
+  }, [isRenaming]);
+
+  const handleRenameSubmit = () => {
+    if (renameValue.trim()) {
+      onRename(conversation.id, renameValue.trim());
+    }
+    setIsRenaming(false);
+  };
+
+  const handleRenameKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleRenameSubmit();
+    } else if (e.key === 'Escape') {
+      setRenameValue(conversation.title);
+      setIsRenaming(false);
+    }
+  };
 
   return (
     <div
@@ -953,15 +1071,34 @@ function ConversationItem({
           ? 'bg-secondary/30 text-foreground/90'
           : 'text-foreground/60 hover:bg-secondary/15 hover:text-foreground/80',
       )}
-      onClick={() => onSelect(conversation.id)}
+      onClick={() => !isRenaming && onSelect(conversation.id)}
       onMouseEnter={() => setIsHovered(true)}
       onMouseLeave={() => setIsHovered(false)}
     >
-      <span className="text-sm truncate flex-1">{conversation.title}</span>
+      {isRenaming ? (
+        <input
+          ref={renameRef}
+          value={renameValue}
+          onChange={(e) => setRenameValue(e.target.value)}
+          onKeyDown={handleRenameKeyDown}
+          onBlur={handleRenameSubmit}
+          className="flex-1 bg-secondary/30 border border-border/30 rounded px-2 py-0.5 text-sm text-foreground/90 focus:outline-none focus:ring-1 focus:ring-emerald-500/30"
+          onClick={(e) => e.stopPropagation()}
+        />
+      ) : (
+        <span className="text-sm truncate flex-1">{conversation.title}</span>
+      )}
 
       {/* Hover-reveal actions */}
-      {isHovered && (
+      {isHovered && !isRenaming && (
         <div className="flex items-center gap-0.5 shrink-0" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => { setRenameValue(conversation.title); setIsRenaming(true); }}
+            className="p-1 rounded hover:bg-secondary/30 text-muted-foreground/40 hover:text-foreground/70 transition-colors"
+            title="Rename"
+          >
+            <Pencil className="h-3 w-3" />
+          </button>
           <button
             onClick={() => onPin(conversation.id)}
             className={cn(
@@ -981,7 +1118,7 @@ function ConversationItem({
           </button>
         </div>
       )}
-      {!isHovered && conversation.pinned && (
+      {!isHovered && conversation.pinned && !isRenaming && (
         <Pin className="h-3 w-3 text-amber-400/50 shrink-0" />
       )}
     </div>
@@ -989,7 +1126,7 @@ function ConversationItem({
 }
 
 // ============================================================
-// Conversation Sidebar (ChatGPT-style)
+// Conversation Sidebar (ChatGPT-style with time grouping)
 // ============================================================
 
 function ConversationSidebar({
@@ -1001,6 +1138,7 @@ function ConversationSidebar({
   onNew,
   onDelete,
   onPin,
+  onRename,
 }: {
   conversations: Conversation[];
   activeId: string | null;
@@ -1010,87 +1148,108 @@ function ConversationSidebar({
   onNew: () => void;
   onDelete: (id: string) => void;
   onPin: (id: string) => void;
+  onRename: (id: string, newTitle: string) => void;
 }) {
   const filteredConversations = conversations.filter(c =>
     c.title.toLowerCase().includes(searchQuery.toLowerCase()) ||
     c.lastMessage.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // Group conversations by time period
-  const now = Date.now();
-  const oneDay = 86400000;
-  const sevenDays = 7 * oneDay;
-  const thirtyDays = 30 * oneDay;
+  // Separate pinned and unpinned
+  const pinned = filteredConversations.filter(c => c.pinned);
+  const unpinned = filteredConversations.filter(c => !c.pinned);
 
-  const pinnedConvs = filteredConversations.filter(c => c.pinned);
-  const unpinnedConvs = filteredConversations.filter(c => !c.pinned);
+  // Group unpinned by time
+  const grouped = unpinned.reduce<Record<string, Conversation[]>>((acc, conv) => {
+    const group = getTimeGroup(conv.timestamp);
+    if (!acc[group]) acc[group] = [];
+    acc[group].push(conv);
+    return acc;
+  }, {});
 
-  const todayConvs = unpinnedConvs.filter(c => now - c.timestamp < oneDay);
-  const yesterdayConvs = unpinnedConvs.filter(c => now - c.timestamp >= oneDay && now - c.timestamp < 2 * oneDay);
-  const previous7Convs = unpinnedConvs.filter(c => now - c.timestamp >= 2 * oneDay && now - c.timestamp < sevenDays);
-  const previous30Convs = unpinnedConvs.filter(c => now - c.timestamp >= sevenDays && now - c.timestamp < thirtyDays);
-  const olderConvs = unpinnedConvs.filter(c => now - c.timestamp >= thirtyDays);
-
-  const renderSection = (label: string, items: Conversation[]) => {
-    if (items.length === 0) return null;
-    return (
-      <div className="mb-2">
-        <div className="px-3 py-1.5">
-          <span className="text-[11px] font-medium text-muted-foreground/40">{label}</span>
-        </div>
-        {items.map(conv => (
-          <ConversationItem
-            key={conv.id}
-            conversation={conv}
-            isActive={conv.id === activeId}
-            onSelect={onSelect}
-            onDelete={onDelete}
-            onPin={onPin}
-          />
-        ))}
-      </div>
-    );
-  };
+  const groupOrder = ['Today', 'Yesterday', 'Previous 7 Days', 'Older'];
 
   return (
-    <div className="flex flex-col h-full bg-card/80">
+    <div className="flex flex-col h-full">
       {/* New Chat Button */}
-      <div className="p-2">
+      <div className="p-3">
         <button
           onClick={onNew}
-          className="flex items-center gap-2 w-full px-3 py-2.5 rounded-xl border border-border/20 hover:bg-secondary/20 transition-all text-foreground/70 hover:text-foreground/90 text-sm"
+          className={cn(
+            'flex items-center gap-2 w-full px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200',
+            'bg-gradient-to-r from-emerald-500 to-cyan-500 text-white',
+            'hover:from-emerald-400 hover:to-cyan-400 hover:shadow-lg hover:shadow-emerald-500/20',
+            'active:scale-[0.98]'
+          )}
         >
-          <Plus className="h-5 w-5" />
-          <span>New chat</span>
+          <Plus className="h-4 w-4" />
+          New Chat
         </button>
       </div>
 
       {/* Search */}
-      <div className="px-2 pb-2">
+      <div className="px-3 pb-2">
         <div className="relative">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/30" />
-          <Input
+          <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground/40" />
+          <input
             value={searchQuery}
-            onChange={e => onSearchChange(e.target.value)}
+            onChange={(e) => onSearchChange(e.target.value)}
             placeholder="Search conversations..."
-            className="h-8 text-xs pl-9 bg-secondary/5 border-border/15 focus:border-emerald-500/20 rounded-lg"
+            className="w-full pl-8 pr-3 py-2 rounded-lg bg-secondary/20 border border-border/15 text-sm text-foreground/80 placeholder:text-muted-foreground/40 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 focus:border-emerald-500/20 transition-all"
           />
         </div>
       </div>
 
       {/* Conversation List */}
-      <div className="flex-1 overflow-y-auto px-1 custom-scrollbar">
-        {pinnedConvs.length > 0 && renderSection('Pinned', pinnedConvs)}
-        {renderSection('Today', todayConvs)}
-        {renderSection('Yesterday', yesterdayConvs)}
-        {renderSection('Previous 7 Days', previous7Convs)}
-        {renderSection('Previous 30 Days', previous30Convs)}
-        {renderSection('Older', olderConvs)}
+      <div className="flex-1 overflow-y-auto px-2 custom-scrollbar">
+        {/* Pinned conversations */}
+        {pinned.length > 0 && (
+          <div className="mb-3">
+            <div className="flex items-center gap-1.5 px-2 py-1.5 text-[10px] font-semibold text-amber-400/70 uppercase tracking-wider">
+              <Pin className="h-2.5 w-2.5" />
+              Pinned
+            </div>
+            {pinned.map(conv => (
+              <ConversationItem
+                key={conv.id}
+                conversation={conv}
+                isActive={conv.id === activeId}
+                onSelect={onSelect}
+                onDelete={onDelete}
+                onPin={onPin}
+                onRename={onRename}
+              />
+            ))}
+          </div>
+        )}
+
+        {/* Time-grouped conversations */}
+        {groupOrder.map(group => {
+          const convs = grouped[group];
+          if (!convs || convs.length === 0) return null;
+          return (
+            <div key={group} className="mb-3">
+              <div className="px-2 py-1.5 text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">
+                {group}
+              </div>
+              {convs.map(conv => (
+                <ConversationItem
+                  key={conv.id}
+                  conversation={conv}
+                  isActive={conv.id === activeId}
+                  onSelect={onSelect}
+                  onDelete={onDelete}
+                  onPin={onPin}
+                  onRename={onRename}
+                />
+              ))}
+            </div>
+          );
+        })}
 
         {filteredConversations.length === 0 && (
-          <div className="flex flex-col items-center justify-center py-12 text-muted-foreground/25">
-            <MessageSquare className="h-8 w-8 mb-2" />
-            <p className="text-xs">No conversations yet</p>
+          <div className="text-center py-8 text-sm text-muted-foreground/40">
+            {searchQuery ? 'No conversations found' : 'No conversations yet'}
           </div>
         )}
       </div>
@@ -1099,277 +1258,227 @@ function ConversationSidebar({
 }
 
 // ============================================================
-// Tool Navigation Panel (expandable overlay panel)
+// Platform Context Panel (Right Panel)
 // ============================================================
 
-function ToolNavigationPanel({
-  currentActionType,
+function PlatformContextPanel({
+  currentPage,
+  lastActionType,
   onNavigate,
-  onClose,
+  onQuickAction,
 }: {
-  currentActionType: string | undefined;
+  currentPage: string;
+  lastActionType: string | undefined;
   onNavigate: (view: ViewType) => void;
-  onClose: () => void;
+  onQuickAction: (prompt: string) => void;
 }) {
-  // Determine related tools based on current action
-  const relatedTools = useMemo(() => {
-    if (!currentActionType) return [];
-    const keys = RELATED_TOOLS[currentActionType] || [];
-    return keys.map(key => ACTION_NAV_MAP[key]).filter(Boolean);
-  }, [currentActionType]);
-
-  // Get contextual tips
-  const tips = useMemo(() => {
-    if (!currentActionType) return [
-      'Use specific prompts for better results',
-      'Try Deep Research for comprehensive analysis',
-      'Save results to relevant sections for easy access',
-      'Navigate to tools to take action on AI insights',
-    ];
-    return PLATFORM_TIPS[currentActionType] || PLATFORM_TIPS.general_chat || [];
-  }, [currentActionType]);
-
-  // Primary nav item for current action
-  const primaryNav = currentActionType ? ACTION_NAV_MAP[currentActionType] : null;
+  const tips = lastActionType ? PLATFORM_TIPS[lastActionType] : null;
+  const relatedKeys = lastActionType ? RELATED_TOOLS[lastActionType] : [];
+  const relatedItems = relatedKeys
+    .map(key => ACTION_NAV_MAP[key])
+    .filter(Boolean)
+    .slice(0, 4);
 
   return (
-    <div className="flex flex-col h-full">
-      {/* Header */}
-      <div className="flex items-center justify-between p-4 border-b border-border/15">
-        <div className="flex items-center gap-2">
-          <Compass className="h-4 w-4 text-emerald-400" />
-          <span className="text-sm font-semibold text-foreground/80">Tool Navigation</span>
+    <div className="flex flex-col h-full overflow-y-auto custom-scrollbar">
+      {/* Current Context */}
+      <div className="p-4 border-b border-border/15">
+        <div className="flex items-center gap-2 mb-2">
+          <Compass className="h-3.5 w-3.5 text-emerald-400" />
+          <span className="text-[10px] font-semibold text-emerald-400 uppercase tracking-wider">Current Context</span>
         </div>
-        <button
-          onClick={onClose}
-          className="p-1 rounded-md text-muted-foreground/40 hover:text-foreground/70 hover:bg-secondary/20 transition-all"
-        >
-          <X className="h-4 w-4" />
-        </button>
+        <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-secondary/15 border border-border/15">
+          <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
+          <span className="text-xs text-foreground/70">{currentPage}</span>
+        </div>
       </div>
 
-      <div className="flex-1 overflow-y-auto custom-scrollbar">
-        {/* Quick Navigate — Primary */}
-        {primaryNav && (
-          <div className="p-4 border-b border-border/10">
-            <div className="space-y-2">
-              <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Active Tool</span>
-              <button
-                onClick={() => { onNavigate(primaryNav.view); onClose(); }}
-                className={cn(
-                  'flex items-center gap-2.5 w-full px-3 py-2.5 rounded-lg border text-left transition-all duration-200',
-                  'bg-emerald-500/10 border-emerald-500/20 text-emerald-400',
-                  'hover:bg-emerald-500/15 hover:border-emerald-500/30',
-                )}
-              >
-                <primaryNav.icon className="h-4 w-4 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-[11px] font-medium">{primaryNav.label}</div>
-                  <div className="text-[9px] text-emerald-400/60 truncate">{primaryNav.description}</div>
-                </div>
-                <ArrowRight className="h-3.5 w-3.5 shrink-0 opacity-50" />
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* Related Tools */}
-        {relatedTools.length > 0 && (
-          <div className="p-4 border-b border-border/10">
-            <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Related Tools</span>
-            <div className="space-y-1.5 mt-2">
-              {relatedTools.map((tool) => {
-                const ToolIcon = tool.icon;
-                return (
-                  <button
-                    key={tool.view}
-                    onClick={() => { onNavigate(tool.view); onClose(); }}
-                    className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg border text-left transition-all duration-200 bg-secondary/5 border-border/10 text-foreground/70 hover:bg-secondary/10 hover:border-border/20 hover:text-foreground/90"
-                  >
-                    <ToolIcon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
-                    <div className="min-w-0 flex-1">
-                      <div className="text-[11px] font-medium">{tool.label}</div>
-                      <div className="text-[9px] text-muted-foreground/40 truncate">{tool.description}</div>
-                    </div>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* All Platform Tools */}
-        <div className="p-4 border-b border-border/10">
-          <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">All Tools</span>
-          <div className="grid grid-cols-2 gap-1.5 mt-2">
-            {Object.entries(ACTION_NAV_MAP).map(([key, tool]) => {
-              const ToolIcon = tool.icon;
-              const isActive = key === currentActionType;
-              const isRelated = relatedTools.some(r => r.view === tool.view);
-              return (
-                <button
-                  key={key}
-                  onClick={() => { onNavigate(tool.view); onClose(); }}
-                  className={cn(
-                    'flex flex-col items-center gap-1 px-2 py-2.5 rounded-lg border text-center transition-all duration-200',
-                    isActive
-                      ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                      : isRelated
-                      ? 'bg-emerald-500/5 border-emerald-500/10 text-emerald-400/70'
-                      : 'bg-secondary/5 border-border/10 text-muted-foreground/50',
-                    !isActive && 'hover:bg-secondary/10 hover:text-foreground/70',
-                  )}
-                >
-                  <ToolIcon className="h-4 w-4 shrink-0" />
-                  <span className="text-[9px] font-medium leading-tight">{tool.label}</span>
-                </button>
-              );
-            })}
-          </div>
+      {/* Quick Actions */}
+      <div className="p-4 border-b border-border/15">
+        <div className="flex items-center gap-2 mb-3">
+          <Zap className="h-3.5 w-3.5 text-amber-400" />
+          <span className="text-[10px] font-semibold text-amber-400 uppercase tracking-wider">Quick Actions</span>
         </div>
+        <div className="space-y-1.5">
+          {[
+            { label: 'Find Leads', icon: Telescope, prompt: 'Find high-intent leads matching my ICP' },
+            { label: 'Build ICP', icon: Target, prompt: 'Help me build my Ideal Customer Profile' },
+            { label: 'Compose Outreach', icon: Mail, prompt: 'Draft personalized outreach messages' },
+            { label: 'Analyze Pipeline', icon: BarChart3, prompt: 'Analyze my pipeline performance' },
+            { label: 'Enrich Data', icon: Database, prompt: 'Enrich my lead data with contact info' },
+          ].map(action => (
+            <button
+              key={action.label}
+              onClick={() => onQuickAction(action.prompt)}
+              className={cn(
+                'flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[11px] font-medium',
+                'bg-secondary/10 border border-border/10 text-foreground/60',
+                'hover:bg-secondary/20 hover:border-border/20 hover:text-foreground/80 transition-all duration-200'
+              )}
+            >
+              <action.icon className="h-3.5 w-3.5 shrink-0 text-muted-foreground/50" />
+              {action.label}
+            </button>
+          ))}
+        </div>
+      </div>
 
-        {/* Platform Tips */}
-        <div className="p-4">
-          <div className="flex items-center gap-1.5 mb-2">
-            <Lightbulb className="h-3.5 w-3.5 text-amber-400" />
-            <span className="text-[10px] font-semibold text-muted-foreground/50 uppercase tracking-wider">Tips</span>
+      {/* Platform Tips */}
+      {tips && tips.length > 0 && (
+        <div className="p-4 border-b border-border/15">
+          <div className="flex items-center gap-2 mb-3">
+            <Lightbulb className="h-3.5 w-3.5 text-cyan-400" />
+            <span className="text-[10px] font-semibold text-cyan-400 uppercase tracking-wider">Platform Tips</span>
           </div>
           <div className="space-y-2">
             {tips.map((tip, i) => (
-              <div
-                key={i}
-                className="flex items-start gap-2 text-[11px] text-muted-foreground/50 leading-relaxed"
-              >
-                <div className="h-1 w-1 rounded-full bg-emerald-400/40 mt-1.5 shrink-0" />
-                <span>{tip}</span>
+              <div key={i} className="flex items-start gap-2 text-[11px] text-foreground/50 leading-relaxed">
+                <span className="text-cyan-400/60 mt-0.5">•</span>
+                {tip}
               </div>
             ))}
           </div>
         </div>
-      </div>
-    </div>
-  );
-}
+      )}
 
-// ============================================================
-// Model Selector Dropdown
-// ============================================================
-
-function ModelSelector({
-  selectedModel,
-  onSelect,
-}: {
-  selectedModel: string;
-  onSelect: (model: string) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  const ref = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    const handleClick = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClick);
-    return () => document.removeEventListener('mousedown', handleClick);
-  }, []);
-
-  const models = [
-    { id: 'standard', label: 'Standard', description: 'Fast, balanced responses', icon: Zap },
-    { id: 'deep-research', label: 'Deep Research', description: 'Thorough multi-stage analysis', icon: FlaskConical },
-    { id: 'quick', label: 'Quick', description: 'Concise, to-the-point answers', icon: BoltIcon },
-  ];
-
-  const current = models.find(m => m.id === selectedModel) || models[0];
-  const CurrentIcon = current.icon;
-
-  return (
-    <div className="relative" ref={ref}>
-      <button
-        onClick={() => setOpen(!open)}
-        className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg hover:bg-secondary/15 transition-colors text-foreground/70 hover:text-foreground/90"
-      >
-        <CurrentIcon className="h-3.5 w-3.5" />
-        <span className="text-xs font-medium">{current.label}</span>
-        <ChevronDown className={cn('h-3 w-3 transition-transform', open && 'rotate-180')} />
-      </button>
-      {open && (
-        <div className="absolute top-full mt-1 left-0 w-56 rounded-xl border border-border/20 bg-card/95 backdrop-blur-md shadow-xl z-50 overflow-hidden">
-          {models.map(model => {
-            const ModelIcon = model.icon;
-            return (
-              <button
-                key={model.id}
-                onClick={() => { onSelect(model.id); setOpen(false); }}
-                className={cn(
-                  'flex items-center gap-3 w-full px-3 py-2.5 text-left transition-colors',
-                  model.id === selectedModel ? 'bg-emerald-500/10 text-emerald-400' : 'text-foreground/70 hover:bg-secondary/10'
-                )}
-              >
-                <ModelIcon className="h-4 w-4 shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <div className="text-xs font-medium">{model.label}</div>
-                  <div className="text-[10px] text-muted-foreground/50">{model.description}</div>
-                </div>
-                {model.id === selectedModel && <Check className="h-3.5 w-3.5 text-emerald-400 shrink-0" />}
-              </button>
-            );
-          })}
+      {/* Related Tools */}
+      {relatedItems.length > 0 && (
+        <div className="p-4">
+          <div className="flex items-center gap-2 mb-3">
+            <LayoutGrid className="h-3.5 w-3.5 text-violet-400" />
+            <span className="text-[10px] font-semibold text-violet-400 uppercase tracking-wider">Related Tools</span>
+          </div>
+          <div className="space-y-1.5">
+            {relatedItems.map(item => {
+              const ItemIcon = item.icon;
+              return (
+                <button
+                  key={item.view}
+                  onClick={() => onNavigate(item.view)}
+                  className={cn(
+                    'flex items-center gap-2 w-full px-3 py-2 rounded-lg text-[11px]',
+                    'bg-secondary/10 border border-border/10 text-muted-foreground/60',
+                    'hover:bg-secondary/20 hover:border-border/20 hover:text-foreground/70 transition-all duration-200'
+                  )}
+                >
+                  <ItemIcon className="h-3.5 w-3.5 shrink-0" />
+                  <span>{item.label}</span>
+                  <ArrowRight className="h-2.5 w-2.5 ml-auto opacity-30" />
+                </button>
+              );
+            })}
+          </div>
         </div>
       )}
     </div>
   );
 }
 
-// Bolt icon component for Quick model
-function BoltIcon(props: React.SVGProps<SVGSVGElement>) {
+// ============================================================
+// Welcome Screen (ChatGPT-style empty state)
+// ============================================================
+
+function WelcomeScreen({ onSuggestionClick }: { onSuggestionClick: (prompt: string) => void }) {
   return (
-    <svg
-      xmlns="http://www.w3.org/2000/svg"
-      width="24"
-      height="24"
-      viewBox="0 0 24 24"
-      fill="none"
-      stroke="currentColor"
-      strokeWidth="2"
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      {...props}
-    >
-      <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" />
-    </svg>
+    <div className="flex flex-col items-center justify-center h-full px-4 py-12">
+      {/* Logo */}
+      <div className="flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-emerald-500 to-cyan-500 shadow-lg shadow-emerald-500/20 mb-6">
+        <Bot className="h-8 w-8 text-white" />
+      </div>
+
+      <h1 className="text-2xl font-bold text-foreground/90 mb-2">LeadReach AI</h1>
+      <p className="text-sm text-muted-foreground/60 mb-10">How can I help you today?</p>
+
+      {/* Suggestion Cards Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-2xl">
+        {SUGGESTED_PROMPTS.map((suggestion, i) => {
+          const Icon = suggestion.icon;
+          return (
+            <button
+              key={i}
+              onClick={() => onSuggestionClick(suggestion.prompt)}
+              className={cn(
+                'flex items-start gap-3 p-4 rounded-xl border text-left transition-all duration-200',
+                'bg-secondary/5 border-border/15 hover:bg-secondary/15 hover:border-border/30',
+                'group cursor-pointer'
+              )}
+            >
+              <div className="flex items-center justify-center h-9 w-9 rounded-lg bg-emerald-500/10 border border-emerald-500/15 shrink-0 group-hover:bg-emerald-500/15 transition-colors">
+                <Icon className="h-4 w-4 text-emerald-400" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-sm font-medium text-foreground/80 group-hover:text-foreground/90 transition-colors">
+                  {suggestion.label}
+                </div>
+                <div className="text-[11px] text-muted-foreground/50 mt-0.5 leading-relaxed">
+                  {suggestion.description}
+                </div>
+              </div>
+            </button>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
 // ============================================================
-// Main View (ChatGPT-style)
+// Main Component: AIAssistantView (ChatGPT Three-Column Layout)
 // ============================================================
 
 export function AIAssistantView() {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [toolsPanelOpen, setToolsPanelOpen] = useState(false);
-  const [searchQuery, setSearchQuery] = useState('');
-  const [showScrollBtn, setShowScrollBtn] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('standard');
-  const [inputValue, setInputValue] = useState('');
-
   const { activeView, setActiveView } = useAppStore();
   const engine = useChatEngine();
+
+  // Layout state
+  const [leftSidebarOpen, setLeftSidebarOpen] = useState(true);
+  const [rightPanelOpen, setRightPanelOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [input, setInput] = useState('');
+  const [chatMode, setChatMode] = useState<ChatMode>('standard');
+  const [showModeDropdown, setShowModeDropdown] = useState(false);
+  const [showScrollBtn, setShowScrollBtn] = useState(false);
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+  const [titleEditValue, setTitleEditValue] = useState('');
+
+  // Refs
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const modeDropdownRef = useRef<HTMLDivElement>(null);
+  const titleEditRef = useRef<HTMLInputElement>(null);
 
-  // Derive deep research from model selector
-  const deepResearchEnabled = selectedModel === 'deep-research';
+  // Derived state
+  const currentViewLabel = VIEW_LABELS[activeView] || 'Dashboard';
+  const systemPromptWithCtx = SYSTEM_PROMPT.replace('{currentPage}', currentViewLabel);
+  const activeConversation = engine.conversations.find(c => c.id === engine.activeConversationId);
+  const hasMessages = engine.messages.length > 0;
 
-  // Determine the current action type from the last assistant message
-  const currentActionType = useMemo(() => {
-    const lastAssistantMsg = [...engine.messages].reverse().find(m => m.role === 'assistant' && m.actionType);
-    return lastAssistantMsg?.actionType;
-  }, [engine.messages]);
+  // Detect last action type for right panel
+  const lastAssistantMsg = [...engine.messages].reverse().find(m => m.role === 'assistant' && m.actionType);
+  const lastActionType = lastAssistantMsg?.actionType;
 
-  // Auto-scroll
+  const currentMode = CHAT_MODES.find(m => m.id === chatMode) || CHAT_MODES[0];
+  const ModeIcon = currentMode.icon;
+
+  // ============================================================
+  // Effects
+  // ============================================================
+
+  // Close mode dropdown on outside click
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (modeDropdownRef.current && !modeDropdownRef.current.contains(e.target as Node)) {
+        setShowModeDropdown(false);
+      }
+    };
+    if (showModeDropdown) {
+      document.addEventListener('mousedown', handleClickOutside);
+      return () => document.removeEventListener('mousedown', handleClickOutside);
+    }
+  }, [showModeDropdown]);
+
+  // Auto-scroll to bottom on new messages
   const scrollToBottom = useCallback(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, []);
@@ -1378,51 +1487,45 @@ export function AIAssistantView() {
     scrollToBottom();
   }, [engine.messages, engine.isStreaming, engine.isThinking, engine.researchStages, scrollToBottom]);
 
-  // Detect scroll position
+  // Detect scroll position for "scroll to bottom" button
   const handleScroll = useCallback(() => {
     const el = scrollAreaRef.current;
     if (el) {
-      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+      const isNearBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 100;
       setShowScrollBtn(!isNearBottom);
     }
   }, []);
 
   // Focus input on mount
   useEffect(() => {
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
-  // Auto-resize textarea
+  // Focus title edit
+  useEffect(() => {
+    if (isEditingTitle && titleEditRef.current) {
+      titleEditRef.current.focus();
+      titleEditRef.current.select();
+    }
+  }, [isEditingTitle]);
+
+  // ============================================================
+  // Handlers
+  // ============================================================
+
   const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setInputValue(e.target.value);
+    setInput(e.target.value);
     const textarea = e.target;
     textarea.style.height = 'auto';
-    textarea.style.height = Math.min(textarea.scrollHeight, 200) + 'px';
+    textarea.style.height = Math.min(textarea.scrollHeight, 160) + 'px';
   };
 
-  // Build system prompt with context
-  const systemPromptWithCtx = useMemo(() => {
-    const currentViewLabel = VIEW_LABELS[activeView] || 'Dashboard';
-    let prompt = SYSTEM_PROMPT.replace('{currentPage}', currentViewLabel);
-    if (deepResearchEnabled) {
-      prompt += '\n\nDEEP RESEARCH MODE: The user has enabled deep research. Perform comprehensive multi-stage research with detailed analysis, exhaustive data gathering, and thorough synthesis. Take your time and be thorough.';
-    }
-    if (selectedModel === 'quick') {
-      prompt += '\n\nQUICK MODE: The user prefers concise, direct responses. Keep answers brief and to-the-point. Use bullet points and avoid lengthy explanations.';
-    }
-    return prompt;
-  }, [activeView, deepResearchEnabled, selectedModel]);
-
   const handleSend = async () => {
-    if (!inputValue.trim() || engine.isStreaming || engine.isThinking) return;
-    let msg = inputValue.trim();
-    if (deepResearchEnabled) {
-      msg += ' Use deep research mode.';
-    }
-    setInputValue('');
+    if (!input.trim() || engine.isStreaming || engine.isThinking) return;
+    const msg = input.trim();
+    setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
-    await engine.sendMessage(msg, systemPromptWithCtx, VIEW_LABELS[activeView] || 'Dashboard');
-    inputRef.current?.focus();
+    await engine.sendMessage(msg, systemPromptWithCtx, currentViewLabel);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1432,13 +1535,17 @@ export function AIAssistantView() {
     }
   };
 
-  const handleRegenerate = async (_messageId: string) => {
-    await engine.regenerateLastMessage(systemPromptWithCtx, VIEW_LABELS[activeView] || 'Dashboard');
+  const handleSuggestionClick = async (prompt: string) => {
+    setInput('');
+    await engine.sendMessage(prompt, systemPromptWithCtx, currentViewLabel);
   };
 
-  const handlePromptClick = (prompt: string) => {
-    setInputValue(prompt);
-    setTimeout(() => inputRef.current?.focus(), 50);
+  const handleNavigate = (view: ViewType) => {
+    setActiveView(view);
+  };
+
+  const handleRegenerate = async (_messageId: string) => {
+    await engine.regenerateLastMessage(systemPromptWithCtx, currentViewLabel);
   };
 
   const handleSaveTarget = async (messageId: string, saveTarget: SaveTarget) => {
@@ -1450,32 +1557,72 @@ export function AIAssistantView() {
     }
   };
 
-  const handleNavigate = (view: ViewType) => {
-    setActiveView(view);
+  const handleEditMessage = async (messageId: string, newContent: string) => {
+    // Find the message and all messages after it, then resend from that point
+    const conv = engine.conversations.find(c => c.id === engine.activeConversationId);
+    if (!conv) return;
+
+    const msgIdx = conv.messages.findIndex(m => m.id === messageId);
+    if (msgIdx < 0) return;
+
+    // Trim messages to before the edited one, then resend with new content
+    // We'll use createConversation and sendMessage approach
+    // Actually, let's just re-send the edited content as a new message
+    // by trimming the conversation to before this message and sending
+    await engine.sendMessage(newContent, systemPromptWithCtx, currentViewLabel);
   };
 
-  const handleModelSelect = (model: string) => {
-    setSelectedModel(model);
+  const handleRenameConversation = (id: string, newTitle: string) => {
+    // We need to update the conversation title - use the engine's internal state
+    // Since the engine doesn't expose a rename method, we'll use a workaround
+    // by accessing localStorage directly
+    try {
+      const stored = localStorage.getItem('leadreach-chat-conversations');
+      if (stored) {
+        const conversations = JSON.parse(stored);
+        const updated = conversations.map((c: Conversation) =>
+          c.id === id ? { ...c, title: newTitle } : c
+        );
+        localStorage.setItem('leadreach-chat-conversations', JSON.stringify(updated));
+        // Force a reload of conversations by switching away and back
+        engine.switchConversation(engine.activeConversationId || id);
+      }
+    } catch {
+      // Silently fail
+    }
   };
+
+  const handleTitleEditSubmit = () => {
+    if (titleEditValue.trim() && activeConversation) {
+      handleRenameConversation(activeConversation.id, titleEditValue.trim());
+    }
+    setIsEditingTitle(false);
+  };
+
+  const handleTitleEditKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter') {
+      handleTitleEditSubmit();
+    } else if (e.key === 'Escape') {
+      setIsEditingTitle(false);
+    }
+  };
+
+  const isStreaming = engine.isStreaming || engine.isThinking;
+  const hasInput = input.trim().length > 0;
+
+  // ============================================================
+  // Render
+  // ============================================================
 
   return (
-    <div className="flex h-[calc(100vh-8rem)] -m-4 md:-m-6 lg:-m-8 relative bg-background">
-      {/* Sidebar overlay backdrop */}
-      {sidebarOpen && (
-        <div
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden"
-          onClick={() => setSidebarOpen(false)}
-        />
-      )}
-
-      {/* Left Sidebar — Conversations (ChatGPT-style slide-in) */}
+    <div className="flex h-full w-full overflow-hidden bg-background">
+      {/* ============================================================ */}
+      {/* Left Sidebar - Conversation History */}
+      {/* ============================================================ */}
       <div
         className={cn(
-          'fixed lg:relative z-50 lg:z-auto h-full transition-all duration-300 ease-in-out',
-          'w-[280px] border-r border-border/15',
-          sidebarOpen
-            ? 'translate-x-0 opacity-100'
-            : '-translate-x-full lg:translate-x-0 lg:w-0 lg:overflow-hidden lg:opacity-0',
+          'h-full border-r border-border/15 bg-card/50 flex flex-col transition-all duration-300 shrink-0 overflow-hidden',
+          leftSidebarOpen ? 'w-[260px]' : 'w-0',
         )}
       >
         <ConversationSidebar
@@ -1483,309 +1630,251 @@ export function AIAssistantView() {
           activeId={engine.activeConversationId}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
-          onSelect={(id) => { engine.switchConversation(id); setSidebarOpen(false); }}
-          onNew={() => { engine.createConversation(); setSidebarOpen(false); }}
+          onSelect={engine.switchConversation}
+          onNew={engine.createConversation}
           onDelete={engine.deleteConversation}
           onPin={engine.pinConversation}
+          onRename={handleRenameConversation}
         />
       </div>
 
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col min-w-0 relative">
-        {/* Header (ChatGPT-style minimal) */}
-        <div className="flex items-center justify-between px-3 py-2.5 shrink-0 border-b border-border/10">
-          <div className="flex items-center gap-2">
+      {/* ============================================================ */}
+      {/* Center - Chat Area */}
+      {/* ============================================================ */}
+      <div className="flex-1 flex flex-col min-w-0 h-full">
+        {/* Header Bar */}
+        <div className="flex items-center justify-between px-3 py-2 border-b border-border/15 shrink-0">
+          {/* Left: Sidebar toggle */}
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground/60 hover:text-foreground/80 hover:bg-secondary/15"
-              onClick={() => setSidebarOpen(!sidebarOpen)}
+              className="h-8 w-8 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/20"
+              onClick={() => setLeftSidebarOpen(!leftSidebarOpen)}
+              title={leftSidebarOpen ? 'Close sidebar' : 'Open sidebar'}
             >
-              <PanelLeftOpen className="h-5 w-5" />
+              {leftSidebarOpen ? <PanelLeftClose className="h-4 w-4" /> : <PanelLeftOpen className="h-4 w-4" />}
             </Button>
-            <ModelSelector selectedModel={selectedModel} onSelect={handleModelSelect} />
+
+            {/* Conversation title (clickable to edit) */}
+            {activeConversation && (
+              <div className="flex items-center ml-1">
+                {isEditingTitle ? (
+                  <input
+                    ref={titleEditRef}
+                    value={titleEditValue}
+                    onChange={(e) => setTitleEditValue(e.target.value)}
+                    onKeyDown={handleTitleEditKeyDown}
+                    onBlur={handleTitleEditSubmit}
+                    className="text-sm font-medium bg-secondary/30 border border-border/30 rounded px-2 py-1 text-foreground/90 focus:outline-none focus:ring-1 focus:ring-emerald-500/30 max-w-[200px]"
+                  />
+                ) : (
+                  <button
+                    onClick={() => { setTitleEditValue(activeConversation.title); setIsEditingTitle(true); }}
+                    className="text-sm font-medium text-foreground/70 hover:text-foreground/90 transition-colors flex items-center gap-1.5 max-w-[200px]"
+                    title="Click to rename"
+                  >
+                    <span className="truncate">{activeConversation.title}</span>
+                    <Pencil className="h-2.5 w-2.5 opacity-0 group-hover:opacity-100 text-muted-foreground/40" />
+                  </button>
+                )}
+              </div>
+            )}
           </div>
 
-          <div className="flex items-center gap-1.5">
-            {/* Status indicator */}
-            {engine.isThinking || engine.isStreaming ? (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/10 border border-amber-500/15">
-                <Loader2 className="h-3 w-3 text-amber-400 animate-spin" />
-                <span className="text-[10px] font-medium text-amber-400">
-                  {engine.researchStages.length > 0 ? 'Researching' : 'Thinking'}
-                </span>
+          {/* Center: Mode selector */}
+          <div ref={modeDropdownRef} className="relative">
+            <button
+              onClick={() => setShowModeDropdown(!showModeDropdown)}
+              className="flex items-center gap-1.5 h-8 px-3 rounded-lg text-[11px] font-medium text-muted-foreground/70 hover:text-foreground hover:bg-secondary/20 transition-all border border-transparent hover:border-border/15"
+            >
+              <ModeIcon className="h-3.5 w-3.5" />
+              <span>{currentMode.label}</span>
+              <ChevronDown className={cn('h-2.5 w-2.5 transition-transform', showModeDropdown && 'rotate-180')} />
+            </button>
+            {showModeDropdown && (
+              <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 w-52 rounded-xl border border-border/30 bg-card/95 backdrop-blur-xl shadow-xl z-50 overflow-hidden">
+                {CHAT_MODES.map((mode) => {
+                  const Icon = mode.icon;
+                  return (
+                    <button
+                      key={mode.id}
+                      onClick={() => { setChatMode(mode.id); setShowModeDropdown(false); }}
+                      className={cn(
+                        'flex items-center gap-3 w-full px-3 py-2.5 text-[11px] transition-colors',
+                        chatMode === mode.id
+                          ? 'bg-emerald-500/10 text-emerald-400'
+                          : 'text-muted-foreground/70 hover:text-foreground hover:bg-secondary/10'
+                      )}
+                    >
+                      <Icon className="h-4 w-4 shrink-0" />
+                      <div className="text-left">
+                        <div className="font-medium">{mode.label}</div>
+                        <div className="text-[9px] text-muted-foreground/50">{mode.description}</div>
+                      </div>
+                      {chatMode === mode.id && <Check className="h-3 w-3 ml-auto shrink-0" />}
+                    </button>
+                  );
+                })}
               </div>
-            ) : null}
+            )}
+          </div>
 
-            {/* New chat */}
+          {/* Right: New chat + Right panel toggle */}
+          <div className="flex items-center gap-1">
             <Button
               variant="ghost"
               size="icon"
-              className="h-9 w-9 text-muted-foreground/60 hover:text-foreground/80 hover:bg-secondary/15"
+              className="h-8 w-8 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/20"
               onClick={engine.createConversation}
               title="New chat"
             >
-              <Pencil className="h-4 w-4" />
+              <Plus className="h-4 w-4" />
             </Button>
-
-            {/* Tools panel toggle */}
             <Button
               variant="ghost"
               size="icon"
-              className={cn(
-                'h-9 w-9 transition-colors',
-                toolsPanelOpen
-                  ? 'text-emerald-400 bg-emerald-500/10 hover:bg-emerald-500/15'
-                  : 'text-muted-foreground/60 hover:text-foreground/80 hover:bg-secondary/15'
-              )}
-              onClick={() => setToolsPanelOpen(!toolsPanelOpen)}
-              title={toolsPanelOpen ? 'Hide tools panel' : 'Show tools panel'}
+              className="h-8 w-8 text-muted-foreground/60 hover:text-foreground hover:bg-secondary/20"
+              onClick={() => setRightPanelOpen(!rightPanelOpen)}
+              title={rightPanelOpen ? 'Close panel' : 'Open panel'}
             >
-              <Compass className="h-4 w-4" />
+              {rightPanelOpen ? <PanelRightClose className="h-4 w-4" /> : <PanelRightOpen className="h-4 w-4" />}
             </Button>
           </div>
         </div>
 
-        {/* Messages Area */}
-        <div
-          ref={scrollAreaRef}
-          onScroll={handleScroll}
-          className="flex-1 overflow-y-auto custom-scrollbar"
-        >
-          <div className="max-w-3xl mx-auto px-4 sm:px-6">
-            {engine.messages.length === 0 ? (
-              /* Welcome Screen (ChatGPT-style) */
-              <div className="flex flex-col items-center justify-center min-h-[65vh] gap-6 py-12">
-                {/* Logo */}
-                <div className="flex h-16 w-16 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 border border-emerald-500/15">
-                  <Sparkles className="h-8 w-8 text-emerald-400" />
+        {/* Chat Area */}
+        <div className="flex-1 min-h-0 flex flex-col">
+          {/* Messages or Welcome */}
+          <div
+            ref={scrollAreaRef}
+            onScroll={handleScroll}
+            className="flex-1 overflow-y-auto custom-scrollbar"
+          >
+            <div className={cn(
+              'mx-auto w-full',
+              hasMessages ? 'max-w-3xl px-4' : 'max-w-3xl',
+            )}>
+              {hasMessages ? (
+                <div className="py-4">
+                  {engine.messages.map((message) => (
+                    <MessageBubble
+                      key={message.id}
+                      message={message}
+                      onCopy={engine.copyMessage}
+                      onFeedback={engine.feedbackMessage}
+                      onRegenerate={handleRegenerate}
+                      onSaveTarget={handleSaveTarget}
+                      onNavigate={handleNavigate}
+                      onEditMessage={handleEditMessage}
+                    />
+                  ))}
+                  <div ref={messagesEndRef} />
                 </div>
-
-                <div className="text-center">
-                  <h1 className="text-2xl font-semibold text-foreground/90 mb-2">What can I help you with?</h1>
-                  <p className="text-sm text-muted-foreground/50 max-w-md">
-                    Find leads, research companies, draft outreach, analyze your pipeline, and more.
-                  </p>
-                </div>
-
-                {/* Deep Research Notice */}
-                {deepResearchEnabled && (
-                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-violet-500/20 bg-violet-500/5 text-[11px] text-violet-400">
-                    <FlaskConical className="h-3.5 w-3.5" />
-                    <span>Deep Research mode is active — responses will be more thorough</span>
-                  </div>
-                )}
-
-                {/* Prompt Suggestion Cards (2x2 grid) */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 w-full max-w-xl">
-                  {SUGGESTED_PROMPTS.slice(0, 4).map((prompt, i) => {
-                    const Icon = prompt.icon;
-                    return (
-                      <button
-                        key={i}
-                        className="flex items-start gap-3 p-4 rounded-xl border border-border/15 bg-secondary/[0.03] hover:bg-secondary/10 hover:border-emerald-500/20 transition-all duration-200 text-left group"
-                        onClick={() => handlePromptClick(prompt.prompt)}
-                      >
-                        <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/15 transition-colors shrink-0">
-                          <Icon className="h-4 w-4 text-emerald-400/70 group-hover:text-emerald-400 transition-colors" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-medium text-foreground/80 group-hover:text-foreground/90 transition-colors">{prompt.label}</div>
-                          <div className="text-xs text-muted-foreground/40 mt-0.5 leading-relaxed">{prompt.description}</div>
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              /* Messages */
-              <>
-                {engine.messages.map(msg => (
-                  <MessageBubble
-                    key={msg.id}
-                    message={msg}
-                    onCopy={engine.copyMessage}
-                    onFeedback={engine.feedbackMessage}
-                    onRegenerate={handleRegenerate}
-                    onSaveTarget={handleSaveTarget}
-                    onNavigate={handleNavigate}
-                  />
-                ))}
-
-                {/* Thinking indicator */}
-                {engine.isThinking && !engine.messages.some(m => m.isLoading) && (
-                  <div className="flex gap-3 py-4">
-                    <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 border border-emerald-500/15 shrink-0 mt-0.5">
-                      <Bot className="h-4 w-4 text-emerald-400" />
-                    </div>
-                    <div className="flex items-center gap-3 pt-1">
-                      <div className="flex gap-1.5">
-                        <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/60 animate-bounce [animation-delay:0ms]" />
-                        <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/40 animate-bounce [animation-delay:150ms]" />
-                        <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/20 animate-bounce [animation-delay:300ms]" />
-                      </div>
-                      <span className="text-sm text-muted-foreground/50">Thinking...</span>
-                    </div>
-                  </div>
-                )}
-
-                {/* Suggested prompts (show when few messages) */}
-                {engine.messages.length <= 2 && !engine.isThinking && !engine.isStreaming && (
-                  <>
-                    <Separator className="bg-border/10 my-2" />
-                    <div className="space-y-3 pb-4">
-                      <div className="flex items-center gap-2">
-                        <Lightbulb className="h-4 w-4 text-amber-400/60" />
-                        <span className="text-xs font-medium text-foreground/50">Suggested prompts</span>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        {SUGGESTED_PROMPTS.slice(0, 4).map((prompt, i) => {
-                          const Icon = prompt.icon;
-                          return (
-                            <button
-                              key={i}
-                              className="flex items-start gap-2.5 p-3 rounded-xl border border-border/10 bg-secondary/[0.03] hover:bg-secondary/10 hover:border-emerald-500/20 transition-all duration-200 text-left group"
-                              onClick={() => handlePromptClick(prompt.prompt)}
-                            >
-                              <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-emerald-500/10 group-hover:bg-emerald-500/15 shrink-0">
-                                <Icon className="h-3.5 w-3.5 text-emerald-400/60 group-hover:text-emerald-400" />
-                              </div>
-                              <div>
-                                <div className="text-xs font-medium text-foreground/70 group-hover:text-foreground/80">{prompt.label}</div>
-                                <div className="text-[10px] text-muted-foreground/40 mt-0.5">{prompt.description}</div>
-                              </div>
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                <div ref={messagesEndRef} />
-              </>
-            )}
+              ) : (
+                <WelcomeScreen onSuggestionClick={handleSuggestionClick} />
+              )}
+            </div>
           </div>
-        </div>
 
-        {/* Scroll to bottom button */}
-        {showScrollBtn && (
-          <div className="absolute bottom-36 left-1/2 -translate-x-1/2 z-10">
+          {/* Scroll to bottom button */}
+          {showScrollBtn && hasMessages && (
             <button
               onClick={scrollToBottom}
-              className="flex items-center justify-center h-8 w-8 rounded-full bg-card/90 border border-border/25 shadow-lg hover:bg-secondary/20 transition-all text-muted-foreground/60 backdrop-blur-sm"
+              className="absolute bottom-28 left-1/2 -translate-x-1/2 z-10 flex items-center justify-center h-8 w-8 rounded-full border border-border/30 bg-card/90 backdrop-blur-sm shadow-lg text-muted-foreground/70 hover:text-foreground hover:bg-card transition-all"
             >
               <ArrowDown className="h-4 w-4" />
             </button>
-          </div>
-        )}
+          )}
 
-        {/* Input Area (ChatGPT-style pill input) */}
-        <div className="shrink-0 px-3 sm:px-4 pb-4 pt-2">
-          <div className="max-w-3xl mx-auto">
-            {/* Research stages indicator */}
-            {engine.researchStages.length > 0 && (
-              <div className="mb-3 rounded-xl border border-violet-500/15 bg-violet-500/5 px-4 py-3">
-                <ResearchProgress stages={engine.researchStages} />
-              </div>
-            )}
-
-            {/* The pill input container */}
-            <div className="relative flex items-end rounded-2xl border border-border/25 bg-secondary/[0.06] shadow-sm focus-within:border-border/40 focus-within:shadow-md transition-all">
-              {/* Attachment button (left inside) */}
-              <div className="pl-3 pb-3 pt-3">
-                <button className="text-muted-foreground/30 hover:text-muted-foreground/60 transition-colors" title="Attach file (coming soon)">
-                  <Paperclip className="h-5 w-5" />
-                </button>
-              </div>
-
-              {/* Textarea */}
-              <textarea
-                ref={inputRef}
-                value={inputValue}
-                onChange={handleInputChange}
-                onKeyDown={handleKeyDown}
-                placeholder={deepResearchEnabled ? 'Message LeadReach AI (deep research)...' : 'Message LeadReach AI...'}
-                rows={1}
-                className="flex-1 resize-none bg-transparent pl-3 pr-2 py-3 text-sm text-foreground/90 placeholder:text-muted-foreground/30 focus:outline-none min-h-[52px] max-h-[200px] leading-relaxed"
-              />
-
-              {/* Send / Stop button (right inside) */}
-              <div className="pr-3 pb-3 pt-3">
-                {engine.isStreaming || engine.isThinking ? (
+          {/* Input Area */}
+          <div className="shrink-0 px-4 pb-4 pt-2">
+            <div className="max-w-3xl mx-auto">
+              {/* Input container */}
+              <div className={cn(
+                'relative rounded-2xl border transition-all duration-200',
+                'bg-card/80 backdrop-blur-sm',
+                hasInput
+                  ? 'border-emerald-500/20 shadow-sm shadow-emerald-500/5'
+                  : 'border-border/30',
+                isStreaming && 'border-amber-500/20'
+              )}>
+                <div className="flex items-end gap-2 pl-4 pr-2 py-2">
+                  {/* Paperclip (disabled placeholder) */}
                   <button
-                    onClick={engine.stopStreaming}
-                    className="flex items-center justify-center h-8 w-8 rounded-lg bg-foreground/80 hover:bg-foreground text-background transition-colors"
-                    title="Stop generating"
+                    className="flex items-center justify-center h-8 w-8 rounded-lg text-muted-foreground/25 cursor-not-allowed shrink-0 mb-0.5"
+                    disabled
+                    title="Attachments coming soon"
                   >
-                    <Square className="h-3.5 w-3.5" fill="currentColor" />
+                    <Paperclip className="h-4 w-4" />
                   </button>
-                ) : (
-                  <button
-                    onClick={handleSend}
-                    disabled={!inputValue.trim()}
-                    className={cn(
-                      'flex items-center justify-center h-8 w-8 rounded-lg transition-all',
-                      inputValue.trim()
-                        ? 'bg-foreground text-background hover:opacity-90'
-                        : 'bg-foreground/10 text-foreground/20 cursor-not-allowed'
+
+                  {/* Textarea */}
+                  <textarea
+                    ref={inputRef}
+                    value={input}
+                    onChange={handleInputChange}
+                    onKeyDown={handleKeyDown}
+                    placeholder="Message LeadReach AI..."
+                    rows={1}
+                    className="flex-1 bg-transparent text-sm text-foreground/90 placeholder:text-muted-foreground/40 resize-none focus:outline-none py-1.5 max-h-[160px] leading-relaxed"
+                    disabled={isStreaming}
+                  />
+
+                  {/* Send or Stop button */}
+                  <div className="shrink-0 mb-0.5">
+                    {isStreaming ? (
+                      <button
+                        onClick={engine.stopStreaming}
+                        className="flex items-center justify-center h-8 w-8 rounded-lg bg-amber-500/20 text-amber-400 hover:bg-amber-500/30 transition-all"
+                        title="Stop generating"
+                      >
+                        <Square className="h-3.5 w-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={handleSend}
+                        disabled={!hasInput}
+                        className={cn(
+                          'flex items-center justify-center h-8 w-8 rounded-lg transition-all',
+                          hasInput
+                            ? 'bg-emerald-500 text-white hover:bg-emerald-400 shadow-md shadow-emerald-500/20'
+                            : 'bg-secondary/20 text-muted-foreground/30 cursor-not-allowed'
+                        )}
+                        title="Send message"
+                      >
+                        <ArrowUp className="h-4 w-4" />
+                      </button>
                     )}
-                    title="Send message"
-                  >
-                    <ArrowUp className="h-4 w-4" />
-                  </button>
-                )}
+                  </div>
+                </div>
               </div>
-            </div>
 
-            {/* Below-input row: Deep Research toggle + hints */}
-            <div className="flex items-center justify-between mt-2 px-1">
-              <div className="flex items-center gap-2">
-                <button
-                  onClick={() => setSelectedModel(deepResearchEnabled ? 'standard' : 'deep-research')}
-                  className={cn(
-                    'flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-[10px] font-medium transition-all',
-                    deepResearchEnabled
-                      ? 'bg-violet-500/10 border-violet-500/20 text-violet-400'
-                      : 'border-border/15 text-muted-foreground/30 hover:text-muted-foreground/50 hover:border-border/25'
-                  )}
-                >
-                  <FlaskConical className="h-3 w-3" />
-                  Deep Research
-                </button>
-                {currentActionType && ACTION_NAV_MAP[currentActionType] && ACTION_CONFIG[currentActionType] && (
-                  <span className="flex items-center gap-1 px-2.5 py-1 rounded-full border border-border/10 text-[10px] text-muted-foreground/30">
-                    {ACTION_CONFIG[currentActionType].emoji} {ACTION_NAV_MAP[currentActionType].label}
-                  </span>
-                )}
-              </div>
-              <span className="text-[10px] text-muted-foreground/20">
-                LeadReach AI can make mistakes. Verify important info.
-              </span>
+              {/* Disclaimer */}
+              <p className="text-[10px] text-muted-foreground/30 text-center mt-2">
+                LeadReach AI can make mistakes. Consider checking important information.
+              </p>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Tools Panel (expandable overlay from right) */}
-      {toolsPanelOpen && (
-        <>
-          {/* Backdrop */}
-          <div
-            className="fixed inset-0 bg-black/30 z-40"
-            onClick={() => setToolsPanelOpen(false)}
-          />
-          {/* Panel */}
-          <div className="fixed right-0 top-0 bottom-0 w-[320px] z-50 bg-card/95 backdrop-blur-md border-l border-border/15 shadow-2xl animate-in slide-in-from-right duration-200">
-            <ToolNavigationPanel
-              currentActionType={currentActionType}
-              onNavigate={handleNavigate}
-              onClose={() => setToolsPanelOpen(false)}
-            />
-          </div>
-        </>
-      )}
+      {/* ============================================================ */}
+      {/* Right Panel - Platform Context */}
+      {/* ============================================================ */}
+      <div
+        className={cn(
+          'h-full border-l border-border/15 bg-card/50 transition-all duration-300 shrink-0 overflow-hidden',
+          rightPanelOpen ? 'w-[300px]' : 'w-0',
+        )}
+      >
+        <PlatformContextPanel
+          currentPage={currentViewLabel}
+          lastActionType={lastActionType}
+          onNavigate={handleNavigate}
+          onQuickAction={handleSuggestionClick}
+        />
+      </div>
     </div>
   );
 }
