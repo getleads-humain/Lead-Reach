@@ -55,8 +55,8 @@ export type LLMModel = typeof LLM_MODELS[number];
  * Higher budget = more reasoning before answering, but costs more tokens.
  */
 const THINKING_BUDGETS = {
-  /** Quick responses (intent classification, health checks) */
-  quick: 512,
+  /** Quick responses (intent classification, health checks) — must be >= 1024 to leave tokens for content */
+  quick: 1024,
   /** Standard responses (chat, data extraction) */
   standard: 2048,
   /** Complex reasoning (deep research, multi-step analysis) */
