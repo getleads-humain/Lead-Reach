@@ -17,8 +17,8 @@
  * The final output is a comprehensive research report with actionable intelligence.
  */
 
-import { webRead, exaSearch, exaSearchDeep, exaSearchCompaniesStructured, exaSearchPeople, exaSearchIntentSignals, exaGetContents, exaFindSimilar, exaCategorySearch } from '../agent-reach-bridge';
-import { isExaConfigured } from '../exa-sdk';
+import { webRead, exaSearch } from '../agent-reach-bridge';
+import { callLLM as centralCallLLM, callLLMForJSON } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -271,22 +271,18 @@ export function detectResearchIntent(query: string): {
 
 async function callLLM(systemPrompt: string, userMessage: string): Promise<string> {
   try {
-    const ZAI = (await import('z-ai-web-dev-sdk')).default;
-    const zai = await ZAI.create();
-    
-    const result = await zai.chat.completions.create({
-      messages: [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage },
-      ],
+    const result = await centralCallLLM({
+      systemPrompt,
+      userMessage,
       temperature: 0.3,
-      max_tokens: 4000,
+      maxTokens: 4000,
+      thinkingBudget: 'deep',
     });
     
-    if (!result?.choices?.[0]?.message?.content) {
-      throw new Error('LLM returned empty response');
+    if (!result) {
+      throw new Error('LLM returned null — API key may not be configured or all models failed');
     }
-    return result.choices[0].message.content;
+    return result;
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     console.error('[ResearchEngine] LLM call failed:', msg);
@@ -380,7 +376,7 @@ async function executeCompanySearch(
     stage: 'company_search',
     label: 'Searching company data',
     status: 'running',
-    detail: `Deep searching for ${companyName} via Exa...`,
+    detail: `Searching for ${companyName} company data...`,
   });
   
   try {
@@ -390,74 +386,33 @@ async function executeCompanySearch(
     
     let companyData: CompanySearchOutput | undefined;
     
-    // Primary: Exa deep search with structured output
-    if (isExaConfigured()) {
-      try {
-        const result = await exaSearchCompaniesStructured(searchQuery, 5);
-        
-        if (result.success && result.data.length > 0) {
-          // Use the best result
-          const best = result.data[0];
-          companyData = {
-            companyName: best.title || companyName,
-            website: best.url || websiteUrl,
-            industry: industry || undefined,
-            description: best.snippet || best.summary || undefined,
-            source: 'Exa Deep Search',
-          };
-        }
-        
-        // If we have a URL, try to get enriched content from Exa /contents
-        if (websiteUrl && isExaConfigured()) {
-          try {
-            const contents = await exaGetContents([websiteUrl], {
-              text: { maxCharacters: 15000 },
-              highlights: true,
-              summary: { query: `${companyName} company overview industry employees revenue location contact` },
-            });
-            
-            if (contents.success && contents.data.length > 0) {
-              const c = contents.data[0];
-              if (c.summary && companyData) {
-                companyData.description = c.summary;
-              }
-              if (c.text && companyData) {
-                // Parse out useful data from the text
-                const text = c.text;
-                const emailMatch = text.match(/[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/);
-                if (emailMatch && !companyData.website?.includes('@')) {
-                  // Found an email
-                }
-              }
-            }
-          } catch {}
-        }
-        
-        // Also try Exa findSimilar for the website
-        if (websiteUrl && isExaConfigured()) {
-          try {
-            const similar = await exaFindSimilar(websiteUrl, 3);
-            // Similar sites give competitive landscape data
-          } catch {}
-        }
-      } catch (e) {
-        console.warn('[ResearchEngine] Exa company search failed:', e instanceof Error ? e.message : e);
+    // Primary: Web search for company data
+    try {
+      const result = await exaSearch(searchQuery, 5);
+      if (result.success && result.data.length > 0) {
+        const best = result.data[0];
+        companyData = {
+          companyName: best.title || companyName,
+          website: best.url || websiteUrl,
+          industry: industry || undefined,
+          description: best.snippet || undefined,
+          source: result.source || 'Web Search',
+        };
       }
+    } catch (e) {
+      console.warn('[ResearchEngine] Web search for company failed:', e instanceof Error ? e.message : e);
     }
     
-    // Fallback: General web search
-    if (!companyData) {
+    // Secondary: If we have a URL, read the website for more data
+    if (websiteUrl && companyData) {
       try {
-        const result = await exaSearch(searchQuery, 5);
-        if (result.success && result.data.length > 0) {
-          const best = result.data[0];
-          companyData = {
-            companyName: best.title || companyName,
-            website: best.url || websiteUrl,
-            industry: industry || undefined,
-            description: best.snippet || undefined,
-            source: result.source || 'Web Search',
-          };
+        const webResult = await webRead(websiteUrl);
+        if (webResult.success && webResult.data.content) {
+          // Extract more detailed description from the website
+          const content = webResult.data.content.slice(0, 3000);
+          if (content.length > (companyData.description?.length || 0)) {
+            companyData.description = content.slice(0, 500).trim();
+          }
         }
       } catch {}
     }
@@ -509,47 +464,41 @@ async function executePeopleSearch(
   const contacts: PeopleSearchOutput[] = [];
   
   try {
-    // Primary: Exa people search
-    if (isExaConfigured()) {
-      try {
-        const peopleQuery = `${companyName} CEO founder director VP head ${industry || ''}`;
-        const result = await exaSearchPeople(peopleQuery, 8);
-        
-        if (result.success && result.data.length > 0) {
-          for (const person of result.data) {
-            // Clean up the snippet - remove raw LinkedIn data patterns
-            let cleanSnippet = (person.snippet || person.summary || '')
-              .replace(/\[object Object\]/g, '')
-              .replace(/###/g, '')
-              .replace(/Department:.*?(?:\n|$)/gi, '')
-              .replace(/Level:.*?(?:\n|$)/gi, '')
-              .slice(0, 300); // Truncate long snippets
-            
-            contacts.push({
-              name: person.title || '',
-              title: person.snippet?.split('—')[0]?.split(' at ')[0]?.trim() || undefined,
-              company: companyName,
-              linkedinUrl: person.url?.includes('linkedin') ? person.url : undefined,
-              location: location || undefined,
-              snippet: cleanSnippet || undefined,
-              source: 'Exa People Search',
-            });
-          }
+    // Primary: Web search for company leadership
+    try {
+      const peopleQuery = `${companyName} CEO founder director VP head leadership team ${industry || ''}`;
+      const result = await exaSearch(peopleQuery, 8);
+      
+      if (result.success && result.data.length > 0) {
+        for (const person of result.data) {
+          let cleanSnippet = (person.snippet || '')
+            .replace(/\[object Object\]/g, '')
+            .replace(/###/g, '')
+            .slice(0, 300);
+          
+          contacts.push({
+            name: person.title || '',
+            title: person.snippet?.split('—')[0]?.split(' at ')[0]?.trim() || undefined,
+            company: companyName,
+            linkedinUrl: person.url?.includes('linkedin') ? person.url : undefined,
+            location: location || undefined,
+            snippet: cleanSnippet || undefined,
+            source: 'Web Search',
+          });
         }
-      } catch (e) {
-        console.warn('[ResearchEngine] Exa people search failed:', e instanceof Error ? e.message : e);
       }
+    } catch (e) {
+      console.warn('[ResearchEngine] People search failed:', e instanceof Error ? e.message : e);
     }
     
-    // Fallback: LinkedIn category search
+    // Secondary: LinkedIn-specific search
     if (contacts.length < 3) {
       try {
-        const linkedInQuery = `${companyName} CEO founder director`;
-        const result = await exaCategorySearch(linkedInQuery, 'linkedin profile', 5);
+        const linkedInQuery = `site:linkedin.com ${companyName} CEO founder director`;
+        const result = await exaSearch(linkedInQuery, 5);
         
         if (result.success && result.data.length > 0) {
           for (const person of result.data) {
-            // Avoid duplicates
             if (contacts.some(c => c.linkedinUrl === person.url)) continue;
             
             contacts.push({
@@ -557,24 +506,8 @@ async function executePeopleSearch(
               title: person.snippet?.split(' at ')[0]?.trim() || undefined,
               company: companyName,
               linkedinUrl: person.url,
-              snippet: (person.snippet || person.summary || '').replace(/\[object Object\]/g, '').replace(/###/g, '').slice(0, 300) || undefined,
+              snippet: (person.snippet || '').replace(/\[object Object\]/g, '').replace(/###/g, '').slice(0, 300) || undefined,
               source: 'LinkedIn Search',
-            });
-          }
-        }
-      } catch {}
-    }
-    
-    // Fallback: General web search for "companyName CEO/founder"
-    if (contacts.length < 2) {
-      try {
-        const result = await exaSearch(`${companyName} CEO founder director leadership team`, 5);
-        if (result.success && result.data.length > 0) {
-          for (const person of result.data) {
-            contacts.push({
-              name: person.title || '',
-              snippet: (person.snippet || '').slice(0, 300) || undefined,
-              source: 'Web Search',
             });
           }
         }
@@ -615,35 +548,31 @@ async function executeNewsAndSocial(
   
   try {
     // Search for recent news
-    if (isExaConfigured()) {
-      try {
-        const newsResult = await exaCategorySearch(
-          `${companyName} latest news updates 2024 2025`,
-          'news',
-          5,
-        );
-        
-        if (newsResult.success && newsResult.data.length > 0) {
-          for (const item of newsResult.data) {
-            items.push({
-              title: item.title || '',
-              url: item.url,
-              snippet: item.snippet || item.summary || '',
-              date: item.publishedDate,
-              source: 'Exa News',
-              category: 'news',
-            });
-          }
+    try {
+      const newsResult = await exaSearch(
+        `${companyName} latest news updates 2024 2025`,
+        5,
+      );
+      
+      if (newsResult.success && newsResult.data.length > 0) {
+        for (const item of newsResult.data) {
+          items.push({
+            title: item.title || '',
+            url: item.url,
+            snippet: item.snippet || '',
+            date: item.publishedDate,
+            source: 'Web Search',
+            category: 'news',
+          });
         }
-      } catch {}
-    }
+      }
+    } catch {}
     
     // Also do a general search for recent activity
     try {
       const generalResult = await exaSearch(`${companyName} news press release announcement 2024 2025`, 5);
       if (generalResult.success && generalResult.data.length > 0) {
         for (const item of generalResult.data) {
-          // Avoid duplicates
           if (items.some(i => i.url === item.url)) continue;
           items.push({
             title: item.title || '',
@@ -692,50 +621,45 @@ async function executeIntentSignals(
   const signals: IntentSignalOutput[] = [];
   
   try {
-    if (isExaConfigured()) {
-      try {
-        const result = await exaSearchIntentSignals(companyName, industry, location);
-        
-        if (result.structuredOutput?.content) {
-          const content = result.structuredOutput.content as Record<string, unknown>;
-          const signalList = content.signals as Array<Record<string, unknown>> | undefined;
-          
-          if (signalList && Array.isArray(signalList)) {
-            for (const s of signalList) {
-              signals.push({
-                type: (s.type as string) || 'unknown',
-                description: (s.description as string) || '',
-                source: (s.source as string) || undefined,
-                date: (s.date as string) || undefined,
-                confidence: (s.overallAssessment as 'high' | 'medium' | 'low') || 'medium',
-              });
-            }
-          }
-          
-          // Add overall assessment as a signal if available
-          if (content.overallAssessment) {
-            signals.push({
-              type: 'overall_assessment',
-              description: `Overall buying intent: ${content.overallAssessment}`,
-              confidence: content.overallAssessment as 'high' | 'medium' | 'low',
-            });
-          }
+    // Search for hiring/expansion/funding signals
+    try {
+      const result = await exaSearch(`${companyName} hiring expanding funding new office 2024 2025`, 3);
+      if (result.success && result.data.length > 0) {
+        for (const item of result.data) {
+          signals.push({
+            type: 'web_signal',
+            description: item.snippet || item.title || '',
+            source: item.url,
+            confidence: 'low',
+          });
         }
-      } catch {}
-    }
+      }
+    } catch {}
     
-    // Fallback: General search for hiring/expansion signals
+    // Use LLM to analyze intent based on gathered data
     if (signals.length === 0) {
       try {
-        const result = await exaSearch(`${companyName} hiring expanding funding new office 2024 2025`, 3);
-        if (result.success && result.data.length > 0) {
-          for (const item of result.data) {
-            signals.push({
-              type: 'web_signal',
-              description: item.snippet || item.title || '',
-              source: item.url,
-              confidence: 'low',
-            });
+        const intentAnalysis = await centralCallLLM({
+          systemPrompt: 'You are a B2B sales intelligence analyst. Analyze the company and identify potential buying intent signals based on general market knowledge. Return a JSON array of signals with fields: type, description, confidence (high/medium/low). Example: [{"type":"expansion","description":"Company is expanding operations","confidence":"medium"}]',
+          userMessage: `Analyze potential buying intent signals for: ${companyName} in ${industry || 'technology'} industry, ${location || 'global'}. Focus on typical signals like hiring patterns, technology adoption, expansion, funding, etc.`,
+          temperature: 0.3,
+          maxTokens: 1000,
+          thinkingBudget: 'standard',
+        });
+        
+        if (intentAnalysis) {
+          const parsed = intentAnalysis.match(/\[[\s\S]*\]/);
+          if (parsed) {
+            try {
+              const parsedSignals = JSON.parse(parsed[0]) as Array<{ type: string; description: string; confidence: string }>;
+              for (const s of parsedSignals) {
+                signals.push({
+                  type: s.type || 'ai_inferred',
+                  description: s.description || '',
+                  confidence: (['high', 'medium', 'low'].includes(s.confidence) ? s.confidence : 'low') as 'high' | 'medium' | 'low',
+                });
+              }
+            } catch {}
           }
         }
       } catch {}

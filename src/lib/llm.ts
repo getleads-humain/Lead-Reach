@@ -70,8 +70,8 @@ type ThinkingBudget = keyof typeof THINKING_BUDGETS;
 // ============================================================
 
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 1500; // 1.5s between calls
-const JITTER_MS = 500; // Random jitter to avoid thundering herd
+const MIN_INTERVAL_MS = 500; // 500ms between calls (reduced from 1.5s for better throughput)
+const JITTER_MS = 200; // Random jitter to avoid thundering herd
 
 async function waitForRateLimit() {
   const now = Date.now();
