@@ -1525,7 +1525,7 @@ export function AIAssistantView() {
     const msg = input.trim();
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
-    await engine.sendMessage(msg, systemPromptWithCtx, currentViewLabel);
+    await engine.sendMessage(msg, systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -1537,7 +1537,7 @@ export function AIAssistantView() {
 
   const handleSuggestionClick = async (prompt: string) => {
     setInput('');
-    await engine.sendMessage(prompt, systemPromptWithCtx, currentViewLabel);
+    await engine.sendMessage(prompt, systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleNavigate = (view: ViewType) => {
@@ -1545,7 +1545,7 @@ export function AIAssistantView() {
   };
 
   const handleRegenerate = async (_messageId: string) => {
-    await engine.regenerateLastMessage(systemPromptWithCtx, currentViewLabel);
+    await engine.regenerateLastMessage(systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleSaveTarget = async (messageId: string, saveTarget: SaveTarget) => {
@@ -1569,7 +1569,7 @@ export function AIAssistantView() {
     // We'll use createConversation and sendMessage approach
     // Actually, let's just re-send the edited content as a new message
     // by trimming the conversation to before this message and sending
-    await engine.sendMessage(newContent, systemPromptWithCtx, currentViewLabel);
+    await engine.sendMessage(newContent, systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleRenameConversation = (id: string, newTitle: string) => {

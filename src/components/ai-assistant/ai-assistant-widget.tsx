@@ -841,7 +841,7 @@ export function AIAssistantWidget() {
     const msg = input.trim();
     setInput('');
     if (inputRef.current) inputRef.current.style.height = 'auto';
-    await engine.sendMessage(msg, systemPromptWithCtx, currentViewLabel);
+    await engine.sendMessage(msg, systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -853,7 +853,7 @@ export function AIAssistantWidget() {
 
   const handleQuickAction = async (prompt: string) => {
     setInput('');
-    await engine.sendMessage(prompt, systemPromptWithCtx, currentViewLabel);
+    await engine.sendMessage(prompt, systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleNavigate = (view: ViewType) => {
@@ -862,7 +862,7 @@ export function AIAssistantWidget() {
   };
 
   const handleRegenerate = async (messageId: string) => {
-    await engine.regenerateLastMessage(systemPromptWithCtx, currentViewLabel);
+    await engine.regenerateLastMessage(systemPromptWithCtx, currentViewLabel, chatMode);
   };
 
   const handleSaveTarget = async (messageId: string, saveTarget: SaveTarget) => {
