@@ -101,9 +101,9 @@ export interface ChatEngine {
   streamingContent: string;
   error: string | null;
   researchStages: ResearchStageInfo[];
-  sendMessage: (content: string, systemPrompt?: string, currentPage?: string) => Promise<void>;
+  sendMessage: (content: string, systemPrompt?: string, currentPage?: string, chatMode?: 'standard' | 'deep-research' | 'quick') => Promise<void>;
   stopStreaming: () => void;
-  regenerateLastMessage: (systemPrompt?: string, currentPage?: string) => Promise<void>;
+  regenerateLastMessage: (systemPrompt?: string, currentPage?: string, chatMode?: 'standard' | 'deep-research' | 'quick') => Promise<void>;
   createConversation: () => void;
   switchConversation: (id: string) => void;
   deleteConversation: (id: string) => void;
@@ -220,7 +220,7 @@ export function useChatEngine(): ChatEngine {
   // Send Message — calls /api/ai-assistant/smart-chat with SSE
   // ============================================================
 
-  const sendMessage = useCallback(async (content: string, systemPrompt?: string, currentPage?: string) => {
+  const sendMessage = useCallback(async (content: string, systemPrompt?: string, currentPage?: string, chatMode?: 'standard' | 'deep-research' | 'quick') => {
     if (!content.trim() || isStreaming) return;
 
     const convId = activeConversationId;
@@ -277,19 +277,50 @@ export function useChatEngine(): ChatEngine {
         { role: userMessage.role, content: userMessage.content },
       ];
 
-      const response = await fetch('/api/ai-assistant/smart-chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: historyMessages,
-          systemPrompt: systemPrompt || 'You are LeadReach AI, an intelligent assistant for B2B lead generation.',
-          currentPage: currentPage || '',
-        }),
-        signal: controller.signal,
-      });
+      // Retry logic: up to 2 attempts on 502/503/429 errors
+      let response: Response | null = null;
+      const MAX_RETRIES = 1;
+      for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+        try {
+          response = await fetch('/api/ai-assistant/smart-chat', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              messages: historyMessages,
+              systemPrompt: systemPrompt || 'You are LeadReach AI, an intelligent assistant for B2B lead generation.',
+              currentPage: currentPage || '',
+              chatMode: chatMode || 'standard',
+            }),
+            signal: controller.signal,
+          });
 
-      if (!response.ok) {
-        throw new Error(`API returned ${response.status}`);
+          if (response.ok) break; // Success!
+
+          // Retry on 502, 503, or 429 (but not on 4xx client errors)
+          if ((response.status === 502 || response.status === 503 || response.status === 429) && attempt < MAX_RETRIES) {
+            const backoff = (attempt + 1) * 2000;
+            console.warn(`[sendMessage] API returned ${response.status}, retrying in ${backoff}ms...`);
+            await new Promise(r => setTimeout(r, backoff));
+            continue;
+          }
+
+          throw new Error(`API returned ${response.status}`);
+        } catch (fetchError) {
+          // If it's an abort error, don't retry
+          if ((fetchError as Error).name === 'AbortError') throw fetchError;
+          // If it's a network error and we have retries left, try again
+          if (attempt < MAX_RETRIES && !(fetchError as Error).message.includes('API returned')) {
+            const backoff = (attempt + 1) * 2000;
+            console.warn(`[sendMessage] Network error, retrying in ${backoff}ms...`);
+            await new Promise(r => setTimeout(r, backoff));
+            continue;
+          }
+          throw fetchError;
+        }
+      }
+
+      if (!response || !response.ok) {
+        throw new Error('Failed to connect to AI service after retries. Please try again.');
       }
 
       if (controller.signal.aborted) return;
@@ -522,9 +553,16 @@ export function useChatEngine(): ChatEngine {
 
       const errMsg = err instanceof Error ? err.message : 'Failed to get AI response';
       const isRateLimitError = errMsg.includes('429') || errMsg.includes('rate limit') || errMsg.includes('high demand');
-      const errorContent = isRateLimitError
-        ? 'The AI service is currently experiencing high demand. Please wait a moment and try again.'
-        : `I encountered an error: ${errMsg}. Please try again.`;
+      const isNetworkError = errMsg.includes('Failed to connect') || errMsg.includes('NetworkError') || errMsg.includes('fetch');
+      const is502 = errMsg.includes('502') || errMsg.includes('Bad Gateway');
+      let errorContent: string;
+      if (isRateLimitError) {
+        errorContent = 'The AI service is currently experiencing high demand. Please wait a moment and try again.';
+      } else if (is502 || isNetworkError) {
+        errorContent = 'I\'m having trouble connecting to the AI service. This is usually temporary — please try again in a few seconds.';
+      } else {
+        errorContent = `I encountered an issue: ${errMsg}. Please try again.`;
+      }
 
       setError(errorContent);
 
@@ -559,7 +597,7 @@ export function useChatEngine(): ChatEngine {
   // Regenerate Last Message
   // ============================================================
 
-  const regenerateLastMessage = useCallback(async (systemPrompt?: string, currentPage?: string) => {
+  const regenerateLastMessage = useCallback(async (systemPrompt?: string, currentPage?: string, chatMode?: 'standard' | 'deep-research' | 'quick') => {
     const conv = conversations.find(c => c.id === activeConversationId);
     if (!conv) return;
 
@@ -577,7 +615,7 @@ export function useChatEngine(): ChatEngine {
     }));
 
     // Re-send
-    await sendMessage(lastUserMsg.content, systemPrompt, currentPage);
+    await sendMessage(lastUserMsg.content, systemPrompt, currentPage, chatMode);
   }, [conversations, activeConversationId, sendMessage]);
 
   // ============================================================
