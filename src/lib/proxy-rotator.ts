@@ -581,8 +581,38 @@ export function getProxyRotator(): ProxyRotator {
 /**
  * Convenience: the singleton ProxyRotator instance.
  * Access via getProxyRotator() for lazy init, or import proxyRotator directly.
+ * NOTE: Uses lazy getter to avoid instantiating ProxyRotator at module import time,
+ * which prevents heavy side-effects (curl, network calls) from crashing the server.
  */
-export const proxyRotator = new ProxyRotator();
+let _proxyRotatorInstance: ProxyRotator | null = null;
+
+/**
+ * Get the lazy-initialized proxy rotator singleton.
+ * This avoids instantiating ProxyRotator at module import time.
+ */
+export function getLazyProxyRotator(): ProxyRotator {
+  if (!_proxyRotatorInstance) {
+    _proxyRotatorInstance = new ProxyRotator();
+  }
+  return _proxyRotatorInstance;
+}
+
+/**
+ * Convenience export — returns the lazy singleton.
+ * Use getLazyProxyRotator() or this for access.
+ */
+export const proxyRotator = {
+  get instance() { return getLazyProxyRotator(); },
+  start: () => getLazyProxyRotator().start(),
+  stop: () => getLazyProxyRotator().stop(),
+  fetchWithProxy: (url: string, options?: RequestInit, retries?: number) => getLazyProxyRotator().fetchWithProxy(url, options, retries),
+  getStats: () => getLazyProxyRotator().getStats(),
+  getProxies: () => getLazyProxyRotator().getProxies(),
+  triggerRefresh: () => getLazyProxyRotator().triggerRefresh(),
+  getNextProxy: () => getLazyProxyRotator().getNextProxy(),
+  markProxyFailed: (proxy: ProxyEntry) => getLazyProxyRotator().markProxyFailed(proxy),
+  markProxySuccess: (proxy: ProxyEntry, responseTime: number) => getLazyProxyRotator().markProxySuccess(proxy, responseTime),
+};
 
 // ============================================================
 // Global Toggle
@@ -591,6 +621,7 @@ export const proxyRotator = new ProxyRotator();
 /**
  * Whether proxy rotation is enabled.
  * Can be toggled via the USE_PROXY_ROTATION environment variable.
- * Defaults to true.
+ * Defaults to DISABLED (false) to prevent server crashes from proxy scraping.
+ * Set USE_PROXY_ROTATION=true to enable.
  */
-export const USE_PROXY_ROTATION = process.env.USE_PROXY_ROTATION !== 'false';
+export const USE_PROXY_ROTATION = process.env.USE_PROXY_ROTATION === 'true';

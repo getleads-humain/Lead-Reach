@@ -1,15 +1,64 @@
 import { NextRequest } from 'next/server';
 import { callLLM, callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
-import {
-  exaSearch,
-  webRead,
-  linkedInSearchCompanies,
-  linkedInSearchPeople,
-  twitterSearch,
-  redditSearch,
-} from '@/lib/agent-reach-bridge';
+
+// Lazy-load agent-reach-bridge to avoid heavy module side-effects (proxy-rotator etc.)
+// crashing the server on route import. These are only needed for non-quick actions.
+let _exaSearch: typeof import('@/lib/agent-reach-bridge').exaSearch | null = null;
+let _webRead: typeof import('@/lib/agent-reach-bridge').webRead | null = null;
+let _linkedInSearchCompanies: typeof import('@/lib/agent-reach-bridge').linkedInSearchCompanies | null = null;
+let _linkedInSearchPeople: typeof import('@/lib/agent-reach-bridge').linkedInSearchPeople | null = null;
+let _twitterSearch: typeof import('@/lib/agent-reach-bridge').twitterSearch | null = null;
+let _redditSearch: typeof import('@/lib/agent-reach-bridge').redditSearch | null = null;
+
+async function loadBridge() {
+  if (!_exaSearch) {
+    try {
+      const bridge = await import('@/lib/agent-reach-bridge');
+      _exaSearch = bridge.exaSearch;
+      _webRead = bridge.webRead;
+      _linkedInSearchCompanies = bridge.linkedInSearchCompanies;
+      _linkedInSearchPeople = bridge.linkedInSearchPeople;
+      _twitterSearch = bridge.twitterSearch;
+      _redditSearch = bridge.redditSearch;
+    } catch (err) {
+      console.error('[smart-chat] Failed to load agent-reach-bridge:', err instanceof Error ? err.message : 'Unknown');
+      throw new Error('Agent-Reach bridge unavailable — search channels cannot be loaded');
+    }
+  }
+}
+
+async function exaSearch(query: string, numResults?: number) {
+  await loadBridge();
+  return _exaSearch!(query, numResults);
+}
+
+async function webRead(url: string, format?: 'markdown' | 'text', options?: { useProxy?: boolean }) {
+  await loadBridge();
+  return _webRead!(url, format, options);
+}
+
+async function linkedInSearchCompanies(query: string, limit?: number) {
+  await loadBridge();
+  return _linkedInSearchCompanies!(query, limit);
+}
+
+async function linkedInSearchPeople(query: string, limit?: number) {
+  await loadBridge();
+  return _linkedInSearchPeople!(query, limit);
+}
+
+async function twitterSearch(query: string, limit?: number) {
+  await loadBridge();
+  return _twitterSearch!(query, limit);
+}
+
+async function redditSearch(query: string, limit?: number) {
+  await loadBridge();
+  return _redditSearch!(query, limit);
+}
 
 export const maxDuration = 300;
+export const dynamic = 'force-dynamic';
 
 // ============================================================
 // Types
@@ -47,15 +96,18 @@ function createSSEStream(
   generator: (send: (event: string, data: SSEEvent) => void) => Promise<void>
 ): Response {
   const encoder = new TextEncoder();
+  let isClosed = false;
   const stream = new ReadableStream({
     async start(controller) {
       const send = (event: string, data: SSEEvent) => {
+        if (isClosed) return;
         try {
           controller.enqueue(
             encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`)
           );
         } catch {
-          // Stream may be closed
+          // Stream may be closed — mark as closed to prevent further writes
+          isClosed = true;
         }
       };
 
@@ -63,18 +115,25 @@ function createSSEStream(
         await generator(send);
       } catch (error) {
         const msg = error instanceof Error ? error.message : 'Unknown error';
-        try {
-          send('error', { type: 'error', message: msg });
-        } catch {
-          // Stream already closed
+        if (!isClosed) {
+          try {
+            send('error', { type: 'error', message: msg });
+          } catch {
+            // Stream already closed
+          }
         }
       } finally {
+        isClosed = true;
         try {
           controller.close();
         } catch {
           // Already closed
         }
       }
+    },
+    cancel() {
+      // Called when the client disconnects — mark as closed
+      isClosed = true;
     },
   });
 
