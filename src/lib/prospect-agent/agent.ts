@@ -923,6 +923,8 @@ COMPANY DATA:
 
 USER'S ORIGINAL QUERY: "${userQuery}"
 
+CRITICAL: You MUST write ALL output in English. Do NOT use Chinese or any other language. All field values, names, descriptions, industries, challenges, goals, and every other text field MUST be in English.
+
 Create an ICP that targets companies SIMILAR to this one. Respond with JSON:
 {
   "name": "<ICP name based on the company type, e.g. 'Mid-Market HealthTech SaaS'>",

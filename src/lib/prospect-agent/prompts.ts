@@ -460,6 +460,8 @@ ${context.userPreferences.industries?.length ? `- User interests: ${context.user
 
   return `${getPersonaPrompt(persona)}
 
+CRITICAL LANGUAGE REQUIREMENT: You MUST write your ENTIRE response in English. Do NOT use Chinese or any other language. All text, descriptions, suggestions, and data references must be in English.
+
 ${contextStr}
 
 USER ASKED: "${userMessage}"
@@ -495,6 +497,8 @@ export function getICPBuildingPrompt(
   step: number,
 ): string {
   return `You are ARCHITECT, the ICP Builder specialist. You're helping the user define their Ideal Customer Profile.
+
+CRITICAL: You MUST write ALL output in English. Do NOT use Chinese or any other language. All field values, descriptions, questions, and criteria must be in English.
 
 CURRENT ICP STATE:
 ${currentICPState || 'No ICP defined yet — starting from scratch.'}
@@ -605,6 +609,8 @@ Respond with JSON:
  */
 export function getAutoICPCurationPrompt(prospectData: string, userQuery: string): string {
   return `You are ARCHITECT, the ICP Builder specialist. Based on the company research data below, create an Ideal Customer Profile (ICP) that will help the user find SIMILAR companies.
+
+CRITICAL: You MUST write ALL output in English. Do NOT use Chinese or any other language. All field values, names, descriptions, industries, challenges, goals, and every other text field MUST be in English.
 
 The user's original query was: "${userQuery}"
 

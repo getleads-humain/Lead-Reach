@@ -885,8 +885,10 @@ export function ProspectDiscoveryView() {
         body: JSON.stringify({ message: text, context }),
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error(`Stream failed: ${response.status}`);
+      // Validate response is actually an SSE stream (not an HTML redirect or error page)
+      const contentType = response.headers.get('content-type') || '';
+      if (!response.ok || !response.body || (!contentType.includes('text/event-stream') && !contentType.includes('text/plain'))) {
+        throw new Error(`Stream failed: ${response.status} (content-type: ${contentType})`);
       }
 
       const reader = response.body.getReader();

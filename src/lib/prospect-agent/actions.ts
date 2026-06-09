@@ -84,20 +84,55 @@ interface SearchSnippet {
 // ============================================================
 
 function extractStructuredFromSnippets(prospect: ProspectResult, results: SearchSnippet[]): void {
-  const allText = results.map(r => `${r.title} ${r.snippet}`).join(' ');
+  // Clean snippets of DuckDuckGo artifacts before processing
+  const cleanSnippet = (s: string) => s
+    .replace(/&rut=[a-f0-9]+/g, '')                                                     // DuckDuckGo tracking tokens
+    .replace(/uddg=[^\s&"')]+/g, '')                                                    // DuckDuckGo redirect params
+    .replace(/\[[^\]]*\]\(https?:\/\/duckduckgo\.com[^\s)]*\)?/g, '')                   // DDG redirect links (even truncated)
+    .replace(/\]\(https?:\/\/duckduckgo\.com[^\s)]*\)?/g, '')                            // DDG link closures only (even truncated)
+    .replace(/\]\(https?:\/\/[^\s)]*uddg=[^\s)]*\)?/g, '')                               // DDG uddg links (even truncated)
+    .replace(/\[[^\]]*\]\([^)]*\)/g, '')                                                  // Remaining markdown links
+    .replace(/\]\([^)]*\)/g, '')                                                           // Orphan markdown link closures
+    .replace(/duckduckgo\.com\/l\/\?[^\s]*/g, '')                                         // DDG redirect URL fragments
+    .replace(/^\s*[\[\]()]+\s*/gm, '')                                                     // Leading brackets/parens
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const allText = results.map(r => `${r.title} ${cleanSnippet(r.snippet)}`).join(' ');
 
   // Extract emails
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const emails = allText.match(emailRegex) || [];
   if (emails.length > 0 && !prospect.generalEmail) {
-    prospect.generalEmail = emails.find(e => !e.includes('example.com') && !e.includes('email.com') && !e.includes('test.com')) || null;
+    prospect.generalEmail = emails.find(e => !e.includes('example.com') && !e.includes('email.com') && !e.includes('test.com') && !e.includes('sentry.io') && !e.includes('wixpress.com') && !e.includes('gitbook.io')) || null;
   }
 
-  // Extract phone numbers
+  // Extract phone numbers — validate it's a plausible phone (not an ID/hash)
   const phoneRegex = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
   const phones = allText.match(phoneRegex) || [];
   if (phones.length > 0 && !prospect.phoneMain) {
-    prospect.phoneMain = phones[0];
+    // Pick the phone that appears near phone-related keywords
+    const phoneContextRegex = /(?:phone|tel|call|contact|fax|office)[\s:]*(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/i;
+    const contextMatch = allText.match(phoneContextRegex);
+    if (contextMatch) {
+      const phoneDigits = contextMatch[0].replace(/\D/g, '');
+      if (phoneDigits.length >= 10 && phoneDigits.length <= 15) {
+        prospect.phoneMain = contextMatch[0].replace(/^(?:phone|tel|call|contact|fax|office)[\s:]*/i, '').trim();
+      }
+    }
+    // Fallback: pick first phone that has proper format (area code doesn't start with 0/1)
+    if (!prospect.phoneMain) {
+      for (const p of phones) {
+        const digits = p.replace(/\D/g, '');
+        if (digits.length >= 10 && digits.length <= 15) {
+          const areaCode = digits.slice(-10, -7);
+          if (!['000', '111', '800', '855', '866', '877', '888', '900'].includes(areaCode)) {
+            prospect.phoneMain = p;
+            break;
+          }
+        }
+      }
+    }
   }
 
   // Extract LinkedIn URLs
@@ -167,12 +202,14 @@ function extractStructuredFromSnippets(prospect: ProspectResult, results: Search
     prospect.foundingYear = foundedMatch[1];
   }
 
-  // Extract website from search result URLs
+  // Extract website from search result URLs — prefer the company's own domain
   if (!prospect.website && results.length > 0) {
+    const blockedDomains = ['linkedin.com', 'twitter.com', 'x.com', 'facebook.com', 'crunchbase.com', 'bloomberg.com', 'wikipedia.org', 'duckduckgo.com', 'zoominfo.com', 'pitchbook.com', 'dealroom.co', 'theorg.com'];
     for (const r of results) {
       try {
         const u = new URL(r.url);
-        if (!['linkedin.com', 'twitter.com', 'x.com', 'facebook.com', 'crunchbase.com', 'bloomberg.com', 'wikipedia.org'].includes(u.hostname.replace('www.', ''))) {
+        const hostname = u.hostname.replace('www.', '');
+        if (!blockedDomains.includes(hostname)) {
           prospect.website = u.origin;
           break;
         }
@@ -180,9 +217,13 @@ function extractStructuredFromSnippets(prospect: ProspectResult, results: Search
     }
   }
 
-  // Use first snippet as description fallback
+  // Use first CLEAN snippet as description fallback
   if (!prospect.description && results[0]?.snippet) {
-    prospect.description = results[0].snippet;
+    const desc = cleanSnippet(results[0].snippet);
+    // Only use if it looks like a real description (not a URL fragment)
+    if (desc.length > 20 && !desc.startsWith('http') && !desc.includes('uddg=') && !desc.includes('&rut=')) {
+      prospect.description = desc;
+    }
   }
 
   // Extract LinkedIn URL from search result URLs
@@ -580,11 +621,15 @@ export async function executeCompanyResearch(
     if (!prospect.recentNews.length) {
       try {
         const newsSearch = await withTimeout(
-          () => exaSearch(`${companyName} news 2024 2025`, 3),
+          () => exaSearch(`${companyName} news 2025 2026`, 3),
           10_000, 'News search',
         );
         if (newsSearch?.success && newsSearch.data.length > 0) {
-          prospect.recentNews = newsSearch.data.map(r => `${r.title} - ${r.snippet?.slice(0, 100) || ''}`);
+          prospect.recentNews = newsSearch.data.map(r => {
+            const title = r.title.replace(/&rut=[a-f0-9]+/g, '').trim();
+            const snippet = (r.snippet || '').replace(/&rut=[a-f0-9]+/g, '').replace(/uddg=[^\s&"')]+/g, '').trim();
+            return `${title} - ${snippet.slice(0, 100)}`;
+          }).filter(n => n.length > 5 && !n.includes('&rut=') && !n.includes('uddg='));
           sources.push(...newsSearch.data.map(r => r.url));
         }
       } catch { /* non-critical */ }
@@ -627,6 +672,8 @@ export async function executeCompanyResearch(
     const extractionPrompt = isDomainSpecific
       ? `You are a B2B intelligence analyst specializing in ${detectedDomain.label}. Extract ALL available information about this ${detectedDomain.entityTypes[0] || 'company'} from the provided content. Follow the schema fields below.
 
+CRITICAL: You MUST write ALL output in English. Do NOT use Chinese or any other language. All field values, descriptions, names, and data must be in English.
+
 Return a JSON object with these fields (use null for truly unknown):
 COMPANY: companyName, legalName, website, industry, subIndustry, description
 LOCATION: hqAddress, city, stateProvince, country, postalCode
@@ -638,6 +685,8 @@ OFFERINGS: productsServices (array), partners (array)
 NEWS: recentNews (array of headlines), fundingInfo
 DOMAIN-SPECIFIC: For ${detectedDomain.domain}, also include any relevant fields like fund_name, fund_type, estimated_dry_powder_usd, vintage_year, geographic_focus, target_deployment_countries as a flat JSON object.`
       : `You are a B2B intelligence analyst. Extract ALL available information about this company from the provided content. You have content from MULTIPLE sources (web pages, search results, LinkedIn, news).
+
+CRITICAL: You MUST write ALL output in English. Do NOT use Chinese or any other language. All field values, descriptions, names, and data must be in English.
 
 IMPORTANT: Fill in as many fields as possible. Even partial or estimated information is valuable. Do NOT repeat information already provided in "KNOWN DATA" — only add NEW fields.
 
@@ -719,11 +768,15 @@ foundingYear: ${prospect.foundingYear || 'unknown'}`;
     if (!prospect.recentNews.length) {
       try {
         const newsSearch = await withTimeout(
-          () => exaSearch(`${companyName} news 2024 2025`, 3),
+          () => exaSearch(`${companyName} news 2025 2026`, 3),
           15_000, 'News search',
         );
         if (newsSearch?.success && newsSearch.data.length > 0) {
-          prospect.recentNews = newsSearch.data.map(r => `${r.title} - ${r.snippet?.slice(0, 100) || ''}`);
+          prospect.recentNews = newsSearch.data.map(r => {
+            const title = r.title.replace(/&rut=[a-f0-9]+/g, '').trim();
+            const snippet = (r.snippet || '').replace(/&rut=[a-f0-9]+/g, '').replace(/uddg=[^\s&"')]+/g, '').trim();
+            return `${title} - ${snippet.slice(0, 100)}`;
+          }).filter(n => n.length > 5 && !n.includes('&rut=') && !n.includes('uddg='));
           sources.push(...newsSearch.data.map(r => r.url));
         }
       } catch { /* non-critical */ }
@@ -960,11 +1013,15 @@ Return JSON with ONLY fields that have NEW info: companyName, legalName, website
   if (!prospect.recentNews.length) {
     try {
       const newsSearch = await withTimeout(
-        () => exaSearch(`${companyName} news 2024 2025`, 3),
+        () => exaSearch(`${companyName} news 2025 2026`, 3),
         15_000, 'News search',
       );
       if (newsSearch?.success && newsSearch.data.length > 0) {
-        prospect.recentNews = newsSearch.data.map(r => `${r.title} - ${r.snippet?.slice(0, 100) || ''}`);
+        prospect.recentNews = newsSearch.data.map(r => {
+          const title = r.title.replace(/&rut=[a-f0-9]+/g, '').trim();
+          const snippet = (r.snippet || '').replace(/&rut=[a-f0-9]+/g, '').replace(/uddg=[^\s&"')]+/g, '').trim();
+          return `${title} - ${snippet.slice(0, 100)}`;
+        }).filter(n => n.length > 5 && !n.includes('&rut=') && !n.includes('uddg='));
         sources.push(...newsSearch.data.map(r => r.url));
       }
     } catch { /* non-critical */ }
@@ -2155,7 +2212,14 @@ function extractDomainHintsFromSnippets(
   snippets: SearchSnippet[],
   domain: { domain: string; requiredKPIs: string[]; schemaTemplate: Record<string, unknown> },
 ): Record<string, unknown> | null {
-  const allText = snippets.map(r => `${r.title} ${r.snippet}`).join(' ');
+  // Clean snippets of DuckDuckGo artifacts before processing
+  const cleanText = (s: string) => s
+    .replace(/&rut=[a-f0-9]+/g, '')
+    .replace(/uddg=[^\s&"')]+/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+
+  const allText = snippets.map(r => `${r.title} ${cleanText(r.snippet)}`).join(' ');
   if (allText.length < 50) return null;
 
   const hints: Record<string, unknown> = {};
