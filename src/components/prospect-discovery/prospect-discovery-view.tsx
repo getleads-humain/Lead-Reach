@@ -785,8 +785,31 @@ export function ProspectDiscoveryView() {
   const [suggestedActions, setSuggestedActions] = useState<SuggestedAction[]>([]);
   const [showThinking, setShowThinking] = useState(true);
   const [saveNotification, setSaveNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [aiHealth, setAiHealth] = useState<'healthy' | 'degraded' | 'down' | 'checking' | 'unknown'>('unknown');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  // Check AI health on mount
+  useEffect(() => {
+    const checkHealth = async () => {
+      setAiHealth('checking');
+      try {
+        const res = await fetch('/api/prospect-discovery/health');
+        if (res.ok) {
+          const data = await res.json();
+          setAiHealth(data.overall || 'unknown');
+        } else {
+          setAiHealth('unknown');
+        }
+      } catch {
+        setAiHealth('unknown');
+      }
+    };
+    checkHealth();
+    // Re-check every 2 minutes
+    const interval = setInterval(checkHealth, 120_000);
+    return () => clearInterval(interval);
+  }, []);
 
   // Auto-scroll
   useEffect(() => {
@@ -1066,6 +1089,25 @@ export function ProspectDiscoveryView() {
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* AI Health Indicator */}
+          <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary/20" title={`AI System Status: ${aiHealth}`}>
+            {aiHealth === 'checking' && <Loader2 className="h-3 w-3 animate-spin text-amber-400" />}
+            {aiHealth === 'healthy' && <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />}
+            {aiHealth === 'degraded' && <div className="h-2 w-2 rounded-full bg-amber-400" />}
+            {aiHealth === 'down' && <div className="h-2 w-2 rounded-full bg-red-400" />}
+            {aiHealth === 'unknown' && <div className="h-2 w-2 rounded-full bg-muted-foreground/40" />}
+            <span className={`text-[9px] font-medium ${
+              aiHealth === 'healthy' ? 'text-emerald-400' :
+              aiHealth === 'degraded' ? 'text-amber-400' :
+              aiHealth === 'down' ? 'text-red-400' :
+              'text-muted-foreground/50'
+            }`}>
+              {aiHealth === 'checking' ? 'Checking AI...' :
+               aiHealth === 'healthy' ? 'AI Online' :
+               aiHealth === 'degraded' ? 'AI Degraded' :
+               aiHealth === 'down' ? 'AI Offline' : 'AI Status Unknown'}
+            </span>
+          </div>
           <Button
             variant="ghost"
             size="sm"

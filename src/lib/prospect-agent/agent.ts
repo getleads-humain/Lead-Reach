@@ -402,6 +402,24 @@ async function processAgentMessageInner(
     }
   }
 
+  // If we still have no response content after all actions, generate a fallback
+  // from whatever action data we collected. This ensures users always get a
+  // meaningful response even when the LLM is completely unavailable.
+  if (!responseContent && (prospectData || icpData || marketData || scoreData || outreachData)) {
+    const { generateStructuredFallback } = await import('@/lib/llm');
+    responseContent = generateStructuredFallback({
+      persona: classification.persona,
+      intent: classification.intent,
+      userMessage,
+      actionSummary: prospectData ? buildResearchSummary(prospectData) :
+                     icpData ? JSON.stringify(icpData) :
+                     marketData ? JSON.stringify(marketData) :
+                     scoreData ? JSON.stringify(scoreData) :
+                     outreachData ? JSON.stringify(outreachData) : '{}',
+      context: buildContextHint(updatedContext),
+    });
+  }
+
   // Auto-curate ICP from prospect data if no active ICP exists
   if (prospectData && !updatedContext.activeICP && (classification.intent === 'research_company' || classification.intent === 'research_url')) {
     try {

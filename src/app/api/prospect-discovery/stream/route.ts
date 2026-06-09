@@ -60,7 +60,7 @@ export async function POST(request: NextRequest) {
         } catch {
           if (keepaliveInterval) clearInterval(keepaliveInterval);
         }
-      }, 15_000);
+      }, 10_000);
 
       const onProgress = (event: string, data: unknown) => {
         send(event, data);

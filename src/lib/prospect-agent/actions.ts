@@ -11,7 +11,7 @@
 //   - Promise.allSettled everywhere for resilience
 // ============================================================
 
-import { callLLM, callLLMForJSON } from '@/lib/llm';
+import { callLLM, callLLMForJSON, generateStructuredFallback } from '@/lib/llm';
 import {
   webRead,
   exaSearch,
@@ -1815,11 +1815,28 @@ export async function generateConversationResponse(
       userMessage: 'Generate your conversational response based on the action results above.',
       retriesPerModel: 2, // Increased from 1 to 2 for better resilience
     });
-    if (response) return response;
+    if (response && response.trim().length > 0) return response;
 
-    // LLM returned null — generate a simple response from the action results
+    // LLM returned null/empty — try structured fallback first, then simple fallback
+    const structured = generateStructuredFallback({
+      persona,
+      intent,
+      userMessage,
+      actionSummary: actionResults,
+    });
+    if (structured && structured.trim().length > 0) return structured;
+
     return buildFallbackResponse(intent, actionResults);
   } catch {
+    // LLM call threw — try structured fallback, then simple fallback
+    const structured = generateStructuredFallback({
+      persona,
+      intent,
+      userMessage,
+      actionSummary: actionResults,
+    });
+    if (structured && structured.trim().length > 0) return structured;
+
     return buildFallbackResponse(intent, actionResults);
   }
 }

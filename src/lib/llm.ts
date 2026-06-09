@@ -70,7 +70,7 @@ type ThinkingBudget = keyof typeof THINKING_BUDGETS;
 // ============================================================
 
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 500; // 500ms between calls (reduced from 1.5s for better throughput)
+const MIN_INTERVAL_MS = 300; // 300ms between calls (reduced for better throughput)
 const JITTER_MS = 200; // Random jitter to avoid thundering herd
 
 async function waitForRateLimit() {
@@ -602,6 +602,88 @@ export function extractJSONFromString<T>(text: string): T | null {
   try { return JSON.parse(text) as T; } catch { /* continue */ }
 
   return null;
+}
+
+// ============================================================
+// Structured Fallback (no LLM needed)
+// ============================================================
+
+/**
+ * Generate a structured fallback response when LLM is unavailable.
+ * This creates a useful response from the provided data without needing AI.
+ */
+export function generateStructuredFallback(params: {
+  persona: string;
+  intent: string;
+  userMessage: string;
+  actionSummary: string;
+  context?: string;
+}): string {
+  const { persona, intent, userMessage, actionSummary, context } = params;
+
+  try {
+    // Try to parse the action summary for structured data
+    const data = JSON.parse(actionSummary);
+
+    if (intent === 'research_company' || intent === 'research_url') {
+      const company = data.company || 'the company';
+      const industry = data.industry || '';
+      const employees = data.employees || '';
+      const revenue = data.revenue || '';
+      const ceo = data.ceo || '';
+      const email = data.email || '';
+      const linkedin = data.linkedin || '';
+      const completeness = data.completeness || 0;
+
+      let response = `I've completed my research on **${company}**.`;
+      if (industry) response += ` They operate in the ${industry} industry.`;
+      if (employees) response += ` The company has approximately ${employees} employees.`;
+      if (revenue) response += ` Estimated revenue: ${revenue}.`;
+      if (ceo) response += ` The CEO is ${ceo}.`;
+      if (email) response += ` Contact email: ${email}.`;
+      if (linkedin) response += ` LinkedIn: available.`;
+
+      if (completeness < 30) {
+        response += `\n\nData completeness is at ${completeness}%. For deeper results, try providing a company website URL.`;
+      } else if (completeness >= 60) {
+        response += `\n\nData completeness is at ${completeness}% — good research coverage! I recommend scoring this lead against your ICP or composing personalized outreach.`;
+      }
+
+      return response;
+    }
+
+    if (intent === 'research_person') {
+      const person = data.person || 'the contact';
+      const title = data.title || '';
+      const company = data.company || '';
+      const email = data.email || '';
+
+      let response = `I've found information about **${person}**.`;
+      if (title) response += ` Their title is ${title}.`;
+      if (company) response += ` They work at ${company}.`;
+      if (email) response += ` Email: ${email}.`;
+
+      return response;
+    }
+
+    if (intent === 'analyze_market' || intent === 'analyze_competitors') {
+      const summary = data.summary || '';
+      const competitors = data.competitors || [];
+      const trends = data.trends || [];
+
+      let response = `Here's my market analysis:`;
+      if (summary) response += `\n\n${summary}`;
+      if (Array.isArray(competitors) && competitors.length > 0) response += `\n\nKey competitors: ${competitors.join(', ')}.`;
+      if (Array.isArray(trends) && trends.length > 0) response += `\n\nTrends identified: ${trends.join('; ')}.`;
+
+      return response;
+    }
+  } catch {
+    // JSON parse failed — use raw text
+  }
+
+  // Generic fallback
+  return `I've processed your request about "${userMessage.slice(0, 50)}". The research pipeline has completed and I've gathered available data. You can review the structured results below, and I'd recommend taking the next step — scoring this lead, composing outreach, or building an ICP based on what we found.`;
 }
 
 // ============================================================
