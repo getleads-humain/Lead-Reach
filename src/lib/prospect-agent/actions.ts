@@ -33,6 +33,13 @@ import { getConversationResponsePrompt } from './prompts';
 import { deepCrawlWebsite } from './deep-crawler';
 import { extractCompanyIdentity, smartCompanySearch } from './company-verifier';
 import { resolveFromEmail, resolveFromName, isEmail } from './person-resolver';
+import {
+  detectDomain,
+  getDomainSearchQueries,
+  DOMAIN_SCHEMAS,
+  getDomainThinkModePrompt,
+  type DomainType,
+} from './domain-intelligence';
 
 // ============================================================
 // Timeout helper
@@ -292,27 +299,95 @@ export async function executeCompanyResearch(
   prospect.companyName = cleanName;
   let stepIdx = 0;
 
+  // ═══ DETECT DOMAIN ═══
+  // Detect the domain from the company name + query context.
+  // If it's a specialized domain (VC, PE, hedge funds, etc.),
+  // use domain-specific search queries instead of generic ones.
+  // Also check well-known company names that imply specific domains.
+  let detectedDomain = detectDomain(cleanName);
+  
+  // If domain is "general", try enhanced detection using known company names
+  if (detectedDomain.domain === 'general') {
+    const knownCompanyDomains: Record<string, string> = {
+      'andreessen horowitz': 'venture_capital',
+      'a16z': 'venture_capital',
+      'sequoia': 'venture_capital',
+      'sequoia capital': 'venture_capital',
+      'yc': 'venture_capital',
+      'y combinator': 'venture_capital',
+      'accel': 'venture_capital',
+      'benchmark': 'venture_capital',
+      'lightspeed': 'venture_capital',
+      'founders fund': 'venture_capital',
+      'softbank': 'venture_capital',
+      'tiger global': 'venture_capital',
+      'coatue': 'venture_capital',
+      'insight partners': 'private_equity',
+      'kkr': 'private_equity',
+      'blackstone': 'private_equity',
+      'carlyle': 'private_equity',
+      'apollo': 'private_equity',
+      'bridgewater': 'hedge_funds',
+      'citadel': 'hedge_funds',
+      'renaissance': 'hedge_funds',
+      'two sigma': 'hedge_funds',
+      'goldman sachs': 'investment_banking',
+      'morgan stanley': 'investment_banking',
+      'jpmorgan': 'investment_banking',
+    };
+    const lowerName = cleanName.toLowerCase();
+    for (const [name, domainKey] of Object.entries(knownCompanyDomains)) {
+      if (lowerName.includes(name) || name.includes(lowerName)) {
+        detectedDomain = DOMAIN_SCHEMAS[domainKey as DomainType] || detectedDomain;
+        break;
+      }
+    }
+  }
+  
+  const isDomainSpecific = detectedDomain.domain !== 'general';
+
+  if (isDomainSpecific) {
+    prospect.detectedDomain = detectedDomain.domain;
+    prospect.domainLabel = detectedDomain.label;
+  }
+
   // ═══════════════════════════════════════════════════════════
   // STEP 1: Targeted Category Searches (PARALLEL - all 6 at once)
   // ═══════════════════════════════════════════════════════════
   steps.push({ type: 'research_company', label: 'Category Searches', status: 'running', message: `Running 6 targeted searches for "${cleanName}"...` });
   onProgress?.('step_start', { stepIndex: stepIdx, label: 'Category Searches', message: `Running 6 targeted searches for "${cleanName}"...` });
 
-  const categoryQueries = [
-    { category: 'contact',    query: `"${cleanName}" email phone contact` },
-    { category: 'location',   query: `"${cleanName}" headquarters office address` },
-    { category: 'firmographics', query: `"${cleanName}" revenue employees funding size` },
-    { category: 'people',     query: `"${cleanName}" CEO founder leadership team executives` },
-    { category: 'digital',    query: `"${cleanName}" LinkedIn Twitter website social media` },
-    { category: 'products',   query: `"${cleanName}" services products offerings about` },
-  ];
+  let categoryQueries;
+  if (isDomainSpecific) {
+    // Use domain-specific search queries (limited to 6)
+    const domainQueries = getDomainSearchQueries(cleanName, detectedDomain);
+    categoryQueries = domainQueries.slice(0, 6).map((query, i) => ({
+      category: `domain_${i}`,
+      query,
+    }));
+    // Add contact/location searches for domain-specific queries
+    categoryQueries.push({ category: 'contact', query: `"${cleanName}" email phone contact address` });
+    categoryQueries.push({ category: 'location', query: `"${cleanName}" headquarters office address` });
+    // Limit to 6 total
+    categoryQueries = categoryQueries.slice(0, 6);
+  } else {
+    // Use existing generic category queries
+    categoryQueries = [
+      { category: 'contact',    query: `"${cleanName}" email phone contact` },
+      { category: 'location',   query: `"${cleanName}" headquarters office address` },
+      { category: 'firmographics', query: `"${cleanName}" revenue employees funding size` },
+      { category: 'people',     query: `"${cleanName}" CEO founder leadership team executives` },
+      { category: 'digital',    query: `"${cleanName}" LinkedIn Twitter website social media` },
+      { category: 'products',   query: `"${cleanName}" services products offerings about` },
+    ];
+  }
 
   const allSearchResults: CategorySearchResult[] = [];
   try {
     const searchPromises = categoryQueries.map(async (cq): Promise<CategorySearchResult> => {
       const result = await withTimeout(
         () => exaSearch(cq.query, 5),
-        30_000, `Category search: ${cq.category}`,
+        12_000, `Category search: ${cq.category}`,
       );
       return { category: cq.category, searchResult: result as SearchResultType | null };
     });
@@ -374,7 +449,7 @@ export async function executeCompanyResearch(
 
     // Read all pages in parallel
     const readSettled = await Promise.allSettled(
-      urlsToRead.map(u => withTimeout(() => webRead(u.url), 25_000, `Read: ${u.url.slice(0, 50)}`)),
+      urlsToRead.map(u => withTimeout(() => webRead(u.url), 15_000, `Read: ${u.url.slice(0, 50)}`)),
     );
     for (let i = 0; i < readSettled.length; i++) {
       const result = readSettled[i];
@@ -447,6 +522,95 @@ export async function executeCompanyResearch(
   stepIdx++;
 
   // ═══════════════════════════════════════════════════════════
+  // FAST PATH: Return after regex extraction if we have reasonable data.
+  // The LLM extraction, deep crawl, and gap fill steps are expensive
+  // (30-90s each) and often cause the pipeline to timeout. Instead,
+  // we return what we have and rely on the conversation response
+  // LLM call to present the data nicely.
+  //
+  // We only proceed to the expensive LLM steps if regex extraction
+  // yielded very little (< 20% completeness) AND we have content to extract from.
+  // ═══════════════════════════════════════════════════════════
+  const regexCompleteness = calculateCompleteness(prospect);
+  const hasContentForLLM = allSnippets.length > 3 || webContents.length > 1;
+
+  if (regexCompleteness >= 20 || !hasContentForLLM) {
+    // We have enough from regex, or there's not enough content for LLM to improve.
+    // Mark remaining steps as skipped/optional.
+    steps.push({ type: 'research_company', label: 'AI Deep Extraction', status: 'completed', message: regexCompleteness >= 20 ? 'Skipped — regex data sufficient' : 'Skipped — limited content available' });
+    stepIdx++;
+
+    // Skip deep crawl
+    steps.push({ type: 'research_company', label: 'Deep Site Crawl', status: 'completed', message: 'Skipped — data sufficient' });
+    stepIdx++;
+
+    // Quick LinkedIn search (non-blocking, fast)
+    steps.push({ type: 'research_company', label: 'LinkedIn Search', status: 'running', message: 'Quick LinkedIn check...' });
+    onProgress?.('step_start', { stepIndex: stepIdx, label: 'LinkedIn Search', message: 'Checking LinkedIn...' });
+    try {
+      const liResult = await withTimeout(
+        () => linkedInSearchCompanies(companyName, 3),
+        8_000, 'LinkedIn search',
+      );
+      if (liResult?.success && liResult.data.length > 0) {
+        const company = liResult.data[0];
+        if (company.name && !prospect.companyName) prospect.companyName = company.name;
+        if (company.headline && !prospect.description) prospect.description = company.headline;
+        if (company.url && !prospect.linkedinUrl) prospect.linkedinUrl = company.url;
+        if (company.location && !prospect.hqAddress) prospect.hqAddress = company.location;
+        sources.push(`linkedin:${company.url || companyName}`);
+        steps[stepIdx].status = 'completed';
+        steps[stepIdx].message = 'Found LinkedIn profile';
+      } else {
+        steps[stepIdx].status = 'completed';
+        steps[stepIdx].message = 'No LinkedIn profile found';
+      }
+    } catch {
+      steps[stepIdx].status = 'completed';
+      steps[stepIdx].message = 'LinkedIn search unavailable';
+    }
+    onProgress?.('step_complete', { stepIndex: stepIdx, status: steps[stepIdx].status, message: steps[stepIdx].message, partialData: prospect });
+    stepIdx++;
+
+    // Skip gap fill
+    steps.push({ type: 'research_company', label: 'Gap Fill', status: 'completed', message: 'Skipped — data sufficient' });
+    stepIdx++;
+
+    // Add news if missing (quick search)
+    if (!prospect.recentNews.length) {
+      try {
+        const newsSearch = await withTimeout(
+          () => exaSearch(`${companyName} news 2024 2025`, 3),
+          10_000, 'News search',
+        );
+        if (newsSearch?.success && newsSearch.data.length > 0) {
+          prospect.recentNews = newsSearch.data.map(r => `${r.title} - ${r.snippet?.slice(0, 100) || ''}`);
+          sources.push(...newsSearch.data.map(r => r.url));
+        }
+      } catch { /* non-critical */ }
+    }
+
+    // Domain-specific metadata (NO extra LLM call — just mark the domain)
+    // The conversation response LLM will be prompted with domain context
+    // to produce domain-aware output from the search snippet data.
+    if (isDomainSpecific) {
+      // Store the domain schema's requiredKPIs as domainData hint
+      // so the frontend can display the domain badge
+      prospect.detectedDomain = detectedDomain.domain;
+      prospect.domainLabel = detectedDomain.label;
+      // Extract structured domain data from snippets using regex (no LLM)
+      const domainHint = extractDomainHintsFromSnippets(allSnippets, detectedDomain);
+      if (domainHint && Object.keys(domainHint).length > 0) {
+        prospect.domainData = [domainHint];
+      }
+    }
+
+    prospect.sources = [...new Set(sources)];
+    prospect.dataCompleteness = calculateCompleteness(prospect);
+    return { prospect, steps };
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // STEP 4: Deep LLM Extraction (1 comprehensive call)
   // Feed ALL gathered content into ONE big LLM extraction call
   // ═══════════════════════════════════════════════════════════
@@ -458,9 +622,22 @@ export async function executeCompanyResearch(
     const pageContent = webContents.map(w => `[${w.category.toUpperCase()} PAGE: ${w.url}]\n${w.content}`).join('\n\n===\n\n');
     const combinedContent = `SEARCH SNIPPETS:\n${snippetContent}\n\n===\n\nWEB PAGE CONTENT:\n${pageContent}`;
 
-    let extracted = await withTimeout(
-      () => callLLMForJSON<Partial<ProspectResult>>(
-        `You are a B2B intelligence analyst. Extract ALL available information about this company from the provided content. You have content from MULTIPLE sources (web pages, search results, LinkedIn, news).
+    // Use a focused, concise extraction prompt (NOT the domain think-mode prompt which is too slow)
+    // The domain context is passed to the conversation response LLM instead.
+    const extractionPrompt = isDomainSpecific
+      ? `You are a B2B intelligence analyst specializing in ${detectedDomain.label}. Extract ALL available information about this ${detectedDomain.entityTypes[0] || 'company'} from the provided content. Follow the schema fields below.
+
+Return a JSON object with these fields (use null for truly unknown):
+COMPANY: companyName, legalName, website, industry, subIndustry, description
+LOCATION: hqAddress, city, stateProvince, country, postalCode
+CONTACT: phoneMain, generalEmail, supportEmail
+PEOPLE: ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail, boardMembers (array)
+FIRMOGRAPHICS: employeeCount, revenueEstimate, foundingYear, ownershipType
+DIGITAL: linkedinUrl, twitterHandle, facebookPage, techStack (array)
+OFFERINGS: productsServices (array), partners (array)
+NEWS: recentNews (array of headlines), fundingInfo
+DOMAIN-SPECIFIC: For ${detectedDomain.domain}, also include any relevant fields like fund_name, fund_type, estimated_dry_powder_usd, vintage_year, geographic_focus, target_deployment_countries as a flat JSON object.`
+      : `You are a B2B intelligence analyst. Extract ALL available information about this company from the provided content. You have content from MULTIPLE sources (web pages, search results, LinkedIn, news).
 
 IMPORTANT: Fill in as many fields as possible. Even partial or estimated information is valuable. Do NOT repeat information already provided in "KNOWN DATA" — only add NEW fields.
 
@@ -487,24 +664,19 @@ employeeCount: ${prospect.employeeCount || 'unknown'}
 revenueEstimate: ${prospect.revenueEstimate || 'unknown'}
 linkedinUrl: ${prospect.linkedinUrl || 'unknown'}
 twitterHandle: ${prospect.twitterHandle || 'unknown'}
-foundingYear: ${prospect.foundingYear || 'unknown'}`,
-        combinedContent.slice(0, 50000),
+foundingYear: ${prospect.foundingYear || 'unknown'}`;
+
+    let extracted = await withTimeout(
+      () => callLLMForJSON<Partial<ProspectResult>>(
+        extractionPrompt,
+        combinedContent.slice(0, 20000), // Reduced from 50k to 20k for faster LLM processing
+        { thinkingBudget: 'standard' }, // Use standard instead of deep for faster response
       ),
-      45_000, 'Company comprehensive LLM extraction',
+      30_000, 'Company comprehensive LLM extraction', // Reduced from 45s to 30s
     );
 
-    // Retry with simpler prompt if first extraction failed
-    if (!extracted) {
-      console.warn('[executeCompanyResearch] Comprehensive LLM extraction returned null — retrying with simpler prompt');
-      extracted = await withTimeout(
-        () => callLLMForJSON<Partial<ProspectResult>>(
-          `Extract key business data about "${companyName}" from this text. Return a JSON object with: companyName, website, industry, description, city, stateProvince, country, phoneMain, generalEmail, ceoName, ceoEmail, keyContactName, keyContactTitle, keyContactEmail, employeeCount, revenueEstimate, foundingYear, linkedinUrl, twitterHandle, hqAddress, supportEmail, productsServices (array), techStack (array), recentNews (array). Use null for unknown fields.`,
-          (pageContent || snippetContent).slice(0, 12000),
-          { retriesPerModel: 1, useFallback: true },
-        ),
-        30_000, 'Company LLM extraction retry',
-      );
-    }
+    // No retry — if LLM extraction fails, we continue with regex data
+    // Retrying adds another 30s+ and often fails for the same reason
 
     if (extracted) {
       safeMerge(prospect, extracted);
@@ -527,9 +699,55 @@ foundingYear: ${prospect.foundingYear || 'unknown'}`,
   stepIdx++;
 
   // ═══════════════════════════════════════════════════════════
-  // STEP 5: Website Deep Crawl (if URL found)
+  // EARLY RETURN CHECK AFTER LLM: If data completeness > 50%,
+  // skip deep crawl and gap fill — we have enough data
   // ═══════════════════════════════════════════════════════════
-  if (prospect.website) {
+  if (calculateCompleteness(prospect) > 50) {
+    // Skip deep crawl and gap fill — mark them as skipped
+    if (prospect.website) {
+      steps.push({ type: 'research_company', label: 'Deep Site Crawl', status: 'completed', message: 'Skipped — data sufficient' });
+      stepIdx++;
+    }
+    // Add LinkedIn step as skipped
+    steps.push({ type: 'research_company', label: 'LinkedIn Search', status: 'completed', message: 'Skipped — data sufficient' });
+    stepIdx++;
+    // Add Gap Fill step as skipped
+    steps.push({ type: 'research_company', label: 'Gap Fill', status: 'completed', message: 'Skipped — data sufficient' });
+    stepIdx++;
+
+    // Still add news if missing
+    if (!prospect.recentNews.length) {
+      try {
+        const newsSearch = await withTimeout(
+          () => exaSearch(`${companyName} news 2024 2025`, 3),
+          15_000, 'News search',
+        );
+        if (newsSearch?.success && newsSearch.data.length > 0) {
+          prospect.recentNews = newsSearch.data.map(r => `${r.title} - ${r.snippet?.slice(0, 100) || ''}`);
+          sources.push(...newsSearch.data.map(r => r.url));
+        }
+      } catch { /* non-critical */ }
+    }
+
+    // Domain-specific metadata (NO extra LLM call — use regex hints)
+    if (isDomainSpecific) {
+      prospect.detectedDomain = detectedDomain.domain;
+      prospect.domainLabel = detectedDomain.label;
+      const domainHint = extractDomainHintsFromSnippets(allSnippets, detectedDomain);
+      if (domainHint && Object.keys(domainHint).length > 0) {
+        prospect.domainData = [domainHint];
+      }
+    }
+
+    prospect.sources = [...new Set(sources)];
+    prospect.dataCompleteness = calculateCompleteness(prospect);
+    return { prospect, steps };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // STEP 5: Website Deep Crawl (if URL found AND completeness < 50%)
+  // ═══════════════════════════════════════════════════════════
+  if (prospect.website && calculateCompleteness(prospect) < 50) {
     steps.push({ type: 'research_company', label: 'Deep Site Crawl', status: 'running', message: `Deep-crawling ${prospect.website}...` });
     onProgress?.('step_start', { stepIndex: stepIdx, label: 'Deep Site Crawl', message: `Deep-crawling ${prospect.website}...` });
 
@@ -684,11 +902,12 @@ Return JSON with ONLY fields that have NEW info: companyName, legalName, website
     onProgress?.('step_start', { stepIndex: stepIdx, label: 'Gap Fill', message: `Filling data gaps in ${gapCategories.length} categories...` });
 
     try {
-      // Run ALL gap searches in parallel
-      const gapPromises = gapCategories.map(async (gap) => {
+      // Run gap searches in parallel (limit to 3 categories max)
+      const limitedGapCategories = gapCategories.slice(0, 3);
+      const gapPromises = limitedGapCategories.map(async (gap) => {
         const gapResult = await withTimeout(
           () => exaSearch(gap.query, 3),
-          25_000, `Gap search: ${gap.category}`,
+          12_000, `Gap search: ${gap.category}`,
         );
         if (!gapResult?.success || gapResult.data.length === 0) return null;
 
@@ -701,7 +920,7 @@ Return JSON with ONLY fields that have NEW info: companyName, legalName, website
         // Try to read top URL and extract with LLM
         const topUrl = gapResult.data[0]?.url;
         if (topUrl) {
-          const readResult = await withTimeout(() => webRead(topUrl), 25_000, `Gap read: ${gap.category}`);
+          const readResult = await withTimeout(() => webRead(topUrl), 12_000, `Gap read: ${gap.category}`);
           if (readResult?.success) {
             const gapData = await withTimeout(
               () => callLLMForJSON<Partial<ProspectResult>>(
@@ -722,7 +941,7 @@ Return JSON with ONLY fields that have NEW info: companyName, legalName, website
       await Promise.allSettled(gapPromises);
 
       steps[stepIdx].status = 'completed';
-      steps[stepIdx].message = `Filled ${gapCategories.length} data gap${gapCategories.length > 1 ? 's' : ''}`;
+      steps[stepIdx].message = `Filled ${limitedGapCategories.length} data gap${limitedGapCategories.length > 1 ? 's' : ''}`;
       onProgress?.('step_complete', { stepIndex: stepIdx, status: 'completed', message: steps[stepIdx].message, partialData: prospect });
       onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
     } catch {
@@ -749,6 +968,21 @@ Return JSON with ONLY fields that have NEW info: companyName, legalName, website
         sources.push(...newsSearch.data.map(r => r.url));
       }
     } catch { /* non-critical */ }
+  }
+
+  // Domain-specific data extraction at the end of the pipeline (regex-based, no LLM)
+  if (isDomainSpecific) {
+    prospect.detectedDomain = detectedDomain.domain;
+    prospect.domainLabel = detectedDomain.label;
+    const domainHint = extractDomainHintsFromSnippets(allSnippets, detectedDomain);
+    if (domainHint && Object.keys(domainHint).length > 0) {
+      // Merge with any existing domainData from earlier steps
+      if (prospect.domainData && prospect.domainData.length > 0) {
+        prospect.domainData = [domainHint, ...prospect.domainData];
+      } else {
+        prospect.domainData = [domainHint];
+      }
+    }
   }
 
   prospect.sources = [...new Set(sources)];
@@ -1909,6 +2143,88 @@ function createEmptyProspect(queryType: string, query: string): ProspectResult {
     personPhone: null, personLinkedin: null, personBio: null,
     sources: [], dataCompleteness: 0,
   };
+}
+
+// ============================================================
+// Domain Hint Extraction (Regex-based, no LLM)
+// Extracts structured domain data from search snippets using
+// pattern matching — fast and always works.
+// ============================================================
+
+function extractDomainHintsFromSnippets(
+  snippets: SearchSnippet[],
+  domain: { domain: string; requiredKPIs: string[]; schemaTemplate: Record<string, unknown> },
+): Record<string, unknown> | null {
+  const allText = snippets.map(r => `${r.title} ${r.snippet}`).join(' ');
+  if (allText.length < 50) return null;
+
+  const hints: Record<string, unknown> = {};
+
+  // Common patterns across domains
+  // Fund/firm name
+  const firmMatch = allText.match(/(?:firm|fund|company|capital|ventures|partners|group)\s+name[:\s]+([A-Z][a-zA-Z\s&]+?)(?:\.|,|;|$)/i);
+  if (firmMatch) hints.firm_name = firmMatch[1].trim();
+
+  // Fund name
+  const fundMatch = allText.match(/(?:fund\s+(?:name|title)|called)\s*[:\-]?\s*([A-Z][a-zA-Z\s\d]+?(?:Fund|LP|LLC|Ltd|I+V?|Growth|Capital|Ventures))/i);
+  if (fundMatch) hints.fund_name = fundMatch[1].trim();
+
+  // Fund type / strategy
+  const typeMatch = allText.match(/(?:fund\s+type|strategy|focus|style)\s*[:\-]?\s*([A-Z][a-zA-Z\s&]+?)(?:\.|,|;|fund|$)/i);
+  if (typeMatch) hints.fund_type = typeMatch[1].trim();
+
+  // Dry powder / fund size
+  const dryPowderMatch = allText.match(/(?:dry\s*powder|fund\s+size|AUM|assets\s+under\s+management|capital\s+committed|total\s+capital)\s*(?:of|is|[:\-]?\s*)\$?([\d.]+\s*(?:billion|million|B|M|bn|mm))/i);
+  if (dryPowderMatch) {
+    const val = dryPowderMatch[1].replace(/\s+/g, '').toLowerCase();
+    let num = parseFloat(val);
+    if (val.includes('b') || val.includes('bn')) num *= 1000000000;
+    else if (val.includes('m') || val.includes('mm')) num *= 1000000;
+    hints.estimated_dry_powder_usd = num;
+  }
+
+  // Vintage year
+  const vintageMatch = allText.match(/(?:vintage|fund\s+year|launched|raised)\s*(?:year|in)?\s*[:\-]?\s*(20\d{2})/i);
+  if (vintageMatch) hints.vintage_year = parseInt(vintageMatch[1]);
+
+  // Geographic focus
+  const geoMatch = allText.match(/(?:geograph|focus|region|target)\s*(?:focus|area|market)?\s*[:\-]?\s*([A-Z][a-zA-Z\s,]+?)(?:\.|;|,?\s+(?:and|with|focus|invest))/i);
+  if (geoMatch) hints.geographic_focus = geoMatch[1].trim();
+
+  // Target deployment countries
+  const countryPatterns = ['United States', 'Canada', 'United Kingdom', 'Europe', 'Asia', 'Israel', 'Singapore', 'Germany', 'France', 'Japan', 'Australia'];
+  const foundCountries = countryPatterns.filter(c => allText.includes(c));
+  if (foundCountries.length > 0) hints.target_deployment_countries = foundCountries;
+
+  // LLC / legal entity
+  const llcMatch = allText.match(/([A-Z][a-zA-Z\s]+(?:LLC|L\.P\.|Ltd|Inc|GmbH|LLP|Pte))/g);
+  if (llcMatch) hints.associated_llc = llcMatch[0].trim();
+
+  // Sector focus
+  const sectorMatch = allText.match(/(?:sector|industry)\s*(?:focus|preference)?\s*[:\-]?\s*([A-Z][a-zA-Z\s,]+?)(?:\.|;|,?\s+(?:and|with|invest))/i);
+  if (sectorMatch) hints.sector_focus = sectorMatch[1].trim();
+
+  // KPIs
+  const kpis: Record<string, unknown> = {};
+
+  // IRR
+  const irrMatch = allText.match(/(?:target\s+)?IRR\s*(?:of|is|[:\-]?\s*)([\d.]+)\s*%/i);
+  if (irrMatch) kpis.target_irr_percentage = parseFloat(irrMatch[1]);
+
+  // TVPI
+  const tvpiMatch = allText.match(/TVPI\s*(?:of|is|[:\-]?\s*)([\d.]+)x/i);
+  if (tvpiMatch) kpis.historical_tvpi = parseFloat(tvpiMatch[1]);
+
+  // DPI
+  const dpiMatch = allText.match(/DPI\s*(?:of|is|[:\-]?\s*)([\d.]+)x/i);
+  if (dpiMatch) kpis.historical_dpi = parseFloat(dpiMatch[1]);
+
+  if (Object.keys(kpis).length > 0) hints.kpis = kpis;
+
+  // Sources
+  hints.sources = snippets.slice(0, 3).map(s => s.url);
+
+  return Object.keys(hints).length > 0 ? hints : null;
 }
 
 function calculateCompleteness(p: ProspectResult): number {

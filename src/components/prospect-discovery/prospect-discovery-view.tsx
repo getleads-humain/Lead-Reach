@@ -954,9 +954,9 @@ export function ProspectDiscoveryView() {
                 m.id === agentMsgId ? { ...m, insights: liveInsights.length > 0 ? liveInsights : undefined } : m
               ));
             } else if (currentEventType === 'error' && data) {
-              setMessages(prev => prev.map(m =>
-                m.id === agentMsgId ? { ...m, content: `Error: ${data.message || 'Unknown error'}. Please try again.` } : m
-              ));
+              // Don't show error immediately — the 'done' event will follow with a proper message
+              // Just log it for debugging
+              console.warn('[ProspectDiscovery] SSE error event:', data.message);
             } else if (currentEventType === 'done' && data) {
               // Final message — replace the live message with the complete one
               const finalMsg = data.message as AgentMessage;
@@ -1021,11 +1021,20 @@ export function ProspectDiscoveryView() {
           setMessages(prev => [...prev, errorMsg]);
         }
       } catch (chatError) {
+        // Both stream and chat API failed — show a more helpful message
         const errorMsg: AgentMessage = {
           id: `error-${Date.now()}`,
-          role: 'system',
-          content: "I encountered an issue processing your request. Please try again or rephrase your question. You can ask me to research a company, find a person, analyze a market, build an ICP, score a lead, or compose outreach.",
+          role: 'assistant',
+          content: "I'm having trouble connecting to the AI service right now. This could be due to:\n\n• **High traffic** — the AI service may be temporarily overloaded\n• **Complex query** — your request may need more processing time\n\n**Try these suggestions:**\n• Rephrase with a simpler query like \"Research Stripe\"\n• Try again in a few seconds\n• Ask a specific question like \"Tell me about [company name]\"",
           timestamp: new Date(),
+          persona: 'navigator',
+          thinking: {
+            persona: 'navigator',
+            intent: 'converse',
+            reasoning: 'Both stream and chat API failed',
+            plan: ['Error recovery'],
+            confidence: 0.3,
+          },
         };
         setMessages(prev => [...prev, errorMsg]);
       }
