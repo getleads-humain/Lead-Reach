@@ -43,35 +43,69 @@ function getICPBuilderPrompt(
     ? `\nCONVERSATION HISTORY (for context):\n${conversationHistory.slice(-6).map(m => `${m.role}: ${m.content.slice(0, 200)}`).join('\n')}\n`
     : '';
 
-  return `You are ARCHITECT — the ICP Builder specialist for LeadReach AI. You help users define their Ideal Customer Profile through an interactive, intelligent conversation.
+  return `You are ARCHITECT — the ICP Builder specialist agent within the LeadReach AI 8-agent agentic system. You help users define their Ideal Customer Profile through an interactive, intelligent conversation that leverages the full power of the agentic toolkit.
 
-YOUR PERSONALITY: Strategic, systematic, collaborative. You build frameworks that work.
-YOUR EXPERTISE: Creating and refining Ideal Customer Profiles from business context.
+## YOUR AGENTIC SYSTEM CONTEXT
 
-YOUR APPROACH:
-1. Extract ALL ICP criteria from the user's message — don't miss implied criteria
+You are part of LeadReach AI's 8-agent agentic system. Each agent has specialized capabilities and channels:
+
+| Agent | Role | Channels | Capabilities |
+|-------|------|----------|-------------|
+| Atlas (Orchestrator) | Master coordinator | Delegates all | Campaign coordination, multi-agent orchestration |
+| Scout (Discovery) | Lead discovery | Exa, LinkedIn, GitHub, Twitter, Reddit, Web, RSS | Company research, prospect discovery across 7 channels |
+| Forge (Enrichment) | Data enrichment | Web, LinkedIn, Exa, Twitter, GitHub | Contact/firmographic data enrichment, deep profiling |
+| Sage (Research) | Deep research | Web, Exa, LinkedIn, Twitter, YouTube, Reddit, RSS | Market analysis, competitive intelligence, deep-dive research |
+| Architect (YOU) | ICP Builder | Conversation | ICP creation, 6-dimension profiling, strategic targeting |
+| Judge (Qualification) | Lead scoring | Web, LinkedIn, Exa | ICP scoring, lead qualification, intent analysis |
+| Bard (Outreach) | Messaging | LinkedIn, Web, Exa | Personalized outreach composition, multi-channel messaging |
+| Echo (Reports) | Analytics | Database | Pipeline analytics, performance reports, insights |
+
+YOUR 17+ AGENT-REACH CHANNELS: Exa Search, LinkedIn, Twitter/X, Reddit, GitHub, YouTube, Web Search, RSS Feeds, and more.
+
+When building an ICP, you can draw upon insights that would come from these agents. For example:
+- Scout discovers companies matching the ICP → you can suggest discovery strategies
+- Forge enriches contacts → you can define what data points to prioritize
+- Sage researches markets → you can reference market trends and competitive landscapes
+- Judge scores leads → you can define scoring criteria that align with the ICP
+- Bard composes outreach → you can define messaging angles and personalization hooks
+
+## YOUR PERSONALITY
+Strategic, systematic, collaborative, and deeply knowledgeable about B2B go-to-market strategy. You build frameworks that work in the real world, not just on paper. You think like a VP of Sales and a Product Marketing Leader combined.
+
+## YOUR EXPERTISE
+- Creating and refining Ideal Customer Profiles from business context
+- 6-dimension ICP framework: Firmographic, Technographic, Psychographic, Behavioral, Situational, Economic
+- B2B market segmentation and targeting strategy
+- Translating business objectives into actionable customer profiles
+- Cross-referencing market intelligence with customer definition
+
+## YOUR APPROACH
+1. Extract ALL ICP criteria from the user's message — don't miss implied or inferred criteria
 2. If their input is rich enough, fill in multiple dimensions at once (be efficient, don't ask unnecessary questions)
-3. Make smart inferences — if they say "healthcare SaaS", infer HIPAA compliance needs, regulated industry challenges, etc.
-4. Ask the NEXT most important question to fill the biggest gap
-5. Guide toward a complete ICP across all 6 dimensions
+3. Make smart inferences — if they say "healthcare SaaS", infer HIPAA compliance needs, regulated industry challenges, EHR integration requirements, etc.
+4. Apply industry expertise — for each industry/market mentioned, infer common pain points, tech stacks, buying patterns, and compliance needs
+5. Ask the NEXT most important question to fill the biggest gap in the ICP
+6. Guide toward a complete ICP across all 6 dimensions
+7. When the ICP is substantially complete, suggest next steps like: discovering matching companies (Scout), scoring existing leads (Judge), composing outreach (Bard)
 
-CURRENT ICP STATE:
+## CURRENT ICP STATE:
 ${icpStateStr}
 ${historyStr}
-USER SAID: "${userMessage}"
+## USER SAID: "${userMessage}"
 
 Based on the user's input, extract ICP criteria AND generate a conversational response in a SINGLE response.
 
-IMPORTANT RULES:
-- Extract AS MANY criteria as possible from the user's message, including implied ones
-- If the user says "B2B SaaS in healthcare", extract: industries=[Healthcare, SaaS, B2B], companySizes=["50-500"], challenges=["HIPAA compliance", "Data security"], requiredTech=["Cloud infrastructure", "EHR integration"], buyingSignals=["Regulatory changes", "Funding rounds"]
-- Don't ask about criteria the user already provided or that can be inferred
-- Always suggest the next dimension to define
-- If the ICP seems complete enough (has entries in 4+ dimensions), suggest saving it
+## CRITICAL EXTRACTION RULES:
+- Extract AS MANY criteria as possible from the user's message, including strongly implied ones
+- If the user says "B2B SaaS in healthcare", extract: industries=["Healthcare", "SaaS", "B2B"], companySizes=["50-200", "201-500"], challenges=["HIPAA compliance", "Data security", "Patient engagement"], requiredTech=["Cloud infrastructure", "EHR integration", "HIPAA-compliant storage"], buyingSignals=["Regulatory changes", "Funding rounds", "Digital transformation initiatives"], values=["Data security", "Regulatory compliance", "Patient outcomes"]
+- Don't ask about criteria the user already provided or that can be confidently inferred
+- Always suggest the next most impactful dimension to define
+- If the ICP seems complete enough (has entries in 4+ dimensions), suggest saving it and using it with other agents
+- Reference the agentic toolkit when suggesting next steps (e.g., "Once we save this ICP, Scout can discover matching companies across LinkedIn, Exa, and 5 other channels")
 
-Respond with JSON:
+## RESPONSE FORMAT — Return JSON:
 {
-  "acknowledgment": "<specific acknowledgment of what you understood, be detailed>",
+  "acknowledgment": "<specific, detailed acknowledgment of what you understood from the user's input>",
   "extractedCriteria": {
     "name": "<ICP name if provided or inferred, or null>",
     "industries": ["<industry1>", ...],
@@ -85,13 +119,14 @@ Respond with JSON:
     "goals": ["<goal1>", ...],
     "buyingSignals": ["<signal1>", ...],
     "engagementPatterns": ["<pattern1>", ...],
+    "triggerEvents": ["<event1>", ...],
     "budgetRange": "<range or null>",
     "decisionTimeline": "<timeline or null>"
   },
-  "response": "<your conversational response — be specific, reference what you extracted, ask the next most important question>",
+  "response": "<your conversational response — be specific, reference what you extracted, suggest the next dimension to define, and mention agentic capabilities when relevant>",
   "isComplete": false,
-  "completenessScore": <0-100 estimate of how complete the ICP is>,
-  "nextDimension": "<which dimension to focus on next: firmographic|technographic|psychographic|behavioral|economic|review>",
+  "completenessScore": <0-100 estimate of how complete the ICP is across all 6 dimensions>,
+  "nextDimension": "<which dimension to focus on next: firmographic|technographic|psychographic|behavioral|situational|economic|review>",
   "suggestedActions": ["<action1>", "<action2>"]
 }`;
 }
@@ -164,6 +199,17 @@ function mergeCriteriaIntoICP(existing: ICPResult | null, extracted: Record<stri
   }
   if (typeof extracted.decisionTimeline === 'string' && extracted.decisionTimeline.trim()) {
     icp.economic.decisionTimeline = extracted.decisionTimeline;
+  }
+
+  // Trigger events (situational dimension — added for completeness)
+  // These are stored in criteria but not in the core ICPResult type,
+  // so we preserve them through the criteria field
+  if (Array.isArray(extracted.triggerEvents)) {
+    // Merge into criteria for situational context
+    const existingCriteria = icp.criteria ? JSON.parse(icp.criteria || '{}') : {};
+    const existingTriggers: string[] = Array.isArray(existingCriteria.triggerEvents) ? existingCriteria.triggerEvents : [];
+    existingCriteria.triggerEvents = [...new Set([...existingTriggers, ...extracted.triggerEvents.filter((s: unknown) => typeof s === 'string') as string[]])];
+    icp.criteria = JSON.stringify(existingCriteria);
   }
 
   // Update description based on ICP content
@@ -337,18 +383,30 @@ export async function POST(request: NextRequest) {
 
 async function handleQuickBuild(description: string, existingICP: ICPResult | null) {
   const result = await callLLMForJSON<ICPResult>(
-    `You are an ICP builder. Generate a complete Ideal Customer Profile based on this description.
+    `You are ARCHITECT — the ICP Builder specialist for LeadReach AI's 8-agent agentic system. Generate a complete Ideal Customer Profile based on this description.
 
 DESCRIPTION: "${description}"
 ${existingICP ? `EXISTING ICP TO MERGE WITH: ${JSON.stringify(existingICP)}` : ''}
 
-Generate a comprehensive ICP with as many criteria as possible across all dimensions.
-Make smart inferences based on the industry and description provided.
+Generate a comprehensive ICP with as many criteria as possible across all 6 dimensions.
+Make smart inferences based on the industry and description provided. Apply deep B2B expertise:
+- Infer compliance needs (HIPAA, GDPR, SOC2, etc.) based on industry
+- Infer common tech stacks for the industry and company size
+- Infer buying signals and trigger events based on growth stage
+- Infer challenges and goals based on industry dynamics
+- Infer budget ranges and decision timelines based on company size
+
+The ICP will be used by LeadReach AI's 8-agent system:
+- Scout will discover matching companies across 7 channels (Exa, LinkedIn, GitHub, Twitter, Reddit, Web, RSS)
+- Forge will enrich contacts with firmographic and technographic data
+- Sage will research markets and competitors
+- Judge will score leads against this ICP
+- Bard will compose personalized outreach based on these criteria
 
 Return JSON:
 {
   "name": "<descriptive ICP name>",
-  "description": "<2-3 sentence summary>",
+  "description": "<2-3 sentence strategic summary>",
   "firmographic": {
     "industries": ["<industry1>", ...],
     "companySizes": ["<size range>", ...],
@@ -446,16 +504,71 @@ function handleGenerateSuggestions(industry: string, currentICP: ICPResult | nul
       goals: ['Operational efficiency', 'Quality improvement', 'Cost reduction', 'Sustainability'],
       requiredTech: ['ERP system', 'MES', 'IoT platform', 'Quality management system'],
     },
+    ai_ml: {
+      companySizes: ['11-50', '51-200', '201-500'],
+      challenges: ['Model deployment at scale', 'Data quality and governance', 'Talent shortage', 'Compute costs'],
+      buyingSignals: ['GPU infrastructure investment', 'MLOps platform adoption', 'Series A+ funding', 'Data team expansion'],
+      goals: ['Model accuracy improvement', 'Production ML deployment', 'Cost optimization', 'Responsible AI'],
+      requiredTech: ['Cloud GPU/TPU', 'MLOps platform', 'Data pipeline', 'Model monitoring'],
+    },
+    cybersecurity: {
+      companySizes: ['11-50', '51-200', '201-1000'],
+      challenges: ['Threat landscape evolution', 'Compliance requirements', 'Skills gap', 'Zero-trust implementation'],
+      buyingSignals: ['Security incident response', 'Compliance audit', 'SOC expansion', 'Cloud security migration'],
+      goals: ['Threat detection improvement', 'Compliance achievement', 'Risk reduction', 'Security automation'],
+      requiredTech: ['SIEM/SOAR', 'EDR/XDR', 'Cloud security platform', 'Identity management'],
+    },
+    edtech: {
+      companySizes: ['11-50', '51-200', '201-500'],
+      challenges: ['Student engagement', 'Content personalization', 'Scalability', 'Accessibility compliance'],
+      buyingSignals: ['Curriculum overhaul', 'Remote learning expansion', 'LMS migration', 'Institutional partnerships'],
+      goals: ['Learning outcomes improvement', 'Student retention', 'Platform engagement', 'Content scalability'],
+      requiredTech: ['LMS platform', 'Video conferencing', 'Analytics dashboard', 'Accessibility tools'],
+    },
+    proptech: {
+      companySizes: ['11-50', '51-200', '201-500'],
+      challenges: ['Market volatility', 'Regulatory compliance', 'Data integration', 'Customer trust'],
+      buyingSignals: ['Platform migration', 'Market expansion', 'Funding rounds', 'Partnership formations'],
+      goals: ['Transaction efficiency', 'Market intelligence', 'Customer acquisition', 'Operational automation'],
+      requiredTech: ['Property database', 'CRM', 'Analytics platform', 'Document management'],
+    },
   };
 
-  // Find matching suggestions
+  // Find matching suggestions — also check keywords in the industry string
   const lowerIndustry = industry.toLowerCase();
   let matched: Record<string, string[]> = {};
 
+  // Direct key matching
   for (const [key, value] of Object.entries(suggestions)) {
     if (lowerIndustry.includes(key)) {
       matched = value;
       break;
+    }
+  }
+
+  // Keyword-based matching for common terms
+  if (Object.keys(matched).length === 0) {
+    const keywordMap: Record<string, string[]> = {
+      'ai': ['ai_ml'], 'ml': ['ai_ml'], 'machine learning': ['ai_ml'], 'artificial intelligence': ['ai_ml'],
+      'cyber': ['cybersecurity'], 'security': ['cybersecurity'], 'infosec': ['cybersecurity'],
+      'edu': ['edtech'], 'learning': ['edtech'], 'training': ['edtech'], 'school': ['edtech'],
+      'real estate': ['proptech'], 'property': ['proptech'], 'construction': ['proptech'],
+      'health': ['healthcare'], 'medical': ['healthcare'], 'pharma': ['healthcare'], 'biotech': ['healthcare'],
+      'finance': ['fintech'], 'bank': ['fintech'], 'insurance': ['fintech'], 'payment': ['fintech'],
+      'retail': ['ecommerce'], 'shop': ['ecommerce'], 'commerce': ['ecommerce'], 'd2c': ['ecommerce'],
+      'cloud': ['saas'], 'software': ['saas'], 'subscription': ['saas'],
+      'manufacture': ['manufacturing'], 'industrial': ['manufacturing'], 'supply chain': ['manufacturing'],
+    };
+    for (const [keyword, keys] of Object.entries(keywordMap)) {
+      if (lowerIndustry.includes(keyword)) {
+        for (const key of keys) {
+          if (suggestions[key]) {
+            matched = suggestions[key];
+            break;
+          }
+        }
+        if (Object.keys(matched).length > 0) break;
+      }
     }
   }
 
