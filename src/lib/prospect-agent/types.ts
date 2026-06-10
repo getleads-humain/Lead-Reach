@@ -84,6 +84,13 @@ export interface AgentMessage {
   // Pipeline fields
   converted?: boolean;
   leadId?: string;
+
+  // Error recovery fields
+  retryQuery?: string;              // Original query to re-submit on retry
+  errorState?: {                    // Set when pipeline errors mid-way
+    message: string;
+    timestamp: number;
+  };
 }
 
 /**
