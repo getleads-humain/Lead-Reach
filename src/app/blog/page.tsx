@@ -118,18 +118,19 @@ export default function BlogPage() {
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                   {filteredPosts.map((post) => (
-                    <Link key={post.id} href={`/blog/${post.slug}`} className="group block">
-                      <Card className="card-premium border-border/30 bg-card/50 h-full overflow-hidden transition-all duration-300 group-hover:border-emerald-500/20 group-hover:shadow-lg group-hover:shadow-emerald-500/5">
+                    <Link key={post.id} href={`/blog/${post.slug}`} className="group block cursor-pointer" style={{ pointerEvents: 'auto' }}>
+                      <Card className="card-premium border-border/30 bg-card/50 h-full overflow-hidden transition-all duration-300 group-hover:border-emerald-500/20 group-hover:shadow-lg group-hover:shadow-emerald-500/5 cursor-pointer" style={{ pointerEvents: 'auto' }}>
                         {/* Hero Image */}
-                        <div className={`h-40 relative overflow-hidden bg-gradient-to-br ${post.gradient}`}>
+                        <div className={`h-40 relative overflow-hidden bg-gradient-to-br ${post.gradient}`} style={{ pointerEvents: 'none' }}>
                           <Image
                             src={post.heroImage}
                             alt={post.title}
                             fill
                             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-                            className="object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500"
+                            className="object-cover opacity-90 group-hover:opacity-100 group-hover:scale-105 transition-all duration-500 pointer-events-none"
+                            style={{ pointerEvents: 'none' }}
                           />
-                          <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent" />
+                          <div className="absolute inset-0 bg-gradient-to-t from-background/60 to-transparent pointer-events-none" />
                         </div>
                         <CardContent className="p-5">
                           <Badge variant="outline" className={`text-[10px] mb-3 ${CATEGORY_COLORS[post.category] || ''}`}>
