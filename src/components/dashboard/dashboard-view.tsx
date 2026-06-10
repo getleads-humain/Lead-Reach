@@ -70,6 +70,9 @@ export function DashboardView() {
   const { generate: aiGenerate, isLoading: aiIsLoading } = useAIOneShot();
   const [aiChatMessages, setAiChatMessages] = useState<Array<{ role: string; content: string }>>([]);
 
+  // Proactive Insights from Vellum
+  const [proactiveInsights, setProactiveInsights] = useState<Array<{ type: string; message: string; priority?: string; scopeId?: string }>>([]);
+
   const loadDashboard = useCallback(async () => {
     try {
       const [campaignsData, leadsData, tasksData] = await Promise.all([
@@ -124,6 +127,18 @@ export function DashboardView() {
   useEffect(() => {
     loadDashboard();
   }, [loadDashboard]);
+
+  // Fetch proactive insights from Vellum bridge
+  useEffect(() => {
+    fetch('/api/proactive-insights')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data?.insights && Array.isArray(data.insights)) {
+          setProactiveInsights(data.insights.slice(0, 5));
+        }
+      })
+      .catch(() => {}); // Non-critical
+  }, []);
 
   // Load AI insight after dashboard data is loaded
   useEffect(() => {
@@ -391,6 +406,40 @@ User question: ${msg}`,
           </div>
         </CardContent>
       </Card>
+
+      {/* Proactive Insights from Vellum */}
+      {proactiveInsights.length > 0 && (
+        <Card className="card-premium border-amber-500/20 overflow-hidden relative">
+          <div className="absolute inset-0 bg-gradient-to-br from-amber-500/5 via-transparent to-emerald-500/5 pointer-events-none" />
+          <CardHeader className="pb-3 relative">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <AlertCircle className="h-4 w-4 text-amber-400" />
+              Proactive Insights
+              <Badge variant="outline" className="text-[9px] border-amber-500/20 text-amber-400 bg-amber-500/5 ml-2">
+                Vellum AI
+              </Badge>
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="relative space-y-2">
+            {proactiveInsights.map((insight, i) => (
+              <div
+                key={i}
+                className="rounded-lg border border-border/20 bg-secondary/10 p-2.5 text-xs text-foreground/80 flex items-start gap-2"
+              >
+                <span className={`shrink-0 mt-0.5 h-1.5 w-1.5 rounded-full ${
+                  insight.priority === 'high' ? 'bg-red-400' :
+                  insight.priority === 'medium' ? 'bg-amber-400' :
+                  'bg-emerald-400'
+                }`} />
+                <div>
+                  <span className="font-medium text-foreground/90">{insight.type.replace(/_/g, ' ')}:</span>{' '}
+                  {insight.message}
+                </div>
+              </div>
+            ))}
+          </CardContent>
+        </Card>
+      )}
 
       {/* Bottom Grid */}
       <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">

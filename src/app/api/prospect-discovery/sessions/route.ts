@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { PrismaClient } from '@prisma/client';
+import { storeProspectMemory } from '@/lib/vellum-core/bridge';
 
 const prisma = new PrismaClient();
 
@@ -147,6 +148,22 @@ export async function POST(request: NextRequest) {
           leadId: msg.leadId || null,
         },
       });
+
+            // Store prospect data in Vellum memory for future reference
+            if (body.prospectData || body.scoreData) {
+              storeProspectMemory(
+                {
+                  ...(body.prospectData || {}),
+                  ...(body.scoreData || {}),
+                  sessionId: session.id,
+                  leadScore: body.scoreData?.overallScore,
+                  leadTier: body.scoreData?.tier,
+                },
+                session.userId || 'anonymous',
+              ).catch(err => {
+                console.warn('[Sessions] Failed to store Vellum memory:', err);
+              });
+            }
 
       return NextResponse.json({ success: true, messageId: savedMsg.id });
     }

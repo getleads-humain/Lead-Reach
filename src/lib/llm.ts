@@ -63,7 +63,7 @@ const THINKING_BUDGETS = {
   deep: 4096,
 } as const;
 
-type ThinkingBudget = keyof typeof THINKING_BUDGETS;
+export type ThinkingBudget = keyof typeof THINKING_BUDGETS;
 
 // ============================================================
 // Unified Rate Limiter (shared across ALL API calls)
@@ -576,6 +576,211 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
   console.error('[callLLM] All models failed, returning null for graceful degradation');
   return null;
+}
+
+// ============================================================
+// Streaming LLM Call — for real-time SSE output
+// ============================================================
+
+export interface LLMStreamEvent {
+  type: 'text_delta' | 'thinking_delta' | 'usage' | 'done' | 'error';
+  text?: string;
+  thinking?: string;
+  inputTokens?: number;
+  outputTokens?: number;
+  model?: string;
+  stopReason?: string;
+  error?: string;
+}
+
+/**
+ * Stream a chat completion from Z.AI with real-time token output.
+ * Uses the same rate limiter and auth as callLLM, but yields events
+ * as they arrive instead of waiting for the full response.
+ */
+export async function* callLLMStreaming(
+  messages: Array<{ role: string; content: string }>,
+  options?: {
+    temperature?: number;
+    maxTokens?: number;
+    model?: LLMModel;
+    thinkingBudget?: ThinkingBudget;
+    signal?: AbortSignal;
+  },
+): AsyncGenerator<LLMStreamEvent> {
+  const model = options?.model || MODEL_PRIMARY;
+  const budget = THINKING_BUDGETS[options?.thinkingBudget || 'standard'];
+  const effectiveMaxTokens = Math.max(options?.maxTokens || 4096, budget + 500);
+
+  if (!isZhipuConfigured()) {
+    yield { type: 'error', error: 'Z.AI API key not configured' };
+    return;
+  }
+
+  // Build model list, skipping cooldown
+  const modelsToTry: LLMModel[] = [];
+  if (!isModelInCooldown(model)) {
+    modelsToTry.push(model);
+  }
+  const fallback = model === MODEL_PRIMARY ? MODEL_FALLBACK : MODEL_PRIMARY;
+  if (!modelsToTry.includes(fallback) && !isModelInCooldown(fallback)) {
+    modelsToTry.push(fallback);
+  }
+  if (modelsToTry.length === 0) {
+    modelsToTry.push(MODEL_PRIMARY);
+  }
+
+  for (const currentModel of modelsToTry) {
+    try {
+      await waitForRateLimit();
+
+      const token = getZhipuToken();
+      if (!token) {
+        releaseRateLimit();
+        yield { type: 'error', error: 'Cannot generate JWT token' };
+        return;
+      }
+
+      const baseUrl = getZhipuApiBase();
+      const url = `${baseUrl}/chat/completions`;
+
+      const body = {
+        model: currentModel,
+        messages,
+        temperature: options?.temperature ?? 0.3,
+        max_tokens: effectiveMaxTokens,
+        stream: true,
+        thinking: { type: 'enabled', budget_tokens: budget },
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal: options?.signal || AbortSignal.timeout(90000),
+      });
+
+      if (response.status === 429) {
+        releaseRateLimit();
+        record429(currentModel);
+        const backoffMs = 3000 + Math.random() * 2000;
+        console.warn(`[callLLMStreaming] 429 on ${currentModel}, backing off ${backoffMs}ms`);
+        await new Promise(r => setTimeout(r, backoffMs));
+        continue;
+      }
+
+      if (!response.ok) {
+        releaseRateLimit();
+        const errorText = await response.text().catch(() => 'Unknown error');
+        throw new Error(`API request failed with status ${response.status}: ${errorText.slice(0, 200)}`);
+      }
+
+      // Parse SSE stream
+      recordSuccess(currentModel);
+      const reader = response.body?.getReader();
+      if (!reader) {
+        releaseRateLimit();
+        yield { type: 'error', error: 'No response body' };
+        return;
+      }
+
+      const decoder = new TextDecoder();
+      let buffer = '';
+      let totalInputTokens = 0;
+      let totalOutputTokens = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+
+          buffer += decoder.decode(value, { stream: true });
+          const lines = buffer.split('\n');
+          buffer = lines.pop() || '';
+
+          for (const line of lines) {
+            const trimmed = line.trim();
+            if (!trimmed || trimmed.startsWith(':')) continue;
+
+            if (trimmed === 'data: [DONE]') {
+              releaseRateLimit();
+              yield {
+                type: 'usage',
+                inputTokens: totalInputTokens,
+                outputTokens: totalOutputTokens,
+                model: currentModel,
+              };
+              yield { type: 'done', stopReason: 'stop' };
+              return;
+            }
+
+            if (trimmed.startsWith('data: ')) {
+              try {
+                const event = JSON.parse(trimmed.slice(6));
+                const choices = event.choices as Array<{
+                  delta?: {
+                    content?: string;
+                    reasoning_content?: string;
+                  };
+                  finish_reason?: string;
+                }> | undefined;
+
+                if (choices) {
+                  for (const choice of choices) {
+                    if (choice.delta?.reasoning_content) {
+                      yield { type: 'thinking_delta', thinking: choice.delta.reasoning_content };
+                    }
+                    if (choice.delta?.content) {
+                      yield { type: 'text_delta', text: choice.delta.content };
+                    }
+                    if (choice.finish_reason) {
+                      // Track usage from the event
+                      if (event.usage) {
+                        totalInputTokens += event.usage.prompt_tokens || 0;
+                        totalOutputTokens += event.usage.completion_tokens || 0;
+                      }
+                    }
+                  }
+                }
+
+                if (event.usage) {
+                  totalInputTokens += event.usage.prompt_tokens || 0;
+                  totalOutputTokens += event.usage.completion_tokens || 0;
+                }
+              } catch {
+                // Skip malformed JSON
+              }
+            }
+          }
+        }
+      } finally {
+        reader.releaseLock();
+        releaseRateLimit();
+      }
+
+      // If we exit the loop without [DONE], still emit done
+      yield { type: 'done', stopReason: 'stop' };
+      return;
+    } catch (error) {
+      releaseRateLimit();
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[callLLMStreaming] ${currentModel} failed: ${msg.slice(0, 200)}`);
+
+      if (isRateLimitError(msg)) {
+        record429(currentModel);
+        continue;
+      }
+
+      // Non-retryable error
+      yield { type: 'error', error: msg };
+      return;
+    }
+  }
+
+  yield { type: 'error', error: 'All models failed' };
 }
 
 // ============================================================

@@ -25,10 +25,10 @@ import type { ZAIChatOptions, ZAIStreamEvent, ZAIUsage } from './types';
 // ============================================================
 
 /** Z.AI API base URL — OpenAI-compatible endpoint */
-const ZAI_BASE_URL = 'https://api.z.ai/api/paas/v4/';
+const ZAI_BASE_URL = process.env.ZHIPU_API_BASE || process.env.ZAI_API_BASE || 'https://api.z.ai/api/paas/v4/';
 
 /** Z.AI API key for authentication */
-const ZAI_API_KEY = 'c68cdeade96b45fa8bf45fbd487707b2.cgpoWSZ5Ae8BHEdO';
+const ZAI_API_KEY = process.env.ZHIPU_AI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ZAI_API_KEY || '';
 
 /** Primary model for LeadReach AI */
 export const ZAI_MODEL_PRIMARY = 'glm-4.7-flash' as const;

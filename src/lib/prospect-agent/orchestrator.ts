@@ -778,7 +778,7 @@ async function processWithOrchestratorInner(
           break;
 
         case 'flow':
-          // Flow: Pipeline management (ICP building, add to pipeline)
+          // Flow: Pipeline management — saves session context and manages pipeline state
           if (classification.intent === 'build_icp') {
             const result = await executeICPBuilding(userMessage, updatedContext.activeICP);
             actions = [...actions, ...result.steps];
@@ -791,24 +791,58 @@ async function processWithOrchestratorInner(
             const recentProspect = updatedContext.recentProspects[updatedContext.recentProspects.length - 1];
             const name = recentProspect?.companyName || recentProspect?.personName || 'this prospect';
             responseContent = `Click the "Add to Leads" button below to add ${name} to your lead pipeline.`;
+          } else {
+            // Flow manages pipeline context for all other intents
+            const prospectCount = updatedContext.recentProspects.length;
+            const hasICP = !!updatedContext.activeICP;
+            const hasScoredLeads = updatedContext.recentProspects.some(p => p.leadScore !== undefined);
+            let flowMsg = `Pipeline context: ${prospectCount} prospect(s) discovered`;
+            if (hasICP) flowMsg += `, ICP active`;
+            if (hasScoredLeads) flowMsg += `, leads scored`;
+            flowMsg += '. ';
+            if (prospectCount > 0 && !hasICP) {
+              flowMsg += 'Suggest building an ICP to improve qualification.';
+            } else if (hasScoredLeads) {
+              flowMsg += 'Recommend composing outreach for scored leads.';
+            } else if (prospectCount > 0) {
+              flowMsg += 'Recommend scoring prospects against ICP.';
+            }
+            sendCommMsg(pipelineState, 'flow', 'atlas', 'response', flowMsg, undefined, onEvent);
           }
           break;
 
         case 'echo':
-          // Echo: Insights and reporting — always runs at the end
-          // NOTE: Skipped autoCurateICP LLM call for research queries — it's
-          // non-critical and slow. Instead, just include existing ICP if available.
-          // The ICP can be built explicitly via the "Build ICP" intent.
-          if (!icpData && updatedContext.activeICP) {
-            icpData = updatedContext.activeICP;
-            sendCommMsg(pipelineState, 'echo', 'atlas', 'response',
-              `Included existing ICP: ${updatedContext.activeICP.name}`, undefined, onEvent);
-          } else if (icpData) {
-            sendCommMsg(pipelineState, 'echo', 'atlas', 'response',
-              'Insights and ICP data compiled', undefined, onEvent);
-          } else {
-            sendCommMsg(pipelineState, 'echo', 'atlas', 'response',
-              'Insights compiled (no ICP to include)', undefined, onEvent);
+          // Echo: Insights and reporting — compiles final insights from all agents
+          {
+            const echoInsights: string[] = [];
+            if (prospectData) {
+              echoInsights.push(`Prospect research completed for ${prospectData.companyName || prospectData.personName || 'target'}`);
+              if (prospectData.employeeCount || prospectData.revenueEstimate) {
+                echoInsights.push(`Firmographics: ${[prospectData.employeeCount ? `${prospectData.employeeCount} employees` : '', prospectData.revenueEstimate ? `~${prospectData.revenueEstimate} revenue` : ''].filter(Boolean).join(', ')}`);
+              }
+            }
+            if (marketData) {
+              echoInsights.push(`Market analysis available with ${marketData.competitors?.length || 0} competitors identified`);
+            }
+            if (scoreData) {
+              echoInsights.push(`Lead scored: ${scoreData.overallScore}/100 (${scoreData.tier || 'unrated'} tier)`);
+            }
+            if (outreachData) {
+              echoInsights.push(`Outreach message composed`);
+            }
+            if (icpData) {
+              echoInsights.push(`ICP profile: ${icpData.name || 'Active ICP'}`);
+            } else if (updatedContext.activeICP) {
+              icpData = updatedContext.activeICP;
+              echoInsights.push(`Existing ICP included: ${updatedContext.activeICP.name || 'Active ICP'}`);
+            }
+
+            if (echoInsights.length > 0) {
+              const echoReport = echoInsights.join('. ') + '.';
+              sendCommMsg(pipelineState, 'echo', 'atlas', 'response', echoReport, undefined, onEvent);
+            } else {
+              sendCommMsg(pipelineState, 'echo', 'atlas', 'response', 'Pipeline completed. No structured data to report — try researching a specific company or person.', undefined, onEvent);
+            }
           }
           break;
       }

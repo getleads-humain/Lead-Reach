@@ -82,12 +82,53 @@ function SettingsContentInner() {
   const [location, setLocation] = useState('');
   const [bio, setBio] = useState('');
 
-  // Notification settings
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [pushNotifications, setPushNotifications] = useState(true);
-  const [campaignAlerts, setCampaignAlerts] = useState(true);
-  const [leadAlerts, setLeadAlerts] = useState(true);
-  const [weeklyReport, setWeeklyReport] = useState(true);
+  // Notification settings — persisted to localStorage
+  const [emailNotifications, setEmailNotifications] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leadreach-notifications-email');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+  const [pushNotifications, setPushNotifications] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leadreach-notifications-push');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+  const [campaignAlerts, setCampaignAlerts] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leadreach-notifications-campaigns');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+  const [leadAlerts, setLeadAlerts] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leadreach-notifications-leads');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+  const [weeklyReport, setWeeklyReport] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('leadreach-notifications-weekly');
+      return saved !== null ? saved === 'true' : true;
+    }
+    return true;
+  });
+
+  // Persist notification changes to localStorage
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      localStorage.setItem('leadreach-notifications-email', String(emailNotifications));
+      localStorage.setItem('leadreach-notifications-push', String(pushNotifications));
+      localStorage.setItem('leadreach-notifications-campaigns', String(campaignAlerts));
+      localStorage.setItem('leadreach-notifications-leads', String(leadAlerts));
+      localStorage.setItem('leadreach-notifications-weekly', String(weeklyReport));
+    }
+  }, [emailNotifications, pushNotifications, campaignAlerts, leadAlerts, weeklyReport]);
 
   // Handle checkout URL params
   useEffect(() => {
