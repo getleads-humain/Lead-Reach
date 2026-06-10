@@ -121,8 +121,12 @@ function Agent8Badge({ agentKey, state, compact = false }: { agentKey: string; s
       <span className="font-medium">{display.name}</span>
       {state?.status === 'thinking' && <Clock className="h-2.5 w-2.5 animate-spin" />}
       {state?.status === 'working' && <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+      {state?.status === 'waiting' && <Clock className="h-2.5 w-2.5 opacity-60" />}
       {state?.status === 'completed' && <CheckCircle2 className="h-2.5 w-2.5" />}
       {state?.status === 'failed' && <AlertCircle className="h-2.5 w-2.5" />}
+      {state?.status === 'waiting' && state.currentStep && (
+        <span className="text-[8px] opacity-60 truncate max-w-[60px]">{state.currentStep}</span>
+      )}
     </div>
   );
 }
@@ -193,7 +197,7 @@ function CommMessageBubble({ msg }: { msg: AgentCommMessage }) {
     response: 'border-l-emerald-500/50 bg-emerald-500/5',
     broadcast: 'border-l-violet-500/50 bg-violet-500/5',
     handoff: 'border-l-amber-500/50 bg-amber-500/5',
-    status: 'border-l-muted-foreground/50 bg-secondary/10',
+    status: 'border-l-amber-400/40 bg-amber-500/5',
   };
 
   const typeLabels: Record<string, string> = {
@@ -201,7 +205,7 @@ function CommMessageBubble({ msg }: { msg: AgentCommMessage }) {
     response: '✓',
     broadcast: '📢',
     handoff: '⟶',
-    status: 'ℹ',
+    status: '⏳',
   };
 
   return (
@@ -289,6 +293,12 @@ function AgentWorkspacePanel({
                  pipelineState.phase === 'synthesizing' ? 'Synthesizing...' :
                  pipelineState.phase === 'complete' ? 'Complete' : 'Error'}
               </span>
+              {/* Show cooldown indicator if any agent is in waiting state */}
+              {Object.values(pipelineState.agents).some(a => a.status === 'waiting') && (
+                <span className="text-[8px] text-amber-400 flex items-center gap-0.5 ml-1">
+                  <Clock className="h-2 w-2" /> Rate limit cooldown
+                </span>
+              )}
             </div>
             <Progress value={pipelineState.overallProgress} className="h-1.5 bg-secondary/40 [&>div]:bg-emerald-400" />
             <span className="text-[9px] text-muted-foreground/50 mt-1 block">{pipelineState.overallProgress}%</span>
@@ -325,6 +335,11 @@ function AgentWorkspacePanel({
                       {state?.status === 'working' && (
                         <span className="text-[8px] text-cyan-400 flex items-center gap-0.5">
                           <Loader2 className="h-2 w-2 animate-spin" /> {state.currentStep || 'Working...'}
+                        </span>
+                      )}
+                      {state?.status === 'waiting' && (
+                        <span className="text-[8px] text-amber-400 flex items-center gap-0.5">
+                          <Clock className="h-2 w-2 opacity-60" /> Cooldown...
                         </span>
                       )}
                       {state?.status === 'completed' && (
@@ -1018,6 +1033,25 @@ export function ProspectDiscoveryView() {
                     ...prev,
                     commLog: [...prev.commLog, data],
                   }));
+                }
+                break;
+
+              case 'cooldown':
+                if (data) {
+                  // Show cooldown status in agent workspace
+                  const cooldownAgent = data.agent;
+                  const cooldownMs = data.cooldownMs || 2000;
+                  setPipelineState(prev => {
+                    const updatedAgents = { ...prev.agents };
+                    if (updatedAgents[cooldownAgent]) {
+                      updatedAgents[cooldownAgent] = {
+                        ...updatedAgents[cooldownAgent],
+                        status: 'waiting',
+                        currentStep: `Cooldown (${Math.round(cooldownMs / 1000)}s) — rate limit buffer`,
+                      };
+                    }
+                    return { ...prev, agents: updatedAgents };
+                  });
                 }
                 break;
 

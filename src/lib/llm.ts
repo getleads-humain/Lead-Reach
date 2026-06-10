@@ -68,25 +68,74 @@ type ThinkingBudget = keyof typeof THINKING_BUDGETS;
 // ============================================================
 // Unified Rate Limiter (shared across ALL API calls)
 // ============================================================
+//
+// IMPORTANT: GLM-4.7-Flash and GLM-4.6V-Flash both have a
+// concurrency limit of 1. This means we can only have ONE
+// in-flight request at a time per model.
+//
+// Strategy:
+//   - Enforce a minimum interval between consecutive API calls
+//   - Add a "deep breath" cooldown buffer after each call completes
+//     to ensure we don't overwhelm the rate limiter
+//   - Add jitter to avoid thundering herd when multiple requests queue
+//   - Track in-flight requests to enforce true concurrency = 1
+// ============================================================
 
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 300; // 300ms between calls (reduced for better throughput)
-const JITTER_MS = 200; // Random jitter to avoid thundering herd
+let inFlightRequests = 0;
+const MAX_CONCURRENCY = 1; // GLM-4.7-Flash and GLM-4.6V-Flash both limit to 1
 
+// Minimum interval between calls (1.5s to respect rate limits)
+const MIN_INTERVAL_MS = 1500;
+// "Deep breath" cooldown buffer after each call completes (1-2s)
+const COOLDOWN_BUFFER_MS = 1000;
+// Random jitter to avoid thundering herd (0-500ms)
+const JITTER_MS = 500;
+
+/**
+ * Wait for rate limit clearance before making an API call.
+ * Implements:
+ *   1. Concurrency gate (max 1 in-flight request)
+ *   2. Minimum interval between calls
+ *   3. "Deep breath" cooldown buffer
+ *   4. Random jitter
+ */
 async function waitForRateLimit() {
+  // 1. Wait for concurrency slot
+  while (inFlightRequests >= MAX_CONCURRENCY) {
+    await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
+  }
+
+  // 2. Wait for minimum interval + cooldown buffer since last call
   const now = Date.now();
   const elapsed = now - lastCallTime;
-  const waitTime = MIN_INTERVAL_MS - elapsed + Math.random() * JITTER_MS;
+  const requiredWait = MIN_INTERVAL_MS + COOLDOWN_BUFFER_MS;
+  const waitTime = requiredWait - elapsed + Math.random() * JITTER_MS;
   if (waitTime > 0) {
     await new Promise(r => setTimeout(r, waitTime));
   }
+
+  inFlightRequests++;
   lastCallTime = Date.now();
+}
+
+/**
+ * Release the concurrency slot after a call completes.
+ * Should be called after every API call (success or failure).
+ */
+function releaseRateLimit() {
+  inFlightRequests = Math.max(0, inFlightRequests - 1);
 }
 
 /**
  * Exported so agent-reach-bridge.ts can share the same rate limiter.
  */
 export { waitForRateLimit };
+
+/**
+ * Exported so agent-reach-bridge.ts can release rate limit slots after calls.
+ */
+export { releaseRateLimit };
 
 // ============================================================
 // Model Health Tracker (skips models that return persistent 429s)
@@ -100,7 +149,7 @@ interface ModelHealth {
 
 const modelHealth: Map<string, ModelHealth> = new Map();
 
-const COOLDOWN_AFTER_429_MS = 60_000; // 1 minute cooldown after consecutive 429s
+const COOLDOWN_AFTER_429_MS = 120_000; // 2 minutes cooldown after consecutive 429s (rate limit is strict: concurrency=1)
 const MAX_CONSECUTIVE_429S = 2; // After 2 consecutive 429s, skip model for cooldown period
 
 function isModelInCooldown(model: string): boolean {
@@ -469,16 +518,19 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
         if (content.trim()) {
           recordSuccess(currentModel);
+          releaseRateLimit();
           console.log(`[callLLM] Success with ${currentModel} on attempt ${attempt + 1}`);
           return content;
         }
 
         // Empty response — retry
+        releaseRateLimit();
         if (attempt < retriesPerModel) {
           console.warn(`[callLLM] Empty response from ${currentModel}, attempt ${attempt + 1}, retrying...`);
           continue;
         }
       } catch (error) {
+        releaseRateLimit();
         const msg = error instanceof Error ? error.message : 'Unknown error';
         const errorName = error instanceof Error ? error.name : '';
 
@@ -504,10 +556,10 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         }
 
         if (attempt < retriesPerModel) {
-          // Backoff strategy
-          let backoffMs = 1500;
-          if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000;
-          else if (isGatewayErr) backoffMs = (attempt + 1) * 2000 + Math.random() * 1000;
+          // Backoff strategy — increased for rate limit compliance
+          let backoffMs = 2000;
+          if (isRateErr) backoffMs = (attempt + 1) * 5000 + Math.random() * 2000; // 5s, 10s for rate errors
+          else if (isGatewayErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3s, 6s for gateway errors
 
           console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));

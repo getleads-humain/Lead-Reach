@@ -52,6 +52,7 @@ export type OrchestratorEvent =
   | { type: 'thinking_end'; data: { totalMs: number; classification: { intent: UserIntent; persona: AgentPersona; confidence: number; reasoning: string } } }
   | { type: 'agent_status'; data: { agent: AgentPersona; state: AgentState } }
   | { type: 'agent_comm'; data: AgentCommMessage }
+  | { type: 'cooldown'; data: { agent: AgentPersona; cooldownMs: number; reason: string } }
   | { type: 'step_start'; data: { stepIndex: number; label: string; agent: AgentPersona; message: string } }
   | { type: 'step_progress'; data: { stepIndex: number; message: string; partialData?: Record<string, unknown> } }
   | { type: 'step_complete'; data: { stepIndex: number; status: 'completed' | 'failed'; message: string; partialData?: Record<string, unknown> } }

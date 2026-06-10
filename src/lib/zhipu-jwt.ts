@@ -23,7 +23,7 @@ import crypto from 'crypto';
 // ── Configuration ──────────────────────────────────────────────
 
 const ZHIPU_API_KEY = process.env.ZHIPU_AI_API_KEY || process.env.ZHIPU_API_KEY || process.env.ZAI_API_KEY || '';
-const ZHIPU_API_BASE = process.env.ZHIPU_AI_API_BASE || 'https://open.bigmodel.cn/api/paas/v4';
+const ZHIPU_API_BASE = process.env.ZHIPU_API_BASE || process.env.ZAI_API_BASE || 'https://api.z.ai/api/paas/v4';
 
 // Token refresh 5 minutes before expiration
 const TOKEN_LIFETIME_MS = 3600 * 1000; // 1 hour

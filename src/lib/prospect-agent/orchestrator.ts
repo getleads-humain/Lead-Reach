@@ -346,6 +346,31 @@ async function processWithOrchestratorInner(
     const phaseStart = Date.now();
     const agentPersona = AGENT_8_MAP[phase.agent] || 'navigator';
 
+    // ═══ DEEP BREATH COOLDOWN ═══
+    // Before each agent phase, take a cooldown buffer to ensure
+    // we don't hit the rate limit (concurrency=1 for GLM models).
+    // The cooldown gives the API time to process any pending requests
+    // and prevents 429 errors from consecutive calls.
+    if (stepIdx > 0) {
+      const cooldownMs = 2000 + Math.random() * 1000; // 2-3 second deep breath
+      updateAgentState(pipelineState, agentPersona, {
+        status: 'waiting',
+        currentStep: `Cooldown buffer (${Math.round(cooldownMs / 1000)}s)`,
+        progress: 0,
+        startedAt: Date.now(),
+      }, onEvent);
+
+      sendCommMsg(pipelineState, 'navigator', agentPersona, 'status',
+        `Cooldown: waiting ${Math.round(cooldownMs / 1000)}s before starting (rate limit buffer)`,
+        { cooldownMs, reason: 'rate_limit_buffer' },
+        onEvent);
+
+      emit(onEvent, { type: 'cooldown', data: { agent: agentPersona, cooldownMs, reason: 'rate_limit_buffer' } });
+      emit(onEvent, { type: 'pipeline_progress', data: { phase: 'executing', overallProgress: Math.round(15 + (stepIdx / totalPhases) * 70 - 2) } });
+
+      await new Promise(r => setTimeout(r, cooldownMs));
+    }
+
     // Update agent state to working
     updateAgentState(pipelineState, agentPersona, {
       status: 'working',
@@ -627,6 +652,24 @@ async function processWithOrchestratorInner(
   // ═══════════════════════════════════════════════════
   pipelineState.phase = 'synthesizing';
   emit(onEvent, { type: 'pipeline_progress', data: { phase: 'synthesizing', overallProgress: 85 } });
+
+  // Deep breath cooldown before synthesis LLM call
+  const synthCooldownMs = 2000 + Math.random() * 1000;
+  updateAgentState(pipelineState, 'navigator', {
+    status: 'waiting',
+    currentStep: `Cooldown before synthesis (${Math.round(synthCooldownMs / 1000)}s)`,
+    progress: 0,
+    startedAt: Date.now(),
+  }, onEvent);
+
+  sendCommMsg(pipelineState, 'navigator', 'navigator', 'status',
+    `Cooldown: ${Math.round(synthCooldownMs / 1000)}s buffer before synthesis (rate limit)`,
+    { cooldownMs: synthCooldownMs, reason: 'rate_limit_buffer' },
+    onEvent);
+
+  emit(onEvent, { type: 'cooldown', data: { agent: 'navigator', cooldownMs: synthCooldownMs, reason: 'rate_limit_buffer' } });
+
+  await new Promise(r => setTimeout(r, synthCooldownMs));
 
   updateAgentState(pipelineState, 'navigator', {
     status: 'working',

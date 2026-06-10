@@ -113,6 +113,10 @@ export async function POST(request: NextRequest) {
             send('agent_comm', event.data);
             break;
 
+          case 'cooldown':
+            send('cooldown', event.data);
+            break;
+
           case 'step_start':
             send('step_start', event.data);
             break;

@@ -16,7 +16,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
-import { waitForRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK with JWT auth
+import { waitForRateLimit, releaseRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK with JWT auth
 
 const execFileAsync = promisify(execFile);
 
@@ -615,11 +615,15 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
   try {
     const searchResult = await retryWithBackoff(async () => {
       await waitForRateLimit();
-      const zai = await getSDK(); // Uses JWT auth from zhipu-jwt.ts
-      return await zai.functions.invoke('web_search', {
-        query,
-        num: numResults,
-      });
+      try {
+        const zai = await getSDK(); // Uses JWT auth from zhipu-jwt.ts
+        return await zai.functions.invoke('web_search', {
+          query,
+          num: numResults,
+        });
+      } finally {
+        releaseRateLimit();
+      }
     }, 1, `exaSearch(web_search: ${query.slice(0, 40)})`);
 
     if (Array.isArray(searchResult) && searchResult.length > 0) {
@@ -2192,27 +2196,31 @@ export async function discoverBusinesses(
       for (let page = 0; page < maxPages; page++) {
         try {
           await waitForRateLimit(); // Unified rate limiter (shared with LLM calls)
-          const searchResult = await zai.functions.invoke('web_search', {
-            query: page === 0 ? searchQuery : `${searchQuery} page ${page + 1}`,
-            num: 50,
-          });
-
           let newResultsThisPage = 0;
-          if (Array.isArray(searchResult) && searchResult.length > 0) {
-            for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
-              if (item.url && !seenUrls.has(item.url)) {
-                seenUrls.add(item.url);
-                allResults.push({
-                  title: item.name || '',
-                  url: item.url,
-                  snippet: item.snippet || '',
-                });
-                newResultsThisPage++;
+          try {
+            const searchResult = await zai.functions.invoke('web_search', {
+              query: page === 0 ? searchQuery : `${searchQuery} page ${page + 1}`,
+              num: 50,
+            });
+
+            if (Array.isArray(searchResult) && searchResult.length > 0) {
+              for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
+                if (item.url && !seenUrls.has(item.url)) {
+                  seenUrls.add(item.url);
+                  allResults.push({
+                    title: item.name || '',
+                    url: item.url,
+                    snippet: item.snippet || '',
+                  });
+                  newResultsThisPage++;
+                }
               }
             }
-          }
 
-          console.log(`[discoverBusinesses] Query "${searchQuery.slice(0, 50)}" page ${page + 1}: ${newResultsThisPage} new results (total: ${allResults.length})`);
+            console.log(`[discoverBusinesses] Query "${searchQuery.slice(0, 50)}" page ${page + 1}: ${newResultsThisPage} new results (total: ${allResults.length})`);
+          } finally {
+            releaseRateLimit();
+          }
 
           // If no new results on this page, stop paginating this query
           if (newResultsThisPage === 0) {
