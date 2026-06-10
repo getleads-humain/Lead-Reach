@@ -5,11 +5,20 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { batchScrapeUrls } from '@/lib/google-maps-scraper';
+
+let batchScrapeUrls: ((urls: string[]) => Promise<unknown[]>) | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('@/lib/google-maps-scraper');
+  batchScrapeUrls = mod.batchScrapeUrls;
+} catch { batchScrapeUrls = null; }
 
 export const maxDuration = 180;
 
 export async function POST(request: NextRequest) {
+  if (!batchScrapeUrls) {
+    return NextResponse.json({ success: false, error: 'Google Maps scraper unavailable (puppeteer not installed)' }, { status: 503 });
+  }
   try {
     const body = await request.json();
     const { urls, concurrency = 3 } = body;

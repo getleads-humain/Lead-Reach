@@ -15,8 +15,8 @@ import type { AgentPersona, UserIntent, InsightItem } from './types';
 /** A single message in the inter-agent communication log */
 export interface AgentCommMessage {
   id: string;
-  from: AgentPersona | 'user';
-  to: AgentPersona | 'all';
+  from: string;  // 8-agent display name (atlas, scout, forge, etc.) or 'user'
+  to: string;    // 8-agent display name or 'all'
   type: 'request' | 'response' | 'broadcast' | 'handoff' | 'status';
   content: string;
   data?: Record<string, unknown>;
@@ -39,7 +39,7 @@ export interface PipelineState {
   phase: 'idle' | 'thinking' | 'executing' | 'synthesizing' | 'complete' | 'error';
   thinkStartTime: number | null;
   totalThinkTimeMs: number | null;
-  agents: Record<AgentPersona, AgentState>;
+  agents: Record<string, AgentState>;  // 8-agent display names as keys
   commLog: AgentCommMessage[];
   currentStep: string;
   overallProgress: number; // 0-100
@@ -50,9 +50,9 @@ export type OrchestratorEvent =
   | { type: 'thinking_start'; data: { timestamp: number } }
   | { type: 'thinking_tick'; data: { elapsedMs: number; phase: string } }
   | { type: 'thinking_end'; data: { totalMs: number; classification: { intent: UserIntent; persona: AgentPersona; confidence: number; reasoning: string } } }
-  | { type: 'agent_status'; data: { agent: AgentPersona; state: AgentState } }
+  | { type: 'agent_status'; data: { agent: string; state: AgentState } }
   | { type: 'agent_comm'; data: AgentCommMessage }
-  | { type: 'cooldown'; data: { agent: AgentPersona; cooldownMs: number; reason: string } }
+  | { type: 'cooldown'; data: { agent: string; cooldownMs: number; reason: string } }
   | { type: 'step_start'; data: { stepIndex: number; label: string; agent: AgentPersona; message: string } }
   | { type: 'step_progress'; data: { stepIndex: number; message: string; partialData?: Record<string, unknown> } }
   | { type: 'step_complete'; data: { stepIndex: number; status: 'completed' | 'failed'; message: string; partialData?: Record<string, unknown> } }

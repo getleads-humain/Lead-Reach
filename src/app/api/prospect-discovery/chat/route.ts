@@ -17,6 +17,8 @@ const PIPELINE_TIMEOUT_MS = 240_000; // 4 minutes (increased from 3min for relia
  * The main agent chat endpoint. Uses the 8-agent orchestrator pipeline.
  */
 export async function POST(request: NextRequest) {
+  let requestMessage = '';
+  let requestContext: ConversationContext | undefined;
   try {
     const body = await request.json();
     const { message, conversationHistory, context, forceIntent } = body as {
@@ -32,6 +34,9 @@ export async function POST(request: NextRequest) {
         { status: 400 },
       );
     }
+
+    requestMessage = message.trim();
+    requestContext = context;
 
     // Process the message through the 8-agent orchestrator pipeline with timeout
     const result = await Promise.race([
@@ -62,10 +67,10 @@ export async function POST(request: NextRequest) {
           },
           actions: [{ type: 'converse', label: 'Timeout', status: 'failed', message: 'Research took too long' }],
         },
-        updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
+        updatedContext: requestContext || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
         suggestedActions: [
-          { label: 'Try Again', prompt: message.trim(), icon: 'RefreshCw' },
-          { label: 'Simpler Query', prompt: `Research ${message.trim().split(' ').slice(0, 2).join(' ')}`, icon: 'Search' },
+          { label: 'Try Again', prompt: requestMessage, icon: 'RefreshCw' },
+          { label: 'Simpler Query', prompt: `Research ${requestMessage.split(' ').slice(0, 2).join(' ')}`, icon: 'Search' },
         ],
       });
     }
@@ -119,9 +124,9 @@ export async function POST(request: NextRequest) {
         },
         actions: [],
       },
-      updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
+      updatedContext: requestContext || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
       suggestedActions: [
-        { label: 'Try Again', prompt: (error instanceof Error ? '' : message?.trim() || ''), icon: 'RefreshCw' },
+        { label: 'Try Again', prompt: requestMessage || '', icon: 'RefreshCw' },
         { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
       ],
     });

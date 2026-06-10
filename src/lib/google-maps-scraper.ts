@@ -31,7 +31,19 @@
  *   });
  */
 
-import puppeteer, { type Browser, type Page, type HTTPRequest } from 'puppeteer';
+// Puppeteer is an optional dependency — this module gracefully degrades if unavailable
+let puppeteer: typeof import('puppeteer') | null = null;
+type Browser = NonNullable<typeof puppeteer>['Browser'] | any;
+type Page = NonNullable<typeof puppeteer>['Page'] | any;
+type HTTPRequest = NonNullable<typeof puppeteer>['HTTPRequest'] | any;
+
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  puppeteer = require('puppeteer');
+} catch {
+  puppeteer = null;
+  console.warn('[google-maps-scraper] Puppeteer not installed — Google Maps scraping unavailable');
+}
 
 // ============================================================
 // Types — Exported Interfaces
@@ -2254,6 +2266,9 @@ async function performNormalSearch(
 export async function searchGoogleMaps(
   options: GoogleMapsSearchOptions
 ): Promise<GoogleMapsEntry[]> {
+  if (!puppeteer) {
+    throw new Error('Google Maps scraping unavailable — puppeteer is not installed');
+  }
   const startTime = Date.now();
 
   if (!options.query) {

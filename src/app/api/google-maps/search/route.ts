@@ -13,11 +13,26 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from 'next/server';
-import { searchGoogleMaps } from '@/lib/google-maps-scraper';
+
+// Puppeteer is an optional dependency — the route returns a graceful error if unavailable
+let searchGoogleMaps: ((...args: unknown[]) => Promise<unknown[]>) | null = null;
+try {
+  // eslint-disable-next-line @typescript-eslint/no-require-imports
+  const mod = require('@/lib/google-maps-scraper');
+  searchGoogleMaps = mod.searchGoogleMaps;
+} catch {
+  searchGoogleMaps = null;
+}
 
 export const maxDuration = 120; // 2 minutes for scraping operations
 
 export async function POST(request: NextRequest) {
+  if (!searchGoogleMaps) {
+    return NextResponse.json(
+      { success: false, error: 'Google Maps scraper is not available (puppeteer not installed)', results: [], total: 0 },
+      { status: 503 },
+    );
+  }
   try {
     const body = await request.json();
 
@@ -148,6 +163,13 @@ export async function GET(request: NextRequest) {
   const language = searchParams.get('lang') || 'en';
   const maxResults = parseInt(searchParams.get('limit') || '20', 10);
   const fastMode = searchParams.get('fast') === 'true';
+
+  if (!searchGoogleMaps) {
+    return NextResponse.json(
+      { success: false, error: 'Google Maps scraper is not available (puppeteer not installed)', results: [], total: 0 },
+      { status: 503 },
+    );
+  }
 
   if (!query) {
     return NextResponse.json(

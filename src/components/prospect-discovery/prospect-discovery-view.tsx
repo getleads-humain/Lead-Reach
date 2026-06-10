@@ -313,12 +313,8 @@ function AgentWorkspacePanel({
             </div>
             <div className="grid grid-cols-2 gap-1.5">
               {Object.entries(AGENT_8_DISPLAY).map(([key, display]) => {
-                const agentPersona: AgentPersona = key === 'atlas' || key === 'flow' ? 'navigator' :
-                  key === 'forge' ? 'scout' :
-                  key === 'sage' || key === 'echo' ? 'analyst' :
-                  key === 'bard' ? 'scribe' :
-                  key as AgentPersona;
-                const state = pipelineState.agents[agentPersona];
+                // pipelineState.agents now uses 8-agent display keys directly
+                const state = pipelineState.agents[key];
                 const isRelevant = isProcessing && state && state.status !== 'idle';
 
                 return (
@@ -866,13 +862,14 @@ export function ProspectDiscoveryView() {
   const [pipelineState, setPipelineState] = useState<PipelineState>({
     phase: 'idle', thinkStartTime: null, totalThinkTimeMs: null,
     agents: {
+      atlas: { persona: 'navigator', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
       scout: { persona: 'scout', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-      hound: { persona: 'hound', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-      analyst: { persona: 'analyst', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-      architect: { persona: 'architect', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+      forge: { persona: 'scout', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+      sage: { persona: 'analyst', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
       judge: { persona: 'judge', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-      scribe: { persona: 'scribe', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-      navigator: { persona: 'navigator', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+      bard: { persona: 'scribe', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+      flow: { persona: 'navigator', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+      echo: { persona: 'analyst', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
     },
     commLog: [], currentStep: '', overallProgress: 0,
   });
