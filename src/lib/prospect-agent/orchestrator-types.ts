@@ -60,6 +60,7 @@ export type OrchestratorEvent =
   | { type: 'insight'; data: { insight: InsightItem } }
   | { type: 'pipeline_progress'; data: { phase: PipelineState['phase']; overallProgress: number } }
   | { type: 'done'; data: { message: Record<string, unknown>; updatedContext: Record<string, unknown>; suggestedActions: Record<string, unknown>[]; pipelineState: PipelineState | null } }
+  | { type: 'pipeline_resumed'; data: { resumedFrom: string; completedAgents: string[]; failedAgent?: string } }
   | { type: 'error'; data: { message: string; recoverable: boolean } };
 
 export type OrchestratorCallback = (event: OrchestratorEvent) => void;
