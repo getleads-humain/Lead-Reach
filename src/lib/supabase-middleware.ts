@@ -98,13 +98,12 @@ export async function updateSession(request: NextRequest) {
   const publicApiRoutes = [
     '/api/auth',
     '/api/admin/fix-security',
-    '/api/prospect-discovery/search',  // Allow unauthenticated search for testing
-    '/api/prospect-discovery/chat',    // Allow unauthenticated chat for testing
-    '/api/ai-assistant/chat',          // AI chat endpoint
-    '/api/ai-assistant/deep-research', // AI deep research endpoint
-    '/api/ai-assistant/smart-chat',    // AI smart chat endpoint
-    '/api/ai-assistant/save',          // AI save results endpoint
-    '/api/identity',                   // Identity profile save/load
+    '/api/prospect-discovery/',   // All prospect discovery endpoints (search, chat, stream, health, convert, deep-analyze, sessions)
+    '/api/ai-assistant/chat',           // AI chat endpoint
+    '/api/ai-assistant/deep-research',  // AI deep research endpoint
+    '/api/ai-assistant/smart-chat',     // AI smart chat endpoint
+    '/api/ai-assistant/save',           // AI save results endpoint
+    '/api/identity',                    // Identity profile save/load
   ];
 
   // Static assets and Next.js internals

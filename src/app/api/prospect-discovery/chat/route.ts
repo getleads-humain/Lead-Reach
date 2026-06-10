@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { processAgentMessage } from '@/lib/prospect-agent/agent';
+import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
 import type { ConversationContext, UserIntent } from '@/lib/prospect-agent/types';
 
 // Set max duration for this API route to 5 minutes (production)
@@ -7,32 +7,14 @@ export const maxDuration = 300;
 
 /**
  * Maximum time the agent pipeline is allowed to run before we return
- * a partial/graceful response.  Kept well under typical reverse-proxy
- * timeouts (60-120s) so the client always receives a JSON response.
+ * a partial/graceful response.
  */
-const PIPELINE_TIMEOUT_MS = 90_000; // 90 seconds — gives search + LLM extraction enough time
+const PIPELINE_TIMEOUT_MS = 240_000; // 4 minutes (increased from 3min for reliability)
 
 /**
  * POST /api/prospect-discovery/chat
  *
- * The main agent chat endpoint. Processes user messages through the
- * intelligent agent pipeline:
- * 1. Classifies user intent
- * 2. Dispatches to the appropriate specialist agent
- * 3. Executes research actions
- * 4. Returns conversational response with structured data
- *
- * The entire pipeline is wrapped in a timeout guard so we always
- * return a valid JSON response — even if the LLM or search APIs
- * are slow or returning 502 errors.
- *
- * Request body:
- * {
- *   message: string;
- *   conversationHistory: Array<{ role: string; content: string }>;
- *   context?: ConversationContext;
- *   forceIntent?: UserIntent;
- * }
+ * The main agent chat endpoint. Uses the 8-agent orchestrator pipeline.
  */
 export async function POST(request: NextRequest) {
   try {
@@ -51,26 +33,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Process the message through the agent pipeline with an overall timeout
+    // Process the message through the 8-agent orchestrator pipeline with timeout
     const result = await Promise.race([
-      processAgentMessage(message.trim(), context, forceIntent),
+      processWithOrchestrator(message.trim(), context, forceIntent),
       new Promise<null>((resolve) =>
         setTimeout(() => {
-          console.warn('[AgentChat] Pipeline timed out after 55s — returning partial response');
+          console.warn('[AgentChat] Pipeline timed out after 3min — returning partial response');
           resolve(null);
         }, PIPELINE_TIMEOUT_MS)
       ),
     ]);
 
     if (result === null) {
-      // Pipeline timed out — return a graceful response so the client
-      // doesn't see a 502 from the reverse proxy
       return NextResponse.json({
         success: true,
         message: {
           id: `agent-timeout-${Date.now()}`,
           role: 'assistant',
-          content: "I'm still working on your request — the research is taking longer than expected because the AI services are under heavy load. Your query has been processed partially. Please try again or rephrase your question for a quicker response.\n\nTip: Simpler, more specific queries (like \"Research Stripe\") tend to get faster results.",
+          content: "I'm still working on your request — the research is taking longer than expected because the AI services are under heavy load. Please try again or rephrase your question for a quicker response.\n\nTip: Simpler, more specific queries (like \"Research Stripe\") tend to get faster results.",
           timestamp: new Date().toISOString(),
           persona: 'navigator',
           thinking: {
@@ -95,14 +75,13 @@ export async function POST(request: NextRequest) {
       message: result.message,
       updatedContext: result.updatedContext,
       suggestedActions: result.suggestedActions,
+      pipelineState: result.pipelineState,
     });
   } catch (error) {
     console.error('[AgentChat] Unhandled error:', error);
 
     const msg = error instanceof Error ? error.message : 'Unknown error';
 
-    // Detect GENUINE gateway errors only — not false positives from search failures
-    // A genuine gateway error means the LLM API itself is down or overloaded
     const isGenuineGatewayError = (
       (msg.includes('502') || msg.includes('Bad Gateway'))
       && !msg.includes('search') && !msg.includes('exaSearch') && !msg.includes('DuckDuckGo')
@@ -123,15 +102,12 @@ export async function POST(request: NextRequest) {
       }, { status: 503 });
     }
 
-    // For all other errors (search failures, JSON parse errors, etc.),
-    // return a more helpful message and a 200 status so the front-end
-    // can display it as a normal agent message rather than an error
     return NextResponse.json({
       success: true,
       message: {
         id: `agent-error-${Date.now()}`,
         role: 'assistant',
-        content: "I encountered an issue while processing your request. This might be a temporary problem with one of my data sources. Let me try a simpler approach.\n\nYou can try:\n• **Be more specific** — e.g., \"Research Stripe\" instead of a long query\n• **Ask a different question** — I can help with company research, person search, ICP building, lead scoring, and outreach composition\n• **Try again** — the issue may be temporary",
+        content: "I encountered an issue while processing your request. This might be a temporary problem with one of my data sources.\n\nYou can try:\n• **Be more specific** — e.g., \"Research Stripe\"\n• **Ask a different question** — I can help with company research, person search, ICP building, lead scoring, and outreach\n• **Try again** — the issue may be temporary",
         timestamp: new Date().toISOString(),
         persona: 'navigator',
         thinking: {
@@ -145,7 +121,7 @@ export async function POST(request: NextRequest) {
       },
       updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
       suggestedActions: [
-        { label: 'Try Again', prompt: message.trim(), icon: 'RefreshCw' },
+        { label: 'Try Again', prompt: (error instanceof Error ? '' : message?.trim() || ''), icon: 'RefreshCw' },
         { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
       ],
     });

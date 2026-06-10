@@ -1,0 +1,10 @@
+{
+  "name": "gmaps-scraper",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "bun run index.ts",
+    "setup": "pip install -r requirements.txt && playwright install chromium",
+    "start": "python3 -m uvicorn app.main:app --host 0.0.0.0 --port 5340"
+  }
+}

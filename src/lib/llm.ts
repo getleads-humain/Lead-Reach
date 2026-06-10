@@ -68,25 +68,74 @@ type ThinkingBudget = keyof typeof THINKING_BUDGETS;
 // ============================================================
 // Unified Rate Limiter (shared across ALL API calls)
 // ============================================================
+//
+// IMPORTANT: GLM-4.7-Flash and GLM-4.6V-Flash both have a
+// concurrency limit of 1. This means we can only have ONE
+// in-flight request at a time per model.
+//
+// Strategy:
+//   - Enforce a minimum interval between consecutive API calls
+//   - Add a "deep breath" cooldown buffer after each call completes
+//     to ensure we don't overwhelm the rate limiter
+//   - Add jitter to avoid thundering herd when multiple requests queue
+//   - Track in-flight requests to enforce true concurrency = 1
+// ============================================================
 
 let lastCallTime = 0;
-const MIN_INTERVAL_MS = 500; // 500ms between calls (reduced from 1.5s for better throughput)
-const JITTER_MS = 200; // Random jitter to avoid thundering herd
+let inFlightRequests = 0;
+const MAX_CONCURRENCY = 1; // GLM-4.7-Flash and GLM-4.6V-Flash both limit to 1
 
+// Minimum interval between calls (2s to respect rate limits)
+const MIN_INTERVAL_MS = 2000;
+// "Deep breath" cooldown buffer after each call completes (2-3s)
+const COOLDOWN_BUFFER_MS = 2000;
+// Random jitter to avoid thundering herd (0-1000ms)
+const JITTER_MS = 1000;
+
+/**
+ * Wait for rate limit clearance before making an API call.
+ * Implements:
+ *   1. Concurrency gate (max 1 in-flight request)
+ *   2. Minimum interval between calls
+ *   3. "Deep breath" cooldown buffer
+ *   4. Random jitter
+ */
 async function waitForRateLimit() {
+  // 1. Wait for concurrency slot
+  while (inFlightRequests >= MAX_CONCURRENCY) {
+    await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
+  }
+
+  // 2. Wait for minimum interval + cooldown buffer since last call
   const now = Date.now();
   const elapsed = now - lastCallTime;
-  const waitTime = MIN_INTERVAL_MS - elapsed + Math.random() * JITTER_MS;
+  const requiredWait = MIN_INTERVAL_MS + COOLDOWN_BUFFER_MS;
+  const waitTime = requiredWait - elapsed + Math.random() * JITTER_MS;
   if (waitTime > 0) {
     await new Promise(r => setTimeout(r, waitTime));
   }
+
+  inFlightRequests++;
   lastCallTime = Date.now();
+}
+
+/**
+ * Release the concurrency slot after a call completes.
+ * Should be called after every API call (success or failure).
+ */
+function releaseRateLimit() {
+  inFlightRequests = Math.max(0, inFlightRequests - 1);
 }
 
 /**
  * Exported so agent-reach-bridge.ts can share the same rate limiter.
  */
 export { waitForRateLimit };
+
+/**
+ * Exported so agent-reach-bridge.ts can release rate limit slots after calls.
+ */
+export { releaseRateLimit };
 
 // ============================================================
 // Model Health Tracker (skips models that return persistent 429s)
@@ -100,8 +149,8 @@ interface ModelHealth {
 
 const modelHealth: Map<string, ModelHealth> = new Map();
 
-const COOLDOWN_AFTER_429_MS = 60_000; // 1 minute cooldown after consecutive 429s
-const MAX_CONSECUTIVE_429S = 2; // After 2 consecutive 429s, skip model for cooldown period
+const COOLDOWN_AFTER_429_MS = 30_000; // 30s cooldown after consecutive 429s (reduced from 2min for better UX)
+const MAX_CONSECUTIVE_429S = 3; // After 3 consecutive 429s, skip model for cooldown period
 
 function isModelInCooldown(model: string): boolean {
   const health = modelHealth.get(model);
@@ -159,11 +208,14 @@ async function directChatCompletion(params: {
   // Use thinking:enabled with a budget to get clean content output.
   // Without this, the model puts everything in reasoning_content and leaves content empty.
   const budget = THINKING_BUDGETS[params.thinking_budget || 'standard'];
+  // Ensure max_tokens is always at least budget + 500 to leave room for the actual content
+  // The thinking budget is consumed FIRST, then content is generated from remaining tokens
+  const effectiveMaxTokens = Math.max(params.max_tokens || 4096, budget + 500);
   const body = {
     model: params.model,
     messages: params.messages,
     temperature: params.temperature,
-    max_tokens: params.max_tokens,
+    max_tokens: effectiveMaxTokens,
     thinking: { type: 'enabled', budget_tokens: budget },
   };
 
@@ -174,7 +226,7 @@ async function directChatCompletion(params: {
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(60000), // 60s timeout
+    signal: AbortSignal.timeout(90000), // 90s timeout (increased for reasoning models)
   });
 
   if (!response.ok) {
@@ -469,16 +521,19 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
         if (content.trim()) {
           recordSuccess(currentModel);
+          releaseRateLimit();
           console.log(`[callLLM] Success with ${currentModel} on attempt ${attempt + 1}`);
           return content;
         }
 
         // Empty response — retry
+        releaseRateLimit();
         if (attempt < retriesPerModel) {
           console.warn(`[callLLM] Empty response from ${currentModel}, attempt ${attempt + 1}, retrying...`);
           continue;
         }
       } catch (error) {
+        releaseRateLimit();
         const msg = error instanceof Error ? error.message : 'Unknown error';
         const errorName = error instanceof Error ? error.name : '';
 
@@ -504,10 +559,10 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         }
 
         if (attempt < retriesPerModel) {
-          // Backoff strategy
-          let backoffMs = 1500;
-          if (isRateErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000;
-          else if (isGatewayErr) backoffMs = (attempt + 1) * 2000 + Math.random() * 1000;
+          // Backoff strategy — increased for rate limit compliance
+          let backoffMs = 2000;
+          if (isRateErr) backoffMs = (attempt + 1) * 5000 + Math.random() * 2000; // 5s, 10s for rate errors
+          else if (isGatewayErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3s, 6s for gateway errors
 
           console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
@@ -602,6 +657,88 @@ export function extractJSONFromString<T>(text: string): T | null {
   try { return JSON.parse(text) as T; } catch { /* continue */ }
 
   return null;
+}
+
+// ============================================================
+// Structured Fallback (no LLM needed)
+// ============================================================
+
+/**
+ * Generate a structured fallback response when LLM is unavailable.
+ * This creates a useful response from the provided data without needing AI.
+ */
+export function generateStructuredFallback(params: {
+  persona: string;
+  intent: string;
+  userMessage: string;
+  actionSummary: string;
+  context?: string;
+}): string {
+  const { persona, intent, userMessage, actionSummary, context } = params;
+
+  try {
+    // Try to parse the action summary for structured data
+    const data = JSON.parse(actionSummary);
+
+    if (intent === 'research_company' || intent === 'research_url') {
+      const company = data.company || 'the company';
+      const industry = data.industry || '';
+      const employees = data.employees || '';
+      const revenue = data.revenue || '';
+      const ceo = data.ceo || '';
+      const email = data.email || '';
+      const linkedin = data.linkedin || '';
+      const completeness = data.completeness || 0;
+
+      let response = `I've completed my research on **${company}**.`;
+      if (industry) response += ` They operate in the ${industry} industry.`;
+      if (employees) response += ` The company has approximately ${employees} employees.`;
+      if (revenue) response += ` Estimated revenue: ${revenue}.`;
+      if (ceo) response += ` The CEO is ${ceo}.`;
+      if (email) response += ` Contact email: ${email}.`;
+      if (linkedin) response += ` LinkedIn: available.`;
+
+      if (completeness < 30) {
+        response += `\n\nData completeness is at ${completeness}%. For deeper results, try providing a company website URL.`;
+      } else if (completeness >= 60) {
+        response += `\n\nData completeness is at ${completeness}% — good research coverage! I recommend scoring this lead against your ICP or composing personalized outreach.`;
+      }
+
+      return response;
+    }
+
+    if (intent === 'research_person') {
+      const person = data.person || 'the contact';
+      const title = data.title || '';
+      const company = data.company || '';
+      const email = data.email || '';
+
+      let response = `I've found information about **${person}**.`;
+      if (title) response += ` Their title is ${title}.`;
+      if (company) response += ` They work at ${company}.`;
+      if (email) response += ` Email: ${email}.`;
+
+      return response;
+    }
+
+    if (intent === 'analyze_market' || intent === 'analyze_competitors') {
+      const summary = data.summary || '';
+      const competitors = data.competitors || [];
+      const trends = data.trends || [];
+
+      let response = `Here's my market analysis:`;
+      if (summary) response += `\n\n${summary}`;
+      if (Array.isArray(competitors) && competitors.length > 0) response += `\n\nKey competitors: ${competitors.join(', ')}.`;
+      if (Array.isArray(trends) && trends.length > 0) response += `\n\nTrends identified: ${trends.join('; ')}.`;
+
+      return response;
+    }
+  } catch {
+    // JSON parse failed — use raw text
+  }
+
+  // Generic fallback
+  return `I've processed your request about "${userMessage.slice(0, 50)}". The research pipeline has completed and I've gathered available data. You can review the structured results below, and I'd recommend taking the next step — scoring this lead, composing outreach, or building an ICP based on what we found.`;
 }
 
 // ============================================================

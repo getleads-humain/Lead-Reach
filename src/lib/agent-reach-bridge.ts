@@ -16,7 +16,7 @@
 import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
-import { waitForRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK with JWT auth
+import { waitForRateLimit, releaseRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK with JWT auth
 
 const execFileAsync = promisify(execFile);
 
@@ -503,50 +503,101 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
     if (response.ok) {
       const text = await response.text();
       const results: SearchResult[] = [];
-
-      // Parse DuckDuckGo results from Jina Reader markdown output
-      // DuckDuckGo HTML format delivers results as linked titles with snippets
-      const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
-      let match;
       const seenUrls = new Set<string>();
 
+      // Step 1: Extract all uddg= redirect URLs FIRST (these are the actual destination URLs)
+      // DuckDuckGo wraps all result URLs in redirect links like /l/?uddg=<encoded_url>
+      const uddgResults: Array<{ url: string; title: string; snippet: string }> = [];
+      const uddgRegex = /uddg=([^&"')]+)/g;
+      let uddgMatch;
+      while ((uddgMatch = uddgRegex.exec(text)) !== null) {
+        try {
+          const decodedUrl = decodeURIComponent(uddgMatch[1]);
+          if (!decodedUrl.startsWith('http')) continue;
+          // Skip DuckDuckGo internal URLs
+          try {
+            const h = new URL(decodedUrl).hostname;
+            if (h === 'duckduckgo.com' || h.endsWith('.duckduckgo.com')) continue;
+          } catch { continue; }
+
+          // Find associated title: look backwards from the uddg= position for a markdown link
+          const beforeRegion = text.slice(Math.max(0, uddgMatch.index - 500), uddgMatch.index);
+          // Remove any nested DuckDuckGo redirect links from the region
+          const cleanRegion = beforeRegion.replace(/\[([^\]]*)\]\([^)]*uddg=[^)]*\)/g, '');
+          const titleMatch = cleanRegion.match(/\[([^\]]+)\]\([^)]*\)\s*$/);
+          let title = titleMatch ? titleMatch[1].trim() : '';
+          // Clean title of any DuckDuckGo artifacts
+          title = title.replace(/&rut=[a-f0-9]+/g, '').replace(/\s+/g, ' ').trim();
+
+          // Find snippet: look forward from the uddg= position
+          const afterRegion = text.slice(uddgMatch.index + uddgMatch[0].length, uddgMatch.index + uddgMatch[0].length + 500);
+          // Remove markdown links and DuckDuckGo artifacts from snippet
+          let snippet = afterRegion
+            .replace(/\[[^\]]*\]\(https?:\/\/duckduckgo\.com[^\s)]*\)/g, '')  // Remove DDG redirect links
+            .replace(/\]\(https?:\/\/duckduckgo\.com[^\s)]*\)?/g, '')        // Remove orphan DDG link closures (even truncated)
+            .replace(/\]\(https?:\/\/[^\s)]*uddg=[^\s)]*\)?/g, '')           // Remove DDG uddg links (even truncated)
+            .replace(/\[[^\]]*\]\([^)]*\)/g, '')                               // Remove remaining markdown links
+            .replace(/&rut=[a-f0-9]+/g, '')                                     // Remove DuckDuckGo tracking params
+            .replace(/uddg=[^\s&"')]+/g, '')                                    // Remove uddg params
+            .replace(/duckduckgo\.com\/l\/\?[^\s]*/g, '')                      // DDG redirect URL fragments
+            .replace(/\]\([^)]*\)/g, '')                                        // Remove orphan markdown link closures
+            .replace(/[#*_\n]/g, ' ')                                            // Remove markdown formatting
+            .replace(/^\s*[\[\]()]+\s*/gm, '')                                   // Remove leading brackets/parens
+            .replace(/\s{2,}/g, ' ')                                              // Normalize whitespace
+            .trim();
+          // Cut snippet at the next result boundary (typically a heading or separator)
+          const snippetCutIdx = snippet.search(/\d+\.\s+\[/);
+          if (snippetCutIdx > 50) snippet = snippet.slice(0, snippetCutIdx).trim();
+          snippet = snippet.slice(0, 250);
+
+          if (title.length >= 3 || snippet.length >= 20) {
+            uddgResults.push({
+              url: decodedUrl,
+              title: title || new URL(decodedUrl).hostname.replace('www.', ''),
+              snippet,
+            });
+          }
+        } catch { /* skip malformed URLs */ }
+      }
+
+      // Add uddg results (these have the REAL destination URLs)
+      for (const r of uddgResults) {
+        if (results.length >= numResults) break;
+        if (seenUrls.has(r.url)) continue;
+        seenUrls.add(r.url);
+        results.push({ title: r.title, url: r.url, snippet: r.snippet });
+      }
+
+      // Step 2: Also parse direct markdown links (non-redirect) as supplement
+      const linkRegex = /\[([^\]]+)\]\((https?:\/\/[^\s)]+)\)/g;
+      let match;
       while ((match = linkRegex.exec(text)) !== null && results.length < numResults) {
-        const title = match[1].trim();
+        const title = match[1].trim().replace(/&rut=[a-f0-9]+/g, '').trim();
         const url = match[2];
 
-        // Skip DuckDuckGo internal URLs and duplicate URLs (proper domain matching, not substring)
-        let isDuckDuckGoUrl = false;
-        try { const h = new URL(url).hostname; isDuckDuckGoUrl = h === 'duckduckgo.com' || h.endsWith('.duckduckgo.com'); } catch { isDuckDuckGoUrl = true; /* skip malformed URLs */ }
-        if (isDuckDuckGoUrl || url.includes('/l/?uddg=') || seenUrls.has(url)) continue;
+        // Skip DuckDuckGo internal/redirect URLs
+        let shouldSkip = false;
+        try {
+          const h = new URL(url).hostname;
+          if (h === 'duckduckgo.com' || h.endsWith('.duckduckgo.com')) shouldSkip = true;
+        } catch { shouldSkip = true; }
+        if (shouldSkip || url.includes('/l/?uddg=') || seenUrls.has(url)) continue;
         if (title.length < 3) continue;
 
         seenUrls.add(url);
 
         // Extract snippet from text after the link
         const afterMatch = text.slice(match.index + match[0].length);
-        const snippetText = afterMatch.slice(0, 300).replace(/\[[^\]]*\]\([^)]*\)/g, '').replace(/[#*_\n]/g, ' ').trim();
+        const snippetText = afterMatch
+          .slice(0, 300)
+          .replace(/\[[^\]]*\]\([^)]*\)/g, '')
+          .replace(/&rut=[a-f0-9]+/g, '')
+          .replace(/[#*_\n]/g, ' ')
+          .replace(/\s{2,}/g, ' ')
+          .trim();
         const snippet = snippetText.slice(0, 200);
 
         results.push({ title, url, snippet });
-      }
-
-      // Handle DuckDuckGo redirect URLs (uddg parameter)
-      const uddgRegex = /uddg=([^&"')]+)/g;
-      let uddgMatch;
-      while ((uddgMatch = uddgRegex.exec(text)) !== null && results.length < numResults) {
-        try {
-          const decodedUrl = decodeURIComponent(uddgMatch[1]);
-          if (!seenUrls.has(decodedUrl) && decodedUrl.startsWith('http')) {
-            seenUrls.add(decodedUrl);
-            // Find the title near this URL in the text
-            const beforeUrl = text.slice(Math.max(0, uddgMatch.index - 200), uddgMatch.index);
-            const titleMatch = beforeUrl.match(/\[([^\]]+)\]\([^)]*\)$/);
-            const title = titleMatch ? titleMatch[1].trim() : new URL(decodedUrl).hostname;
-            const afterUrl = text.slice(uddgMatch.index + uddgMatch[0].length);
-            const snippetText = afterUrl.slice(0, 200).replace(/\[[^\]]*\]\([^)]*\)/g, '').replace(/[#*_\n]/g, ' ').trim();
-            results.push({ title, url: decodedUrl, snippet: snippetText.slice(0, 200) });
-          }
-        } catch { /* skip malformed URLs */ }
       }
 
       if (results.length > 0) {
@@ -564,11 +615,15 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
   try {
     const searchResult = await retryWithBackoff(async () => {
       await waitForRateLimit();
-      const zai = await getSDK(); // Uses JWT auth from zhipu-jwt.ts
-      return await zai.functions.invoke('web_search', {
-        query,
-        num: numResults,
-      });
+      try {
+        const zai = await getSDK(); // Uses JWT auth from zhipu-jwt.ts
+        return await zai.functions.invoke('web_search', {
+          query,
+          num: numResults,
+        });
+      } finally {
+        releaseRateLimit();
+      }
     }, 1, `exaSearch(web_search: ${query.slice(0, 40)})`);
 
     if (Array.isArray(searchResult) && searchResult.length > 0) {
@@ -2141,27 +2196,31 @@ export async function discoverBusinesses(
       for (let page = 0; page < maxPages; page++) {
         try {
           await waitForRateLimit(); // Unified rate limiter (shared with LLM calls)
-          const searchResult = await zai.functions.invoke('web_search', {
-            query: page === 0 ? searchQuery : `${searchQuery} page ${page + 1}`,
-            num: 50,
-          });
-
           let newResultsThisPage = 0;
-          if (Array.isArray(searchResult) && searchResult.length > 0) {
-            for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
-              if (item.url && !seenUrls.has(item.url)) {
-                seenUrls.add(item.url);
-                allResults.push({
-                  title: item.name || '',
-                  url: item.url,
-                  snippet: item.snippet || '',
-                });
-                newResultsThisPage++;
+          try {
+            const searchResult = await zai.functions.invoke('web_search', {
+              query: page === 0 ? searchQuery : `${searchQuery} page ${page + 1}`,
+              num: 50,
+            });
+
+            if (Array.isArray(searchResult) && searchResult.length > 0) {
+              for (const item of searchResult as Array<{ url?: string; name?: string; snippet?: string }>) {
+                if (item.url && !seenUrls.has(item.url)) {
+                  seenUrls.add(item.url);
+                  allResults.push({
+                    title: item.name || '',
+                    url: item.url,
+                    snippet: item.snippet || '',
+                  });
+                  newResultsThisPage++;
+                }
               }
             }
-          }
 
-          console.log(`[discoverBusinesses] Query "${searchQuery.slice(0, 50)}" page ${page + 1}: ${newResultsThisPage} new results (total: ${allResults.length})`);
+            console.log(`[discoverBusinesses] Query "${searchQuery.slice(0, 50)}" page ${page + 1}: ${newResultsThisPage} new results (total: ${allResults.length})`);
+          } finally {
+            releaseRateLimit();
+          }
 
           // If no new results on this page, stop paginating this query
           if (newResultsThisPage === 0) {

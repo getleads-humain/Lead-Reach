@@ -645,44 +645,49 @@ export function ICPView() {
     setIsBuilding(true);
 
     try {
+      // Use the dedicated /api/icp/chat endpoint — optimized single-LLM-call
+      // pipeline that completes in 10-20s instead of 45+s on the general
+      // /api/prospect-discovery/chat route which runs a 3-step pipeline
+      // (intent classification → ICP extraction → conversational response)
+      // that frequently causes 502 gateway timeouts.
       const result = await safeFetchJSON<{
         success: boolean;
         message: { content: string; icpData?: ICPResult };
-        updatedContext?: ConversationContext;
+        icpData?: ICPResult | null;
+        completeness?: number;
+        isComplete?: boolean;
+        nextDimension?: string;
+        suggestedActions?: string[];
         error?: string;
-      }>('/api/prospect-discovery/chat', {
+      }>('/api/icp/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: text,
           conversationHistory: chatMessages.slice(-10).map((m) => ({ role: m.role, content: m.content })),
-          context: {
-            recentProspects: [],
-            activeICP: builderICP,
-            lastIntent: null,
-            lastPersona: null,
-            userPreferences: {},
-          },
+          currentICP: builderICP,
         }),
       });
 
       if (result.success && result.message) {
+        // The dedicated endpoint returns icpData at the top level
+        const extractedICP = result.icpData || result.message.icpData || null;
         const assistantMsg: ChatMessage = {
           id: `assistant-${Date.now()}`,
           role: 'assistant',
           content: result.message.content,
           timestamp: new Date(),
-          icpData: result.message.icpData || null,
+          icpData: extractedICP,
         };
         setChatMessages((prev) => [...prev, assistantMsg]);
-        if (result.message.icpData) {
-          setBuilderICP(result.message.icpData);
+        if (extractedICP) {
+          setBuilderICP(extractedICP);
         }
       } else {
         const errorMsg: ChatMessage = {
           id: `error-${Date.now()}`,
           role: 'system',
-          content: result.error || 'The agent encountered an error. Please try again.',
+          content: result.error || 'The Architect agent encountered an issue. Please try again with a simpler description.',
           timestamp: new Date(),
         };
         setChatMessages((prev) => [...prev, errorMsg]);
@@ -692,14 +697,14 @@ export function ICPView() {
       const errorMsg: ChatMessage = {
         id: `error-${Date.now()}`,
         role: 'system',
-        content: `Agent error: ${msg}`,
+        content: `Connection error: ${msg}. The AI service may be temporarily busy — please try again in a moment.`,
         timestamp: new Date(),
       };
       setChatMessages((prev) => [...prev, errorMsg]);
     }
 
     setIsBuilding(false);
-    inputRef.current?.focus();
+    setTimeout(() => inputRef.current?.focus(), 50);
   }, [chatInput, isBuilding, chatMessages, builderICP]);
 
   // ============================================================
@@ -844,17 +849,53 @@ export function ICPView() {
                   </div>
                   <div>
                     <span className="text-sm font-medium text-foreground">AI ICP Builder</span>
-                    <span className="text-[9px] text-muted-foreground ml-2">Architect Persona</span>
+                    <Badge variant="outline" className="text-[8px] bg-amber-500/10 text-amber-400 border-amber-500/20 ml-2">
+                      Architect
+                    </Badge>
+                    <Badge variant="outline" className="text-[8px] bg-violet-500/10 text-violet-400 border-violet-500/20 ml-1">
+                      8-Agent Toolkit
+                    </Badge>
                   </div>
                 </div>
-                {builderICP && (
-                  <Button
-                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs h-8"
-                    onClick={() => handleSaveICP(builderICP)}
-                  >
-                    <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
-                  </Button>
-                )}
+                <div className="flex items-center gap-2">
+                  {builderICP && (() => {
+                    const completenessPct = Math.round((
+                      (builderICP.firmographic.industries.length > 0 ? 1 : 0) +
+                      (builderICP.firmographic.companySizes.length > 0 ? 1 : 0) +
+                      (builderICP.firmographic.locations.length > 0 ? 1 : 0) +
+                      (builderICP.firmographic.revenueRange ? 1 : 0) +
+                      (builderICP.technographic.requiredTech.length > 0 ? 1 : 0) +
+                      (builderICP.technographic.preferredTech.length > 0 ? 1 : 0) +
+                      (builderICP.psychographic.challenges.length > 0 ? 1 : 0) +
+                      (builderICP.psychographic.goals.length > 0 ? 1 : 0) +
+                      (builderICP.behavioral.buyingSignals.length > 0 ? 1 : 0) +
+                      (builderICP.behavioral.engagementPatterns.length > 0 ? 1 : 0) +
+                      (builderICP.economic.budgetRange ? 1 : 0) +
+                      (builderICP.economic.decisionTimeline ? 1 : 0)
+                    ) / 12 * 100);
+                    return (
+                      <div className="flex items-center gap-2 mr-2">
+                        <div className="text-right">
+                          <span className="text-[9px] text-muted-foreground">Completeness</span>
+                          <div className="flex items-center gap-1">
+                            <Progress value={Math.min(100, completenessPct)} className="h-1.5 w-16 bg-secondary/40 [&>div]:bg-amber-400" />
+                            <span className="text-[9px] font-bold text-amber-400">
+                              {completenessPct}%
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  {builderICP && (
+                    <Button
+                      className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs h-8"
+                      onClick={() => handleSaveICP(builderICP)}
+                    >
+                      <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
+                    </Button>
+                  )}
+                </div>
               </div>
 
               {/* Chat Messages */}

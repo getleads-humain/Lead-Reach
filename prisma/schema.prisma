@@ -672,3 +672,68 @@ model AgentDocumentation {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ============================================================
+// Prospect Discovery Chat Sessions
+// ============================================================
+
+model DiscoverySession {
+  id          String   @id @default(cuid())
+  userId      String?  // Null for anonymous users, set for logged-in users
+  
+  title       String   @default("New Discovery Session")
+  
+  // Conversation state (JSON serialized)
+  context     String   @default("{}") // ConversationContext JSON
+  
+  // Metadata
+  messageCount Int     @default(0)
+  lastIntent  String?  // Last classified intent
+  lastPersona String?  // Last active agent persona
+  
+  // Status
+  isActive    Boolean  @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // Relations
+  messages    DiscoveryMessage[]
+}
+
+model DiscoveryMessage {
+  id          String   @id @default(cuid())
+  sessionId   String
+  userId      String?
+  
+  // Message content
+  role        String   // user, assistant, system
+  content     String   @default("")
+  
+  // Agent metadata
+  persona     String?  // Agent persona (scout, hound, analyst, etc.)
+  intent      String?  // Classified intent
+  thinking    String?  // JSON: AgentThinking
+  actions     String?  // JSON: AgentAction[]
+  
+  // Structured data (JSON)
+  prospectData String? // JSON: ProspectResult
+  icpData     String?  // JSON: ICPResult
+  outreachData String? // JSON: OutreachResult
+  marketData  String?  // JSON: MarketResult
+  scoreData   String?  // JSON: ScoreResult
+  insights    String?  // JSON: InsightItem[]
+  
+  // Pipeline state
+  pipelineState String? // JSON: PipelineState from orchestrator
+  thinkTimeMs  Int?     // Thinking time in milliseconds
+  
+  // Status
+  converted   Boolean  @default(false)
+  leadId      String?
+  
+  createdAt   DateTime @default(now())
+  
+  // Relations
+  session     DiscoverySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}

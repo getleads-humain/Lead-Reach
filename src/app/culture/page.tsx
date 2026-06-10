@@ -1,437 +1,385 @@
 'use client';
 
 import { MarketingLayout } from '@/components/marketing/marketing-layout';
-import { Button } from '@/components/ui/button';
-import Link from 'next/link';
-import {
-  Heart,
-  Sparkles,
-  Shield,
-  Zap,
-  Users,
-  Target,
-  Lightbulb,
-  Globe,
-  ArrowRight,
-  Quote,
-  BookOpen,
-  Flame,
-  Compass,
-  Scale,
-  Eye,
-  Handshake,
-  Trophy,
-  Coffee,
-  Brain,
-  Rocket,
-  TreePine,
-} from 'lucide-react';
+import { Heart, Users, Lightbulb, Shield, Compass, Zap, Star, Globe, Brain, Coffee, Dna, Trophy } from 'lucide-react';
+
+const VALUES = [
+  {
+    icon: Lightbulb,
+    title: 'Intellectual Honesty',
+    description:
+      'We speak the truth even when it is inconvenient. Every agent in our system is designed to surface uncertainty, flag low-confidence data, and never fabricate results. We extend this same honesty to our team — dissent is encouraged, mistakes are acknowledged, and assumptions are always challenged.',
+    color: 'text-amber-400',
+    bg: 'bg-amber-500/10',
+  },
+  {
+    icon: Shield,
+    title: 'Radical Transparency',
+    description:
+      'Every decision our AI agents make is traceable, every score is decomposable into its factor contributions, and every data point is attributed to its source. We believe opacity is the enemy of trust, and we build our platform so that any human can audit any automated decision at any time.',
+    color: 'text-blue-400',
+    bg: 'bg-blue-500/10',
+  },
+  {
+    icon: Users,
+    title: 'Obsessive Customer Value',
+    description:
+      'We measure success by the value we create for our customers, not by the features we ship. Every agent, every channel, every workflow exists for one reason: to help our users find, qualify, and engage the right leads faster and more accurately than they ever could manually. If it does not serve the customer, it does not ship.',
+    color: 'text-emerald-400',
+    bg: 'bg-emerald-500/10',
+  },
+  {
+    icon: Compass,
+    title: 'Systems Thinking',
+    description:
+      'We do not build isolated features; we build interconnected systems. Our 8-agent architecture reflects a deep belief that complex problems require coordinated, multi-agent solutions where each component does one thing exceptionally well and the whole is greater than the sum of its parts.',
+    color: 'text-purple-400',
+    bg: 'bg-purple-500/10',
+  },
+  {
+    icon: Zap,
+    title: 'Adaptive Resilience',
+    description:
+      'Our agents do not crash when a channel fails — they adapt, reroute, and deliver results even in degraded conditions. We apply this same philosophy to our culture: we embrace change, learn from failure, and build systems that are antifragile rather than merely robust.',
+    color: 'text-pink-400',
+    bg: 'bg-pink-500/10',
+  },
+  {
+    icon: Heart,
+    title: 'Empathy at Scale',
+    description:
+      'Our Outreach Composer does not send generic templates — it crafts messages that reference specific details about each prospect because we believe empathy is the foundation of meaningful connection. We apply this same principle internally: we listen deeply, communicate with care, and treat every interaction as an opportunity to understand.',
+    color: 'text-red-400',
+    bg: 'bg-red-500/10',
+  },
+];
+
+const OPERATING_PRACTICES = [
+  {
+    title: 'Async-First Communication',
+    description:
+      'We default to written, asynchronous communication so that people can think deeply before responding. Synchronous meetings are reserved for decisions that genuinely require real-time discussion, creative brainstorming, or sensitive conversations. Every meeting has an agenda, a facilitator, and documented outcomes.',
+  },
+  {
+    title: 'Evidence Over Opinion',
+    description:
+      'When disagreements arise, we resolve them with data, not debate. Our agents score leads with five-factor composite models precisely because gut feelings are unreliable. We extend this rigor to our own operations: A/B test before committing, measure before declaring success, and validate before scaling.',
+  },
+  {
+    title: 'Ship Small, Learn Fast',
+    description:
+      'We ship increments, not monoliths. Our agent architecture itself embodies this principle — each agent is independently deployable, testable, and improvable. We prefer a working minimum viable agent over a perfect specification that never reaches production.',
+  },
+  {
+    title: 'Blameless Post-Mortems',
+    description:
+      'When things break — and they will — we focus on the system failure, not the person. Every incident triggers a structured post-mortem that identifies root causes, systemic weaknesses, and preventive measures. We never punish mistakes; we punish the failure to learn from them.',
+  },
+  {
+    title: 'Deep Work Protection',
+    description:
+      'We protect focus time as sacred. Our agents run asynchronously for a reason: interrupted work is low-quality work. We maintain designated focus blocks, minimize unnecessary notifications, and respect that the best solutions emerge from sustained, undisturbed thinking.',
+  },
+  {
+    title: 'Open Knowledge Architecture',
+    description:
+      'Every agent specification, every architectural decision, and every performance benchmark is documented and accessible. We do not hoard knowledge — we share it aggressively. New team members can understand our entire system by reading our agent specs, and we invest in keeping that documentation living and accurate.',
+  },
+  {
+    title: 'Proactive Ownership',
+    description:
+      'We do not wait for permission to fix what is broken. If you see a problem, you own it until it is resolved. Our Orchestrator agent, Atlas, does not wait for human intervention when a channel fails — it adapts. We expect the same proactive ownership from every person on our team.',
+  },
+  {
+    title: 'Customer-Proximity Engineering',
+    description:
+      'Engineers do not work in isolation from customers. We rotate team members through customer support, sales calls, and user research sessions so that the people building the system deeply understand the people using it. The best product ideas come from direct customer exposure.',
+  },
+];
+
+const PEOPLE_ARCHETYPES = [
+  {
+    icon: Brain,
+    title: 'The Systems Architect',
+    description:
+      'You see the world as interconnected graphs and DAGs. When most people see a linear process, you see parallel execution paths with dependency resolution. You think in terms of state machines, event-driven architectures, and graceful degradation. You would feel at home designing our 8-agent pipeline because you naturally think about coordination, failure recovery, and adaptive strategy.',
+    traits: ['Systems thinking', 'Architecture design', 'Failure-mode analysis', 'Coordination protocols'],
+  },
+  {
+    icon: Globe,
+    title: 'The Data Craftsperson',
+    description:
+      'You believe that data without verification is fiction and that precision is a form of respect. You are the kind of person who cross-references three sources before committing a fact, who builds confidence scoring systems instead of trusting single-source data, and who would rather leave a field null than fill it with a guess. Our Data Enrichment agent, Forge, was designed by people exactly like you.',
+    traits: ['Data verification', 'Multi-source fusion', 'Confidence scoring', 'Quality obsession'],
+  },
+  {
+    icon: Star,
+    title: 'The Empathy Engineer',
+    description:
+      'You write code that understands people. You believe that the best technology disappears into the background and makes humans feel understood. You cringe at generic templates, you obsess over personalization depth, and you measure success not by opens and clicks but by the quality of human connection created. Our Outreach Composer, Bard, is your spiritual counterpart.',
+    traits: ['Personalization craft', 'Empathy-driven design', 'Communication quality', 'Human-centered AI'],
+  },
+  {
+    icon: Trophy,
+    title: 'The Relentless Optimizer',
+    description:
+      'You are never satisfied with "good enough." You see a 40% open rate and immediately ask why it is not 50%. You run A/B tests in your sleep, you build dashboards for everything, and you treat every metric as an opportunity for systematic improvement. Our Pipeline Manager, Flow, and Report Generator, Echo, exist because of people like you.',
+    traits: ['Metrics-driven', 'Continuous improvement', 'A/B testing mindset', 'Pipeline optimization'],
+  },
+];
+
+const NON_NEGOTIABLES = [
+  {
+    title: 'No Fabricated Data',
+    description:
+      'Our agents never fabricate data. When a field is empty, it stays empty — annotated with a confidence score, not filled with a guess. When all channels fail, our LLM knowledge fallback is clearly labeled as such. This is not just a technical constraint; it is a moral commitment. We will never mislead our users by presenting AI-generated estimates as verified facts.',
+  },
+  {
+    title: 'Privacy by Design',
+    description:
+      'We only collect publicly available business data. We never scrape behind authentication, we never store personal data beyond what is necessary for B2B outreach, and every data point is attributed to its source. Our agents respect robots.txt, honor rate limits, and include unsubscribe links in every message. Privacy is not a feature — it is a foundation.',
+  },
+  {
+    title: 'Explainability Over Accuracy',
+    description:
+      'A 95% accurate model that cannot explain its decisions is more dangerous than an 85% accurate model that can. Every lead score is decomposable into its five factor contributions. Every disqualification has a reason code. Every agent decision has a traceable audit trail. We would rather be transparently wrong than opaquely right.',
+  },
+];
 
 export default function CulturePage() {
   return (
     <MarketingLayout>
       {/* Hero */}
-      <section className="relative py-20 lg:py-28 border-b border-border/20 overflow-hidden">
+      <section className="relative py-24 lg:py-32 overflow-hidden">
         <div className="absolute inset-0 bg-gradient-to-b from-emerald-500/5 via-transparent to-transparent" />
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 relative">
           <div className="max-w-3xl">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 mb-6">
-              <Heart className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="text-xs font-medium text-emerald-400">Our Culture</span>
+            <div className="flex items-center gap-2 mb-6">
+              <Dna className="h-5 w-5 text-emerald-400" />
+              <span className="text-sm font-medium text-emerald-400 uppercase tracking-wider">Our Culture DNA</span>
             </div>
-            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-foreground">
-              We Build With{' '}
-              <span className="text-gradient">Conviction</span>, Not Convention
+            <h1 className="text-4xl sm:text-5xl lg:text-6xl font-bold text-foreground tracking-tight">
+              We Build Systems That <span className="text-gradient">Think</span>, Not Just Execute
             </h1>
-            <p className="mt-6 text-lg text-muted-foreground leading-relaxed max-w-2xl">
-              LeadReach AI is not a company that happened to use AI — we are a company forged by the belief that autonomous intelligence will redefine how businesses grow. Our culture reflects that conviction in every decision, every hire, and every line of code we ship. We do not follow playbooks; we write them.
+            <p className="mt-6 text-lg text-muted-foreground leading-relaxed">
+              LeadReach AI is not just a product — it is a reflection of how we think about work, technology, and human potential. Our culture is encoded in every agent we build, every decision we make, and every line of code we ship. This is who we are.
             </p>
           </div>
         </div>
       </section>
 
-      {/* Culture DNA — The Unshakable Foundation */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
+      {/* Core Values */}
+      <section className="py-20 lg:py-28">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-violet-500/20 bg-violet-500/10 px-4 py-1.5 mb-4">
-              <Flame className="h-3.5 w-3.5 text-violet-400" />
-              <span className="text-xs font-medium text-violet-400">Culture DNA</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              The Unshakable Foundation
+          <div className="max-w-2xl mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
+              Six Values That Shape Everything
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              Every organization has values printed on a wall. Few have values that actually drive daily decisions. At LeadReach AI, our cultural DNA is not aspirational decoration — it is the operating system that runs every team, every product decision, and every customer interaction. These are not suggestions. They are invariants, as immovable as the laws of physics in our codebase.
+              These are not aspirational slogans on a wall. They are engineering constraints embedded in our agents, decision frameworks that guide our product, and behavioral norms that define our team. Every feature we build is tested against these values.
             </p>
           </div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {[
-              {
-                icon: Shield,
-                title: 'Radical Ownership',
-                color: 'emerald',
-                description: 'There are no spectators at LeadReach AI. Every person owns their domain end-to-end — from concept to production to post-launch telemetry. When something breaks at 3 AM, the person who built it responds. Not because a playbook says so, but because ownership is identity. We do not hand off problems; we solve them. If you touched it, you own it. If you see it, you fix it. There is no "that is not my job" in our vocabulary.',
-                principle: 'If you see it, you own it. If you own it, you ship it.',
-              },
-              {
-                icon: Lightbulb,
-                title: 'First-Principles Thinking',
-                color: 'cyan',
-                description: 'We refuse to accept "because that is how it has always been done" as a valid reason for anything. Every process, every architecture decision, every product feature must justify its existence from first principles. When we built our multi-agent orchestration system, we did not copy existing workflow engines — we asked "what would the optimal coordination protocol look like if we started from zero?" and built that instead. Convention is the enemy of breakthrough.',
-                principle: 'Question every assumption. Build from truth, not tradition.',
-              },
-              {
-                icon: Eye,
-                title: 'Obsessive Transparency',
-                color: 'blue',
-                description: 'Our agents annotate every decision with confidence scores and source attribution. Our engineering dashboards are visible to the entire company. Our roadmap is not a secret document — it is a living, public artifact. We believe that transparency is not a vulnerability but a competitive weapon. When everyone can see the full picture, everyone can make better decisions. Secrets breed misalignment. Visibility breeds velocity.',
-                principle: 'Default to open. Share context, not just conclusions.',
-              },
-              {
-                icon: Target,
-                title: 'Outcomes Over Activity',
-                color: 'amber',
-                description: 'We measure impact, not hours. We measure shipped value, not story points. We measure customer outcomes, not feature counts. A engineer who ships one feature that doubles conversion rates is more valuable than one who ships ten features nobody uses. Our performance systems, our sprint planning, and our promotion criteria all reflect this: we reward results, not performative busyness. Activity without impact is waste dressed as progress.',
-                principle: 'Ship value, not velocity. Measure outcomes, not output.',
-              },
-              {
-                icon: Compass,
-                title: 'Long-Term Orientation',
-                color: 'violet',
-                description: 'We make decisions for the company we are building in five years, not the quarterly earnings we need next month. Our agent architecture took eighteen months to develop because we refused to ship a fragile shortcut. Our free tier exists because we believe the best marketing is a product that genuinely helps people. We invest in foundational infrastructure — our Agent-Reach channel system, our memory architecture, our quality assurance frameworks — because compounding returns favor the patient.',
-                principle: 'Build what lasts. Compounding favors the patient builder.',
-              },
-              {
-                icon: Scale,
-                title: 'Earned Trust',
-                color: 'rose',
-                description: 'Trust at LeadReach AI is not granted by title, tenure, or charisma. It is earned through consistent delivery, honest communication, and demonstrated judgment. Our agents are designed with the same philosophy: they prove their reliability through auditable decisions and transparent confidence scores. A junior engineer who consistently ships high-quality work earns more trust than a senior engineer who does not. Trust is a ledger, and every interaction is a transaction.',
-                principle: 'Trust is earned in drops and lost in buckets. Prove it daily.',
-              },
-            ].map((item) => (
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+            {VALUES.map((value) => (
               <div
-                key={item.title}
-                className="card-premium border-border/30 bg-card/50 p-6 rounded-xl flex flex-col"
+                key={value.title}
+                className="group relative rounded-2xl border border-border/50 bg-card/50 p-8 hover:border-border transition-all duration-300"
               >
-                <div className={`rounded-lg p-2.5 w-fit mb-4 ${
-                  item.color === 'emerald' ? 'bg-emerald-500/10' :
-                  item.color === 'cyan' ? 'bg-cyan-500/10' :
-                  item.color === 'blue' ? 'bg-blue-500/10' :
-                  item.color === 'amber' ? 'bg-amber-500/10' :
-                  item.color === 'violet' ? 'bg-violet-500/10' :
-                  'bg-rose-500/10'
-                }`}>
-                  <item.icon className={`h-5 w-5 ${
-                    item.color === 'emerald' ? 'text-emerald-400' :
-                    item.color === 'cyan' ? 'text-cyan-400' :
-                    item.color === 'blue' ? 'text-blue-400' :
-                    item.color === 'amber' ? 'text-amber-400' :
-                    item.color === 'violet' ? 'text-violet-400' :
-                    'text-rose-400'
-                  }`} />
+                <div className={`inline-flex rounded-xl ${value.bg} p-3 mb-6`}>
+                  <value.icon className={`h-6 w-6 ${value.color}`} />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-3">{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed flex-1">{item.description}</p>
-                <div className="mt-4 pt-4 border-t border-border/20">
-                  <p className="text-xs font-medium text-foreground italic">&ldquo;{item.principle}&rdquo;</p>
-                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-3">{value.title}</h3>
+                <p className="text-muted-foreground leading-relaxed">{value.description}</p>
               </div>
             ))}
           </div>
         </div>
       </section>
 
-      {/* How We Work — The Operating Model */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
+      {/* Operating Model */}
+      <section className="py-20 lg:py-28 border-t border-border/30">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-cyan-500/20 bg-cyan-500/10 px-4 py-1.5 mb-4">
-              <Zap className="h-3.5 w-3.5 text-cyan-400" />
-              <span className="text-xs font-medium text-cyan-400">Operating Model</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+          <div className="max-w-2xl mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
               How We Work
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              Culture is not what you say — it is what you do when no one is watching. Our operating model defines the daily rhythms, decision-making protocols, and collaboration patterns that turn our values into action. Every practice below exists because we learned, sometimes painfully, that the alternative does not work at the speed and quality our customers demand.
+              Our operating model is not borrowed from a management textbook. It is derived from the same principles that make our agent architecture work: asynchronous coordination, evidence-based decisions, graceful degradation, and continuous adaptation. Here is how we translate those principles into daily practice.
             </p>
           </div>
-
-          <div className="grid gap-8 lg:grid-cols-2">
-            <div className="space-y-6">
-              {[
-                {
-                  title: 'Async-First, Sync-When-It-Matters',
-                  description: 'We default to written communication — RFCs, design docs, decision logs — because written thinking is clearer thinking. Synchronous meetings are reserved for genuine ambiguity that cannot be resolved asynchronously: architectural debates, creative ideation, and conflict resolution. Every meeting must have a written agenda distributed 24 hours in advance and a decision log published within 2 hours of conclusion. If it can be an RFC, it should be an RFC. If it needs a room, book the room — but do not default to it.',
-                },
-                {
-                  title: 'Ship on Tuesday, Reflect on Friday',
-                  description: 'Our cadence is designed around two rhythms: the shipping rhythm and the learning rhythm. Tuesday through Thursday are deep-work, heads-down shipping days. Meetings are banned. Slack is muted by default. Friday is Reflection Day — every team spends 2 hours in a structured retrospective analyzing what worked, what failed, and what they would do differently. This dual cadence ensures we never fall into the trap of shipping without learning or learning without shipping.',
-                },
-                {
-                  title: 'Decision Records Over Decision Meetings',
-                  description: 'Every significant decision — architectural, product, strategic — is recorded in a Decision Record (DR) that includes the context, the alternatives considered, the decision made, the rationale, and the expected revisit date. DRs are immutable once published; if we change a decision, we write a new DR that references the old one. This creates a decision audit trail that prevents us from re-litigating settled questions and helps new team members understand why things are the way they are.',
-                },
-                {
-                  title: 'Blameless Post-Incidents',
-                  description: 'When our systems fail — and they will — we conduct blameless post-incident reviews focused exclusively on systemic causes and preventive mechanisms. No finger-pointing, no name-calling, no "who pushed the button." The question is never "who broke it?" but "what system allowed this failure to occur, and how do we make this class of failure impossible?" Every post-incident produces at least one concrete action item that is tracked to completion.',
-                },
-              ].map((item) => (
-                <div key={item.title} className="card-premium border-border/30 bg-card/50 p-6 rounded-xl">
-                  <h3 className="text-lg font-semibold text-foreground mb-3">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {OPERATING_PRACTICES.map((practice, i) => (
+              <div
+                key={practice.title}
+                className="group relative rounded-2xl border border-border/50 bg-card/50 p-8 hover:border-border transition-all duration-300"
+              >
+                <div className="flex items-center gap-4 mb-4">
+                  <span className="flex items-center justify-center h-10 w-10 rounded-lg bg-emerald-500/10 text-emerald-400 font-bold text-sm">
+                    {String(i + 1).padStart(2, '0')}
+                  </span>
+                  <h3 className="text-lg font-semibold text-foreground">{practice.title}</h3>
                 </div>
-              ))}
-            </div>
-
-            <div className="space-y-6">
-              {[
-                {
-                  title: 'RFC Culture',
-                  description: 'Every non-trivial change starts with a Request for Comments. RFCs are lightweight documents — typically 1-3 pages — that describe a problem, propose a solution, and invite feedback. Anyone can write an RFC, anyone can comment, and the author makes the final call. This decentralizes decision-making, improves solution quality through diverse perspectives, and creates a permanent record of the reasoning behind every major change. Our agent architecture was shaped by 23 RFCs over 14 months.',
-                },
-                {
-                  title: 'Agent-Driven Dogfooding',
-                  description: 'We use our own agents to find, qualify, and engage prospects for LeadReach AI itself. When our Outreach Composer sends a cold email on our behalf, we experience exactly what our customers experience. When our Qualification Agent scores a lead incorrectly, we feel the pain before our customers do. This dogfooding is not optional — it is built into our weekly sprint cycle. Every team member reviews at least 10 agent-generated outputs per week and provides structured feedback that feeds directly into our agent improvement pipeline.',
-                },
-                {
-                  title: 'Open Compensation Bands',
-                  description: 'Every role at LeadReach AI has transparent compensation bands visible to all employees. There are no secret negotiations, no opaque equity grants. If you are a Level 4 engineer, you know exactly what every other Level 4 engineer makes. This eliminates the information asymmetry that breeds resentment and ensures that compensation is based on role and impact, not negotiation skill. Annual compensation reviews are data-driven and benchmarked against market rates.',
-                },
-                {
-                  title: 'Continuous Learning Mandate',
-                  description: 'Every team member has a $3,000 annual learning budget and a mandate to use it. We do not view learning as a perk — we view it as a professional obligation. The AI landscape evolves monthly, and our team must evolve with it. We run internal "Agent Labs" every other week where team members present papers, prototype new approaches, and share insights from production systems. The best ideas from Agent Labs get funded as formal projects within 48 hours.',
-                },
-              ].map((item) => (
-                <div key={item.title} className="card-premium border-border/30 bg-card/50 p-6 rounded-xl">
-                  <h3 className="text-lg font-semibold text-foreground mb-3">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
-                </div>
-              ))}
-            </div>
+                <p className="text-muted-foreground leading-relaxed">{practice.description}</p>
+              </div>
+            ))}
           </div>
         </div>
       </section>
 
-      {/* The People We Seek */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
+      {/* People We Seek */}
+      <section className="py-20 lg:py-28 border-t border-border/30">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-rose-500/20 bg-rose-500/10 px-4 py-1.5 mb-4">
-              <Users className="h-3.5 w-3.5 text-rose-400" />
-              <span className="text-xs font-medium text-rose-400">Who We Hire</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
+          <div className="max-w-2xl mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
               The People We Seek
             </h2>
             <p className="mt-4 text-muted-foreground leading-relaxed">
-              We do not hire for skills alone — skills can be taught. We hire for traits that cannot: intellectual curiosity, systems thinking, and the drive to build something that outlasts you. Our interview process is designed to surface how candidates think, not just what they know. We would rather hire a brilliant learner than a brilliant expert, because in a field that reinvents itself every six months, the ability to learn faster than the competition is the only sustainable advantage.
+              We do not hire for skills alone — we hire for cognitive style. Our best people see the world in ways that naturally align with how our system thinks. If you recognize yourself in one of these archetypes, you will thrive here.
             </p>
           </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+            {PEOPLE_ARCHETYPES.map((archetype) => (
+              <div
+                key={archetype.title}
+                className="group relative rounded-2xl border border-border/50 bg-card/50 p-8 hover:border-emerald-500/30 transition-all duration-300"
+              >
+                <div className="inline-flex rounded-xl bg-emerald-500/10 p-3 mb-6">
+                  <archetype.icon className="h-6 w-6 text-emerald-400" />
+                </div>
+                <h3 className="text-xl font-semibold text-foreground mb-3">{archetype.title}</h3>
+                <p className="text-muted-foreground leading-relaxed mb-4">{archetype.description}</p>
+                <div className="flex flex-wrap gap-2">
+                  {archetype.traits.map((trait) => (
+                    <span
+                      key={trait}
+                      className="inline-flex items-center rounded-full bg-emerald-500/10 px-3 py-1 text-xs font-medium text-emerald-400"
+                    >
+                      {trait}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
 
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+      {/* Non-Negotiables */}
+      <section className="py-20 lg:py-28 border-t border-border/30">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="max-w-2xl mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
+              Our Non-Negotiables
+            </h2>
+            <p className="mt-4 text-muted-foreground leading-relaxed">
+              These are not guidelines. They are inviolable constraints — the same kind of hard boundaries that prevent our agents from fabricating data or bypassing audit trails. We will never compromise on these principles, regardless of competitive pressure, customer request, or business incentive.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+            {NON_NEGOTIABLES.map((item) => (
+              <div
+                key={item.title}
+                className="relative rounded-2xl border border-emerald-500/20 bg-emerald-500/5 p-8"
+              >
+                <div className="absolute top-0 left-8 w-px h-6 bg-emerald-500/40" />
+                <h3 className="text-lg font-semibold text-foreground mb-3">{item.title}</h3>
+                <p className="text-muted-foreground leading-relaxed">{item.description}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* DEI */}
+      <section className="py-20 lg:py-28 border-t border-border/30">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-start">
+            <div>
+              <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-6">
+                Diversity, Equity & Inclusion
+              </h2>
+              <p className="text-muted-foreground leading-relaxed mb-4">
+                We believe that diverse teams build better systems. Our agent architecture itself proves this principle: eight specialized agents, each with a distinct perspective and capability, produce far better outcomes than any single generalist ever could. The same is true for human teams. Homogeneous teams, like single-agent systems, have blind spots that no amount of individual brilliance can overcome.
+              </p>
+              <p className="text-muted-foreground leading-relaxed mb-4">
+                We actively recruit across geographies, backgrounds, and disciplines because the hardest problems in AI-powered lead generation require perspectives that no single demographic can provide. We build fairness checks into our qualification agent specifically because we understand that unchecked algorithms can encode bias — and we hold ourselves to the same standard we impose on our technology.
+              </p>
+              <p className="text-muted-foreground leading-relaxed">
+                Our commitment to DEI is not performative. It is structural. It is embedded in our hiring processes, our agent design principles, our data handling policies, and our product roadmap. We measure our progress not by statements but by outcomes — the diversity of our team, the equity of our systems, and the inclusivity of our product.
+              </p>
+            </div>
+            <div className="space-y-6">
+              <div className="rounded-2xl border border-border/50 bg-card/50 p-8">
+                <h3 className="text-lg font-semibold text-foreground mb-6">Team Composition Goals</h3>
+                <div className="space-y-4">
+                  {[
+                    { label: 'Underrepresented groups in leadership', value: '40%', desc: 'Target representation in senior and director-level roles' },
+                    { label: 'Global team distribution', value: '15+', desc: 'Countries represented across our fully remote team' },
+                    { label: 'Women and non-binary in engineering', value: '35%', desc: 'Above industry average and actively improving' },
+                    { label: 'Pay equity audit frequency', value: 'Biannual', desc: 'Regular compensation audits to ensure equitable pay' },
+                  ].map((metric) => (
+                    <div key={metric.label} className="flex items-start gap-4">
+                      <span className="text-2xl font-bold text-emerald-400 shrink-0">{metric.value}</span>
+                      <div>
+                        <p className="text-sm font-medium text-foreground">{metric.label}</p>
+                        <p className="text-xs text-muted-foreground">{metric.desc}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Wellness & Growth */}
+      <section className="py-20 lg:py-28 border-t border-border/30">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="max-w-2xl mb-16">
+            <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
+              How We Sustain Great Work
+            </h2>
+            <p className="mt-4 text-muted-foreground leading-relaxed">
+              Sustainable performance requires intentional investment in rest, growth, and community. We do not glorify burnout — we engineer against it, just as we engineer resilience into our agents.
+            </p>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {[
+              {
+                icon: Coffee,
+                title: 'Flexible Rest',
+                description:
+                  'Unlimited PTO with a 15-day minimum. We track not how many days you take off but whether you are actually resting. Managers are accountable for team rest metrics.',
+              },
               {
                 icon: Brain,
-                title: 'Systems Thinkers',
-                description: 'People who see the whole board, not just their square. Our agents are interconnected systems — a change in the Discovery Agent ripples through Enrichment, Qualification, and Outreach. We need people who think in systems, who understand that optimizing a component in isolation often sub-optimizes the whole. The best engineers at LeadReach AI can explain how a change to the search query constructor affects the final outreach message quality three pipeline stages later.',
+                title: 'Learning Budget',
+                description:
+                  '$5,000 annual learning stipend for conferences, courses, books, or anything that grows your expertise. We invest in your growth because your growth is our competitive advantage.',
               },
               {
-                icon: Rocket,
-                title: 'Constructive Disruptors',
-                description: 'People who challenge the status quo with solutions, not complaints. We want the engineer who sees a broken process and submits an RFC to fix it. The product manager who questions why every competitor does the same thing and proposes a fundamentally different approach. The designer who refuses to copy the industry standard because they can imagine something better. Disruption without construction is destruction. We want builders who break things on purpose — and then make them unbreakable.',
+                icon: Globe,
+                title: 'Global Remote',
+                description:
+                  'Work from anywhere in your timezone. Our async-first culture means you are never forced into inconvenient meeting times. Home office stipend included.',
               },
               {
-                icon: TreePine,
-                title: 'Patient Builders',
-                description: 'People who are willing to invest in foundational work that compounds over years. Our Agent-Reach channel system took 18 months to build. Our quality assurance framework took 12 months. Our memory architecture is still evolving after 24 months. These are not projects for people who need instant gratification. They are projects for people who find deep satisfaction in building infrastructure that makes every future project faster, more reliable, and more powerful.',
+                icon: Heart,
+                title: 'Mental Health',
+                description:
+                  'Comprehensive mental health coverage, quarterly wellness days, and a culture that treats burnout as a systemic failure — not a personal weakness. We run blameless post-mortems on burnout the same way we do on system outages.',
               },
-              {
-                icon: Handshake,
-                title: 'Radical Collaborators',
-                description: 'People who amplify others. Solo brilliance is insufficient in a multi-agent system — both the AI kind and the human kind. We need engineers who write documentation so good that a new hire can contribute in their first week. Designers who pair with engineers instead of throwing designs over the wall. Researchers who translate complex findings into actionable product recommendations. The best work at LeadReach AI happens at the intersection of disciplines.',
-              },
-            ].map((item) => (
-              <div key={item.title} className="card-premium border-border/30 bg-card/50 p-6 rounded-xl">
-                <div className="rounded-lg bg-emerald-500/10 p-2.5 w-fit mb-4">
-                  <item.icon className="h-5 w-5 text-emerald-400" />
+            ].map((program) => (
+              <div
+                key={program.title}
+                className="group rounded-2xl border border-border/50 bg-card/50 p-6 hover:border-border transition-all duration-300"
+              >
+                <div className="inline-flex rounded-xl bg-emerald-500/10 p-3 mb-4">
+                  <program.icon className="h-5 w-5 text-emerald-400" />
                 </div>
-                <h3 className="text-lg font-semibold text-foreground mb-3">{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* What We Do Not Tolerate */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-red-500/20 bg-red-500/10 px-4 py-1.5 mb-4">
-              <Shield className="h-3.5 w-3.5 text-red-400" />
-              <span className="text-xs font-medium text-red-400">Non-Negotiables</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              What We Do Not Tolerate
-            </h2>
-            <p className="mt-4 text-muted-foreground leading-relaxed">
-              A culture is defined as much by what it excludes as by what it embraces. The behaviors below are not merely discouraged — they are disqualifying. We have let go of talented individuals who exhibited these patterns because talent without alignment is a liability, not an asset. Our standards are high because our customers depend on systems that work, and systems that work are built by teams that hold each other accountable without exception.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-            {[
-              {
-                title: 'Knowledge Hoarding',
-                description: 'Information asymmetry is power in dysfunctional organizations. At LeadReach AI, it is a performance issue. If you are the only person who understands a system, you have failed to document it. If you withhold context to stay indispensable, you have betrayed the team. Our agents annotate every decision with full provenance — and we hold humans to the same standard. Knowledge that is not shared is knowledge that does not exist.',
-              },
-              {
-                title: 'Blame Shifting',
-                description: 'When things break, the question is "what do we fix?" not "who do we blame?" Blame shifting destroys the psychological safety required for honest post-incident reviews, for admitting mistakes early, and for asking for help when stuck. Our pipeline manager agent has a strict rule: every state transition is logged with its reason. We expect the same from humans — when you make a decision, own it, document your reasoning, and stand by it or change it transparently.',
-              },
-              {
-                title: 'Shortcut Culture',
-                description: 'We move fast, but we do not cut corners. Speed without quality is not velocity — it is debt. Every shortcut taken today becomes a bug, an outage, or a refactor tomorrow. Our engineering standards exist because we have paid the price for violating them. We would rather ship late and right than ship on time and broken. This is not perfectionism; it is professional responsibility to the customers who depend on our systems running flawlessly at 3 AM while they sleep.',
-              },
-            ].map((item) => (
-              <div key={item.title} className="card-premium border-red-500/20 bg-card/50 p-6 rounded-xl">
-                <h3 className="text-lg font-semibold text-foreground mb-3 flex items-center gap-2">
-                  <span className="text-red-400">&#x2715;</span>
-                  {item.title}
-                </h3>
-                <p className="text-sm text-muted-foreground leading-relaxed">{item.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Culture in Practice — Real Stories */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-amber-500/20 bg-amber-500/10 px-4 py-1.5 mb-4">
-              <BookOpen className="h-3.5 w-3.5 text-amber-400" />
-              <span className="text-xs font-medium text-amber-400">Culture in Practice</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Real Stories From Our Team
-            </h2>
-            <p className="mt-4 text-muted-foreground leading-relaxed">
-              Culture is not what you write on a website — it is what happens when the pressure is highest, the deadline is closest, and the easiest path is the wrong one. These are the moments that define who we are.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-3">
-            {[
-              {
-                quote: 'When our Discovery Agent started returning duplicate companies across channels, the easy fix was to add a simple name-matching filter. Instead, Elena spent two weeks building a fuzzy matching engine with Levenshtein distance scoring and legal suffix normalization. That engine now prevents thousands of duplicate records daily across all customer campaigns. She did not need permission — she saw a systemic problem and built the right solution.',
-                author: 'Marcus Chen',
-                role: 'CEO',
-                context: 'On the fuzzy matching engine that now processes 50K+ deduplication checks daily',
-              },
-              {
-                quote: 'We shipped a version of the Qualification Agent that scored leads 30% faster — but it achieved that speed by skipping the intent signal detection step. During dogfooding, we noticed our own outreach conversion rate dropped from 12% to 4%. The team made the call to revert the optimization within 4 hours, before any customer was affected. Speed means nothing if the output is wrong.',
-                author: 'Dr. Sarah Patel',
-                role: 'CTO',
-                context: 'On the decision to revert a performance optimization that compromised accuracy',
-              },
-              {
-                quote: 'A customer on our free tier was stuck — they had 200 leads but could not afford the enrichment credits to make them useful. Instead of upselling, James spent his weekend building a "self-enrichment" guide that showed the customer how to use our free Web Reader channel to fill in 60% of the missing data themselves. That customer upgraded three months later. Not because of a sales call, but because of trust.',
-                author: 'David Kim',
-                role: 'VP Customer Success',
-                context: 'On choosing customer outcomes over short-term revenue',
-              },
-            ].map((item, i) => (
-              <div key={i} className="card-premium border-border/30 bg-card/50 p-6 rounded-xl flex flex-col">
-                <Quote className="h-6 w-6 text-emerald-400/40 mb-4 flex-shrink-0" />
-                <p className="text-sm text-muted-foreground leading-relaxed flex-1">{item.quote}</p>
-                <div className="mt-6 pt-4 border-t border-border/20">
-                  <p className="text-sm font-semibold text-foreground">{item.author}</p>
-                  <p className="text-xs text-muted-foreground">{item.role}</p>
-                  <p className="text-xs text-emerald-400/70 mt-1">{item.context}</p>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* Diversity, Equity & Inclusion */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="grid gap-12 lg:grid-cols-2 items-start">
-            <div>
-              <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 mb-4">
-                <Globe className="h-3.5 w-3.5 text-emerald-400" />
-                <span className="text-xs font-medium text-emerald-400">DEI</span>
-              </div>
-              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-                Diversity Is Not a Program — It Is a Prerequisite
-              </h2>
-              <p className="mt-4 text-muted-foreground leading-relaxed">
-                We build AI agents that serve businesses across 40+ countries, in every industry, at every scale. A homogeneous team cannot build products that serve a heterogeneous world. Our commitment to diversity is not performative — it is architectural. Different perspectives surface different edge cases, different assumptions, and different opportunities. Our Discovery Agent searches 17+ channels precisely because a single-perspective search is inherently limited. The same principle applies to our team.
-              </p>
-              <p className="mt-4 text-muted-foreground leading-relaxed">
-                Our hiring pipeline is designed to reduce bias at every stage: blind resume screening, structured interviews with rubric-based evaluation, diverse interview panels, and calibrated scoring. But we also know that pipeline fixes are insufficient. We invest in mentorship programs for underrepresented groups in tech, partner with organizations like Code2040 and Women Who Code, and maintain transparent promotion criteria so that advancement is based on demonstrated impact, not social capital.
-              </p>
-            </div>
-            <div className="space-y-4">
-              {[
-                { label: 'Team members across', value: '12+ countries', detail: 'San Francisco, New York, London, Singapore, Lagos, Berlin, and more' },
-                { label: 'Languages spoken', value: '18+', detail: 'Including English, Mandarin, Hindi, Yoruba, Portuguese, German, Korean, and Arabic' },
-                { label: 'Women in engineering', value: '38%', detail: 'Industry average is 22%. Target: 50% by 2027.' },
-                { label: 'Underrepresented minorities in leadership', value: '42%', detail: 'Across VP+ roles. Measured quarterly, published annually.' },
-                { label: 'Annual DEI budget', value: '$250K+', detail: 'Dedicated budget for mentorship, partnerships, conference sponsorships, and ERGs' },
-              ].map((item) => (
-                <div key={item.label} className="card-premium border-border/30 bg-card/50 p-4 rounded-xl flex items-start gap-4">
-                  <div className="rounded-lg bg-emerald-500/10 p-2 flex-shrink-0">
-                    <Trophy className="h-4 w-4 text-emerald-400" />
-                  </div>
-                  <div>
-                    <p className="text-sm text-muted-foreground">{item.label}</p>
-                    <p className="text-xl font-bold text-foreground">{item.value}</p>
-                    <p className="text-xs text-muted-foreground mt-1">{item.detail}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Wellness & Sustainability */}
-      <section className="py-16 lg:py-24 border-b border-border/20">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="max-w-3xl mb-12">
-            <div className="inline-flex items-center gap-2 rounded-full border border-emerald-500/20 bg-emerald-500/10 px-4 py-1.5 mb-4">
-              <Coffee className="h-3.5 w-3.5 text-emerald-400" />
-              <span className="text-xs font-medium text-emerald-400">Sustainable Pace</span>
-            </div>
-            <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-              Burnout Is a Bug, Not a Badge
-            </h2>
-            <p className="mt-4 text-muted-foreground leading-relaxed">
-              The tech industry has a pathological relationship with overwork. We reject the myth that 80-hour weeks produce 80 hours of value. Research consistently shows that productivity peaks at approximately 40-50 hours per week and declines sharply thereafter. Our agents are designed to run 24/7 so that humans do not have to. The entire premise of LeadReach AI is that AI handles the repetitive, time-consuming work — and we extend that philosophy to our own operations.
-            </p>
-          </div>
-
-          <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
-            {[
-              { title: 'Flexible PTO', description: 'No accrual, no tracking, no guilt. Take what you need, when you need it. The only rule: coordinate with your team so coverage is maintained. We trust you to manage your time like the professional you are.', metric: 'Average: 28 days/year' },
-              { title: 'Mental Health Days', description: 'Four dedicated mental health days per year, no questions asked. Mental health is health, and we treat it with the same seriousness as physical health. Our benefits include full coverage for therapy and coaching.', metric: '100% utilization rate' },
-              { title: 'Focus Fridays', description: 'No meetings, no Slack expectations, no deadlines. Fridays are for deep work, learning, or recharging. If you want to spend Friday reading a paper, building a side project, or going for a hike, that is a valid and encouraged use of the day.', metric: '87% team satisfaction' },
-              { title: 'Sabbatical Program', description: 'After four years of continuous employment, every team member is eligible for a fully paid 4-week sabbatical. Not vacation — sabbatical. The purpose is extended rest, personal growth, or creative exploration. Several of our best product ideas originated during sabbaticals.', metric: '92% return rate' },
-            ].map((item) => (
-              <div key={item.title} className="card-premium border-border/30 bg-card/50 p-6 rounded-xl">
-                <h3 className="text-lg font-semibold text-foreground mb-3">{item.title}</h3>
-                <p className="text-sm text-muted-foreground leading-relaxed mb-4">{item.description}</p>
-                <div className="rounded-lg bg-emerald-500/10 px-3 py-2">
-                  <p className="text-xs font-medium text-emerald-400">{item.metric}</p>
-                </div>
+                <h3 className="text-lg font-semibold text-foreground mb-2">{program.title}</h3>
+                <p className="text-sm text-muted-foreground leading-relaxed">{program.description}</p>
               </div>
             ))}
           </div>
@@ -439,31 +387,27 @@ export default function CulturePage() {
       </section>
 
       {/* CTA */}
-      <section className="py-16 lg:py-24">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="relative rounded-2xl border border-emerald-500/20 bg-gradient-to-br from-emerald-500/10 via-card/50 to-card/50 p-8 lg:p-12 text-center overflow-hidden">
-            <div className="absolute inset-0 bg-gradient-to-r from-emerald-500/5 via-transparent to-violet-500/5" />
-            <div className="relative">
-              <h2 className="text-3xl sm:text-4xl font-bold tracking-tight text-foreground">
-                See Our Culture in <span className="text-gradient">Action</span>
-              </h2>
-              <p className="mt-4 text-muted-foreground max-w-2xl mx-auto leading-relaxed">
-                The best way to understand our culture is to experience the product it produces. Launch the platform, run a campaign, and watch eight specialized AI agents collaborate to find, enrich, qualify, and engage your ideal prospects.
-              </p>
-              <div className="mt-8 flex flex-col sm:flex-row items-center justify-center gap-4">
-                <Link href="/app">
-                  <Button className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm px-8 py-6 text-base">
-                    Launch Platform
-                    <ArrowRight className="ml-2 h-4 w-4" />
-                  </Button>
-                </Link>
-                <Link href="/careers">
-                  <Button variant="outline" className="border-border/50 px-8 py-6 text-base">
-                    View Open Roles
-                  </Button>
-                </Link>
-              </div>
-            </div>
+      <section className="py-20 lg:py-28 border-t border-border/30">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 text-center">
+          <h2 className="text-3xl sm:text-4xl font-bold text-foreground mb-4">
+            See Our Culture in Action
+          </h2>
+          <p className="text-muted-foreground mb-8 max-w-xl mx-auto">
+            Our culture is not just words — it is embedded in every agent we build and every decision our system makes.
+          </p>
+          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
+            <a
+              href="/agentic-framework"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-black hover:bg-emerald-400 transition-colors"
+            >
+              Explore Our Agentic Framework
+            </a>
+            <a
+              href="/careers"
+              className="inline-flex items-center gap-2 rounded-lg border border-border px-6 py-3 text-sm font-semibold text-foreground hover:bg-secondary/50 transition-colors"
+            >
+              View Open Positions
+            </a>
           </div>
         </div>
       </section>

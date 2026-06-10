@@ -1,9 +1,11 @@
 // ============================================================
 // SSE Streaming Endpoint for Prospect Discovery
+// Uses the 8-Agent Orchestrator for real multi-agent processing
 // ============================================================
 
 import { NextRequest } from 'next/server';
-import { processAgentMessage } from '@/lib/prospect-agent/agent';
+import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
+import type { OrchestratorEvent, PipelineState } from '@/lib/prospect-agent/orchestrator-types';
 import type { ConversationContext, UserIntent, AgentMessage, SuggestedAction } from '@/lib/prospect-agent/types';
 
 export const maxDuration = 300;
@@ -12,8 +14,11 @@ export const maxDuration = 300;
  * POST /api/prospect-discovery/stream
  *
  * SSE streaming version of the agent chat endpoint.
- * Sends real-time progress events as the discovery pipeline runs,
- * so the user sees each step visually as it happens.
+ * Uses the 8-agent orchestrator pipeline that shows:
+ *   - Real-time thinking mode with timer
+ *   - Agent-to-agent communication
+ *   - Step-by-step pipeline progress
+ *   - Each agent's status and work
  */
 export async function POST(request: NextRequest) {
   let body: { message?: string; context?: ConversationContext; forceIntent?: UserIntent };
@@ -44,6 +49,8 @@ export async function POST(request: NextRequest) {
   const stream = new ReadableStream({
     start(controller) {
       let keepaliveInterval: NodeJS.Timeout | null = null;
+      let thinkingInterval: NodeJS.Timeout | null = null;
+      let thinkStartTime: number | null = null;
 
       const send = (event: string, data: unknown) => {
         try {
@@ -60,24 +67,101 @@ export async function POST(request: NextRequest) {
         } catch {
           if (keepaliveInterval) clearInterval(keepaliveInterval);
         }
-      }, 15_000);
+      }, 10_000);
 
-      const onProgress = (event: string, data: unknown) => {
-        send(event, data);
+      // Thinking timer — emit tick events every second while in thinking phase
+      const startThinkingTimer = () => {
+        thinkStartTime = Date.now();
+        thinkingInterval = setInterval(() => {
+          if (thinkStartTime) {
+            const elapsed = Date.now() - thinkStartTime;
+            send('thinking_tick', { elapsedMs: elapsed, phase: 'Thinking' });
+          }
+        }, 1000);
       };
 
-      processAgentMessage(message.trim(), context, forceIntent, onProgress)
+      const stopThinkingTimer = () => {
+        if (thinkingInterval) {
+          clearInterval(thinkingInterval);
+          thinkingInterval = null;
+        }
+      };
+
+      // Orchestrator event callback
+      const onEvent = (event: OrchestratorEvent) => {
+        switch (event.type) {
+          case 'thinking_start':
+            startThinkingTimer();
+            send('thinking_start', event.data);
+            break;
+
+          case 'thinking_tick':
+            // Forward thinking ticks to the client
+            send('thinking_tick', event.data);
+            break;
+
+          case 'thinking_end':
+            stopThinkingTimer();
+            send('thinking_end', event.data);
+            break;
+
+          case 'agent_status':
+            send('agent_status', event.data);
+            break;
+
+          case 'agent_comm':
+            send('agent_comm', event.data);
+            break;
+
+          case 'cooldown':
+            send('cooldown', event.data);
+            break;
+
+          case 'step_start':
+            send('step_start', event.data);
+            break;
+
+          case 'step_progress':
+            send('step_progress', event.data);
+            break;
+
+          case 'step_complete':
+            send('step_complete', event.data);
+            break;
+
+          case 'data_update':
+            send('data_update', event.data);
+            break;
+
+          case 'insight':
+            send('insight', event.data);
+            break;
+
+          case 'pipeline_progress':
+            send('pipeline_progress', event.data);
+            break;
+
+          case 'error':
+            send('error', event.data);
+            break;
+        }
+      };
+
+      processWithOrchestrator(message.trim(), context, forceIntent, onEvent)
         .then((result) => {
+          stopThinkingTimer();
           send('done', {
             message: serializeAgentMessage(result.message),
             updatedContext: result.updatedContext,
             suggestedActions: result.suggestedActions,
+            pipelineState: result.pipelineState,
           });
         })
         .catch((error) => {
+          stopThinkingTimer();
           console.error('[StreamRoute] Fatal error:', error);
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
-          send('error', { message: errorMsg });
+          send('error', { message: errorMsg, recoverable: true });
           send('done', {
             message: {
               id: `agent-error-${Date.now()}`,
@@ -91,9 +175,11 @@ export async function POST(request: NextRequest) {
             suggestedActions: [
               { label: 'Try Again', prompt: message.trim(), icon: 'RefreshCw' },
             ],
+            pipelineState: null,
           });
         })
         .finally(() => {
+          stopThinkingTimer();
           if (keepaliveInterval) clearInterval(keepaliveInterval);
           try { controller.close(); } catch { /* already closed */ }
         });

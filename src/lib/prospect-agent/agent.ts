@@ -105,6 +105,123 @@ export async function processAgentMessage(
 }
 
 /**
+ * Quick rule-based intent classifier for OBVIOUS patterns.
+ * Returns null if the pattern isn't obvious (fall through to LLM).
+ * This saves 5-15 seconds per request by skipping the LLM classification.
+ */
+function ruleBasedClassifyIfObvious(
+  userMessage: string,
+  context?: ConversationContext,
+): IntentClassification | null {
+  const msg = userMessage.trim().toLowerCase();
+  const original = userMessage.trim();
+
+  // URL → research_url
+  if (/^https?:\/\/[^\s]+/i.test(original)) {
+    return {
+      intent: 'research_url',
+      persona: 'scout',
+      confidence: 0.95,
+      reasoning: 'Message starts with a URL',
+      extractedEntities: { companyName: null, personName: null, url: original, industry: null, location: null },
+      clarifyingQuestion: null,
+    };
+  }
+
+  // "Research X" / "Tell me about X" / "Analyze X" — most common pattern
+  const researchPrefix = msg.match(/^(?:research|tell me about|look up|find info on|analyze|please research|company:)\s+(.+)/i);
+  if (researchPrefix) {
+    const entity = researchPrefix[1].trim();
+    // Check if entity looks like a company name first
+    const companyIndicators = /(?:capital|ventures|partners|group|inc|llc|corp|ltd|gmbh|firm|fund|bank|holdings|associates|consulting|labs|studio|agency|horowitz|sachs|stanley|co\.|&\s)/i;
+    if (companyIndicators.test(entity)) {
+      const cleanEntity = entity.replace(/["']/g, '').trim();
+      return {
+        intent: 'research_company',
+        persona: 'scout',
+        confidence: 0.92,
+        reasoning: 'Entity contains company name indicators',
+        extractedEntities: { companyName: cleanEntity, personName: null, url: null, industry: null, location: null },
+        clarifyingQuestion: null,
+      };
+    }
+    // Multi-word after prefix: check if person
+    const personWithPrefix = entity.match(/^([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
+    if (personWithPrefix && personWithPrefix[1].split(/\s+/).length >= 2) {
+      return {
+        intent: 'research_person',
+        persona: 'hound',
+        confidence: 0.8,
+        reasoning: 'Multi-word name after research prefix',
+        extractedEntities: { companyName: null, personName: personWithPrefix[1], url: null, industry: null, location: null },
+        clarifyingQuestion: null,
+      };
+    }
+    // Default: company research
+    const cleanEntity = entity.replace(/["']/g, '').trim();
+    return {
+      intent: 'research_company',
+      persona: 'scout',
+      confidence: 0.9,
+      reasoning: 'Research prefix with entity name',
+      extractedEntities: { companyName: cleanEntity, personName: null, url: null, industry: null, location: null },
+      clarifyingQuestion: null,
+    };
+  }
+
+  // "Build an ICP" / "Create an ICP"
+  if (/^(?:build|create|define|make)\s+(?:an?\s*)?icp/i.test(msg)) {
+    return {
+      intent: 'build_icp',
+      persona: 'architect',
+      confidence: 0.9,
+      reasoning: 'ICP building request',
+      extractedEntities: extractEntities(original),
+      clarifyingQuestion: null,
+    };
+  }
+
+  // "Write an email" / "Compose outreach"
+  if (/^(?:write|compose|draft|send|email|reach out|craft)\s+(?:an?\s*)?(?:email|message|outreach)/i.test(msg)) {
+    return {
+      intent: 'compose_outreach',
+      persona: 'scribe',
+      confidence: 0.9,
+      reasoning: 'Outreach composition request',
+      extractedEntities: extractEntities(original),
+      clarifyingQuestion: null,
+    };
+  }
+
+  // Simple company name (single word or short phrase, no question marks)
+  if (/^[A-Z][a-zA-Z0-9&\s]{1,40}$/.test(original) && !original.includes('?')) {
+    return {
+      intent: 'research_company',
+      persona: 'scout',
+      confidence: 0.75,
+      reasoning: 'Looks like a company name',
+      extractedEntities: { companyName: original.trim(), personName: null, url: null, industry: null, location: null },
+      clarifyingQuestion: null,
+    };
+  }
+
+  // Not obvious enough — let the LLM classify
+  return null;
+}
+
+/**
+ * Quick entity extraction for rule-based classification.
+ */
+function extractEntities(message: string): IntentClassification['extractedEntities'] {
+  const entities: IntentClassification['extractedEntities'] = {
+    companyName: null, personName: null, url: null, industry: null, location: null,
+  };
+  const urlMatch = message.match(/https?:\/\/[^\s]+/i);
+  if (urlMatch) entities.url = urlMatch[0];
+  return entities;
+}
+
+/**
  * Inner implementation of processAgentMessage — all logic lives here
  * so the outer wrapper can catch any unhandled errors.
  */
@@ -147,7 +264,14 @@ async function processAgentMessageInner(
       clarifyingQuestion: null,
     };
   } else {
-    classification = await classifyIntent(userMessage, context);
+    // Try rule-based classification FIRST for obvious patterns (instant, no LLM needed)
+    // This saves 5-15 seconds on every request that matches clear patterns
+    const ruleBased = ruleBasedClassifyIfObvious(userMessage, context);
+    if (ruleBased) {
+      classification = ruleBased;
+    } else {
+      classification = await classifyIntent(userMessage, context);
+    }
   }
 
   const thinking: AgentThinking = intentToThinking(classification);
@@ -180,9 +304,16 @@ async function processAgentMessageInner(
         prospectData = result.prospect;
         updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
         const actionSummary = buildResearchSummary(result.prospect);
-        responseContent = await generateConversationResponse(
-          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
-        );
+        try {
+          responseContent = await generateConversationResponse(
+            classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+          );
+        } catch {
+          // LLM unavailable — use fallback template-based response
+        }
+        if (!responseContent && prospectData) {
+          responseContent = buildFallbackResponse(prospectData, classification.intent);
+        }
       }
 
       // Multi-intent: Auto-execute secondary action if implied
@@ -214,9 +345,16 @@ async function processAgentMessageInner(
         prospectData = result.prospect;
         updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
         const actionSummary = buildPersonSummary(result.prospect);
-        responseContent = await generateConversationResponse(
-          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
-        );
+        try {
+          responseContent = await generateConversationResponse(
+            classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+          );
+        } catch {
+          // LLM unavailable — use fallback template-based response
+        }
+        if (!responseContent && prospectData) {
+          responseContent = buildFallbackResponse(prospectData, classification.intent);
+        }
       }
 
       // Multi-intent: Auto-compose outreach if implied
@@ -238,9 +376,16 @@ async function processAgentMessageInner(
         prospectData = result.prospect;
         updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
         const actionSummary = buildResearchSummary(result.prospect);
-        responseContent = await generateConversationResponse(
-          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
-        );
+        try {
+          responseContent = await generateConversationResponse(
+            classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+          );
+        } catch {
+          // LLM unavailable — use fallback template-based response
+        }
+        if (!responseContent && prospectData) {
+          responseContent = buildFallbackResponse(prospectData, classification.intent);
+        }
       }
       break;
     }
@@ -402,6 +547,24 @@ async function processAgentMessageInner(
     }
   }
 
+  // If we still have no response content after all actions, generate a fallback
+  // from whatever action data we collected. This ensures users always get a
+  // meaningful response even when the LLM is completely unavailable.
+  if (!responseContent && (prospectData || icpData || marketData || scoreData || outreachData)) {
+    const { generateStructuredFallback } = await import('@/lib/llm');
+    responseContent = generateStructuredFallback({
+      persona: classification.persona,
+      intent: classification.intent,
+      userMessage,
+      actionSummary: prospectData ? buildResearchSummary(prospectData) :
+                     icpData ? JSON.stringify(icpData) :
+                     marketData ? JSON.stringify(marketData) :
+                     scoreData ? JSON.stringify(scoreData) :
+                     outreachData ? JSON.stringify(outreachData) : '{}',
+      context: buildContextHint(updatedContext),
+    });
+  }
+
   // Auto-curate ICP from prospect data if no active ICP exists
   if (prospectData && !updatedContext.activeICP && (classification.intent === 'research_company' || classification.intent === 'research_url')) {
     try {
@@ -501,6 +664,67 @@ async function processAgentMessageInner(
 // ============================================================
 // Helper Functions
 // ============================================================
+
+/**
+ * Build a fallback response from prospect data when LLM is unavailable.
+ * This generates a structured, readable response without calling the LLM.
+ */
+function buildFallbackResponse(prospect: ProspectResult, intent: UserIntent): string {
+  const parts: string[] = [];
+
+  if (prospect.companyName) {
+    parts.push(`**${prospect.companyName}**`);
+  }
+  if (prospect.description) {
+    parts.push(prospect.description);
+  }
+  if (prospect.industry) {
+    parts.push(`**Industry:** ${prospect.industry}`);
+  }
+  if (prospect.employeeCount) {
+    parts.push(`**Employees:** ${prospect.employeeCount}`);
+  }
+  if (prospect.revenueEstimate) {
+    parts.push(`**Revenue:** ${prospect.revenueEstimate}`);
+  }
+  if (prospect.ceoName) {
+    parts.push(`**CEO:** ${prospect.ceoName}`);
+  }
+  if (prospect.city || prospect.country) {
+    parts.push(`**Location:** ${[prospect.city, prospect.country].filter(Boolean).join(', ')}`);
+  }
+  if (prospect.website) {
+    parts.push(`**Website:** ${prospect.website}`);
+  }
+  if (prospect.generalEmail) {
+    parts.push(`**Email:** ${prospect.generalEmail}`);
+  }
+  if (prospect.linkedinUrl) {
+    parts.push(`**LinkedIn:** ${prospect.linkedinUrl}`);
+  }
+
+  if (prospect.techStack?.length) {
+    parts.push(`**Tech Stack:** ${prospect.techStack.join(', ')}`);
+  }
+  if (prospect.recentNews?.length) {
+    parts.push(`**Recent News:**\n${prospect.recentNews.slice(0, 3).map(n => `- ${n}`).join('\n')}`);
+  }
+
+  // Domain-specific data
+  if (prospect.detectedDomain && prospect.detectedDomain !== 'general') {
+    parts.push(`\n**Domain:** ${prospect.domainLabel || prospect.detectedDomain} — 4-Phase Pipeline Active`);
+  }
+
+  parts.push(`\n*Data completeness: ${prospect.dataCompleteness}%*`);
+
+  if (prospect.dataCompleteness < 50) {
+    parts.push('The research found limited data. Try providing a website URL for deeper analysis.');
+  } else {
+    parts.push('Would you like me to score this lead, compose outreach, or find similar companies?');
+  }
+
+  return parts.join('\n\n');
+}
 
 /**
  * Build a structured research summary for the conversational response.
@@ -698,6 +922,8 @@ COMPANY DATA:
 - Funding: ${prospect.fundingInfo}
 
 USER'S ORIGINAL QUERY: "${userQuery}"
+
+CRITICAL: You MUST write ALL output in English. Do NOT use Chinese or any other language. All field values, names, descriptions, industries, challenges, goals, and every other text field MUST be in English.
 
 Create an ICP that targets companies SIMILAR to this one. Respond with JSON:
 {
