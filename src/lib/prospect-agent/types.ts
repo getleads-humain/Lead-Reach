@@ -2,6 +2,8 @@
 // Prospect Discovery Agent — Type Definitions
 // ============================================================
 
+import type { ResponseTemplate } from './response-templates';
+
 /**
  * The specialized agent persona that handles the conversation.
  * Each persona has distinct capabilities, system prompts, and action sets.
@@ -84,6 +86,19 @@ export interface AgentMessage {
   // Pipeline fields
   converted?: boolean;
   leadId?: string;
+
+  // Error recovery fields
+  retryQuery?: string;              // Original query to re-submit on retry
+  errorState?: {                    // Set when pipeline errors mid-way
+    message: string;
+    timestamp: number;
+    lastCompletedAgent?: string;    // Last agent that completed before the error
+    completedAgents?: string[];     // All agents that completed successfully
+    pipelineCheckpoint?: PipelineCheckpoint;  // Saved state for resume
+  };
+
+  // Response template for incremental display
+  responseTemplate?: ResponseTemplate;
 }
 
 /**
@@ -362,3 +377,29 @@ export const PERSONA_META: Record<AgentPersona, {
     capabilities: ['Query clarification', 'Strategy guidance', 'Multi-step planning', 'Pipeline coaching'],
   },
 };
+
+// ============================================================
+// Pipeline Checkpoint — Error Recovery State
+// ============================================================
+
+/**
+ * A snapshot of the pipeline state at the point of failure.
+ * Used to resume the pipeline from where it stopped rather than restarting.
+ */
+export interface PipelineCheckpoint {
+  originalQuery: string;            // The user's original query text
+  classifiedIntent?: UserIntent;    // Intent classified by Atlas (skip re-classification on resume)
+  completedAgents: string[];        // Agents that finished successfully (e.g., ['atlas', 'scout', 'forge'])
+  failedAgent?: string;             // The agent that was running when the error occurred
+  partialProspectData?: Record<string, unknown>;    // Prospect data collected so far
+  partialIcpData?: Record<string, unknown>;         // ICP data collected so far
+  partialScoreData?: Record<string, unknown>;        // Score data collected so far
+  partialOutreachData?: Record<string, unknown>;     // Outreach data collected so far
+  partialMarketData?: Record<string, unknown>;       // Market data collected so far
+  partialInsights?: InsightItem[];                   // Insights collected so far
+  pipelinePhase: string;            // Phase at time of error (thinking, executing, synthesizing)
+  timestamp: number;                // When the checkpoint was created
+}
+
+// Re-export ResponseTemplate from the templates module
+export type { ResponseTemplate, TemplateField, TemplateSection } from './response-templates';

@@ -50,10 +50,13 @@ import {
   Activity,
   Bot,
   MessagesSquare,
+  Cable,
+  RotateCcw,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/components/auth/auth-provider';
 import { safeFetchJSON } from '@/lib/utils';
+import Link from 'next/link';
 import type {
   AgentPersona,
   AgentMessage,
@@ -69,9 +72,17 @@ import type {
   InsightItem,
   NavigationSuggestion,
   ViewType,
+  PipelineCheckpoint,
+  ResponseTemplate,
 } from '@/lib/prospect-agent/types';
 import { PERSONA_META } from '@/lib/prospect-agent/types';
 import { AGENT_8_DISPLAY, type AgentCommMessage, type PipelineState, type AgentState } from '@/lib/prospect-agent/orchestrator-types';
+import {
+  getTemplateForIntent,
+  intentHasTemplate,
+  updateTemplateWithData,
+  getTemplateFillPercentage,
+} from '@/lib/prospect-agent/response-templates';
 
 // ============================================================
 // Icon mapping for dynamic icon rendering
@@ -81,8 +92,25 @@ const ICON_MAP: Record<string, React.ElementType> = {
   Plus, Star, Mail, Search, Building2, Target, User, Globe,
   Telescope, Sparkles, Zap, Users, BarChart3, Briefcase,
   TrendingUp, AlertCircle, Send, Lightbulb, ArrowRight,
-  Clock, Eye, Activity, Bot,
+  Clock, Eye, Activity, Bot, Shield, RotateCcw,
 };
+
+// Custom scrollbar styles for Agent Workspace
+const AGENT_WORKSPACE_SCROLLBAR_STYLES = `
+  .agent-workspace-scroll::-webkit-scrollbar {
+    width: 6px;
+  }
+  .agent-workspace-scroll::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  .agent-workspace-scroll::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.1);
+    border-radius: 3px;
+  }
+  .agent-workspace-scroll::-webkit-scrollbar-thumb:hover {
+    background: rgba(255,255,255,0.2);
+  }
+`;
 
 // ============================================================
 // Safe timestamp formatter
@@ -247,6 +275,14 @@ function AgentWorkspacePanel({
   isOpen: boolean;
   onToggle: () => void;
 }) {
+  const commLogRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll comm log to bottom when new messages arrive
+  useEffect(() => {
+    if (commLogRef.current) {
+      commLogRef.current.scrollTop = commLogRef.current.scrollHeight;
+    }
+  }, [pipelineState.commLog.length]);
   if (!isOpen) {
     return (
       <button
@@ -260,7 +296,7 @@ function AgentWorkspacePanel({
   }
 
   return (
-    <div className="w-80 shrink-0 border-l border-border/30 bg-card/50 flex flex-col overflow-hidden">
+    <div className="w-80 shrink-0 border-l border-border/30 bg-card/50 flex flex-col" style={{ maxHeight: 'calc(100vh - 4rem)' }}>
       {/* Header */}
       <div className="px-3 py-2 border-b border-border/20 flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -272,7 +308,8 @@ function AgentWorkspacePanel({
         </button>
       </div>
 
-      <ScrollArea className="flex-1">
+      <style>{AGENT_WORKSPACE_SCROLLBAR_STYLES}</style>
+      <ScrollArea className="flex-1 overflow-y-auto agent-workspace-scroll" style={{ scrollbarGutter: 'stable' }}>
         <div className="p-3 space-y-3">
           {/* Thinking Mode */}
           {(pipelineState.phase === 'thinking' || pipelineState.totalThinkTimeMs) && (
@@ -375,7 +412,7 @@ function AgentWorkspacePanel({
                 </Badge>
               )}
             </div>
-            <div className="space-y-1.5 max-h-[400px] overflow-y-auto">
+            <div ref={commLogRef} className="space-y-1.5 max-h-[600px] overflow-y-auto scroll-smooth">
               {pipelineState.commLog.length === 0 ? (
                 <p className="text-[9px] text-muted-foreground/40 italic">Agent messages will appear here during processing...</p>
               ) : (
@@ -504,8 +541,12 @@ function DataField({ icon: Icon, label, value, href }: { icon: React.ElementType
   );
 }
 
-function SectionCard({ title, icon: Icon, children, defaultOpen = true }: { title: string; icon: React.ElementType; children: React.ReactNode; defaultOpen?: boolean }) {
+function SectionCard({ title, icon: Icon, children, defaultOpen = true, isLoading = false }: { title: string; icon: React.ElementType; children: React.ReactNode; defaultOpen?: boolean; isLoading?: boolean }) {
   const [open, setOpen] = useState(defaultOpen);
+  const hasContent = React.Children.toArray(children).some(child => child !== null && child !== undefined);
+
+  if (!hasContent && !isLoading) return null; // Auto-hide empty sections
+
   return (
     <div className="rounded-lg border border-border/30 overflow-hidden">
       <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2 bg-secondary/20 hover:bg-secondary/30 transition-colors">
@@ -515,7 +556,16 @@ function SectionCard({ title, icon: Icon, children, defaultOpen = true }: { titl
         </div>
         {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
       </button>
-      {open && <div className="px-3 py-2 space-y-0.5">{children}</div>}
+      {open && (
+        <div className="px-3 py-2 space-y-0.5">
+          {hasContent ? children : (
+            <div className="flex items-center gap-2 py-1">
+              <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/30 animate-pulse" />
+              <div className="h-2.5 w-20 rounded bg-secondary/30 animate-pulse" />
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -560,12 +610,59 @@ function SuggestedActionButtons({ actions, onAction }: { actions: SuggestedActio
 }
 
 // ============================================================
+// Response Template Card — Incremental KPI Fields
+// ============================================================
+
+function ResponseTemplateCard({ template }: { template: ResponseTemplate }) {
+  const fillPct = getTemplateFillPercentage(template);
+
+  return (
+    <Card className="border-cyan-500/20 ml-9">
+      <CardContent className="p-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <Sparkles className="h-4 w-4 text-cyan-400" />
+            <h4 className="text-sm font-bold text-foreground/90">{template.title}</h4>
+          </div>
+          <div className="flex items-center gap-2">
+            <Progress value={fillPct} className="h-1.5 w-16 bg-secondary/40 [&>div]:bg-cyan-400" />
+            <span className="text-xs text-cyan-400">{fillPct}%</span>
+          </div>
+        </div>
+        <p className="text-[10px] text-muted-foreground/60">{template.description}</p>
+        {template.sections.map(section => (
+          <div key={section.key} className="space-y-1.5">
+            <div className="flex items-center gap-1.5">
+              <span className="text-[10px] font-semibold text-foreground/60 uppercase tracking-wider">{section.title}</span>
+            </div>
+            <div className="grid grid-cols-2 gap-1">
+              {section.fields.map(field => (
+                <div key={field.key} className={`rounded-md border px-2 py-1 ${field.filled ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border/20 bg-secondary/5'}`}>
+                  <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wider">{field.label}</span>
+                  {field.filled ? (
+                    <p className="text-[10px] text-foreground/90 truncate">
+                      {Array.isArray(field.value) ? field.value.join(', ') : String(field.value || '')}
+                    </p>
+                  ) : (
+                    <p className="text-[10px] text-muted-foreground/30 italic">{field.placeholder || '—'}</p>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+// ============================================================
 // Prospect Data Card
 // ============================================================
 
-function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, onViewLeads }: {
+function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, onViewLeads, isLive }: {
   prospect: ProspectResult; messageId: string; converted?: boolean; leadId?: string;
-  onConvert: (msgId: string, p: ProspectResult) => void; onViewLeads: () => void;
+  onConvert: (msgId: string, p: ProspectResult) => void; onViewLeads: () => void; isLive?: boolean;
 }) {
   const completenessColor = (pct: number) => pct >= 70 ? 'text-emerald-400' : pct >= 40 ? 'text-amber-400' : 'text-red-400';
   const completenessBarColor = (pct: number) => pct >= 70 ? '[&>div]:bg-emerald-400' : pct >= 40 ? '[&>div]:bg-amber-400' : '[&>div]:bg-red-400';
@@ -576,7 +673,14 @@ function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, o
         {prospect.companyName && (
           <div className="flex items-start justify-between">
             <div>
-              <h4 className="text-base font-bold text-foreground/90">{prospect.companyName}</h4>
+              <div className="flex items-center gap-2">
+                <h4 className="text-base font-bold text-foreground/90">{prospect.companyName}</h4>
+                {isLive && (
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+                  </Badge>
+                )}
+              </div>
               {prospect.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{prospect.description}</p>}
             </div>
             <div className="flex items-center gap-2 shrink-0 ml-3">
@@ -599,29 +703,29 @@ function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, o
           </div>
         )}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <SectionCard title="Contact" icon={Mail}>
+          <SectionCard title="Contact" icon={Mail} isLoading={isLive}>
             <DataField icon={Mail} label="Email" value={prospect.generalEmail} href={prospect.generalEmail ? `mailto:${prospect.generalEmail}` : null} />
             <DataField icon={Phone} label="Phone" value={prospect.phoneMain} href={prospect.phoneMain ? `tel:${prospect.phoneMain}` : null} />
             <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
           </SectionCard>
-          <SectionCard title="Location" icon={MapPin}>
+          <SectionCard title="Location" icon={MapPin} isLoading={isLive}>
             <DataField icon={MapPin} label="City" value={prospect.city} />
             <DataField icon={MapPin} label="Country" value={prospect.country} />
           </SectionCard>
-          <SectionCard title="Firmographics" icon={BarChart3}>
+          <SectionCard title="Firmographics" icon={BarChart3} isLoading={isLive}>
             <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
             <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
             <DataField icon={Building2} label="Industry" value={prospect.industry} />
           </SectionCard>
-          <SectionCard title="Key People" icon={Users}>
+          <SectionCard title="Key People" icon={Users} isLoading={isLive}>
             <DataField icon={Star} label="CEO" value={prospect.ceoName} />
             <DataField icon={Mail} label="CEO Email" value={prospect.ceoEmail} href={prospect.ceoEmail ? `mailto:${prospect.ceoEmail}` : null} />
           </SectionCard>
-          <SectionCard title="Digital" icon={Globe}>
+          <SectionCard title="Digital" icon={Globe} isLoading={isLive}>
             <DataField icon={Linkedin} label="LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
             <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
           </SectionCard>
-          <SectionCard title="Products & Tech" icon={FileText} defaultOpen={(prospect.productsServices?.length || 0) > 0}>
+          <SectionCard title="Products & Tech" icon={FileText} defaultOpen={(prospect.productsServices?.length || 0) > 0} isLoading={isLive}>
             <TagList items={prospect.productsServices || []} color="emerald" />
             {prospect.techStack?.length > 0 && (
               <div className="mt-2">
@@ -704,13 +808,18 @@ function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, o
 // (Simplified from original — same functionality)
 // ============================================================
 
-function ICPDataCard({ icp }: { icp: ICPResult }) {
+function ICPDataCard({ icp, isLive }: { icp: ICPResult; isLive?: boolean }) {
   return (
     <Card className="border-amber-500/20 ml-9">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           <Target className="h-4 w-4 text-amber-400" />
           <h4 className="text-sm font-bold text-foreground/90">{icp.name}</h4>
+          {isLive && (
+            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+            </Badge>
+          )}
         </div>
         {icp.description && <p className="text-xs text-muted-foreground">{icp.description}</p>}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
@@ -724,13 +833,18 @@ function ICPDataCard({ icp }: { icp: ICPResult }) {
   );
 }
 
-function MarketDataCard({ market }: { market: MarketResult }) {
+function MarketDataCard({ market, isLive }: { market: MarketResult; isLive?: boolean }) {
   return (
     <Card className="border-violet-500/20 ml-9">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center gap-2">
           <TrendingUp className="h-4 w-4 text-violet-400" />
           <h4 className="text-sm font-bold text-foreground/90">Market Analysis: {market.query}</h4>
+          {isLive && (
+            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+            </Badge>
+          )}
         </div>
         {market.summary && <p className="text-xs text-muted-foreground">{market.summary}</p>}
         {market.keyFindings.length > 0 && (
@@ -748,13 +862,19 @@ function MarketDataCard({ market }: { market: MarketResult }) {
   );
 }
 
-function ScoreDataCard({ score }: { score: ScoreResult }) {
+function ScoreDataCard({ score, isLive }: { score: ScoreResult; isLive?: boolean }) {
   const tierColor: Record<string, string> = { ideal: 'text-emerald-400', strong: 'text-cyan-400', moderate: 'text-amber-400', weak: 'text-orange-400', poor: 'text-red-400' };
   return (
     <Card className="border-rose-500/20 ml-9">
       <CardContent className="p-4 space-y-3">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-rose-400" /><h4 className="text-sm font-bold text-foreground/90">Lead Score</h4></div>
+          <div className="flex items-center gap-2"><Shield className="h-4 w-4 text-rose-400" /><h4 className="text-sm font-bold text-foreground/90">Lead Score</h4>
+            {isLive && (
+              <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+                <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+              </Badge>
+            )}
+          </div>
           <div className="flex items-center gap-2">
             <span className={`text-lg font-bold ${tierColor[score.tier] || 'text-foreground'}`}>{score.overallScore}</span>
             <Badge variant="outline" className={`text-[9px] ${tierColor[score.tier]}`}>{score.tier}</Badge>
@@ -777,7 +897,7 @@ function ScoreDataCard({ score }: { score: ScoreResult }) {
   );
 }
 
-function OutreachDataCard({ outreach }: { outreach: OutreachResult }) {
+function OutreachDataCard({ outreach, isLive }: { outreach: OutreachResult; isLive?: boolean }) {
   return (
     <Card className="border-sky-500/20 ml-9">
       <CardContent className="p-4 space-y-3">
@@ -785,6 +905,11 @@ function OutreachDataCard({ outreach }: { outreach: OutreachResult }) {
           <Mail className="h-4 w-4 text-sky-400" />
           <h4 className="text-sm font-bold text-foreground/90 capitalize">{outreach.channel} Outreach</h4>
           <Badge variant="outline" className="text-[9px] border-sky-500/20 text-sky-400">{outreach.tone}</Badge>
+          {isLive && (
+            <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+            </Badge>
+          )}
         </div>
         {outreach.subject && <div><span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Subject</span><p className="text-sm font-medium text-foreground/90">{outreach.subject}</p></div>}
         <div><span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Message</span>
@@ -876,6 +1001,8 @@ export function ProspectDiscoveryView() {
   const [thinkingElapsed, setThinkingElapsed] = useState(0);
   const [aiHealth, setAiHealth] = useState<'healthy' | 'degraded' | 'down' | 'checking' | 'unknown'>('unknown');
   const [saveNotification, setSaveNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [lastFailedQuery, setLastFailedQuery] = useState<string | null>(null);
+  const [activeCheckpoint, setActiveCheckpoint] = useState<PipelineCheckpoint | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
@@ -907,10 +1034,11 @@ export function ProspectDiscoveryView() {
     if (saveNotification) { const t = setTimeout(() => setSaveNotification(null), 4000); return () => clearTimeout(t); }
   }, [saveNotification]);
 
-  const handleSendMessage = useCallback(async (messageText?: string) => {
+  const handleSendMessage = useCallback(async (messageText?: string, checkpoint?: PipelineCheckpoint) => {
     const text = (messageText || query).trim();
     if (!text || isSearching) return;
     setQuery('');
+    setActiveCheckpoint(null);
 
     // Add user message
     const userMsg: AgentMessage = { id: `user-${Date.now()}`, role: 'user', content: text, timestamp: new Date() };
@@ -921,13 +1049,14 @@ export function ProspectDiscoveryView() {
     setPipelineState({
       phase: 'thinking', thinkStartTime: Date.now(), totalThinkTimeMs: null,
       agents: {
+        atlas: { persona: 'navigator', status: 'thinking', currentStep: 'Classifying intent', progress: 0, startedAt: Date.now(), completedAt: null, thinkTimeMs: null },
         scout: { persona: 'scout', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-        hound: { persona: 'hound', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-        analyst: { persona: 'analyst', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-        architect: { persona: 'architect', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+        forge: { persona: 'scout', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+        sage: { persona: 'analyst', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
         judge: { persona: 'judge', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-        scribe: { persona: 'scribe', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
-        navigator: { persona: 'navigator', status: 'thinking', currentStep: 'Classifying intent', progress: 0, startedAt: Date.now(), completedAt: null, thinkTimeMs: null },
+        bard: { persona: 'scribe', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+        flow: { persona: 'navigator', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
+        echo: { persona: 'analyst', status: 'idle', currentStep: '', progress: 0, startedAt: null, completedAt: null, thinkTimeMs: null },
       },
       commLog: [], currentStep: 'Classifying intent', overallProgress: 5,
     });
@@ -961,7 +1090,7 @@ export function ProspectDiscoveryView() {
       const response = await fetch('/api/prospect-discovery/stream', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context }),
+        body: JSON.stringify({ message: text, context, resumeFrom: checkpoint }),
       });
 
       const contentType = response.headers.get('content-type') || '';
@@ -1012,9 +1141,19 @@ export function ProspectDiscoveryView() {
                     plan: data.classification.plan || ['Execute research pipeline'],
                     confidence: data.classification.confidence || 0.8,
                   };
-                  setMessages(prev => prev.map(m =>
-                    m.id === agentMsgId ? { ...m, persona: thinking.persona, thinking } : m
-                  ));
+                  setMessages(prev => prev.map(m => {
+                    if (m.id !== agentMsgId) return m;
+                    const updated = { ...m, persona: thinking.persona, thinking };
+                    // Create response template if intent has one
+                    const intent = data.classification.intent as string;
+                    if (intentHasTemplate(intent as any)) {
+                      const template = getTemplateForIntent(intent as any);
+                      if (template) {
+                        updated.responseTemplate = template;
+                      }
+                    }
+                    return updated;
+                  }));
                 }
                 break;
 
@@ -1102,9 +1241,15 @@ export function ProspectDiscoveryView() {
               case 'data_update':
                 if (data) {
                   liveProspect = mergeProspectData(liveProspect, data.prospect);
-                  setMessages(prev => prev.map(m =>
-                    m.id === agentMsgId ? { ...m, prospectData: liveProspect } : m
-                  ));
+                  // Update the response template if present
+                  setMessages(prev => prev.map(m => {
+                    if (m.id !== agentMsgId) return m;
+                    const updated: AgentMessage = { ...m, prospectData: liveProspect };
+                    if (m.responseTemplate) {
+                      updated.responseTemplate = updateTemplateWithData(m.responseTemplate, data);
+                    }
+                    return updated;
+                  }));
                 }
                 break;
 
@@ -1127,8 +1272,69 @@ export function ProspectDiscoveryView() {
                 }
                 break;
 
+              case 'pipeline_resumed':
+                // Pipeline resumed from checkpoint — update workspace state
+                if (data) {
+                  setPipelineState(prev => {
+                    const updatedAgents = { ...prev.agents };
+                    for (const agent of (data.completedAgents || [])) {
+                      if (updatedAgents[agent]) {
+                        updatedAgents[agent] = {
+                          ...updatedAgents[agent],
+                          status: 'completed',
+                          currentStep: 'Completed before resume',
+                          progress: 100,
+                        };
+                      }
+                    }
+                    return { ...prev, agents: updatedAgents, phase: 'executing' };
+                  });
+                }
+                break;
+
               case 'error':
                 console.warn('[ProspectDiscovery] SSE error:', data?.message);
+                // Update agent message with error state while preserving partial data
+                setMessages(prev => prev.map(m => {
+                  if (m.id !== agentMsgId) return m;
+                  // Determine completed agents from pipeline state
+                  const completedAgents = Object.entries(pipelineState.agents)
+                    .filter(([, s]) => s.status === 'completed')
+                    .map(([key]) => key);
+                  const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
+                  // Determine the failed agent (the one that was working)
+                  const failedAgentEntry = Object.entries(pipelineState.agents)
+                    .find(([, s]) => s.status === 'working' || s.status === 'failed');
+                  const failedAgent = failedAgentEntry ? failedAgentEntry[0] : lastCompletedAgent;
+                  // Create a checkpoint for resume
+                  const checkpoint: PipelineCheckpoint = {
+                    originalQuery: text,
+                    classifiedIntent: m.thinking?.intent,
+                    completedAgents,
+                    failedAgent,
+                    partialProspectData: m.prospectData as Record<string, unknown> | undefined,
+                    partialIcpData: m.icpData as Record<string, unknown> | undefined,
+                    partialScoreData: m.scoreData as Record<string, unknown> | undefined,
+                    partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
+                    partialMarketData: m.marketData as Record<string, unknown> | undefined,
+                    partialInsights: m.insights,
+                    pipelinePhase: pipelineState.phase,
+                    timestamp: Date.now(),
+                  };
+                  setActiveCheckpoint(checkpoint);
+                  return {
+                    ...m,
+                    errorState: {
+                      message: data?.message || 'Pipeline error occurred',
+                      timestamp: Date.now(),
+                      lastCompletedAgent,
+                      completedAgents,
+                      pipelineCheckpoint: checkpoint,
+                    },
+                    retryQuery: text,
+                  };
+                }));
+                setPipelineState(prev => ({ ...prev, phase: 'error' }));
                 break;
 
               case 'done':
@@ -1150,8 +1356,48 @@ export function ProspectDiscoveryView() {
         }
       }
     } catch (streamError) {
-      console.warn('[ProspectDiscovery] SSE failed, falling back:', streamError instanceof Error ? streamError.message : 'Unknown');
-      setMessages(prev => prev.filter(m => m.id !== agentMsgId));
+      const errorMsg = streamError instanceof Error ? streamError.message : 'Unknown error';
+      console.warn('[ProspectDiscovery] SSE failed, falling back:', errorMsg);
+      setLastFailedQuery(text);
+
+      // Preserve partial data on the agent message instead of removing it
+      setMessages(prev => prev.map(m => {
+        if (m.id !== agentMsgId) return m;
+        // Build checkpoint from pipeline state
+        const completedAgents = Object.entries(pipelineState.agents)
+          .filter(([, s]) => s.status === 'completed')
+          .map(([key]) => key);
+        const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
+        const failedAgentEntry = Object.entries(pipelineState.agents)
+          .find(([, s]) => s.status === 'working' || s.status === 'failed');
+        const failedAgent = failedAgentEntry ? failedAgentEntry[0] : lastCompletedAgent;
+        const checkpoint: PipelineCheckpoint = {
+          originalQuery: text,
+          classifiedIntent: m.thinking?.intent,
+          completedAgents,
+          failedAgent,
+          partialProspectData: m.prospectData as Record<string, unknown> | undefined,
+          partialIcpData: m.icpData as Record<string, unknown> | undefined,
+          partialScoreData: m.scoreData as Record<string, unknown> | undefined,
+          partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
+          partialMarketData: m.marketData as Record<string, unknown> | undefined,
+          partialInsights: m.insights,
+          pipelinePhase: pipelineState.phase,
+          timestamp: Date.now(),
+        };
+        setActiveCheckpoint(checkpoint);
+        return {
+          ...m,
+          errorState: {
+            message: `Stream failed: ${errorMsg}`,
+            timestamp: Date.now(),
+            lastCompletedAgent,
+            completedAgents,
+            pipelineCheckpoint: checkpoint,
+          },
+          retryQuery: text,
+        };
+      }));
 
       try {
         const result = await safeFetchJSON<{
@@ -1160,27 +1406,90 @@ export function ProspectDiscoveryView() {
         }>('/api/prospect-discovery/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, context }),
+          body: JSON.stringify({ message: text, context, resumeFrom: checkpoint }),
         });
 
         if (result.success && result.message) {
-          setMessages(prev => [...prev, result.message]);
+          // Replace the error-state message with the successful fallback response
+          setMessages(prev => prev.map(m =>
+            m.id === agentMsgId ? { ...result.message, id: agentMsgId, converted: m.converted, leadId: m.leadId } : m
+          ));
           setContext(result.updatedContext);
           setSuggestedActions(result.suggestedActions || []);
         } else {
-          setMessages(prev => [...prev, {
-            id: `error-${Date.now()}`, role: 'system',
-            content: result.error || 'The agent encountered an error. Please try again.',
-            timestamp: new Date(),
-          }]);
+          // Fallback also failed — update agent message with error info, keep partial data
+          setMessages(prev => prev.map(m => {
+            if (m.id !== agentMsgId) return m;
+            const completedAgents = Object.entries(pipelineState.agents)
+              .filter(([, s]) => s.status === 'completed')
+              .map(([key]) => key);
+            const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
+            const checkpoint: PipelineCheckpoint = {
+              originalQuery: text,
+              classifiedIntent: m.thinking?.intent,
+              completedAgents,
+              failedAgent: lastCompletedAgent,
+              partialProspectData: m.prospectData as Record<string, unknown> | undefined,
+              partialIcpData: m.icpData as Record<string, unknown> | undefined,
+              partialScoreData: m.scoreData as Record<string, unknown> | undefined,
+              partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
+              partialMarketData: m.marketData as Record<string, unknown> | undefined,
+              partialInsights: m.insights,
+              pipelinePhase: pipelineState.phase,
+              timestamp: Date.now(),
+            };
+            setActiveCheckpoint(checkpoint);
+            return {
+              ...m,
+              errorState: {
+                message: result.error || 'The agent encountered an error. Please try again.',
+                timestamp: Date.now(),
+                lastCompletedAgent,
+                completedAgents,
+                pipelineCheckpoint: checkpoint,
+              },
+              retryQuery: text,
+            };
+          }));
         }
       } catch {
-        setMessages(prev => [...prev, {
-          id: `error-${Date.now()}`, role: 'assistant',
-          content: "I'm having trouble connecting to the AI service right now. Please try again in a few seconds.",
-          timestamp: new Date(), persona: 'navigator',
-          thinking: { persona: 'navigator', intent: 'converse', reasoning: 'Both stream and chat API failed', plan: ['Error recovery'], confidence: 0.3 },
-        }]);
+        // Both stream and chat failed — update agent message with error info, keep partial data
+        setMessages(prev => prev.map(m => {
+          if (m.id !== agentMsgId) return m;
+          const completedAgents = Object.entries(pipelineState.agents)
+            .filter(([, s]) => s.status === 'completed')
+            .map(([key]) => key);
+          const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
+          const checkpoint: PipelineCheckpoint = {
+            originalQuery: text,
+            classifiedIntent: m.thinking?.intent,
+            completedAgents,
+            failedAgent: lastCompletedAgent,
+            partialProspectData: m.prospectData as Record<string, unknown> | undefined,
+            partialIcpData: m.icpData as Record<string, unknown> | undefined,
+            partialScoreData: m.scoreData as Record<string, unknown> | undefined,
+            partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
+            partialMarketData: m.marketData as Record<string, unknown> | undefined,
+            partialInsights: m.insights,
+            pipelinePhase: pipelineState.phase,
+            timestamp: Date.now(),
+          };
+          setActiveCheckpoint(checkpoint);
+          return {
+            ...m,
+            content: "I'm having trouble connecting to the AI service right now.",
+            errorState: {
+              message: 'Both stream and chat API failed',
+              timestamp: Date.now(),
+              lastCompletedAgent,
+              completedAgents,
+              pipelineCheckpoint: checkpoint,
+            },
+            retryQuery: text,
+            persona: m.persona || 'navigator',
+            thinking: m.thinking || { persona: 'navigator', intent: 'converse', reasoning: 'Both stream and chat API failed', plan: ['Error recovery'], confidence: 0.3 },
+          };
+        }));
       }
     }
 
@@ -1207,7 +1516,14 @@ export function ProspectDiscoveryView() {
         }),
       }).catch(() => { /* Non-critical */ });
     }
-  }, [query, isSearching, messages, context, user, sessionId]);
+  }, [query, isSearching, messages, context, user, sessionId, pipelineState]);
+
+  const handleResumePipeline = useCallback(() => {
+    if (activeCheckpoint) {
+      handleSendMessage(activeCheckpoint.originalQuery, activeCheckpoint);
+      setActiveCheckpoint(null);
+    }
+  }, [activeCheckpoint, handleSendMessage]);
 
   const handleConvertToLead = async (messageId: string, prospect: ProspectResult) => {
     try {
@@ -1391,12 +1707,59 @@ export function ProspectDiscoveryView() {
                           </div>
                         )}
 
+                        {/* Error State with Resume Pipeline */}
+                        {msg.errorState && (
+                          <div className="ml-9 rounded-lg border border-red-500/20 bg-red-500/5 p-4 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle className="h-4 w-4 text-red-400" />
+                              <span className="text-xs font-semibold text-red-400">Pipeline Error</span>
+                            </div>
+                            <p className="text-xs text-red-400/80">{msg.errorState.message}</p>
+                            {(msg.prospectData || (msg.insights && msg.insights.length > 0)) && (
+                              <p className="text-[10px] text-amber-400/70">Some partial data was recovered and is displayed below.</p>
+                            )}
+                            {msg.errorState.pipelineCheckpoint && (
+                              <div className="space-y-2">
+                                <Button
+                                  size="sm"
+                                  className="text-xs h-9 gap-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 hover:border-amber-500/50 font-semibold transition-all"
+                                  onClick={handleResumePipeline}
+                                >
+                                  <Shield className="h-4 w-4" />Resume Pipeline
+                                </Button>
+                                <p className="text-[9px] text-muted-foreground/50">
+                                  Resumes from where the pipeline stopped — skips {msg.errorState.completedAgents?.length || 0} already-completed agent{msg.errorState.completedAgents?.length !== 1 ? 's' : ''}
+                                </p>
+                                <button
+                                  className="text-[10px] text-muted-foreground/40 hover:text-foreground/60 underline underline-offset-2 transition-colors"
+                                  onClick={() => { handleSendMessage(msg.retryQuery); }}
+                                >
+                                  Start Over
+                                </button>
+                              </div>
+                            )}
+                            {!msg.errorState.pipelineCheckpoint && msg.retryQuery && (
+                              <Button
+                                variant="outline"
+                                size="sm"
+                                className="text-[10px] h-7 gap-1.5 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50 transition-colors"
+                                onClick={() => handleSendMessage(msg.retryQuery)}
+                              >
+                                <RefreshCw className="h-3 w-3" />Retry
+                              </Button>
+                            )}
+                          </div>
+                        )}
+
+                        {/* Response Template Card */}
+                        {msg.responseTemplate && <ResponseTemplateCard template={msg.responseTemplate} />}
+
                         {/* Data Cards */}
-                        {msg.prospectData && <ProspectDataCard prospect={msg.prospectData} messageId={msg.id} converted={msg.converted} leadId={msg.leadId} onConvert={handleConvertToLead} onViewLeads={() => setActiveView('leads')} />}
-                        {msg.icpData && <ICPDataCard icp={msg.icpData} />}
-                        {msg.marketData && <MarketDataCard market={msg.marketData} />}
-                        {msg.scoreData && <ScoreDataCard score={msg.scoreData} />}
-                        {msg.outreachData && <OutreachDataCard outreach={msg.outreachData} />}
+                        {msg.prospectData && <ProspectDataCard prospect={msg.prospectData} messageId={msg.id} converted={msg.converted} leadId={msg.leadId} onConvert={handleConvertToLead} onViewLeads={() => setActiveView('leads')} isLive={isSearching && msg.id === messages[messages.length - 1]?.id} />}
+                        {msg.icpData && <ICPDataCard icp={msg.icpData} isLive={isSearching && msg.id === messages[messages.length - 1]?.id} />}
+                        {msg.marketData && <MarketDataCard market={msg.marketData} isLive={isSearching && msg.id === messages[messages.length - 1]?.id} />}
+                        {msg.scoreData && <ScoreDataCard score={msg.scoreData} isLive={isSearching && msg.id === messages[messages.length - 1]?.id} />}
+                        {msg.outreachData && <OutreachDataCard outreach={msg.outreachData} isLive={isSearching && msg.id === messages[messages.length - 1]?.id} />}
                         {msg.insights && msg.insights.length > 0 && <InsightsPanel insights={msg.insights} />}
                         {msg.navigation && msg.navigation.length > 0 && <NavigationButtons suggestions={msg.navigation} onNavigate={handleNavigate} />}
                       </div>

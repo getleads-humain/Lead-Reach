@@ -6,7 +6,7 @@
 import { NextRequest } from 'next/server';
 import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
 import type { OrchestratorEvent, PipelineState } from '@/lib/prospect-agent/orchestrator-types';
-import type { ConversationContext, UserIntent, AgentMessage, SuggestedAction } from '@/lib/prospect-agent/types';
+import type { ConversationContext, UserIntent, AgentMessage, SuggestedAction, PipelineCheckpoint } from '@/lib/prospect-agent/types';
 
 export const maxDuration = 300;
 
@@ -21,7 +21,7 @@ export const maxDuration = 300;
  *   - Each agent's status and work
  */
 export async function POST(request: NextRequest) {
-  let body: { message?: string; context?: ConversationContext; forceIntent?: UserIntent };
+  let body: { message?: string; context?: ConversationContext; forceIntent?: UserIntent; resumeFrom?: PipelineCheckpoint };
   try {
     body = await request.json();
   } catch {
@@ -31,10 +31,11 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { message, context, forceIntent } = body as {
+  const { message, context, forceIntent, resumeFrom } = body as {
     message: string;
     context?: ConversationContext;
     forceIntent?: UserIntent;
+    resumeFrom?: PipelineCheckpoint;
   };
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -141,13 +142,17 @@ export async function POST(request: NextRequest) {
             send('pipeline_progress', event.data);
             break;
 
+          case 'pipeline_resumed':
+            send('pipeline_resumed', event.data);
+            break;
+
           case 'error':
             send('error', event.data);
             break;
         }
       };
 
-      processWithOrchestrator(message.trim(), context, forceIntent, onEvent)
+      processWithOrchestrator(message.trim(), context, forceIntent, onEvent, resumeFrom)
         .then((result) => {
           stopThinkingTimer();
           send('done', {

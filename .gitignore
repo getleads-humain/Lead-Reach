@@ -94,3 +94,7 @@ mini-services/**/*.pyc
 Thumbs.db
 __pycache__/
 *.pyc
+mini-services/gmaps-scraper/.venv/
+mini-services/scraper-service/.venv/
+*.venv/
+vellum-assistant/

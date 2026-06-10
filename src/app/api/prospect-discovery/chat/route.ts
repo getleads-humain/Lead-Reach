@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
-import type { ConversationContext, UserIntent } from '@/lib/prospect-agent/types';
+import type { ConversationContext, UserIntent, PipelineCheckpoint } from '@/lib/prospect-agent/types';
 
 // Set max duration for this API route to 5 minutes (production)
 export const maxDuration = 300;
@@ -21,11 +21,12 @@ export async function POST(request: NextRequest) {
   let requestContext: ConversationContext | undefined;
   try {
     const body = await request.json();
-    const { message, conversationHistory, context, forceIntent } = body as {
+    const { message, conversationHistory, context, forceIntent, resumeFrom } = body as {
       message: string;
       conversationHistory?: Array<{ role: string; content: string }>;
       context?: ConversationContext;
       forceIntent?: UserIntent;
+      resumeFrom?: PipelineCheckpoint;
     };
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
 
     // Process the message through the 8-agent orchestrator pipeline with timeout
     const result = await Promise.race([
-      processWithOrchestrator(message.trim(), context, forceIntent),
+      processWithOrchestrator(message.trim(), context, forceIntent, undefined, resumeFrom),
       new Promise<null>((resolve) =>
         setTimeout(() => {
           console.warn('[AgentChat] Pipeline timed out after 3min — returning partial response');

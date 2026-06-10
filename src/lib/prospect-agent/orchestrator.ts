@@ -45,6 +45,7 @@ import type {
   InsightItem,
   NavigationSuggestion,
   ViewType,
+  PipelineCheckpoint,
 } from './types';
 import { classifyIntent, intentToThinking, type IntentClassification } from './intents';
 import {
@@ -150,6 +151,7 @@ export async function processWithOrchestrator(
   context?: ConversationContext,
   forceIntent?: UserIntent,
   onEvent?: OrchestratorCallback,
+  resumeFrom?: PipelineCheckpoint,
 ): Promise<{
   message: AgentMessage;
   updatedContext: ConversationContext;
@@ -160,7 +162,7 @@ export async function processWithOrchestrator(
   const startTime = Date.now();
 
   try {
-    return await processWithOrchestratorInner(userMessage, context, forceIntent, pipelineState, startTime, onEvent);
+    return await processWithOrchestratorInner(userMessage, context, forceIntent, pipelineState, startTime, onEvent, resumeFrom);
   } catch (error) {
     console.error('[Orchestrator] FATAL:', error);
 
@@ -354,6 +356,7 @@ async function processWithOrchestratorInner(
   pipelineState: PipelineState,
   startTime: number,
   onEvent?: OrchestratorCallback,
+  resumeFrom?: PipelineCheckpoint,
 ): Promise<{
   message: AgentMessage;
   updatedContext: ConversationContext;
@@ -366,27 +369,14 @@ async function processWithOrchestratorInner(
   };
 
   // ═══════════════════════════════════════════════════
-  // PHASE 1: THINK — Atlas classifies intent
+  // RESUME PATH: If a checkpoint is provided, skip
+  // the thinking phase and resume from the failed agent.
   // ═══════════════════════════════════════════════════
-  pipelineState.phase = 'thinking';
-  pipelineState.thinkStartTime = Date.now();
-  emit(onEvent, { type: 'thinking_start', data: { timestamp: pipelineState.thinkStartTime } });
-  emit(onEvent, { type: 'pipeline_progress', data: { phase: 'thinking', overallProgress: 5 } });
-
-  // Update Atlas status (use 'atlas' as the 8-agent key)
-  updateAgentState(pipelineState, 'atlas', {
-    status: 'thinking',
-    currentStep: 'Classifying intent',
-    progress: 0,
-    startedAt: Date.now(),
-  }, onEvent);
-
-  sendCommMsg(pipelineState, 'user', 'atlas', 'request',
-    `Classify this query: "${userMessage.slice(0, 100)}"`, undefined, onEvent);
-
-  // Run intent classification
   let classification: IntentClassification;
-  if (forceIntent) {
+  let thinking: AgentThinking;
+
+  if (resumeFrom && resumeFrom.classifiedIntent) {
+    // Skip thinking — intent is already known from checkpoint
     const personas: Record<UserIntent, AgentPersona> = {
       research_company: 'scout', research_person: 'hound', research_url: 'scout',
       analyze_market: 'analyst', analyze_competitors: 'analyst', build_icp: 'architect',
@@ -394,40 +384,100 @@ async function processWithOrchestratorInner(
       add_to_pipeline: 'navigator', clarify: 'navigator', converse: 'navigator',
     };
     classification = {
-      intent: forceIntent,
-      persona: personas[forceIntent],
+      intent: resumeFrom.classifiedIntent,
+      persona: personas[resumeFrom.classifiedIntent],
       confidence: 1.0,
-      reasoning: 'Intent was explicitly specified',
+      reasoning: 'Resumed from checkpoint — intent already classified',
       extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
       clarifyingQuestion: null,
     };
+    thinking = intentToThinking(classification);
+
+    // Mark already-completed agents in pipeline state
+    for (const completedAgent of resumeFrom.completedAgents) {
+      updateAgentState(pipelineState, completedAgent, {
+        status: 'completed',
+        currentStep: `Completed before resume`,
+        progress: 100,
+        completedAt: Date.now(),
+      }, onEvent);
+    }
+
+    // Emit pipeline_resumed event
+    emit(onEvent, { type: 'pipeline_resumed', data: {
+      resumedFrom: resumeFrom.failedAgent || 'unknown',
+      completedAgents: resumeFrom.completedAgents,
+      failedAgent: resumeFrom.failedAgent,
+    }});
+
+    sendCommMsg(pipelineState, 'atlas', 'all', 'broadcast',
+      `Pipeline resumed from checkpoint. Skipping ${resumeFrom.completedAgents.length} completed agents. Resuming from ${resumeFrom.failedAgent || 'next agent'}...`,
+      { completedAgents: resumeFrom.completedAgents, failedAgent: resumeFrom.failedAgent },
+      onEvent);
+
+    console.log(`[Orchestrator] Resuming from checkpoint: completed=[${resumeFrom.completedAgents.join(',')}], failed=${resumeFrom.failedAgent}`);
   } else {
-    classification = await classifyIntent(userMessage, context);
+    // ═══════════════════════════════════════════════════
+    // PHASE 1: THINK — Atlas classifies intent
+    // ═══════════════════════════════════════════════════
+    pipelineState.phase = 'thinking';
+    pipelineState.thinkStartTime = Date.now();
+    emit(onEvent, { type: 'thinking_start', data: { timestamp: pipelineState.thinkStartTime } });
+    emit(onEvent, { type: 'pipeline_progress', data: { phase: 'thinking', overallProgress: 5 } });
+
+    // Update Atlas status (use 'atlas' as the 8-agent key)
+    updateAgentState(pipelineState, 'atlas', {
+      status: 'thinking',
+      currentStep: 'Classifying intent',
+      progress: 0,
+      startedAt: Date.now(),
+    }, onEvent);
+
+    sendCommMsg(pipelineState, 'user', 'atlas', 'request',
+      `Classify this query: "${userMessage.slice(0, 100)}"`, undefined, onEvent);
+
+    // Run intent classification
+    if (forceIntent) {
+      const personas: Record<UserIntent, AgentPersona> = {
+        research_company: 'scout', research_person: 'hound', research_url: 'scout',
+        analyze_market: 'analyst', analyze_competitors: 'analyst', build_icp: 'architect',
+        score_lead: 'judge', compose_outreach: 'scribe', refine_search: 'scout',
+        add_to_pipeline: 'navigator', clarify: 'navigator', converse: 'navigator',
+      };
+      classification = {
+        intent: forceIntent,
+        persona: personas[forceIntent],
+        confidence: 1.0,
+        reasoning: 'Intent was explicitly specified',
+        extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+        clarifyingQuestion: null,
+      };
+    } else {
+      classification = await classifyIntent(userMessage, context);
+    }
+
+    thinking = intentToThinking(classification);
+
+    // End thinking phase
+    const thinkEndTime = Date.now();
+    pipelineState.totalThinkTimeMs = thinkEndTime - (pipelineState.thinkStartTime || startTime);
+
+    // Update Atlas status to completed
+    updateAgentState(pipelineState, 'atlas', {
+      status: 'completed',
+      currentStep: `Intent: ${classification.intent} (${Math.round(classification.confidence * 100)}% confidence)`,
+      progress: 100,
+      completedAt: Date.now(),
+      thinkTimeMs: pipelineState.totalThinkTimeMs,
+    }, onEvent);
+
+    sendCommMsg(pipelineState, 'atlas', 'all', 'broadcast',
+      `Query classified as **${classification.intent}** with ${Math.round(classification.confidence * 100)}% confidence. Activating pipeline...`,
+      { intent: classification.intent, confidence: classification.confidence, persona: classification.persona },
+      onEvent);
+
+    emit(onEvent, { type: 'thinking_end', data: { totalMs: pipelineState.totalThinkTimeMs, classification } });
   }
-
-  const thinking: AgentThinking = intentToThinking(classification);
-
-  // End thinking phase
-  const thinkEndTime = Date.now();
-  pipelineState.totalThinkTimeMs = thinkEndTime - (pipelineState.thinkStartTime || startTime);
-
-  // Update Atlas status to completed
-  updateAgentState(pipelineState, 'atlas', {
-    status: 'completed',
-    currentStep: `Intent: ${classification.intent} (${Math.round(classification.confidence * 100)}% confidence)`,
-    progress: 100,
-    completedAt: Date.now(),
-    thinkTimeMs: pipelineState.totalThinkTimeMs,
-  }, onEvent);
-
-  sendCommMsg(pipelineState, 'atlas', 'all', 'broadcast',
-    `Query classified as **${classification.intent}** with ${Math.round(classification.confidence * 100)}% confidence. Activating pipeline...`,
-    { intent: classification.intent, confidence: classification.confidence, persona: classification.persona },
-    onEvent);
-
-  emit(onEvent, { type: 'thinking_end', data: { totalMs: pipelineState.totalThinkTimeMs, classification } });
-  // Note: 'thinking' event is not in OrchestratorEvent union — the thinking data
-  // is carried by the 'thinking_end' event's classification field instead.
 
   // ═══════════════════════════════════════════════════
   // FAST PATH: For converse/clarify intents, skip the full
@@ -509,6 +559,19 @@ async function processWithOrchestratorInner(
   let scoreData: ScoreResult | undefined;
   let responseContent = '';
 
+  // Initialize partial data from checkpoint if resuming
+  if (resumeFrom) {
+    if (resumeFrom.partialProspectData) prospectData = resumeFrom.partialProspectData as unknown as ProspectResult;
+    if (resumeFrom.partialIcpData) icpData = resumeFrom.partialIcpData as unknown as ICPResult;
+    if (resumeFrom.partialScoreData) scoreData = resumeFrom.partialScoreData as unknown as ScoreResult;
+    if (resumeFrom.partialOutreachData) outreachData = resumeFrom.partialOutreachData as unknown as OutreachResult;
+    if (resumeFrom.partialMarketData) marketData = resumeFrom.partialMarketData as unknown as MarketResult;
+    // Also restore context from partial data
+    if (prospectData) {
+      updatedContext.recentProspects = [...updatedContext.recentProspects, prospectData];
+    }
+  }
+
   // Create a progress callback that bridges to the orchestrator events
   const bridgeProgress: ProgressCallback = (event: string, data: unknown) => {
     if (event === 'step_start') {
@@ -534,6 +597,19 @@ async function processWithOrchestratorInner(
   // Execute each relevant phase
   for (const phase of relevantPhases) {
     const agentKey = phase.agent; // 8-agent display name (atlas, scout, forge, etc.)
+
+    // ═══ SKIP COMPLETED AGENTS ON RESUME ═══
+    // If resuming from a checkpoint, skip agents that already completed
+    if (resumeFrom && resumeFrom.completedAgents.includes(phase.agent)) {
+      updateAgentState(pipelineState, agentKey, {
+        status: 'completed',
+        currentStep: `${phase.action} (completed before)`,
+        progress: 100,
+        completedAt: Date.now(),
+      }, onEvent);
+      stepIdx++;
+      continue;
+    }
 
     // ═══ REDUCED COOLDOWN ═══
     // Cooldown between agent phases to respect rate limit (concurrency=1).
@@ -778,7 +854,7 @@ async function processWithOrchestratorInner(
           break;
 
         case 'flow':
-          // Flow: Pipeline management (ICP building, add to pipeline)
+          // Flow: Pipeline management — saves session context and manages pipeline state
           if (classification.intent === 'build_icp') {
             const result = await executeICPBuilding(userMessage, updatedContext.activeICP);
             actions = [...actions, ...result.steps];
@@ -791,24 +867,58 @@ async function processWithOrchestratorInner(
             const recentProspect = updatedContext.recentProspects[updatedContext.recentProspects.length - 1];
             const name = recentProspect?.companyName || recentProspect?.personName || 'this prospect';
             responseContent = `Click the "Add to Leads" button below to add ${name} to your lead pipeline.`;
+          } else {
+            // Flow manages pipeline context for all other intents
+            const prospectCount = updatedContext.recentProspects.length;
+            const hasICP = !!updatedContext.activeICP;
+            const hasScoredLeads = updatedContext.recentProspects.some(p => (p as unknown as Record<string, unknown>).leadScore !== undefined);
+            let flowMsg = `Pipeline context: ${prospectCount} prospect(s) discovered`;
+            if (hasICP) flowMsg += `, ICP active`;
+            if (hasScoredLeads) flowMsg += `, leads scored`;
+            flowMsg += '. ';
+            if (prospectCount > 0 && !hasICP) {
+              flowMsg += 'Suggest building an ICP to improve qualification.';
+            } else if (hasScoredLeads) {
+              flowMsg += 'Recommend composing outreach for scored leads.';
+            } else if (prospectCount > 0) {
+              flowMsg += 'Recommend scoring prospects against ICP.';
+            }
+            sendCommMsg(pipelineState, 'flow', 'atlas', 'response', flowMsg, undefined, onEvent);
           }
           break;
 
         case 'echo':
-          // Echo: Insights and reporting — always runs at the end
-          // NOTE: Skipped autoCurateICP LLM call for research queries — it's
-          // non-critical and slow. Instead, just include existing ICP if available.
-          // The ICP can be built explicitly via the "Build ICP" intent.
-          if (!icpData && updatedContext.activeICP) {
-            icpData = updatedContext.activeICP;
-            sendCommMsg(pipelineState, 'echo', 'atlas', 'response',
-              `Included existing ICP: ${updatedContext.activeICP.name}`, undefined, onEvent);
-          } else if (icpData) {
-            sendCommMsg(pipelineState, 'echo', 'atlas', 'response',
-              'Insights and ICP data compiled', undefined, onEvent);
-          } else {
-            sendCommMsg(pipelineState, 'echo', 'atlas', 'response',
-              'Insights compiled (no ICP to include)', undefined, onEvent);
+          // Echo: Insights and reporting — compiles final insights from all agents
+          {
+            const echoInsights: string[] = [];
+            if (prospectData) {
+              echoInsights.push(`Prospect research completed for ${prospectData.companyName || prospectData.personName || 'target'}`);
+              if (prospectData.employeeCount || prospectData.revenueEstimate) {
+                echoInsights.push(`Firmographics: ${[prospectData.employeeCount ? `${prospectData.employeeCount} employees` : '', prospectData.revenueEstimate ? `~${prospectData.revenueEstimate} revenue` : ''].filter(Boolean).join(', ')}`);
+              }
+            }
+            if (marketData) {
+              echoInsights.push(`Market analysis available with ${marketData.competitors?.length || 0} competitors identified`);
+            }
+            if (scoreData) {
+              echoInsights.push(`Lead scored: ${scoreData.overallScore}/100 (${scoreData.tier || 'unrated'} tier)`);
+            }
+            if (outreachData) {
+              echoInsights.push(`Outreach message composed`);
+            }
+            if (icpData) {
+              echoInsights.push(`ICP profile: ${icpData.name || 'Active ICP'}`);
+            } else if (updatedContext.activeICP) {
+              icpData = updatedContext.activeICP;
+              echoInsights.push(`Existing ICP included: ${updatedContext.activeICP.name || 'Active ICP'}`);
+            }
+
+            if (echoInsights.length > 0) {
+              const echoReport = echoInsights.join('. ') + '.';
+              sendCommMsg(pipelineState, 'echo', 'atlas', 'response', echoReport, undefined, onEvent);
+            } else {
+              sendCommMsg(pipelineState, 'echo', 'atlas', 'response', 'Pipeline completed. No structured data to report — try researching a specific company or person.', undefined, onEvent);
+            }
           }
           break;
       }

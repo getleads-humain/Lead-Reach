@@ -737,3 +737,195 @@ model DiscoveryMessage {
   // Relations
   session     DiscoverySession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 }
+
+// ============================================================
+// Vellum Core — MCP Server Configurations
+// ============================================================
+
+model McpServerConfig {
+  id          String   @id @default(cuid())
+  
+  // Identity
+  name        String
+  serverId    String   @unique  // Unique identifier for MCP server lookup
+  
+  // Transport configuration (JSON)
+  // Supported types: stdio, sse, streamable-http
+  // Format: { type: "sse", url: "...", headers?: {...} }
+  transport   String   // JSON: McpTransport configuration
+  
+  // Server settings
+  enabled     Boolean  @default(true)
+  defaultRiskLevel String @default("medium") // low, medium, high
+  maxTools    Int      @default(50)
+  allowedTools String? // JSON array of allowed tool names
+  blockedTools String? // JSON array of blocked tool names
+  
+  // Connection state
+  connectionState String @default("disconnected") // disconnected, connecting, connected, error
+  lastError       String?
+  toolCount       Int    @default(0)
+  lastHealthCheck DateTime?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+// ============================================================
+// Vellum Core — Memory System
+// ============================================================
+
+model VellumMemoryNode {
+  id                String   @id @default(cuid())
+  content           String
+  type              String   // episodic, semantic, procedural, emotional, prospective, behavioral, narrative
+  fidelity          String   @default("vivid") // vivid, dim, fading, gone
+  confidence        Float    @default(0.8)
+  significance      Float    @default(0.5)
+  stability         Float    @default(0.0)
+  emotionalCharge   String?  // JSON
+  sourceConversations String? // JSON array
+  sourceType        String   @default("direct")
+  narrativeRole     String?
+  scopeId           String   // per-user isolation
+  scopeType         String   @default("user") // user, team, org
+  lastAccessedAt    DateTime @default(now())
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  sourceEdges       VellumMemoryEdge[] @relation("SourceEdges")
+  targetEdges       VellumMemoryEdge[] @relation("TargetEdges")
+  triggers          VellumMemoryTrigger[]
+}
+
+model VellumMemoryEdge {
+  id           String   @id @default(cuid())
+  sourceId     String
+  targetId     String
+  relationship String   // caused-by, reminds-of, contradicts, depends-on, part-of, supersedes, resolved-by
+  weight       Float    @default(1.0)
+  scopeId      String
+  createdAt    DateTime @default(now())
+  source       VellumMemoryNode @relation("SourceEdges", fields: [sourceId], references: [id], onDelete: Cascade)
+  target       VellumMemoryNode @relation("TargetEdges", fields: [targetId], references: [id], onDelete: Cascade)
+}
+
+model VellumMemoryTrigger {
+  id        String   @id @default(cuid())
+  nodeId    String
+  type      String   // temporal, semantic, event
+  condition String   // JSON
+  scopeId   String
+  createdAt DateTime @default(now())
+  node      VellumMemoryNode @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Vellum Core — Proactivity System
+// ============================================================
+
+model VellumSchedule {
+  id                  String   @id @default(cuid())
+  name                String
+  mode                String   // notify, script, wake, execute
+  enabled             Boolean  @default(true)
+  cron                String?
+  timezone            String   @default("UTC")
+  activeHoursStart    Int      @default(8)
+  activeHoursEnd      Int      @default(22)
+  maxConsecutiveRuns  Int      @default(3)
+  maxDailyRuns        Int      @default(2)
+  maxRetries          Int      @default(3)
+  retryBackoffMs      Int      @default(5000)
+  prompt              String?
+  scopeId             String
+  conversationId      String?
+  lastRunAt           DateTime?
+  nextRunAt           DateTime?
+  runCount            Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+}
+
+model VellumFollowUp {
+  id             String   @id @default(cuid())
+  title          String
+  description    String?
+  dueAt          DateTime?
+  channelId      String?
+  conversationId String?
+  scopeId        String
+  status         String   @default("pending") // pending, completed, overdue, cancelled
+  createdAt      DateTime @default(now())
+  completedAt    DateTime?
+}
+
+model VellumSequence {
+  id           String   @id @default(cuid())
+  name         String
+  steps        String   // JSON array of SequenceStep
+  enrolledCount Int     @default(0)
+  scopeId      String
+  status       String   @default("active") // active, paused, completed
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+// ============================================================
+// Vellum Core — Sessions
+// ============================================================
+
+model VellumSession {
+  id             String   @id @default(cuid())
+  title          String?
+  scopeId        String
+  context        String?  // JSON
+  agentStates    String?  // JSON - per-agent state
+  pipelineState  String?  // JSON
+  memoryScopeId  String?
+  activeSkills   String?  // JSON array
+  status         String   @default("active") // active, completed, archived
+  messageCount   Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+  messages       VellumMessage[]
+}
+
+model VellumMessage {
+  id            String   @id @default(cuid())
+  sessionId     String
+  role          String   // user, assistant, system, agent
+  content       String
+  agentName     String?  // Which agent produced this
+  agentPersona  String?
+  thinking      String?  // Thinking content
+  thinkingTimeMs Int?
+  intent        String?
+  actions       String?  // JSON
+  toolCalls     String?  // JSON
+  toolResults   String?  // JSON
+  memoryUsed    Boolean  @default(false)
+  metadata      String?  // JSON
+  createdAt     DateTime @default(now())
+  session       VellumSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+}
+
+// ============================================================
+// Vellum Core — MCP Servers
+// ============================================================
+
+model VellumMcpServer {
+  id          String   @id @default(cuid())
+  name        String
+  transportType String  // stdio, sse, streamable-http
+  transportConfig String // JSON
+  enabled     Boolean  @default(true)
+  defaultRiskLevel String @default("high")
+  maxTools    Int      @default(20)
+  allowedTools String? // JSON array
+  blockedTools String? // JSON array
+  scopeId     String
+  status      String   @default("disconnected") // connected, disconnected, error
+  lastConnectedAt DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

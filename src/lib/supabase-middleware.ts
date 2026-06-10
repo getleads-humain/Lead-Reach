@@ -104,6 +104,7 @@ export async function updateSession(request: NextRequest) {
     '/api/ai-assistant/smart-chat',     // AI smart chat endpoint
     '/api/ai-assistant/save',           // AI save results endpoint
     '/api/identity',                    // Identity profile save/load
+    '/api/vellum/',                     // All Vellum Core API endpoints (chat, memory, skills, pipeline, health, etc.)
   ];
 
   // Static assets and Next.js internals
