@@ -1,4 +1,4 @@
-export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports' | 'setter' | 'booking' | 'messaging' | 'analytics' | 'data-enrichment' | 'prospect-discovery' | 'identity' | 'icp' | 'ai-assistant';
+export type ViewType = 'dashboard' | 'campaigns' | 'leads' | 'agents' | 'outreach' | 'reports' | 'setter' | 'booking' | 'messaging' | 'analytics' | 'data-enrichment' | 'prospect-discovery' | 'identity' | 'icp' | 'ai-assistant' | 'vellum';
 
 export type CampaignStatus = 'active' | 'paused' | 'completed' | 'archived';
 export type LeadTier = 'hot' | 'warm' | 'cold' | 'unqualified';

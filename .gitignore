@@ -97,3 +97,4 @@ __pycache__/
 mini-services/gmaps-scraper/.venv/
 mini-services/scraper-service/.venv/
 *.venv/
+vellum-assistant/

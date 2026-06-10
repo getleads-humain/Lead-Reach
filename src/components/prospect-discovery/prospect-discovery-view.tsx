@@ -50,10 +50,12 @@ import {
   Activity,
   Bot,
   MessagesSquare,
+  Cable,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import { useAuth } from '@/components/auth/auth-provider';
 import { safeFetchJSON } from '@/lib/utils';
+import Link from 'next/link';
 import type {
   AgentPersona,
   AgentMessage,
@@ -1243,12 +1245,25 @@ export function ProspectDiscoveryView() {
             <h2 className="text-2xl font-bold text-foreground flex items-center gap-2">
               <Telescope className="h-6 w-6 text-emerald-400" />
               Prospect Discovery
+              <Badge variant="outline" className="text-[8px] h-5 px-1.5 border-emerald-500/20 text-emerald-400 font-normal gap-1 ml-1">
+                <Cable className="h-2.5 w-2.5" />
+                Vellum Core
+              </Badge>
             </h2>
             <p className="text-sm text-muted-foreground mt-1">
               8-Agent AI pipeline — research, enrich, analyze, qualify, and outreach
             </p>
           </div>
           <div className="flex items-center gap-2">
+            <Link href="/vellum">
+              <Button variant="outline" size="sm"
+                className="text-[10px] gap-1.5 border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 hover:border-emerald-500/30 transition-all"
+              >
+                <Brain className="h-3.5 w-3.5" />
+                <span className="hidden sm:inline">Open in Vellum</span>
+                <span className="sm:hidden">Vellum</span>
+              </Button>
+            </Link>
             <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-secondary/20" title={`AI: ${aiHealth}`}>
               {aiHealth === 'healthy' && <div className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />}
               {aiHealth === 'degraded' && <div className="h-2 w-2 rounded-full bg-amber-400" />}

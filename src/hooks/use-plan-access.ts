@@ -24,7 +24,8 @@ export type ViewType =
   | 'messaging'
   | 'outreach'
   | 'analytics'
-  | 'reports';
+  | 'reports'
+  | 'vellum';
 
 export interface PlanAccessResult {
   /** Whether the user can access the given view */
@@ -57,6 +58,7 @@ const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'e
   'leads': 'free',
   'reports': 'free',
   'campaigns': 'free',
+  'vellum': 'free',
   'outreach': 'standard',
   'data-enrichment': 'standard',
   'agents': 'professional',

@@ -26,6 +26,7 @@ import {
   Lock,
   Crown,
   Sparkles,
+  Brain,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -48,6 +49,7 @@ const navItems: NavItem[] = [
   { view: 'ai-assistant', label: 'Ask AI', icon: Sparkles, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'prospect-discovery', label: 'Prospect Discovery', icon: Telescope, minGrade: 'standard', upgradePlanId: 'scout' },
+  { view: 'vellum', label: 'Vellum AI', icon: Brain, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'icp', label: 'ICP Builder', icon: Crosshair, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'campaigns', label: 'Campaigns', icon: Target, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'leads', label: 'Leads', icon: Users, minGrade: 'standard', upgradePlanId: 'scout' },
