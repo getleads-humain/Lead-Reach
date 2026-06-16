@@ -30,7 +30,15 @@ model Lead {
   id            String   @id @default(cuid())
   campaignId    String
   campaign      Campaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
-  
+
+  // ── Unified Lead Type (company | person | place) ─────────────────────────
+  // Allows the platform to represent multi-type leads: companies, individual
+  // decision-makers (directors, C-suite), and physical places (POIs from OSM
+  // or Google Maps). Legacy leads default to "company" for backward compat.
+  leadType      String   @default("company") // company, person, place
+  // Common display name (company name, full person name, or place name)
+  displayName   String?
+
   // Company Info
   companyName   String
   legalName     String?
@@ -39,39 +47,73 @@ model Lead {
   subIndustry   String?
   sicCode       String?
   naicsCode     String?
-  
+
   // Location
   hqAddress     String?
   city          String?
   stateProvince String?
   country       String?
   postalCode    String?
-  
+  // Geo-coordinates (lat/lng) — populated by Overpass, Google Maps, Geocoder
+  latitude      Float?
+  longitude     Float?
+  // Place classification — "neighborhood", "business district", "commercial strip", etc.
+  placeType     String?
+  // Raw OSM tags (JSON object) — preserved for full fidelity of OSM data
+  osmTags       String?  // JSON object of OSM tags
+
   // Contact Info
   phoneMain     String?
   phoneDirect   String?
   generalEmail  String?
   supportEmail  String?
-  
+
   // Key People
   ceoName       String?
   ceoEmail      String?
   keyContactName  String?
   keyContactTitle String?
   keyContactEmail  String?
-  
+  // ── Person-type lead fields ─────────────────────────────────────────────
+  // Used when leadType = "person". Populated from OpenCorporates directors,
+  // SEC EDGAR DEF 14A officers, or scraped employee directories.
+  personFullName  String?
+  jobTitle      String?
+  currentCompany String?
+  personEmail   String?
+  personPhone   String?
+  linkedinPersonUrl String?
+
   // Firmographics
   employeeCount String?
   revenueEstimate String?
   foundingYear  String?
   ownershipType String?
-  
+  // ── Verified registry fields (OpenCorporates / SEC EDGAR) ───────────────
+  registryJurisdiction String?  // e.g., "us_de", "gb_eng"
+  registryStatus       String?  // active, dissolved, etc.
+  incorporationDate    DateTime?
+  registrySource       String?  // opencorporates, sec_edgar, companies_house
+  // ── Financial KPIs (yfinance / SEC EDGAR) ───────────────────────────────
+  ticker        String?
+  marketCap     String?  // stored as string for arbitrary precision
+  peRatio       Float?
+  revenueTtm    String?
+  sector        String?
+  fiveYearGrowth Float?  // percentage, e.g., 12.5 = 12.5%
+
   // Digital
   linkedinUrl   String?
   twitterHandle String?
   facebookPage  String?
   techStack     String? // JSON array
-  
+
+  // ── Dynamic user-defined KPIs (JSON object) ─────────────────────────────
+  // Arbitrary metrics computed by data source channels (e.g.,
+  // {"distance_to_downtown_km": 2.3, "hiring_score": 7,
+  //  "news_mention_count_30d": 14, "insider_buying_ratio": 0.78})
+  customKpis    String?
+
   // Qualification
   leadScore     Int      @default(0)
   leadTier      String   @default("unqualified") // hot, warm, cold, unqualified
@@ -80,20 +122,20 @@ model Lead {
   reachabilityScore Int @default(0)
   strategicScore Int     @default(0)
   dataCompleteness Int  @default(0)
-  
+
   // Pipeline
   stage         String   @default("new") // new, enriched, qualified, contacted, engaged, negotiating, closed_won, closed_lost, nurture
   lastContactDate DateTime?
   nextFollowUp  DateTime?
   notes         String?
-  
+
   // Discovery
   sources       String?  // JSON array of discovery sources
   discoveredAt  DateTime @default(now())
   enrichedAt    DateTime?
   qualifiedAt   DateTime?
   contactedAt   DateTime?
-  
+
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
   outreach      Outreach[]

@@ -37,6 +37,58 @@ env.NODE_OPTIONS = '--max-old-space-size=768';
 const PID_FILE = path.join(__dirname, '.server-pid');
 const LOG_FILE = '/tmp/leadreach-server.log';
 
+// ── News Worker (Python FastAPI sidecar) ─────────────────────────────────
+//
+// The Newspaper3k Python worker is a separate process running on port 5341.
+// It provides article extraction, news search, and sentiment analysis for
+// the Judge agent. We start it alongside Next.js so the platform has full
+// news-intent enrichment available out of the box.
+//
+// If Python or the worker dependencies aren't installed, this is a no-op —
+// the platform still works, just without news enrichment.
+let newsWorkerProcess = null;
+const NEWS_WORKER_PID_FILE = path.join(__dirname, '.news-worker-pid');
+const NEWS_WORKER_LOG = '/tmp/leadreach-news-worker.log';
+
+function startNewsWorker() {
+  const workerDir = path.join(__dirname, 'python-workers', 'news-worker');
+  const startScript = path.join(workerDir, 'start.sh');
+
+  // Only start if the script exists
+  if (!fs.existsSync(startScript)) {
+    console.log('[daemon] News worker start.sh not found — skipping');
+    return;
+  }
+
+  console.log('[daemon] Starting News Worker (Python sidecar on port 5341)...');
+
+  try {
+    newsWorkerProcess = spawn('bash', [startScript, '--detached'], {
+      cwd: workerDir,
+      env,
+      stdio: ['ignore', fs.openSync(NEWS_WORKER_LOG, 'a'), fs.openSync(NEWS_WORKER_LOG, 'a')],
+      detached: true,
+    });
+
+    if (newsWorkerProcess.pid) {
+      fs.writeFileSync(NEWS_WORKER_PID_FILE, String(newsWorkerProcess.pid));
+      console.log(`[daemon] News Worker PID: ${newsWorkerProcess.pid}`);
+    }
+
+    newsWorkerProcess.on('error', (err) => {
+      console.warn(`[daemon] News Worker failed to start: ${err.message} — continuing without it`);
+    });
+
+    newsWorkerProcess.on('exit', (code) => {
+      console.log(`[daemon] News Worker exited with code=${code}`);
+    });
+
+    newsWorkerProcess.unref();
+  } catch (err) {
+    console.warn(`[daemon] News Worker startup failed: ${err.message} — continuing without it`);
+  }
+}
+
 function startServer() {
   console.log(`[daemon] Starting Next.js server (attempt ${retries + 1}/${MAX_RETRIES})...`);
 
@@ -74,12 +126,17 @@ function startServer() {
 process.on('SIGTERM', () => {
   console.log('[daemon] Received SIGTERM, stopping server...');
   if (serverProcess) serverProcess.kill('SIGTERM');
+  if (newsWorkerProcess) newsWorkerProcess.kill('SIGTERM');
 });
 
 process.on('SIGINT', () => {
   console.log('[daemon] Received SIGINT, stopping server...');
   if (serverProcess) serverProcess.kill('SIGINT');
+  if (newsWorkerProcess) newsWorkerProcess.kill('SIGINT');
 });
+
+// Start the News Worker first (non-blocking — failures are logged but not fatal)
+startNewsWorker();
 
 startServer();
 

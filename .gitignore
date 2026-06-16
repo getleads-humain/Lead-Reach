@@ -98,3 +98,11 @@ mini-services/gmaps-scraper/.venv/
 mini-services/scraper-service/.venv/
 *.venv/
 vellum-assistant/
+
+# ── Phase 1: Data Source Channels ─────────────────────────────────────────
+# Python worker sidecars
+python-workers/*/.venv/
+python-workers/*/*.pid
+python-workers/*/*.log
+python-workers/*/__pycache__/
+.news-worker-pid

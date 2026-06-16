@@ -154,6 +154,17 @@ export interface ProspectResult {
   personBio: string | null;
   sources: string[];
   dataCompleteness: number;
+
+  // ── Phase 1 Data Source Channel fields ─────────────────────────────────
+  // Geo-coordinates (from Overpass, Google Maps, or Geocoder)
+  latitude?: number | null;
+  longitude?: number | null;
+  placeType?: string | null;        // For place-type leads (cafe, restaurant, etc.)
+  // Aggregated KPIs from all data sources (JSON string)
+  // Format: { market_cap_usd: 2800000000000, pe_ratio: 28.5, news_mention_count_30d: 14, ... }
+  customKpis?: string | null;
+  // Detected stock ticker (if company is publicly traded)
+  ticker?: string | null;
 }
 
 /**

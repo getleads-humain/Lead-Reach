@@ -1,0 +1,24 @@
+# News Worker dependencies — Newspaper3k + NLP stack
+# Install with: pip install -r requirements.txt
+# Then: python -m spacy download en_core_web_sm
+
+# Core article extraction
+newspaper3k>=0.2.8
+feedparser>=6.0.10          # for Google News RSS parsing
+
+# Web framework
+fastapi>=0.110.0
+uvicorn[standard]>=0.27.0
+pydantic>=2.5.0
+
+# NLP — sentiment analysis
+vaderSentiment>=3.3.2
+spacy>=3.7.0
+
+# HTTP / parsing
+requests>=2.31.0
+beautifulsoup4>=4.12.0
+lxml>=4.9.0
+
+# Optional: NER for entity extraction (heavier)
+# spacy-transformers>=1.3.0

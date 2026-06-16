@@ -29,6 +29,11 @@ import {
   exaSearch,
   linkedInSearchCompanies,
 } from '@/lib/agent-reach-bridge';
+import {
+  executeChannelEnrichment,
+  refreshNewsIntent,
+  discoverPlaces,
+} from './channel-enrichment';
 import type {
   AgentPersona,
   UserIntent,
@@ -772,6 +777,66 @@ async function processWithOrchestratorInner(
             } catch (e) {
               actions[enrichIdx] = { ...enrichActions, status: 'completed', message: 'Enrichment partially completed' };
             }
+
+            // ── Phase 1 Data Source Channels ──────────────────────────────
+            // Run OpenCorporates, yfinance, SEC EDGAR, News Worker, Geocoder,
+            // and PublicWWW in parallel to enrich the prospect with verified
+            // registry data, financial KPIs, news intent signals, and geo coords.
+            // PublicWWW is skipped here to respect its 60s rate limit — it's
+            // only called explicitly from the Scout phase for tech-stack discovery.
+            if (prospectData && (prospectData.companyName || prospectData.personName)) {
+              try {
+                const channelActions: AgentAction = {
+                  type: 'research_company',
+                  label: 'Data Source Channels',
+                  status: 'running',
+                  message: `Querying OpenCorporates, yfinance, SEC EDGAR, News, Geocoder...`,
+                };
+                actions.push(channelActions);
+                const chIdx = actions.length - 1;
+
+                const channelResult = await executeChannelEnrichment(prospectData, {
+                  onProgress: (label, message, status) => {
+                    if (status === 'running') {
+                      actions[chIdx] = { ...channelActions, status: 'running', message };
+                    } else if (status === 'completed') {
+                      actions[chIdx] = { ...channelActions, status: 'completed', message };
+                    }
+                  },
+                  skipPublicWww: true,  // 60s rate limit — call separately in Scout phase
+                });
+
+                // Replace prospectData with the enriched version
+                prospectData = channelResult.prospect;
+
+                const ocOk = channelResult.channelResults.openCorporates?.success ? '✓' : '✗';
+                const yfOk = channelResult.channelResults.yfinance?.success ? '✓' : '✗';
+                const edOk = channelResult.channelResults.edgar?.success ? '✓' : '✗';
+                const nwOk = channelResult.channelResults.news?.success ? '✓' : '✗';
+                const geOk = channelResult.channelResults.geocoder?.success ? '✓' : '✗';
+
+                actions[chIdx] = {
+                  ...channelActions,
+                  status: 'completed',
+                  message: `Channels: OC:${ocOk} YF:${yfOk} EDGAR:${edOk} News:${nwOk} Geo:${geOk} — ` +
+                           `${channelResult.personLeads.length} person leads, ` +
+                           `${Object.keys(channelResult.customKpis).length} KPIs`,
+                };
+
+                sendCommMsg(pipelineState, 'forge', 'atlas', 'response',
+                  `Channel enrichment: ${Object.keys(channelResult.customKpis).length} KPIs, ` +
+                  `${channelResult.personLeads.length} person leads`,
+                  { kpiCount: Object.keys(channelResult.customKpis).length,
+                    personLeadCount: channelResult.personLeads.length },
+                  onEvent);
+
+                // Recalculate completeness after channel enrichment
+                prospectData.dataCompleteness = calculateQuickCompleteness(prospectData);
+              } catch (e) {
+                // Non-fatal — the pipeline continues with whatever data we have
+                console.warn('[orchestrator] Channel enrichment failed:', e);
+              }
+            }
           }
           break;
 
@@ -807,6 +872,34 @@ async function processWithOrchestratorInner(
               sendCommMsg(pipelineState, 'atlas', 'judge', 'request',
                 `Score ${recentProspect.companyName || recentProspect.personName} against ICP`,
                 { companyName: recentProspect.companyName }, onEvent);
+
+              // Refresh news intent signals right before scoring — this gives the
+              // Judge the freshest possible view of recent news/market activity.
+              try {
+                const targetName = recentProspect.companyName || recentProspect.personName || '';
+                if (targetName) {
+                  const newsRefresh = await refreshNewsIntent(targetName);
+                  if (newsRefresh.intent && newsRefresh.intent.success) {
+                    const kpiKeys = Object.keys(newsRefresh.kpis);
+                    if (kpiKeys.length > 0) {
+                      // Merge fresh news KPIs into prospect's customKpis
+                      const existingKpis = recentProspect.customKpis
+                        ? JSON.parse(recentProspect.customKpis)
+                        : {};
+                      const merged = { ...existingKpis, ...newsRefresh.kpis };
+                      recentProspect.customKpis = JSON.stringify(merged);
+
+                      sendCommMsg(pipelineState, 'judge', 'atlas', 'response',
+                        `Refreshed news intent: ${newsRefresh.intent.mentionCount30d} mentions, ` +
+                        `${kpiKeys.length} signals (sentiment: ${newsRefresh.intent.sentiment.overall})`,
+                        { mentions: newsRefresh.intent.mentionCount30d, sentiment: newsRefresh.intent.sentiment.overall },
+                        onEvent);
+                    }
+                  }
+                }
+              } catch (e) {
+                console.warn('[orchestrator] News refresh in Judge phase failed:', e);
+              }
 
               const result = await executeLeadScoring(recentProspect, updatedContext.activeICP);
               actions = [...actions, ...result.steps];
