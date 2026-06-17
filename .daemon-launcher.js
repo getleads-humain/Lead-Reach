@@ -92,9 +92,13 @@ function startNewsWorker() {
 function startServer() {
   console.log(`[daemon] Starting Next.js server (attempt ${retries + 1}/${MAX_RETRIES})...`);
 
-  const nextBin = path.join(__dirname, 'node_modules', '.bin', 'next');
+  // Use the standalone server build directly — Next.js 16 with `output: standalone`
+  // does not support `next start` and warns + exits if you try. Running the
+  // standalone server.js is the documented production runtime for this config.
+  const standaloneServer = path.join(__dirname, '.next', 'standalone', 'server.js');
+  const nodeBin = process.execPath;
 
-  serverProcess = spawn(nextBin, ['start', '-p', '3000', '-H', '0.0.0.0'], {
+  serverProcess = spawn(nodeBin, [standaloneServer], {
     cwd: __dirname,
     env,
     stdio: ['ignore', fs.openSync(LOG_FILE, 'a'), fs.openSync(LOG_FILE, 'a')],

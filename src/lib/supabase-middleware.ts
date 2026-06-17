@@ -105,6 +105,7 @@ export async function updateSession(request: NextRequest) {
     '/api/ai-assistant/save',           // AI save results endpoint
     '/api/identity',                    // Identity profile save/load
     '/api/vellum/',                     // All Vellum Core API endpoints (chat, memory, skills, pipeline, health, etc.)
+    '/api/data-sources/',               // Phase 1 data source channels (health, discover-places) — read-only, public
   ];
 
   // Static assets and Next.js internals
@@ -114,10 +115,15 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/logo') ||
     pathname.includes('.') && !pathname.startsWith('/api');
 
+  // Routes whose sub-paths should also be public (e.g. /blog/some-post-slug).
+  // Without this, deep links into blog posts redirect to /login because the
+  // exact-match check below only matches the leaf /blog route.
+  const publicPrefixRoutes = ['/blog'];
+
   // Check if the current route is public
   const isPublicRoute = publicRoutes.some(
     (route) => pathname === route || pathname === `${route}/`
-  );
+  ) || publicPrefixRoutes.some((route) => pathname.startsWith(`${route}/`));
   const isPublicApiRoute = publicApiRoutes.some(
     (route) => pathname.startsWith(route)
   );
