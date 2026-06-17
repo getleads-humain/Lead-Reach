@@ -92,6 +92,7 @@ export async function updateSession(request: NextRequest) {
     '/support',
     '/terms',
     '/platform',
+    '/health',           // FC / load-balancer health check (ultra-light, no DB)
   ];
 
   // API routes that should be accessible without auth
@@ -106,6 +107,7 @@ export async function updateSession(request: NextRequest) {
     '/api/identity',                    // Identity profile save/load
     '/api/vellum/',                     // All Vellum Core API endpoints (chat, memory, skills, pipeline, health, etc.)
     '/api/data-sources/',               // Phase 1 data source channels (health, discover-places) — read-only, public
+    '/api/health',                      // Standard API-path health check (ultra-light, no DB)
   ];
 
   // Static assets and Next.js internals

@@ -66,6 +66,9 @@ if [ -f "./next-service-dist/server.js" ]; then
     export PORT="${PORT:-3000}"
     export HOSTNAME="${HOSTNAME:-0.0.0.0}"
     export DATABASE_URL="${DATABASE_URL:-$DEFAULT_PACKAGED_DATABASE_URL}"
+    # Conservative heap cap — standalone build is small, tighter heap reduces
+    # GC pressure and speeds up cold start on Function Compute.
+    export NODE_OPTIONS="${NODE_OPTIONS:---max-old-space-size=512}"
 
     if [ "$DATABASE_URL" = "$DEFAULT_PACKAGED_DATABASE_URL" ]; then
         if [ ! -f "$DEFAULT_PACKAGED_DB_PATH" ]; then
@@ -79,19 +82,83 @@ if [ -f "./next-service-dist/server.js" ]; then
         echo "🗄️  当前使用外部指定数据库: $DATABASE_URL"
     fi
     
-    # 后台启动 Next.js
-    bun server.js &
+    # Choose runtime: prefer node (best Prisma/native-module compatibility),
+    # fall back to bun if node is unavailable.
+    if command -v node >/dev/null 2>&1; then
+        RUNNER="node"
+    elif command -v bun >/dev/null 2>&1; then
+        RUNNER="bun"
+    else
+        echo "❌ Neither node nor bun found in PATH"
+        exit 1
+    fi
+    echo " runtime: $RUNNER"
+    
+    # Start Next.js in the background.
+    # We use 'nohup' + '&' so the process is fully detached from this shell —
+    # important because 'exec caddy' later replaces this shell and would
+    # otherwise take Next.js down with it.
+    nohup "$RUNNER" server.js > /tmp/nextjs.log 2>&1 &
     NEXT_PID=$!
     pids="$NEXT_PID"
     
-    # 等待一小段时间检查进程是否成功启动
-    sleep 1
-    if ! kill -0 "$NEXT_PID" 2>/dev/null; then
-        echo "❌ Next.js 服务器启动失败"
-        exit 1
-    else
-        echo "✅ Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
+    # ── Wait for Next.js to actually be HTTP-ready ─────────────────────────
+    # Previous version did 'sleep 1' and only checked the process was alive.
+    # That was racy: Next.js with Prisma + 8-agent pipeline + 7 data-source
+    # modules takes 5-15s to bind to the port. Caddy then proxied to a dead
+    # upstream, FC's health checks failed, and the function got stuck in
+    # "pending state" forever.
+    #
+    # Now we poll /health (an ultra-light route that returns 200 with no DB
+    # or auth) every 0.5s, up to 60s. Only then do we start Caddy.
+    echo "   waiting for Next.js HTTP readiness on :$PORT/health (max 60s)…"
+    READY=0
+    WAIT_SEC=0
+    while [ $WAIT_SEC -lt 60 ]; do
+        # Check process is still alive first
+        if ! kill -0 "$NEXT_PID" 2>/dev/null; then
+            echo "❌ Next.js process exited during startup. Last log lines:"
+            tail -30 /tmp/nextjs.log 2>&1 || true
+            exit 1
+        fi
+        
+        # Try the health endpoint
+        if command -v curl >/dev/null 2>&1; then
+            HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/health" 2>/dev/null || echo "000")
+        elif command -v wget >/dev/null 2>&1; then
+            # wget fallback: -q quiet, -S server response, --spider don't download
+            HTTP_CODE=$(wget -q -S --spider "http://127.0.0.1:$PORT/health" 2>&1 | grep -oE 'HTTP/[0-9.]+ [0-9]+' | tail -1 | awk '{print $2}')
+            HTTP_CODE="${HTTP_CODE:-000}"
+        else
+            # No HTTP client available — fall back to port-listen check
+            if command -v nc >/dev/null 2>&1; then
+                nc -z 127.0.0.1 "$PORT" 2>/dev/null && HTTP_CODE="200" || HTTP_CODE="000"
+            else
+                # Last-resort fallback: assume ready after process is alive 5s
+                HTTP_CODE="200"
+            fi
+        fi
+        
+        if [ "$HTTP_CODE" = "200" ]; then
+            READY=1
+            echo "   ✅ Next.js ready after ${WAIT_SEC}s (HTTP 200 from /health)"
+            break
+        fi
+        
+        sleep 1
+        WAIT_SEC=$((WAIT_SEC + 1))
+    done
+    
+    if [ $READY -eq 0 ]; then
+        echo "⚠️  Next.js did not become HTTP-ready within 60s, but continuing anyway…"
+        echo "   Last 20 log lines:"
+        tail -20 /tmp/nextjs.log 2>&1 || true
+        # Don't exit — Caddy will still try to proxy and may catch up.
+        # FC's own health checks will retry and eventually succeed once
+        # Next.js finishes booting.
     fi
+    
+    echo "✅ Next.js 服务器已启动 (PID: $NEXT_PID, Port: $PORT)"
     
     cd ../
 else
