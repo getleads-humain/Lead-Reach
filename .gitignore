@@ -106,3 +106,4 @@ python-workers/*/*.pid
 python-workers/*/*.log
 python-workers/*/__pycache__/
 .news-worker-pid
+.server-pid
