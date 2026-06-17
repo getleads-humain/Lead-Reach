@@ -1,16 +1,29 @@
 #!/bin/bash
 # LeadReach — stable production launcher
 # ---------------------------------------
-# Uses setsid + nohup + full I/O redirection to fully detach the Next.js
-# standalone server from the launching shell. This ensures the server keeps
-# running even after the parent shell session exits (which is important in
-# IM/preview environments where each tool call runs in a fresh shell).
+# Builds (if needed) and runs the Next.js standalone production server with
+# full detachment so it survives the parent shell exiting.
 #
-# The server is run with a conservative 384MB heap cap — the standalone
-# build is small and a tighter heap reduces GC pressure on shared hosts.
+# IMPORTANT: We must use `npm run build` (NOT `npx next build`) because the
+# project's build script does two critical post-build copies that Next.js
+# itself does NOT do automatically:
+#   1. cp -r .next/static .next/standalone/.next/
+#   2. cp -r public .next/standalone/
+# Without step 2, the standalone server has no access to /public/blog/*.png,
+# /public/logo.png, etc. — every image on the site returns HTTP 404 even
+# though the files exist on disk in the source tree.
+#
+# This script can take an optional argument:
+#   --no-build   Skip the build step (use the existing .next/standalone/)
+#   --build      Force a fresh build (default behavior)
 
 set -e
 cd /home/z/my-project
+
+DO_BUILD=1
+if [ "$1" = "--no-build" ]; then
+  DO_BUILD=0
+fi
 
 # Kill any existing instances
 pkill -9 -f "next-server" 2>/dev/null || true
@@ -21,6 +34,28 @@ sleep 1
 set -a
 source .env 2>/dev/null || true
 set +a
+
+# Build (uses the project's build script which copies public/ and .next/static/)
+if [ "$DO_BUILD" -eq 1 ]; then
+  echo "[run-stable] Building (npm run build)…"
+  npm run build > /tmp/leadreach-build.log 2>&1 || {
+    echo "[run-stable] BUILD FAILED — tail of build log:"
+    tail -40 /tmp/leadreach-build.log
+    exit 1
+  }
+  echo "[run-stable] Build complete."
+fi
+
+# Verify standalone has public/ (the build script should have copied it)
+if [ ! -d .next/standalone/public ]; then
+  echo "[run-stable] WARN: .next/standalone/public missing — copying manually"
+  cp -r public .next/standalone/
+fi
+if [ ! -d .next/standalone/.next/static ]; then
+  echo "[run-stable] WARN: .next/standalone/.next/static missing — copying manually"
+  mkdir -p .next/standalone/.next
+  cp -r .next/static .next/standalone/.next/
+fi
 
 export NODE_ENV=production
 export HOSTNAME=0.0.0.0
