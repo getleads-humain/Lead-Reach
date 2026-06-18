@@ -1,4 +1,5 @@
 #!/bin/sh
+# Build cache marker: c783cb4-v2 (forces FC to rebuild container, not reuse cache)
 
 set -e
 
