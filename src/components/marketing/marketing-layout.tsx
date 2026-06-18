@@ -24,6 +24,7 @@ function OrcidIcon({ className }: { className?: string }) {
 const NAV_LINKS = [
   { href: '/#features', label: 'Features' },
   { href: '/agent', label: 'Agents' },
+  { href: '/ai-hub', label: 'AI Hub' },
   { href: '/blog', label: 'Blog' },
   { href: '/faq', label: 'FAQ' },
 ];
@@ -143,6 +144,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
               <ul className="mt-4 space-y-2.5">
                 <li><Link href="/#features" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Features</Link></li>
                 <li><Link href="/agent" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Agents</Link></li>
+                <li><Link href="/ai-hub" className="text-xs text-muted-foreground hover:text-foreground transition-colors">AI Hub</Link></li>
                 <li><Link href="/pricing" className="text-xs text-muted-foreground hover:text-foreground transition-colors">Pricing</Link></li>
                 <li><Link href="/api-docs" className="text-xs text-muted-foreground hover:text-foreground transition-colors">API</Link></li>
               </ul>

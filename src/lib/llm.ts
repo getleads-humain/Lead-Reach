@@ -3,14 +3,17 @@
  *
  * Uses Zhipu AI's GLM models via JWT-authenticated HTTP API.
  *
- * Model Configuration (as of 2025-06):
- *   - glm-4.6v-flash  (PRIMARY — currently active, reasoning-capable)
- *   - glm-4.7-flash   (SECONDARY — may be rate-limited on free tier)
+ * Model Configuration (as of 2026-06):
+ *   - glm-4.6  (PRIMARY — reasoning-capable, current Z.AI model)
+ *   - glm-4.5  (SECONDARY — cheaper/faster fallback)
+ *
+ * Note: Z.AI deprecated the old "-flash" suffix names (glm-4.6v-flash,
+ * glm-4.7-flash) in late 2025. Current names drop the suffix.
  *
  * IMPORTANT DESIGN NOTES:
  * 1. Zhipu AI requires JWT authentication. The API key format is
  *    `{id}.{secret}`, converted to a JWT token by zhipu-jwt.ts.
- * 2. GLM reasoning models (4.6v-flash, 4.7-flash) use the `thinking`
+ * 2. GLM reasoning models (4.6, 4.7) use the `thinking`
  *    parameter. With `thinking: {type: "enabled", budget_tokens: N}`,
  *    the model separates reasoning (in `reasoning_content`) from the
  *    clean answer (in `content`). With `thinking: {type: "disabled"}`,
@@ -27,16 +30,17 @@ import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from 
 // ============================================================
 
 /**
- * Primary model — currently glm-4.6v-flash (reasoning-capable, confirmed working).
- * This model properly separates reasoning from content when thinking is enabled.
+ * Primary model — glm-4.6 (reasoning-capable, currently active on Z.AI).
+ * Note: Z.AI deprecated the old "-flash" suffix model names (glm-4.6v-flash, glm-4.7-flash)
+ * in late 2025. The current naming convention drops the suffix entirely.
  */
-export const MODEL_PRIMARY = 'glm-4.6v-flash' as const;
+export const MODEL_PRIMARY = 'glm-4.6' as const;
 
 /**
- * Secondary/fallback model — glm-4.7-flash.
+ * Secondary/fallback model — glm-4.5 (cheaper, faster, good for simple tasks).
  * May be rate-limited on the free tier; skipped quickly on 429.
  */
-export const MODEL_FALLBACK = 'glm-4.7-flash' as const;
+export const MODEL_FALLBACK = 'glm-4.5' as const;
 
 /** Legacy alias for MODEL_FALLBACK (used by some importers) */
 export const MODEL_VISION = MODEL_PRIMARY;

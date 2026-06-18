@@ -93,6 +93,7 @@ export async function updateSession(request: NextRequest) {
     '/terms',
     '/platform',
     '/health',           // FC / load-balancer health check (ultra-light, no DB)
+    '/ai-hub',           // AI Activation Hub — surface every AI feature
   ];
 
   // API routes that should be accessible without auth
@@ -108,6 +109,21 @@ export async function updateSession(request: NextRequest) {
     '/api/vellum/',                     // All Vellum Core API endpoints (chat, memory, skills, pipeline, health, etc.)
     '/api/data-sources/',               // Phase 1 data source channels (health, discover-places) — read-only, public
     '/api/health',                      // Standard API-path health check (ultra-light, no DB)
+    '/api/ai-activate',                 // AI Activation Hub — unified AI feature endpoint (24 capabilities across 14 domains)
+    '/api/leads/ai-',                   // Per-domain AI routes (lead scoring, enrichment, next-action)
+    '/api/emails/ai-',                  // (compose, reply, optimize-subject)
+    '/api/messaging/ai-',               // (suggest-reply, summarize)
+    '/api/setters/ai-',                 // (coach, qualifying-rules)
+    '/api/campaigns/ai-',               // (generate, optimize)
+    '/api/reports/ai-',                 // (summary)
+    '/api/analytics/ai-',               // (annotate, forecast)
+    '/api/outreach/ai-',                // (sequence)
+    '/api/abm/ai-',                     // (score)
+    '/api/bookings/ai-',                // (brief)
+    '/api/settings/ai-',                // (recommend)
+    '/api/billing/ai-',                 // (analyze)
+    '/api/pipeline/ai-',                // (analyze)
+    '/api/icp/ai-',                     // (refine)
   ];
 
   // Static assets and Next.js internals
