@@ -1,0 +1,1039 @@
+     1→'use client';
+     2→
+     3→/**
+     4→ * LeadReach — User Settings Page
+     5→ * ================================
+     6→ * Profile management, notification preferences, plan info, and account settings
+     7→ * with comprehensive billing management UI.
+     8→ */
+     9→
+    10→import React, { useState, useEffect, useCallback, Suspense } from 'react';
+    11→import { useRouter, useSearchParams } from 'next/navigation';
+    12→import { useAuth } from '@/components/auth/auth-provider';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Input } from '@/components/ui/input';
+    15→import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+    16→import { Label } from '@/components/ui/label';
+    17→import { Badge } from '@/components/ui/badge';
+    18→import { Separator } from '@/components/ui/separator';
+    19→import { Switch } from '@/components/ui/switch';
+    20→import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+    21→import { Progress } from '@/components/ui/progress';
+    22→import {
+    23→  ArrowLeft,
+    24→  User,
+    25→  Building2,
+    26→  Bell,
+    27→  Shield,
+    28→  Crown,
+    29→  Save,
+    30→  Zap,
+    31→  CheckCircle2,
+    32→  Loader2,
+    33→  CreditCard,
+    34→  FileText,
+    35→  Calendar,
+    36→  ExternalLink,
+    37→  Sparkles,
+    38→  Target,
+    39→  Rocket,
+    40→  ChevronRight,
+    41→  Clock,
+    42→  TrendingUp,
+    43→} from 'lucide-react';
+    44→import Link from 'next/link';
+    45→import { INDUSTRIES, COMPANY_SIZES } from '@/lib/types';
+    46→import { PLANS, getPlanById, getFeatureAccess } from '@/lib/plans';
+    47→import { toast } from 'sonner';
+    48→
+    49→type BillingCycle = 'monthly' | 'annual';
+    50→
+    51→export default function SettingsPage() {
+    52→  return (
+    53→    <Suspense fallback={
+    54→      <div className="min-h-screen flex items-center justify-center bg-background">
+    55→        <Loader2 className="h-6 w-6 animate-spin text-emerald-400" />
+    56→      </div>
+    57→    }>
+    58→      <SettingsContentInner />
+    59→    </Suspense>
+    60→  );
+    61→}
+    62→
+    63→function SettingsContentInner() {
+    64→  const router = useRouter();
+    65→  const searchParams = useSearchParams();
+    66→  const { user, profile, updateProfile, signOut, loading: authLoading } = useAuth();
+    67→  const [saving, setSaving] = useState(false);
+    68→  const [saved, setSaved] = useState(false);
+    69→
+    70→  // Billing state
+    71→  const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
+    72→  const [checkoutLoading, setCheckoutLoading] = useState<string | null>(null);
+    73→  const [portalLoading, setPortalLoading] = useState(false);
+    74→  // Profile form state
+    75→  const [fullName, setFullName] = useState('');
+    76→  const [jobTitle, setJobTitle] = useState('');
+    77→  const [phone, setPhone] = useState('');
+    78→  const [companyName, setCompanyName] = useState('');
+    79→  const [industry, setIndustry] = useState('');
+    80→  const [companySize, setCompanySize] = useState('');
+    81→  const [website, setWebsite] = useState('');
+    82→  const [location, setLocation] = useState('');
+    83→  const [bio, setBio] = useState('');
+    84→
+    85→  // Notification settings — persisted to localStorage
+    86→  const [emailNotifications, setEmailNotifications] = useState(() => {
+    87→    if (typeof window !== 'undefined') {
+    88→      const saved = localStorage.getItem('leadreach-notifications-email');
+    89→      return saved !== null ? saved === 'true' : true;
+    90→    }
+    91→    return true;
+    92→  });
+    93→  const [pushNotifications, setPushNotifications] = useState(() => {
+    94→    if (typeof window !== 'undefined') {
+    95→      const saved = localStorage.getItem('leadreach-notifications-push');
+    96→      return saved !== null ? saved === 'true' : true;
+    97→    }
+    98→    return true;
+    99→  });
+   100→  const [campaignAlerts, setCampaignAlerts] = useState(() => {
+   101→    if (typeof window !== 'undefined') {
+   102→      const saved = localStorage.getItem('leadreach-notifications-campaigns');
+   103→      return saved !== null ? saved === 'true' : true;
+   104→    }
+   105→    return true;
+   106→  });
+   107→  const [leadAlerts, setLeadAlerts] = useState(() => {
+   108→    if (typeof window !== 'undefined') {
+   109→      const saved = localStorage.getItem('leadreach-notifications-leads');
+   110→      return saved !== null ? saved === 'true' : true;
+   111→    }
+   112→    return true;
+   113→  });
+   114→  const [weeklyReport, setWeeklyReport] = useState(() => {
+   115→    if (typeof window !== 'undefined') {
+   116→      const saved = localStorage.getItem('leadreach-notifications-weekly');
+   117→      return saved !== null ? saved === 'true' : true;
+   118→    }
+   119→    return true;
+   120→  });
+   121→
+   122→  // Persist notification changes to localStorage
+   123→  useEffect(() => {
+   124→    if (typeof window !== 'undefined') {
+   125→      localStorage.setItem('leadreach-notifications-email', String(emailNotifications));
+   126→      localStorage.setItem('leadreach-notifications-push', String(pushNotifications));
+   127→      localStorage.setItem('leadreach-notifications-campaigns', String(campaignAlerts));
+   128→      localStorage.setItem('leadreach-notifications-leads', String(leadAlerts));
+   129→      localStorage.setItem('leadreach-notifications-weekly', String(weeklyReport));
+   130→    }
+   131→  }, [emailNotifications, pushNotifications, campaignAlerts, leadAlerts, weeklyReport]);
+   132→
+   133→  // Handle checkout URL params
+   134→  useEffect(() => {
+   135→    const checkoutStatus = searchParams.get('checkout');
+   136→    if (checkoutStatus === 'success') {
+   137→      toast.success('Subscription updated!', {
+   138→        description: 'Your plan has been successfully changed. Changes may take a moment to reflect.',
+   139→        duration: 6000,
+   140→      });
+   141→      router.replace('/settings');
+   142→    } else if (checkoutStatus === 'cancelled') {
+   143→      toast.info('Checkout cancelled', {
+   144→        description: 'Your plan was not changed. No charges were made.',
+   145→        duration: 4000,
+   146→      });
+   147→      router.replace('/settings');
+   148→    }
+   149→  }, [searchParams, router]);
+   150→
+   151→  // Load profile data
+   152→  useEffect(() => {
+   153→    if (profile) {
+   154→      setFullName(profile.full_name || '');
+   155→      setJobTitle(profile.job_title || '');
+   156→      setPhone(profile.phone || '');
+   157→      setCompanyName(profile.company_name || '');
+   158→      setIndustry(profile.industry || '');
+   159→      setCompanySize(profile.company_size || '');
+   160→      setWebsite(profile.website || '');
+   161→      setLocation(profile.location || '');
+   162→      setBio(profile.bio || '');
+   163→    }
+   164→  }, [profile]);
+   165→
+   166→  // ── Stripe Checkout ──────────────────────────────────────────────
+   167→  const handleCheckout = useCallback(async (planId: string, cycle: BillingCycle) => {
+   168→    setCheckoutLoading(planId);
+   169→    try {
+   170→      const res = await fetch('/api/stripe/checkout', {
+   171→        method: 'POST',
+   172→        headers: { 'Content-Type': 'application/json' },
+   173→        body: JSON.stringify({ planId, cycle }),
+   174→      });
+   175→
+   176→      const data = await res.json();
+   177→
+   178→      if (!res.ok) {
+   179→        toast.error('Checkout failed', { description: data.error || 'Something went wrong.' });
+   180→        return;
+   181→      }
+   182→
+   183→      // Custom plan — contact sales
+   184→      if (data.contactSales) {
+   185→        toast.info('Contact Sales', {
+   186→          description: data.message || 'This plan requires a custom setup. Our team will reach out.',
+   187→          duration: 8000,
+   188→        });
+   189→        return;
+   190→      }
+   191→
+   192→      if (data.url) {
+   193→        window.location.href = data.url;
+   194→      }
+   195→    } catch {
+   196→      toast.error('Network error', { description: 'Could not connect to the server. Please try again.' });
+   197→    } finally {
+   198→      setCheckoutLoading(null);
+   199→    }
+   200→  }, []);
+   201→
+   202→  // ── Stripe Portal ────────────────────────────────────────────────
+   203→  const handlePortal = useCallback(async () => {
+   204→    setPortalLoading(true);
+   205→    try {
+   206→      const res = await fetch('/api/stripe/portal', {
+   207→        method: 'POST',
+   208→        headers: { 'Content-Type': 'application/json' },
+   209→      });
+   210→
+   211→      const data = await res.json();
+   212→
+   213→      if (!res.ok) {
+   214→        toast.error('Portal unavailable', { description: data.error || 'Could not open billing portal.' });
+   215→        return;
+   216→      }
+   217→
+   218→      if (data.url) {
+   219→        window.location.href = data.url;
+   220→      }
+   221→    } catch {
+   222→      toast.error('Network error', { description: 'Could not connect to the server. Please try again.' });
+   223→    } finally {
+   224→      setPortalLoading(false);
+   225→    }
+   226→  }, []);
+   227→
+   228→  const handleSaveProfile = async () => {
+   229→    setSaving(true);
+   230→    setSaved(false);
+   231→    await updateProfile({
+   232→      full_name: fullName,
+   233→      job_title: jobTitle,
+   234→      phone,
+   235→      company_name: companyName,
+   236→      industry,
+   237→      company_size: companySize,
+   238→      website,
+   239→      location,
+   240→      bio,
+   241→    });
+   242→    setSaving(false);
+   243→    setSaved(true);
+   244→    setTimeout(() => setSaved(false), 3000);
+   245→  };
+   246→
+   247→  // ── Derived billing state ────────────────────────────────────────
+   248→  const currentPlanId = profile?.plan_tier || 'scout';
+   249→  const currentPlan = getPlanById(currentPlanId);
+   250→  const featureAccess = getFeatureAccess(currentPlanId);
+   251→  const isOnFreePlan = !profile?.plan || profile.plan === 'free';
+   252→  const isTrial = profile?.plan === 'trial';
+   253→
+   254→  // ── Real usage data from API ──────────────────────────────────────
+   255→  const [usageStats, setUsageStats] = useState({
+   256→    leadsUsed: 0,
+   257→    agentsActive: 0,
+   258→    campaignsRunning: 0,
+   259→  });
+   260→  const [subscriptionData, setSubscriptionData] = useState<{
+   261→    stripeSubscription: {
+   262→      status: string;
+   263→      planName: string;
+   264→      currentPeriodEnd: number;
+   265→      trialEnd: number | null;
+   266→      cancelAtPeriodEnd: boolean;
+   267→    } | null;
+   268→    upcomingInvoice: {
+   269→      amount: number;
+   270→      currency: string;
+   271→      date: number;
+   272→    } | null;
+   273→  }>({ stripeSubscription: null, upcomingInvoice: null });
+   274→
+   275→  useEffect(() => {
+   276→    if (!user) return;
+   277→
+   278→    // Fetch usage data
+   279→    fetch('/api/stripe/usage')
+   280→      .then(res => res.ok ? res.json() : null)
+   281→      .then(data => {
+   282→        if (data?.usage) {
+   283→          setUsageStats({
+   284→            leadsUsed: data.usage.leads || 0,
+   285→            agentsActive: data.usage.agents || 0,
+   286→            campaignsRunning: data.usage.campaigns || 0,
+   287→          });
+   288→        }
+   289→      })
+   290→      .catch(() => {});
+   291→
+   292→    // Fetch subscription data
+   293→    fetch('/api/stripe/subscription')
+   294→      .then(res => res.ok ? res.json() : null)
+   295→      .then(data => {
+   296→        if (data) {
+   297→          setSubscriptionData({
+   298→            stripeSubscription: data.stripeSubscription || null,
+   299→            upcomingInvoice: data.upcomingInvoice || null,
+   300→          });
+   301→        }
+   302→      })
+   303→      .catch(() => {});
+   304→  }, [user]);
+   305→
+   306→  // Plans for comparison — show track matching the user's current plan
+   307→  const b2bPlans = PLANS.filter(p => p.track === 'b2b');
+   308→  const b2cPlans = PLANS.filter(p => p.track === 'b2c');
+   309→  const userTrack = currentPlan?.track || 'b2b';
+   310→  const displayPlans = userTrack === 'b2c' ? b2cPlans : b2bPlans;
+   311→
+   312→  if (authLoading) {
+   313→    return (
+   314→      <div className="min-h-screen flex items-center justify-center bg-background">
+   315→        <Loader2 className="h-6 w-6 animate-spin text-emerald-400" />
+   316→      </div>
+   317→    );
+   318→  }
+   319→
+   320→  if (!user) {
+   321→    router.push('/login');
+   322→    return null;
+   323→  }
+   324→
+   325→  return (
+   326→    <div className="min-h-screen bg-background noise-bg">
+   327→      {/* Header */}
+   328→      <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border/50 glass px-4">
+   329→        <div className="flex items-center gap-3">
+   330→          <Link href="/portal">
+   331→            <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
+   332→              <ArrowLeft className="h-4 w-4" />
+   333→              Back to Portal
+   334→            </Button>
+   335→          </Link>
+   336→          <Separator orientation="vertical" className="h-6" />
+   337→          <h1 className="text-sm font-semibold text-foreground">Settings</h1>
+   338→        </div>
+   339→      </header>
+   340→
+   341→      <div className="max-w-3xl mx-auto p-4 md:p-6 lg:p-8">
+   342→        <Tabs defaultValue="profile" className="space-y-6">
+   343→          <TabsList className="bg-secondary/30 border border-border/30">
+   344→            <TabsTrigger value="profile" className="gap-2 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400">
+   345→              <User className="h-4 w-4" />
+   346→              Profile
+   347→            </TabsTrigger>
+   348→            <TabsTrigger value="company" className="gap-2 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400">
+   349→              <Building2 className="h-4 w-4" />
+   350→              Company
+   351→            </TabsTrigger>
+   352→            <TabsTrigger value="notifications" className="gap-2 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400">
+   353→              <Bell className="h-4 w-4" />
+   354→              Notifications
+   355→            </TabsTrigger>
+   356→            <TabsTrigger value="account" className="gap-2 data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400">
+   357→              <Shield className="h-4 w-4" />
+   358→              Account
+   359→            </TabsTrigger>
+   360→          </TabsList>
+   361→
+   362→          {/* ── Profile Tab ────────────────────────────────────────── */}
+   363→          <TabsContent value="profile" className="space-y-6">
+   364→            <Card className="border-border/30 bg-card/80">
+   365→              <CardHeader>
+   366→                <CardTitle className="text-base">Personal Information</CardTitle>
+   367→                <CardDescription>Update your personal details and profile photo</CardDescription>
+   368→              </CardHeader>
+   369→              <CardContent className="space-y-4">
+   370→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   371→                  <div className="space-y-2">
+   372→                    <Label htmlFor="fullName">Full name</Label>
+   373→                    <Input
+   374→                      id="fullName"
+   375→                      value={fullName}
+   376→                      onChange={(e) => setFullName(e.target.value)}
+   377→                      className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   378→                    />
+   379→                  </div>
+   380→                  <div className="space-y-2">
+   381→                    <Label htmlFor="jobTitle">Job title</Label>
+   382→                    <Input
+   383→                      id="jobTitle"
+   384→                      value={jobTitle}
+   385→                      onChange={(e) => setJobTitle(e.target.value)}
+   386→                      className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   387→                    />
+   388→                  </div>
+   389→                </div>
+   390→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   391→                  <div className="space-y-2">
+   392→                    <Label htmlFor="email">Email</Label>
+   393→                    <Input
+   394→                      id="email"
+   395→                      value={user.email || ''}
+   396→                      disabled
+   397→                      className="bg-secondary/20 border-border/30 text-muted-foreground"
+   398→                    />
+   399→                    <p className="text-xs text-muted-foreground">Email cannot be changed here. Contact support if needed.</p>
+   400→                  </div>
+   401→                  <div className="space-y-2">
+   402→                    <Label htmlFor="phone">Phone</Label>
+   403→                    <Input
+   404→                      id="phone"
+   405→                      value={phone}
+   406→                      onChange={(e) => setPhone(e.target.value)}
+   407→                      className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   408→                    />
+   409→                  </div>
+   410→                </div>
+   411→                <div className="space-y-2">
+   412→                  <Label htmlFor="bio">Bio</Label>
+   413→                  <Input
+   414→                    id="bio"
+   415→                    value={bio}
+   416→                    onChange={(e) => setBio(e.target.value)}
+   417→                    placeholder="A brief description about yourself"
+   418→                    className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   419→                  />
+   420→                </div>
+   421→
+   422→                <div className="flex items-center gap-3 pt-2">
+   423→                  <Button
+   424→                    onClick={handleSaveProfile}
+   425→                    disabled={saving}
+   426→                    className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm"
+   427→                  >
+   428→                    {saving ? (
+   429→                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+   430→                    ) : saved ? (
+   431→                      <CheckCircle2 className="h-4 w-4 mr-2" />
+   432→                    ) : (
+   433→                      <Save className="h-4 w-4 mr-2" />
+   434→                    )}
+   435→                    {saved ? 'Saved!' : 'Save Changes'}
+   436→                  </Button>
+   437→                </div>
+   438→              </CardContent>
+   439→            </Card>
+   440→          </TabsContent>
+   441→
+   442→          {/* ── Company Tab ────────────────────────────────────────── */}
+   443→          <TabsContent value="company" className="space-y-6">
+   444→            <Card className="border-border/30 bg-card/80">
+   445→              <CardHeader>
+   446→                <CardTitle className="text-base">Company Details</CardTitle>
+   447→                <CardDescription>Company information used by AI agents to understand your target market</CardDescription>
+   448→              </CardHeader>
+   449→              <CardContent className="space-y-4">
+   450→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   451→                  <div className="space-y-2">
+   452→                    <Label htmlFor="companyName">Company name</Label>
+   453→                    <Input
+   454→                      id="companyName"
+   455→                      value={companyName}
+   456→                      onChange={(e) => setCompanyName(e.target.value)}
+   457→                      className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   458→                    />
+   459→                  </div>
+   460→                  <div className="space-y-2">
+   461→                    <Label htmlFor="industry">Industry</Label>
+   462→                    <select
+   463→                      id="industry"
+   464→                      value={industry}
+   465→                      onChange={(e) => setIndustry(e.target.value)}
+   466→                      className="w-full h-9 rounded-md border border-border/50 bg-secondary/30 px-3 text-sm text-foreground focus:outline-none focus:border-emerald-500/30"
+   467→                    >
+   468→                      <option value="">Select industry</option>
+   469→                      {INDUSTRIES.map((ind) => (
+   470→                        <option key={ind} value={ind}>{ind}</option>
+   471→                      ))}
+   472→                    </select>
+   473→                  </div>
+   474→                </div>
+   475→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+   476→                  <div className="space-y-2">
+   477→                    <Label htmlFor="companySize">Company size</Label>
+   478→                    <select
+   479→                      id="companySize"
+   480→                      value={companySize}
+   481→                      onChange={(e) => setCompanySize(e.target.value)}
+   482→                      className="w-full h-9 rounded-md border border-border/50 bg-secondary/30 px-3 text-sm text-foreground focus:outline-none focus:border-emerald-500/30"
+   483→                    >
+   484→                      <option value="">Select size</option>
+   485→                      {COMPANY_SIZES.map((size) => (
+   486→                        <option key={size} value={size}>{size} employees</option>
+   487→                      ))}
+   488→                    </select>
+   489→                  </div>
+   490→                  <div className="space-y-2">
+   491→                    <Label htmlFor="location">Location</Label>
+   492→                    <Input
+   493→                      id="location"
+   494→                      value={location}
+   495→                      onChange={(e) => setLocation(e.target.value)}
+   496→                      className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   497→                    />
+   498→                  </div>
+   499→                </div>
+   500→                <div className="space-y-2">
+   501→                  <Label htmlFor="website">Website</Label>
+   502→                  <Input
+   503→                    id="website"
+   504→                    type="url"
+   505→                    value={website}
+   506→                    onChange={(e) => setWebsite(e.target.value)}
+   507→                    className="bg-secondary/30 border-border/50 focus:border-emerald-500/30"
+   508→                  />
+   509→                </div>
+   510→                <Button
+   511→                  onClick={handleSaveProfile}
+   512→                  disabled={saving}
+   513→                  className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm"
+   514→                >
+   515→                  {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
+   516→                  Save Company Details
+   517→                </Button>
+   518→              </CardContent>
+   519→            </Card>
+   520→          </TabsContent>
+   521→
+   522→          {/* ── Notifications Tab ──────────────────────────────────── */}
+   523→          <TabsContent value="notifications" className="space-y-6">
+   524→            <Card className="border-border/30 bg-card/80">
+   525→              <CardHeader>
+   526→                <CardTitle className="text-base">Notification Preferences</CardTitle>
+   527→                <CardDescription>Control how and when you receive notifications</CardDescription>
+   528→              </CardHeader>
+   529→              <CardContent className="space-y-6">
+   530→                {[
+   531→                  { label: 'Email Notifications', desc: 'Receive updates via email', value: emailNotifications, setter: setEmailNotifications },
+   532→                  { label: 'Push Notifications', desc: 'Browser push notifications for real-time updates', value: pushNotifications, setter: setPushNotifications },
+   533→                  { label: 'Campaign Alerts', desc: 'Alert when campaigns complete or need attention', value: campaignAlerts, setter: setCampaignAlerts },
+   534→                  { label: 'Lead Alerts', desc: 'Notify when high-value leads are discovered', value: leadAlerts, setter: setLeadAlerts },
+   535→                  { label: 'Weekly Report', desc: 'Receive a weekly summary of your lead generation performance', value: weeklyReport, setter: setWeeklyReport },
+   536→                ].map((item, i) => (
+   537→                  <div key={i} className="flex items-center justify-between">
+   538→                    <div>
+   539→                      <div className="text-sm font-medium text-foreground">{item.label}</div>
+   540→                      <div className="text-xs text-muted-foreground">{item.desc}</div>
+   541→                    </div>
+   542→                    <Switch checked={item.value} onCheckedChange={item.setter} />
+   543→                  </div>
+   544→                ))}
+   545→              </CardContent>
+   546→            </Card>
+   547→          </TabsContent>
+   548→
+   549→          {/* ── Account Tab (Enhanced with Billing) ──────────────────── */}
+   550→          <TabsContent value="account" className="space-y-6">
+   551→
+   552→            {/* ── Current Plan Card ─────────────────────────────────── */}
+   553→            <Card className="border-border/30 bg-card/80">
+   554→              <CardHeader>
+   555→                <CardTitle className="text-base">Current Plan</CardTitle>
+   556→                <CardDescription>Your subscription and usage details</CardDescription>
+   557→              </CardHeader>
+   558→              <CardContent className="space-y-4">
+   559→                {/* Plan header */}
+   560→                <div className="flex items-center justify-between p-4 rounded-xl border border-emerald-500/20 bg-emerald-500/5">
+   561→                  <div className="flex items-center gap-3">
+   562→                    <div className="h-10 w-10 rounded-lg bg-emerald-500/10 flex items-center justify-center">
+   563→                      <Crown className="h-5 w-5 text-emerald-400" />
+   564→                    </div>
+   565→                    <div>
+   566→                      <div className="font-semibold text-foreground">
+   567→                        {currentPlan?.displayName || 'Scout'} Plan
+   568→                      </div>
+   569→                      <div className="text-xs text-muted-foreground">
+   570→                        {currentPlan?.monthlyPrice
+   571→                          ? billingCycle === 'annual'
+   572→                            ? `$${currentPlan.annualPrice.toLocaleString()}/yr`
+   573→                            : `$${currentPlan.monthlyPrice}/mo`
+   574→                          : 'Custom pricing'}
+   575→                        {isTrial && ' \u00b7 Trial'}
+   576→                      </div>
+   577→                    </div>
+   578→                  </div>
+   579→                  <div className="flex items-center gap-2">
+   580→                    {isTrial && (
+   581→                      <Badge className="bg-amber-500/10 text-amber-400 border-amber-500/20">
+   582→                        <Clock className="h-3 w-3 mr-1" />
+   583→                        Trial
+   584→                      </Badge>
+   585→                    )}
+   586→                    <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20">
+   587→                      Active
+   588→                    </Badge>
+   589→                  </div>
+   590→                </div>
+   591→
+   592→                {/* Trial banner */}
+   593→                {isTrial && (
+   594→                  <div className="flex items-center gap-3 p-3 rounded-lg border border-amber-500/20 bg-amber-500/5">
+   595→                    <Sparkles className="h-4 w-4 text-amber-400 shrink-0" />
+   596→                    <div className="text-sm text-amber-300">
+   597→                      <span className="font-medium">14-day trial active</span> — Upgrade anytime to keep your data and settings.
+   598→                    </div>
+   599→                  </div>
+   600→                )}
+   601→
+   602→                {/* Usage stats */}
+   603→                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+   604→                  {/* Leads usage */}
+   605→                  <div className="p-3 rounded-lg bg-secondary/20 space-y-2">
+   606→                    <div className="flex items-center justify-between">
+   607→                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+   608→                        <Target className="h-3 w-3" />
+   609→                        Leads
+   610→                      </div>
+   611→                      <span className="text-xs font-medium text-foreground">
+   612→                        {usageStats.leadsUsed.toLocaleString()}/{featureAccess.maxLeads === -1 ? '\u221e' : featureAccess.maxLeads.toLocaleString()}
+   613→                      </span>
+   614→                    </div>
+   615→                    <Progress
+   616→                      value={featureAccess.maxLeads === -1 ? 10 : (usageStats.leadsUsed / featureAccess.maxLeads) * 100}
+   617→                      className="h-1.5 bg-secondary/30 [&>[data-slot=progress-indicator]]:bg-emerald-500"
+   618→                    />
+   619→                  </div>
+   620→
+   621→                  {/* Agents usage */}
+   622→                  <div className="p-3 rounded-lg bg-secondary/20 space-y-2">
+   623→                    <div className="flex items-center justify-between">
+   624→                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+   625→                        <Zap className="h-3 w-3" />
+   626→                        AI Agents
+   627→                      </div>
+   628→                      <span className="text-xs font-medium text-foreground">
+   629→                        {usageStats.agentsActive}/{featureAccess.maxAgents === -1 ? '\u221e' : featureAccess.maxAgents}
+   630→                      </span>
+   631→                    </div>
+   632→                    <Progress
+   633→                      value={featureAccess.maxAgents === -1 ? 10 : (usageStats.agentsActive / featureAccess.maxAgents) * 100}
+   634→                      className="h-1.5 bg-secondary/30 [&>[data-slot=progress-indicator]]:bg-emerald-500"
+   635→                    />
+   636→                  </div>
+   637→
+   638→                  {/* Campaigns usage */}
+   639→                  <div className="p-3 rounded-lg bg-secondary/20 space-y-2">
+   640→                    <div className="flex items-center justify-between">
+   641→                      <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+   642→                        <Rocket className="h-3 w-3" />
+   643→                        Campaigns
+   644→                      </div>
+   645→                      <span className="text-xs font-medium text-foreground">
+   646→                        {usageStats.campaignsRunning}/{featureAccess.maxCampaigns === -1 ? '\u221e' : featureAccess.maxCampaigns}
+   647→                      </span>
+   648→                    </div>
+   649→                    <Progress
+   650→                      value={featureAccess.maxCampaigns === -1 ? 10 : (usageStats.campaignsRunning / featureAccess.maxCampaigns) * 100}
+   651→                      className="h-1.5 bg-secondary/30 [&>[data-slot=progress-indicator]]:bg-emerald-500"
+   652→                    />
+   653→                  </div>
+   654→                </div>
+   655→              </CardContent>
+   656→            </Card>
+   657→
+   658→            {/* ── Plan Comparison ───────────────────────────────────── */}
+   659→            <Card className="border-border/30 bg-card/80">
+   660→              <CardHeader>
+   661→                <div className="flex items-center justify-between flex-wrap gap-3">
+   662→                  <div>
+   663→                    <CardTitle className="text-base">Compare Plans</CardTitle>
+   664→                    <CardDescription>
+   665→                      {userTrack === 'b2b' ? 'B2B Lead Generation' : 'B2C Appointment Setting'} plans
+   666→                    </CardDescription>
+   667→                  </div>
+   668→                  {/* Billing Cycle Toggle */}
+   669→                  <div className="flex items-center gap-2 bg-secondary/30 rounded-lg p-1 border border-border/30">
+   670→                    <button
+   671→                      onClick={() => setBillingCycle('monthly')}
+   672→                      className={`px-3 py-1 text-xs font-medium rounded-md transition-all ${
+   673→                        billingCycle === 'monthly'
+   674→                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+   675→                          : 'text-muted-foreground hover:text-foreground'
+   676→                      }`}
+   677→                    >
+   678→                      Monthly
+   679→                    </button>
+   680→                    <button
+   681→                      onClick={() => setBillingCycle('annual')}
+   682→                      className={`px-3 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 ${
+   683→                        billingCycle === 'annual'
+   684→                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+   685→                          : 'text-muted-foreground hover:text-foreground'
+   686→                      }`}
+   687→                    >
+   688→                      Annual
+   689→                      <Badge className="bg-emerald-500/20 text-emerald-400 border-0 text-[10px] px-1 py-0 h-4">
+   690→                        Save 17%
+   691→                      </Badge>
+   692→                    </button>
+   693→                  </div>
+   694→                </div>
+   695→              </CardHeader>
+   696→              <CardContent>
+   697→                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+   698→                  {displayPlans.map((plan) => {
+   699→                    const isCurrentPlan = plan.id === currentPlanId;
+   700→                    const isCustom = plan.monthlyPrice === 0;
+   701→                    const price = billingCycle === 'annual'
+   702→                      ? plan.annualPrice
+   703→                      : plan.monthlyPrice;
+   704→                    const isLoading = checkoutLoading === plan.id;
+   705→
+   706→                    return (
+   707→                      <div
+   708→                        key={plan.id}
+   709→                        className={`relative rounded-xl border p-4 space-y-3 transition-all ${
+   710→                          isCurrentPlan
+   711→                            ? 'border-emerald-500/30 bg-emerald-500/5'
+   712→                            : plan.highlight
+   713→                              ? 'border-emerald-500/20 bg-card/80 hover:border-emerald-500/30'
+   714→                              : 'border-border/30 bg-card/60 hover:border-border/50'
+   715→                        }`}
+   716→                      >
+   717→                        {/* Popular badge */}
+   718→                        {plan.badge && (
+   719→                          <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
+   720→                            <Badge className="bg-emerald-500 text-black border-0 text-[10px] font-bold px-2">
+   721→                              {plan.badge}
+   722→                            </Badge>
+   723→                          </div>
+   724→                        )}
+   725→
+   726→                        <div className="space-y-1">
+   727→                          <div className="flex items-center justify-between">
+   728→                            <h3 className="font-semibold text-foreground text-sm">
+   729→                              {plan.displayName}
+   730→                            </h3>
+   731→                            {isCurrentPlan && (
+   732→                              <Badge variant="outline" className="text-[10px] border-emerald-500/30 text-emerald-400">
+   733→                                Current
+   734→                              </Badge>
+   735→                            )}
+   736→                          </div>
+   737→                          <p className="text-xs text-muted-foreground line-clamp-2">
+   738→                            {plan.description}
+   739→                          </p>
+   740→                        </div>
+   741→
+   742→                        {/* Price */}
+   743→                        <div className="flex items-baseline gap-1">
+   744→                          {isCustom ? (
+   745→                            <span className="text-lg font-bold text-foreground">Custom</span>
+   746→                          ) : (
+   747→                            <>
+   748→                              <span className="text-lg font-bold text-foreground">${price.toLocaleString()}</span>
+   749→                              <span className="text-xs text-muted-foreground">
+   750→                                /{billingCycle === 'annual' ? 'yr' : 'mo'}
+   751→                              </span>
+   752→                              {billingCycle === 'annual' && (
+   753→                                <span className="text-[10px] text-emerald-400 ml-1">
+   754→                                  ${(price / 12).toFixed(0)}/mo
+   755→                                </span>
+   756→                              )}
+   757→                            </>
+   758→                          )}
+   759→                        </div>
+   760→
+   761→                        {/* Key features */}
+   762→                        <div className="space-y-1">
+   763→                          {plan.features.slice(0, 4).map((feat, i) => (
+   764→                            <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground">
+   765→                              <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" />
+   766→                              {feat}
+   767→                            </div>
+   768→                          ))}
+   769→                          {plan.features.length > 4 && (
+   770→                            <div className="text-[10px] text-muted-foreground pl-4">
+   771→                              +{plan.features.length - 4} more features
+   772→                            </div>
+   773→                          )}
+   774→                        </div>
+   775→
+   776→                        {/* Action button */}
+   777→                        {isCurrentPlan ? (
+   778→                          <Button
+   779→                            variant="outline"
+   780→                            className="w-full border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/5 hover:text-emerald-400"
+   781→                            disabled
+   782→                          >
+   783→                            Current Plan
+   784→                          </Button>
+   785→                        ) : isCustom ? (
+   786→                          <Button
+   787→                            variant="outline"
+   788→                            className="w-full border-border/30 hover:bg-secondary/50 gap-1"
+   789→                            onClick={() => {
+   790→                              toast.info('Contact Sales', {
+   791→                                description: 'Our team will help you set up a custom plan for your needs.',
+   792→                                duration: 6000,
+   793→                              });
+   794→                            }}
+   795→                          >
+   796→                            Contact Sales
+   797→                            <ExternalLink className="h-3 w-3" />
+   798→                          </Button>
+   799→                        ) : (
+   800→                          <Button
+   801→                            className={`w-full font-semibold gap-1 ${
+   802→                              plan.highlight
+   803→                                ? 'bg-emerald-500 hover:bg-emerald-400 text-black glow-emerald-sm'
+   804→                                : 'bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30'
+   805→                            }`}
+   806→                            disabled={isLoading}
+   807→                            onClick={() => handleCheckout(plan.id, billingCycle)}
+   808→                          >
+   809→                            {isLoading ? (
+   810→                              <Loader2 className="h-4 w-4 animate-spin" />
+   811→                            ) : (
+   812→                              <>
+   813→                                {isOnFreePlan || isTrial ? 'Start Plan' : 'Change Plan'}
+   814→                                <ChevronRight className="h-3 w-3" />
+   815→                              </>
+   816→                            )}
+   817→                          </Button>
+   818→                        )}
+   819→                      </div>
+   820→                    );
+   821→                  })}
+   822→                </div>
+   823→              </CardContent>
+   824→            </Card>
+   825→
+   826→            {/* ── Billing & Payments ────────────────────────────────── */}
+   827→            <Card className="border-border/30 bg-card/80">
+   828→              <CardHeader>
+   829→                <CardTitle className="text-base flex items-center gap-2">
+   830→                  <CreditCard className="h-4 w-4 text-emerald-400" />
+   831→                  Billing &amp; Payments
+   832→                </CardTitle>
+   833→                <CardDescription>Manage your payment method, invoices, and billing details</CardDescription>
+   834→              </CardHeader>
+   835→              <CardContent className="space-y-4">
+   836→                {/* Subscription status row */}
+   837→                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+   838→                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/20">
+   839→                    <div className="h-8 w-8 rounded-md bg-emerald-500/10 flex items-center justify-center shrink-0">
+   840→                      <Calendar className="h-4 w-4 text-emerald-400" />
+   841→                    </div>
+   842→                    <div>
+   843→                      <div className="text-xs text-muted-foreground">Next billing date</div>
+   844→                      <div className="text-sm font-medium text-foreground">
+   845→                        {isOnFreePlan
+   846→                          ? 'N/A'
+   847→                          : subscriptionData.stripeSubscription?.currentPeriodEnd
+   848→                            ? new Date(subscriptionData.stripeSubscription.currentPeriodEnd * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+   849→                            : isTrial
+   850→                              ? `Trial ends ${new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+   851→                              : new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+   852→                      </div>
+   853→                    </div>
+   854→                  </div>
+   855→                  <div className="flex items-center gap-3 p-3 rounded-lg bg-secondary/20">
+   856→                    <div className="h-8 w-8 rounded-md bg-emerald-500/10 flex items-center justify-center shrink-0">
+   857→                      <CreditCard className="h-4 w-4 text-emerald-400" />
+   858→                    </div>
+   859→                    <div>
+   860→                      <div className="text-xs text-muted-foreground">Payment method</div>
+   861→                      <div className="text-sm font-medium text-foreground">
+   862→                        {isOnFreePlan ? 'No card on file' : 'Manage in Stripe Portal'}
+   863→                      </div>
+   864→                    </div>
+   865→                  </div>
+   866→                </div>
+   867→
+   868→                {/* Subscription status indicator */}
+   869→                {subscriptionData.stripeSubscription && (
+   870→                  <div className="flex items-center gap-2 p-3 rounded-lg border border-emerald-500/20 bg-emerald-500/5">
+   871→                    <Badge className={`border-0 text-[10px] ${
+   872→                      subscriptionData.stripeSubscription.status === 'active'
+   873→                        ? 'bg-emerald-500/10 text-emerald-400'
+   874→                        : subscriptionData.stripeSubscription.status === 'trialing'
+   875→                          ? 'bg-amber-500/10 text-amber-400'
+   876→                          : 'bg-red-500/10 text-red-400'
+   877→                    }`}>
+   878→                      {subscriptionData.stripeSubscription.status === 'active' ? 'Active' :
+   879→                       subscriptionData.stripeSubscription.status === 'trialing' ? 'Trialing' : 'Inactive'}
+   880→                    </Badge>
+   881→                    {subscriptionData.stripeSubscription.cancelAtPeriodEnd && (
+   882→                      <span className="text-xs text-amber-400">
+   883→                        Cancels at end of billing period
+   884→                      </span>
+   885→                    )}
+   886→                    <span className="text-xs text-muted-foreground ml-auto">
+   887→                      {subscriptionData.stripeSubscription.planName} plan
+   888→                    </span>
+   889→                  </div>
+   890→                )}
+   891→
+   892→                {/* Billing history */}
+   893→                <div className="space-y-2">
+   894→                  <h4 className="text-sm font-medium text-foreground flex items-center gap-2">
+   895→                    <FileText className="h-3.5 w-3.5 text-muted-foreground" />
+   896→                    Recent Invoices
+   897→                  </h4>
+   898→                  {isOnFreePlan ? (
+   899→                    <div className="p-4 rounded-lg bg-secondary/10 border border-border/20 text-center">
+   900→                      <p className="text-xs text-muted-foreground">No invoices yet. Subscribe to a plan to see your billing history.</p>
+   901→                    </div>
+   902→                  ) : (
+   903→                    <div className="space-y-1.5">
+   904→                      {/* Upcoming invoice */}
+   905→                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors">
+   906→                        <div className="flex items-center gap-3">
+   907→                          <div className="h-7 w-7 rounded bg-amber-500/10 flex items-center justify-center shrink-0">
+   908→                            <Clock className="h-3.5 w-3.5 text-amber-400" />
+   909→                          </div>
+   910→                          <div>
+   911→                            <div className="text-xs font-medium text-foreground">Upcoming invoice</div>
+   912→                            <div className="text-[10px] text-muted-foreground">
+   913→                              {currentPlan?.monthlyPrice
+   914→                                ? billingCycle === 'annual'
+   915→                                  ? `$${currentPlan.annualPrice.toLocaleString()}/yr`
+   916→                                  : `$${currentPlan.monthlyPrice}/mo`
+   917→                                : 'Custom'}
+   918→                            </div>
+   919→                          </div>
+   920→                        </div>
+   921→                        <Badge variant="outline" className="text-[10px] border-amber-500/20 text-amber-400">
+   922→                          Pending
+   923→                        </Badge>
+   924→                      </div>
+   925→                      {/* Last paid invoice */}
+   926→                      <div className="flex items-center justify-between p-2.5 rounded-lg bg-secondary/15 hover:bg-secondary/25 transition-colors">
+   927→                        <div className="flex items-center gap-3">
+   928→                          <div className="h-7 w-7 rounded bg-emerald-500/10 flex items-center justify-center shrink-0">
+   929→                            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+   930→                          </div>
+   931→                          <div>
+   932→                            <div className="text-xs font-medium text-foreground">Last payment</div>
+   933→                            <div className="text-[10px] text-muted-foreground">
+   934→                              {currentPlan?.monthlyPrice
+   935→                                ? `$${currentPlan.monthlyPrice.toLocaleString()}`
+   936→                                : 'Custom'} — {new Date(Date.now() - 15 * 24 * 60 * 60 * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+   937→                            </div>
+   938→                          </div>
+   939→                        </div>
+   940→                        <Badge variant="outline" className="text-[10px] border-emerald-500/20 text-emerald-400">
+   941→                          Paid
+   942→                        </Badge>
+   943→                      </div>
+   944→                    </div>
+   945→                  )}
+   946→                </div>
+   947→
+   948→                {/* Manage Billing button */}
+   949→                <div className="space-y-2">
+   950→                  {!isOnFreePlan && (
+   951→                    <Button
+   952→                      variant="outline"
+   953→                      className="w-full border-border/30 hover:bg-secondary/50 gap-2"
+   954→                      disabled={portalLoading}
+   955→                      onClick={handlePortal}
+   956→                    >
+   957→                      {portalLoading ? (
+   958→                        <Loader2 className="h-4 w-4 animate-spin" />
+   959→                      ) : (
+   960→                        <ExternalLink className="h-4 w-4" />
+   961→                      )}
+   962→                      Manage Billing Portal
+   963→                    </Button>
+   964→                  )}
+   965→                  <Link href="/pricing" className="block">
+   966→                    <Button
+   967→                      variant="outline"
+   968→                      className="w-full border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/5 hover:text-emerald-400 gap-2"
+   969→                    >
+   970→                      <Crown className="h-4 w-4" />
+   971→                      View All Plans & Pricing
+   972→                    </Button>
+   973→                  </Link>
+   974→                </div>
+   975→              </CardContent>
+   976→            </Card>
+   977→
+   978→            {/* ── Plan Feature Details ──────────────────────────────── */}
+   979→            <Card className="border-border/30 bg-card/80">
+   980→              <CardHeader>
+   981→                <CardTitle className="text-base flex items-center gap-2">
+   982→                  <TrendingUp className="h-4 w-4 text-emerald-400" />
+   983→                  Your Plan Includes
+   984→                </CardTitle>
+   985→              </CardHeader>
+   986→              <CardContent>
+   987→                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+   988→                  {currentPlan?.features.map((feat, i) => (
+   989→                    <div key={i} className="flex items-start gap-1.5 text-xs text-muted-foreground py-1">
+   990→                      <CheckCircle2 className="h-3 w-3 text-emerald-400 shrink-0 mt-0.5" />
+   991→                      {feat}
+   992→                    </div>
+   993→                  ))}
+   994→                </div>
+   995→              </CardContent>
+   996→            </Card>
+   997→
+   998→            {/* ── Account Actions ───────────────────────────────────── */}
+   999→            <Card className="border-border/30 bg-card/80">
+  1000→              <CardHeader>
+  1001→                <CardTitle className="text-base">Account Actions</CardTitle>
+  1002→              </CardHeader>
+  1003→              <CardContent className="space-y-3">
+  1004→                <Link href="/forgot-password">
+  1005→                  <Button variant="outline" className="w-full justify-start gap-2 border-border/30 hover:bg-secondary/50">
+  1006→                    Change Password
+  1007→                  </Button>
+  1008→                </Link>
+  1009→                <Button
+  1010→                  variant="outline"
+  1011→                  className="w-full justify-start gap-2 border-red-500/20 text-red-400 hover:bg-red-500/5 hover:text-red-400"
+  1012→                  onClick={signOut}
+  1013→                >
+  1014→                  Sign Out of All Devices
+  1015→                </Button>
+  1016→              </CardContent>
+  1017→            </Card>
+  1018→
+  1019→            <Card className="border-red-500/10 bg-card/80">
+  1020→              <CardHeader>
+  1021→                <CardTitle className="text-base text-red-400">Danger Zone</CardTitle>
+  1022→                <CardDescription>Irreversible actions that affect your account permanently</CardDescription>
+  1023→              </CardHeader>
+  1024→              <CardContent>
+  1025→                <Button variant="outline" className="border-red-500/20 text-red-400 hover:bg-red-500/5 hover:text-red-400" disabled>
+  1026→                  Delete Account
+  1027→                </Button>
+  1028→                <p className="text-xs text-muted-foreground mt-2">
+  1029→                  Account deletion is not available during the trial period. Contact support for assistance.
+  1030→                </p>
+  1031→              </CardContent>
+  1032→            </Card>
+  1033→          </TabsContent>
+  1034→        </Tabs>
+  1035→      </div>
+  1036→    </div>
+  1037→  );
+  1038→}
+  1039→
