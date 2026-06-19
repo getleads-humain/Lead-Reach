@@ -64,23 +64,25 @@ export function MessagingView() {
     try {
       const channelInfo = CHANNELS.find(c => c.id === selectedChannel);
       const conv = DEMO_CONVERSATIONS.find(c => c.id === selectedConversation);
-      const systemPrompt = `You are a professional B2B messaging assistant for LeadReach. Generate a concise, engaging ${channelInfo?.name || selectedChannel} message. Keep it under 150 words. Match the tone of the channel (casual for SMS/WhatsApp, professional for email). Include a clear call-to-action.`;
 
-      const userPrompt = conv
-        ? `Generate a reply for ${conv.leadName} via ${channelInfo?.name || selectedChannel}. Their last message was: "${conv.lastMessage}". Status: ${conv.status}. Write a natural, engaging response that moves the conversation forward.`
-        : `Generate a ${channelInfo?.name || selectedChannel} outreach message for a B2B lead. Make it professional, concise, and compelling with a clear call-to-action.`;
+      // Use the dedicated messaging AI composer for channel-optimized messages
+      const data = await safeFetchJSON<{ message?: string; subject?: string | null; callToAction?: string }>(
+        '/api/messaging/ai-compose',
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            channel: selectedChannel,
+            intent: conv ? 'reply' : 'outreach',
+            leadName: conv?.leadName,
+            leadContext: conv ? { lastMessage: conv.lastMessage, status: conv.status, score: conv.score } : undefined,
+            conversationHistory: conv ? [{ role: 'lead', content: conv.lastMessage }] : [],
+          }),
+        }
+      );
 
-      const data = await safeFetchJSON<{ response?: string }>('/api/ai-assistant/chat', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          messages: [{ role: 'user', content: userPrompt }],
-          systemPrompt,
-        }),
-      });
-
-      if (data.response) {
-        setMessage(data.response);
+      if (data.message) {
+        setMessage(data.message);
       }
     } catch (error) {
       console.error('Error generating message:', error);

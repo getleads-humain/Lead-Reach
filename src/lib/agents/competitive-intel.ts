@@ -4,7 +4,7 @@
  * Analyze competitive landscape and generate battle cards using LLM.
  */
 
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
 
 // ============================================================
@@ -122,19 +122,21 @@ ${searchData ? `WEB RESEARCH DATA:\n${searchData}\n\n` : ''}Generate a comprehen
 Return ONLY valid JSON.`;
 
   try {
-    const zai = await getSDK();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const parsed = await callLLMForJSON<Record<string, unknown>>(
+      `You are an expert competitive intelligence analyst. Always respond in English and return ONLY valid JSON.`,
+      prompt,
+      { temperature: 0.3, maxTokens: 4000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+    ) || {};
 
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-
+    const mp = (parsed.marketPosition as { segment?: string; rank?: string; marketShare?: string } | undefined);
     return {
       company,
       industry,
-      marketPosition: parsed.marketPosition || { segment: industry, rank: 'Emerging', marketShare: 'Unknown' },
+      marketPosition: {
+        segment: mp?.segment || industry,
+        rank: mp?.rank || 'Emerging',
+        marketShare: mp?.marketShare || 'Unknown',
+      },
       competitors: Array.isArray(parsed.competitors) ? parsed.competitors.map((c: Record<string, unknown>) => ({
         name: (c.name as string) || 'Unknown',
         description: (c.description as string) || '',
@@ -230,14 +232,11 @@ Include 6-8 features in the feature matrix and 4-6 common objections.
 Return ONLY valid JSON.`;
 
   try {
-    const zai = await getSDK();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    const parsed = await callLLMForJSON<Record<string, unknown>>(
+      `You are an expert sales enablement strategist. Always respond in English and return ONLY valid JSON.`,
+      prompt,
+      { temperature: 0.3, maxTokens: 5000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+    ) || {};
 
     return {
       yourCompany: company,

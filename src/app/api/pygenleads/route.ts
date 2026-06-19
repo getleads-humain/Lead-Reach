@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -70,8 +70,6 @@ export async function POST(request: NextRequest) {
 
       // Use LLM to extract structured business data from content
       try {
-        const zai = await getSDK();
-
         const combinedContent = readResults
           .filter((r): r is NonNullable<typeof r> => r !== null)
           .map((r) => `--- ${r.title} (${r.url}) ---\n${r.content?.slice(0, 3000) || ''}`)
@@ -79,24 +77,13 @@ export async function POST(request: NextRequest) {
 
         if (!combinedContent) continue;
 
-        const extractResult = await zai.chat.completions.create({
-          messages: [
-            {
-              role: 'system',
-              content: `You are a business data extraction assistant. Extract business listings from the provided web content. For each business found, provide: name, phone (if available), email (if available), address (if available), and website URL. Return ONLY a JSON array of objects with these fields: name, phone, email, address, url. If a field is not found, omit it or set to null. Only include real businesses, not ads or navigation elements.`,
-            },
-            {
-              role: 'user',
-              content: `Extract ${keyword} businesses in ${location} from:\n\n${combinedContent.slice(0, 10000)}`,
-            },
-          ],
-          temperature: 0.1,
-        });
+        const extracted = await callLLMForJSON<GeneratedLead[]>(
+          `You are a business data extraction assistant. Extract business listings from the provided web content. Return ONLY a JSON array of objects with these fields: name, phone, email, address, url. If a field is not found, set it to null. Only include real businesses, not ads or navigation elements. Always respond in English.`,
+          `Extract ${keyword} businesses in ${location} from:\n\n${combinedContent.slice(0, 10000)}`,
+          { temperature: 0.1, maxTokens: 4000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+        );
 
-        const rawText = extractResult.choices?.[0]?.message?.content || '[]';
-        const jsonMatch = rawText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-          const extracted: GeneratedLead[] = JSON.parse(jsonMatch[0]);
+        if (Array.isArray(extracted)) {
           for (const lead of extracted) {
             if (lead.name && !seenNames.has(lead.name.toLowerCase())) {
               seenNames.add(lead.name.toLowerCase());

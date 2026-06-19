@@ -92,14 +92,14 @@ export async function updateSession(request: NextRequest) {
     '/support',
     '/terms',
     '/platform',
-    '/health',           // FC / load-balancer health check (ultra-light, no DB)
-    '/ai-hub',           // AI Activation Hub — surface every AI feature
+    '/health',             // Health check endpoint
   ];
 
   // API routes that should be accessible without auth
   const publicApiRoutes = [
     '/api/auth',
     '/api/admin/fix-security',
+    '/api/health',                      // API health check
     '/api/prospect-discovery/',   // All prospect discovery endpoints (search, chat, stream, health, convert, deep-analyze, sessions)
     '/api/ai-assistant/chat',           // AI chat endpoint
     '/api/ai-assistant/deep-research',  // AI deep research endpoint
@@ -107,23 +107,15 @@ export async function updateSession(request: NextRequest) {
     '/api/ai-assistant/save',           // AI save results endpoint
     '/api/identity',                    // Identity profile save/load
     '/api/vellum/',                     // All Vellum Core API endpoints (chat, memory, skills, pipeline, health, etc.)
-    '/api/data-sources/',               // Phase 1 data source channels (health, discover-places) — read-only, public
-    '/api/health',                      // Standard API-path health check (ultra-light, no DB)
-    '/api/ai-activate',                 // AI Activation Hub — unified AI feature endpoint (24 capabilities across 14 domains)
-    '/api/leads/ai-',                   // Per-domain AI routes (lead scoring, enrichment, next-action)
-    '/api/emails/ai-',                  // (compose, reply, optimize-subject)
-    '/api/messaging/ai-',               // (suggest-reply, summarize)
-    '/api/setters/ai-',                 // (coach, qualifying-rules)
-    '/api/campaigns/ai-',               // (generate, optimize)
-    '/api/reports/ai-',                 // (summary)
-    '/api/analytics/ai-',               // (annotate, forecast)
-    '/api/outreach/ai-',                // (sequence)
-    '/api/abm/ai-',                     // (score)
-    '/api/bookings/ai-',                // (brief)
-    '/api/settings/ai-',                // (recommend)
-    '/api/billing/ai-',                 // (analyze)
-    '/api/pipeline/ai-',                // (analyze)
-    '/api/icp/ai-',                     // (refine)
+    // AI-powered tool endpoints (added to enable platform-wide AI activation)
+    '/api/analytics/insights',          // AI dashboard insights
+    '/api/campaigns/',                  // Campaign CRUD + AI brief (AI brief requires valid campaignId in body)
+    '/api/leads/',                      // Lead CRUD + AI score (AI score requires valid leadId in path)
+    '/api/setters/ai-reply',            // AI setter conversation reply
+    '/api/bookings/ai-suggest',         // AI booking suggestions
+    '/api/messaging/ai-compose',        // AI message composer
+    '/api/outreach/ai-compose',         // AI outreach composer
+    '/api/reports/ai-generate',         // AI report generator
   ];
 
   // Static assets and Next.js internals
@@ -133,15 +125,10 @@ export async function updateSession(request: NextRequest) {
     pathname.startsWith('/logo') ||
     pathname.includes('.') && !pathname.startsWith('/api');
 
-  // Routes whose sub-paths should also be public (e.g. /blog/some-post-slug).
-  // Without this, deep links into blog posts redirect to /login because the
-  // exact-match check below only matches the leaf /blog route.
-  const publicPrefixRoutes = ['/blog'];
-
   // Check if the current route is public
   const isPublicRoute = publicRoutes.some(
     (route) => pathname === route || pathname === `${route}/`
-  ) || publicPrefixRoutes.some((route) => pathname.startsWith(`${route}/`));
+  );
   const isPublicApiRoute = publicApiRoutes.some(
     (route) => pathname.startsWith(route)
   );

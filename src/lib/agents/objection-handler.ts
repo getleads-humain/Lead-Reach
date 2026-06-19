@@ -5,7 +5,7 @@
  * and 3 response frameworks.
  */
 
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -138,19 +138,14 @@ Rules:
 - Return ONLY valid JSON`;
 
   try {
-    const zai = await getSDK();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-    });
+    const parsed = await callLLMForJSON<Record<string, unknown>>(
+      `You are an expert B2B sales coach. Generate a response to a sales objection using the framework specified below. Always respond in English.`,
+      prompt,
+      { temperature: 0.4, maxTokens: 2000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+    );
 
-    const content = result.choices?.[0]?.message?.content || '';
-    
-    let parsed: Record<string, unknown>;
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      parsed = {};
+    if (!parsed) {
+      throw new Error('LLM returned no parseable JSON');
     }
 
     return {

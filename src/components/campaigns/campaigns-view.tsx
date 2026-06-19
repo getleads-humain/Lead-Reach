@@ -37,6 +37,7 @@ import {
   Pause,
   Archive,
   Eye,
+  Sparkles,
 } from 'lucide-react';
 import {
   DropdownMenu,
@@ -108,6 +109,11 @@ export function CampaignsView() {
   const [formSize, setFormSize] = useState('');
   const [formCreating, setFormCreating] = useState(false);
 
+  // AI Campaign Brief state
+  const [aiBrief, setAiBrief] = useState<Record<string, unknown> | null>(null);
+  const [aiBriefLoading, setAiBriefLoading] = useState(false);
+  const [aiBriefError, setAiBriefError] = useState<string | null>(null);
+
   // Pipeline status per campaign: campaignId -> PipelineStatusResponse
   const [pipelineStatuses, setPipelineStatuses] = useState<Record<string, PipelineStatusResponse>>({});
   // Track which campaigns we're actively polling
@@ -115,6 +121,33 @@ export function CampaignsView() {
   const pollingTimersRef = useRef<Record<string, ReturnType<typeof setInterval>>>({});
   // Guard against concurrent loadCampaigns calls
   const isLoadingRef = useRef(false);
+
+  const handleCloseDetail = () => {
+    setDetailCampaign(null);
+    setAiBrief(null);
+    setAiBriefError(null);
+  };
+
+  const generateAIBrief = useCallback(async (campaignId: string) => {
+    setAiBriefLoading(true);
+    setAiBriefError(null);
+    try {
+      const data = await safeFetchJSON<{ brief: Record<string, unknown> }>(`/api/campaigns/${campaignId}/ai-brief`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      });
+      if (data?.brief) {
+        setAiBrief(data.brief);
+      } else {
+        setAiBriefError('AI brief generation returned no result.');
+      }
+    } catch (err) {
+      setAiBriefError(err instanceof Error ? err.message : 'AI brief generation failed');
+    } finally {
+      setAiBriefLoading(false);
+    }
+  }, []);
 
   useEffect(() => {
     loadCampaigns();
@@ -871,6 +904,111 @@ export function CampaignsView() {
                 <div className="text-xs text-muted-foreground">
                   Created {new Date(detailCampaign.createdAt).toLocaleDateString()} • Last updated{' '}
                   {new Date(detailCampaign.updatedAt).toLocaleDateString()}
+                </div>
+
+                {/* AI Campaign Brief */}
+                <div className="pt-2 border-t border-border/30">
+                  <div className="flex items-center justify-between mb-2">
+                    <div className="flex items-center gap-2">
+                      <Sparkles className="h-4 w-4 text-violet-400" />
+                      <span className="text-sm font-semibold text-foreground/90">AI Campaign Brief</span>
+                      <Badge variant="outline" className="text-[9px] border-violet-500/20 text-violet-400 bg-violet-500/5">glm-4.6v-flash</Badge>
+                    </div>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1.5 text-[10px] text-violet-400 hover:text-violet-400 hover:bg-violet-500/10"
+                      onClick={() => generateAIBrief(detailCampaign.id)}
+                      disabled={aiBriefLoading}
+                    >
+                      {aiBriefLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                      {aiBrief ? 'Regenerate' : 'Generate'}
+                    </Button>
+                  </div>
+
+                  {aiBriefError ? (
+                    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-400">
+                      {aiBriefError}
+                    </div>
+                  ) : aiBriefLoading && !aiBrief ? (
+                    <div className="rounded-lg border border-violet-500/10 bg-violet-500/5 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 text-violet-400 animate-spin" />
+                        <span className="text-xs text-muted-foreground">AI is analyzing this campaign...</span>
+                      </div>
+                    </div>
+                  ) : aiBrief ? (
+                    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 space-y-3 text-xs">
+                      {typeof aiBrief.targetSegmentAnalysis === 'string' && aiBrief.targetSegmentAnalysis && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Target Segment</div>
+                          <p className="text-foreground/90 leading-relaxed">{aiBrief.targetSegmentAnalysis}</p>
+                        </div>
+                      )}
+                      {Array.isArray(aiBrief.recommendedOutreachAngles) && aiBrief.recommendedOutreachAngles.length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Outreach Angles</div>
+                          <ul className="space-y-1">
+                            {(aiBrief.recommendedOutreachAngles as Array<Record<string, string>>).map((a, i) => (
+                              <li key={i} className="text-foreground/80">
+                                <span className="font-medium">{a.angle}</span>
+                                <span className="text-muted-foreground"> — {a.rationale}</span>
+                                <Badge variant="outline" className="ml-2 text-[8px] capitalize">{a.priority}</Badge>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {Array.isArray(aiBrief.topLeadsToPrioritize) && aiBrief.topLeadsToPrioritize.length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Top Leads to Prioritize</div>
+                          <ul className="space-y-1">
+                            {(aiBrief.topLeadsToPrioritize as Array<Record<string, string>>).slice(0, 5).map((l, i) => (
+                              <li key={i} className="text-foreground/80">
+                                <span className="font-medium">{l.company}</span>
+                                <span className="text-muted-foreground"> — {l.reason}</span>
+                                <div className="text-[10px] text-violet-400 italic">→ {l.recommendedAction}</div>
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {Array.isArray(aiBrief.suggestedNextSteps) && aiBrief.suggestedNextSteps.length > 0 && (
+                        <div>
+                          <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Next Steps</div>
+                          <ul className="space-y-1">
+                            {(aiBrief.suggestedNextSteps as string[]).map((s, i) => (
+                              <li key={i} className="text-foreground/80 flex gap-1.5">
+                                <span className="text-violet-400">{i + 1}.</span>
+                                {s}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                      {typeof aiBrief.projectedOutcome === 'string' && aiBrief.projectedOutcome && (
+                        <div className="pt-2 border-t border-border/20">
+                          <div className="text-[10px] uppercase tracking-wider text-emerald-400 mb-1">Projected Outcome</div>
+                          <p className="text-foreground/90 italic">{aiBrief.projectedOutcome}</p>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border/30 bg-secondary/10 p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Generate an AI-powered brief with outreach angles, top leads to prioritize, and next steps
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-[10px] border-violet-500/20 text-violet-400 hover:bg-violet-500/10 hover:text-violet-400"
+                        onClick={() => generateAIBrief(detailCampaign.id)}
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Generate AI Brief
+                      </Button>
+                    </div>
+                  )}
                 </div>
               </div>
               <DialogFooter className="gap-2">

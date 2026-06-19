@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -16,7 +16,21 @@ import {
   TrendingUp,
   Star,
   ArrowRight,
+  Sparkles,
+  Loader2,
+  AlertCircle,
 } from 'lucide-react';
+import { safeFetchJSON } from '@/lib/utils';
+
+interface BookingSuggestion {
+  conversationId: string;
+  leadName: string;
+  channel: string;
+  bookingProbability: number;
+  suggestedMessage: string;
+  bestTimeToSend: string;
+  rationale: string;
+}
 
 const DEMO_BOOKINGS = [
   { id: '1', leadName: 'Sarah Johnson', setterName: 'Sales Setter Pro', date: 'Today, 2:00 PM', channel: 'whatsapp', status: 'confirmed', notes: 'Demo call for coaching package' },
@@ -42,6 +56,30 @@ const BOOKING_METRICS = {
 
 export function BookingView() {
   const [filter, setFilter] = useState<'all' | 'today' | 'upcoming'>('all');
+  const [aiSuggestions, setAiSuggestions] = useState<BookingSuggestion[]>([]);
+  const [aiSuggestionsLoading, setAiSuggestionsLoading] = useState(false);
+  const [aiSuggestionsError, setAiSuggestionsError] = useState<string | null>(null);
+  const [strategySummary, setStrategySummary] = useState<string>('');
+
+  const loadAISuggestions = useCallback(async () => {
+    setAiSuggestionsLoading(true);
+    setAiSuggestionsError(null);
+    try {
+      const data = await safeFetchJSON<{ suggestions: BookingSuggestion[]; strategySummary: string }>(
+        '/api/bookings/ai-suggest?filter=pending'
+      );
+      setAiSuggestions(data.suggestions || []);
+      setStrategySummary(data.strategySummary || '');
+    } catch (err) {
+      setAiSuggestionsError(err instanceof Error ? err.message : 'Failed to load AI booking suggestions');
+    } finally {
+      setAiSuggestionsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadAISuggestions();
+  }, [loadAISuggestions]);
 
   const filteredBookings = DEMO_BOOKINGS.filter(b => {
     if (filter === 'today') return b.date.includes('Today');
@@ -85,6 +123,90 @@ export function BookingView() {
         <MetricCard title="Booking Rate" value={`${BOOKING_METRICS.conversionRate}%`} icon={Star} accent="amber" />
         <MetricCard title="Avg Time to Book" value={BOOKING_METRICS.avgTimeToBook} icon={Clock} accent="violet" />
       </div>
+
+      {/* AI Booking Suggestions */}
+      <Card className="card-premium border-violet-500/20 relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-violet-400 via-cyan-400 to-emerald-400" />
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <Sparkles className="h-4 w-4 text-violet-400" />
+              AI Booking Suggestions
+              <Badge variant="outline" className="text-[9px] border-violet-500/20 text-violet-400 bg-violet-500/5">
+                glm-4.6v-flash
+              </Badge>
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadAISuggestions}
+              disabled={aiSuggestionsLoading}
+              className="h-7 text-[11px] gap-1.5"
+            >
+              {aiSuggestionsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+              Refresh
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {aiSuggestionsError ? (
+            <div className="flex items-center gap-2 text-sm text-red-400">
+              <AlertCircle className="h-4 w-4" />
+              {aiSuggestionsError}
+            </div>
+          ) : aiSuggestionsLoading && aiSuggestions.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Analyzing conversations for booking opportunities...
+            </div>
+          ) : aiSuggestions.length === 0 ? (
+            <div className="text-center py-6 text-sm text-muted-foreground">
+              <Sparkles className="h-6 w-6 mx-auto text-violet-400/30 mb-2" />
+              No pending leads ready for booking suggestions yet. Keep qualifying leads!
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {strategySummary && (
+                <div className="p-3 rounded-lg bg-gradient-to-br from-violet-500/8 to-cyan-500/4 border border-violet-500/20">
+                  <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Strategy Summary</div>
+                  <p className="text-sm text-foreground/90 leading-relaxed">{strategySummary}</p>
+                </div>
+              )}
+              {aiSuggestions.map((s, i) => (
+                <div key={i} className="rounded-lg border border-border/25 bg-secondary/10 p-3">
+                  <div className="flex items-start justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2">
+                      <Users className="h-3.5 w-3.5 text-cyan-400" />
+                      <span className="text-sm font-semibold text-foreground/90">{s.leadName}</span>
+                      <Badge variant="outline" className="text-[9px] capitalize border-cyan-500/20 text-cyan-400 bg-cyan-500/5">{s.channel}</Badge>
+                    </div>
+                    <Badge variant="outline" className={`text-[9px] ${
+                      s.bookingProbability >= 70 ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5' :
+                      s.bookingProbability >= 40 ? 'border-amber-500/20 text-amber-400 bg-amber-500/5' :
+                      'border-red-500/20 text-red-400 bg-red-500/5'
+                    }`}>
+                      {s.bookingProbability}% likely
+                    </Badge>
+                  </div>
+                  <div className="mb-2">
+                    <div className="text-[10px] uppercase tracking-wider text-muted-foreground mb-1">Suggested message</div>
+                    <p className="text-xs text-foreground/80 italic">"{s.suggestedMessage}"</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-2 text-[10px]">
+                    <div>
+                      <span className="text-muted-foreground">Best time:</span>{' '}
+                      <span className="text-foreground/80">{s.bestTimeToSend}</span>
+                    </div>
+                  </div>
+                  <div className="mt-2 pt-2 border-t border-border/20 text-[10px] text-muted-foreground">
+                    <span className="text-violet-400">Why:</span> {s.rationale}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
 
       {/* Booking Pipeline */}
       <Card className="card-premium border-border/30">

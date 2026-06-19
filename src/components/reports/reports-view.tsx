@@ -57,6 +57,17 @@ export function ReportsView() {
   const [aiSummaryLoading, setAiSummaryLoading] = useState(false);
   const { generate: aiGenerate, isLoading: aiIsLoading } = useAIOneShot();
 
+  // Full AI Report state (multi-section structured report)
+  const [aiReport, setAiReport] = useState<{
+    title: string;
+    type: string;
+    sections: Array<{ title: string; content: string }>;
+    keyFindings: string[];
+    recommendations: string[];
+  } | null>(null);
+  const [aiReportLoading, setAiReportLoading] = useState(false);
+  const [aiReportError, setAiReportError] = useState<string | null>(null);
+
   useEffect(() => {
     loadReport();
   }, []);
@@ -176,6 +187,37 @@ Keep it professional, data-driven, and under 200 words.`,
       // Silently fail — summary is nice-to-have
     } finally {
       setAiSummaryLoading(false);
+    }
+  };
+
+  // Generate a full structured AI report (multi-section, saved to DB)
+  const generateFullAIReport = async (reportType: 'pipeline_snapshot' | 'campaign_performance' | 'prospect_profile' | 'market_analysis' = 'pipeline_snapshot') => {
+    setAiReportLoading(true);
+    setAiReportError(null);
+    try {
+      const data = await safeFetchJSON<{
+        report: {
+          title: string;
+          type: string;
+          sections: Array<{ title: string; content: string }>;
+          keyFindings: string[];
+          recommendations: string[];
+        };
+        savedReportId?: string;
+      }>('/api/reports/ai-generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ reportType, save: true }),
+      });
+      if (data?.report) {
+        setAiReport(data.report);
+      } else {
+        setAiReportError('AI report generation returned no result.');
+      }
+    } catch (err) {
+      setAiReportError(err instanceof Error ? err.message : 'AI report generation failed');
+    } finally {
+      setAiReportLoading(false);
     }
   };
 
@@ -344,6 +386,114 @@ Keep it professional, data-driven, and under 200 words.`,
               >
                 <Sparkles className="h-4 w-4" />
                 Generate Executive Summary
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Full Structured AI Report (multi-section) */}
+      <Card className="card-premium border-violet-500/20 overflow-hidden relative">
+        <div className="absolute inset-0 bg-gradient-to-br from-violet-500/5 via-transparent to-cyan-500/5 pointer-events-none" />
+        <CardHeader className="pb-3 relative">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <Sparkles className="h-4 w-4 text-violet-400" />
+              Full AI Report (Structured)
+              <Badge variant="outline" className="text-[9px] border-violet-500/20 text-violet-400 bg-violet-500/5">
+                glm-4.6v-flash
+              </Badge>
+            </CardTitle>
+            <div className="flex gap-1.5 flex-wrap">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => generateFullAIReport('pipeline_snapshot')}
+                disabled={aiReportLoading}
+                className="h-7 text-[10px] gap-1.5 border-violet-500/20 text-violet-400 hover:bg-violet-500/10"
+              >
+                {aiReportLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+                Pipeline Snapshot
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => generateFullAIReport('market_analysis')}
+                disabled={aiReportLoading}
+                className="h-7 text-[10px] gap-1.5 border-cyan-500/20 text-cyan-400 hover:bg-cyan-500/10"
+              >
+                Market Analysis
+              </Button>
+            </div>
+          </div>
+        </CardHeader>
+        <CardContent className="relative">
+          {aiReportError ? (
+            <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-sm text-red-400">
+              {aiReportError}
+            </div>
+          ) : aiReportLoading ? (
+            <div className="space-y-3">
+              <Skeleton className="h-5 w-1/2 bg-secondary/30" />
+              <Skeleton className="h-20 w-full bg-secondary/30" />
+              <Skeleton className="h-20 w-full bg-secondary/30" />
+              <Skeleton className="h-20 w-full bg-secondary/30" />
+            </div>
+          ) : aiReport ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3">
+                <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">{aiReport.type.replace(/_/g, ' ')}</div>
+                <h3 className="text-base font-semibold text-foreground/90">{aiReport.title}</h3>
+              </div>
+
+              {aiReport.sections.map((section, i) => (
+                <div key={i} className="rounded-lg border border-border/30 bg-secondary/10 p-3">
+                  <h4 className="text-sm font-semibold text-foreground/90 mb-1.5">{section.title}</h4>
+                  <p className="text-xs text-foreground/80 leading-relaxed whitespace-pre-wrap">{section.content}</p>
+                </div>
+              ))}
+
+              {aiReport.keyFindings.length > 0 && (
+                <div className="rounded-lg border border-amber-500/20 bg-amber-500/5 p-3">
+                  <h4 className="text-sm font-semibold text-amber-400 mb-2">Key Findings</h4>
+                  <ul className="space-y-1">
+                    {aiReport.keyFindings.map((f, i) => (
+                      <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                        <span className="text-amber-400">•</span>
+                        {f}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {aiReport.recommendations.length > 0 && (
+                <div className="rounded-lg border border-emerald-500/20 bg-emerald-500/5 p-3">
+                  <h4 className="text-sm font-semibold text-emerald-400 mb-2">Recommendations</h4>
+                  <ul className="space-y-1">
+                    {aiReport.recommendations.map((r, i) => (
+                      <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                        <span className="text-emerald-400">→</span>
+                        {r}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </div>
+          ) : (
+            <div className="text-center py-8">
+              <Sparkles className="h-8 w-8 mx-auto text-violet-400/30 mb-3" />
+              <p className="text-sm text-muted-foreground mb-3">
+                Generate a full multi-section AI report — saved automatically to your reports library.
+              </p>
+              <Button
+                onClick={() => generateFullAIReport('pipeline_snapshot')}
+                variant="outline"
+                className="gap-2 border-violet-500/20 text-violet-400 hover:bg-violet-500/10 hover:text-violet-400"
+              >
+                <Sparkles className="h-4 w-4" />
+                Generate Pipeline Snapshot Report
               </Button>
             </div>
           )}

@@ -1,21 +1,16 @@
-import { NextResponse } from 'next/server';
-
 /**
- * GET /api/health
- *
- * Alias for /health — the standard API-path health check convention.
- * Same ultra-lightweight behavior: no DB, no LLM, no external calls.
+ * /api/health — Alias of /health for API-style health checks.
  */
+
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
+const startedAt = Date.now();
+
 export async function GET() {
-  return NextResponse.json(
-    {
-      status: 'ok',
-      timestamp: new Date().toISOString(),
-      uptime: process.uptime ? Math.round(process.uptime()) : null,
-    },
-    { status: 200 }
-  );
+  return Response.json({
+    status: 'ok',
+    uptime: Math.floor((Date.now() - startedAt) / 1000),
+    timestamp: new Date().toISOString(),
+  }, { status: 200 });
 }

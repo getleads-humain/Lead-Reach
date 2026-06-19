@@ -6,7 +6,7 @@
  */
 
 import { db } from '@/lib/db';
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -373,21 +373,22 @@ Generate 4-6 insights as JSON array:
 Return ONLY the JSON array.`;
 
   try {
-    const zai = await getSDK();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+    const parsed = await callLLMForJSON<unknown[]>(
+      `You are a senior sales intelligence analyst. Generate actionable insights from pipeline data. Always respond in English and return ONLY a valid JSON array.`,
+      prompt,
+      { temperature: 0.3, maxTokens: 3000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+    );
+    const arr: unknown[] = Array.isArray(parsed) ? parsed : [];
+    return arr.map((p) => {
+      const item = p as Record<string, unknown>;
+      return {
+        type: (['opportunity', 'risk', 'trend', 'recommendation'].includes(item.type as string) ? item.type : 'recommendation') as AIInsight['type'],
+        title: (item.title as string) || 'Insight',
+        description: (item.description as string) || '',
+        impact: (['high', 'medium', 'low'].includes(item.impact as string) ? item.impact : 'medium') as AIInsight['impact'],
+        actionRequired: typeof item.actionRequired === 'boolean' ? item.actionRequired : false,
+      };
     });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\[[\s\S]*\]/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : [];
-    return Array.isArray(parsed) ? parsed.map((p: Record<string, unknown>) => ({
-      type: (['opportunity', 'risk', 'trend', 'recommendation'].includes(p.type as string) ? p.type : 'recommendation') as AIInsight['type'],
-      title: (p.title as string) || 'Insight',
-      description: (p.description as string) || '',
-      impact: (['high', 'medium', 'low'].includes(p.impact as string) ? p.impact : 'medium') as AIInsight['impact'],
-      actionRequired: typeof p.actionRequired === 'boolean' ? p.actionRequired : false,
-    })) : getDefaultInsights(data);
   } catch {
     return getDefaultInsights(data);
   }

@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { webRead } from '@/lib/agent-reach-bridge';
-import { getSDK } from '@/lib/llm';
+import { callLLM, MODEL_PRIMARY } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -41,8 +41,6 @@ export async function POST(request: NextRequest) {
 
         // Use LLM to extract structured data
         try {
-          const zai = await getSDK();
-
           const extractPrompt = `You are a data extraction assistant. Extract the following information from the web page content.
 ${selectors ? `Focus on these selectors/fields: ${selectors.join(', ')}` : 'Extract key information like company name, contact details, addresses, phone numbers, and emails.'}
 
@@ -51,15 +49,14 @@ ${readResult.data.content?.slice(0, 8000) || ''}
 
 Return a JSON object with the extracted data. Only include fields that were found in the content.`;
 
-          const llmResult = await zai.chat.completions.create({
-            messages: [
-              { role: 'system', content: 'You are a precise data extraction assistant. Always respond with valid JSON only.' },
-              { role: 'user', content: extractPrompt },
-            ],
+          const extractedText = await callLLM({
+            systemPrompt: `You are a precise data extraction assistant. Always respond with valid JSON only and in English.`,
+            userMessage: extractPrompt,
             temperature: 0.1,
+            maxTokens: 3000,
+            model: MODEL_PRIMARY,
+            thinkingBudget: 'standard',
           });
-
-          const extractedText = llmResult.choices?.[0]?.message?.content || '';
 
           return NextResponse.json({
             success: true,
@@ -67,7 +64,7 @@ Return a JSON object with the extracted data. Only include fields that were foun
               content: readResult.data.content,
               title: readResult.data.title,
               wordCount: readResult.data.wordCount,
-              extracted: extractedText,
+              extracted: extractedText || '',
             },
           });
         } catch (llmError) {

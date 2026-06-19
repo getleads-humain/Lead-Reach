@@ -324,6 +324,57 @@ export function LeadsView() {
   const [aiSuggestionLoading, setAiSuggestionLoading] = useState(false);
   const { generate: aiGenerate, isLoading: aiIsGenerating } = useAIOneShot();
 
+  // AI Lead Scoring state
+  const [aiScoring, setAiScoring] = useState<{
+    overallScore: number;
+    tier: string;
+    confidence: number;
+    dimensions: Record<string, { score: number; rationale: string }>;
+    signals: { positive: string[]; negative: string[]; missing: string[] };
+    recommendedActions: string[];
+    riskFactors: string[];
+    nextBestChannel: string;
+    outreachAngle: string;
+  } | null>(null);
+  const [aiScoringLoading, setAiScoringLoading] = useState(false);
+  const [aiScoringError, setAiScoringError] = useState<string | null>(null);
+
+  // Run AI scoring for the currently selected lead
+  const generateAIScore = useCallback(async (lead: Lead) => {
+    if (!lead?.id) return;
+    setAiScoringLoading(true);
+    setAiScoringError(null);
+    try {
+      const data = await safeFetchJSON<{
+        scoring: {
+          overallScore: number;
+          tier: string;
+          confidence: number;
+          dimensions: Record<string, { score: number; rationale: string }>;
+          signals: { positive: string[]; negative: string[]; missing: string[] };
+          recommendedActions: string[];
+          riskFactors: string[];
+          nextBestChannel: string;
+          outreachAngle: string;
+        };
+        applied?: boolean;
+      }>(`/api/leads/${lead.id}/ai-score`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ applyUpdate: true }),
+      });
+      if (data?.scoring) {
+        setAiScoring(data.scoring);
+      } else {
+        setAiScoringError('AI scoring returned no result.');
+      }
+    } catch (err) {
+      setAiScoringError(err instanceof Error ? err.message : 'AI scoring failed');
+    } finally {
+      setAiScoringLoading(false);
+    }
+  }, []);
+
   // Action pipeline state
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [executingActionId, setExecutingActionId] = useState<string | null>(null);
@@ -710,6 +761,8 @@ Format each action exactly like this:
     setSelectedLead(lead);
     setAiSuggestion(null);
     setAiSuggestionLoading(false);
+    setAiScoring(null);
+    setAiScoringError(null);
     setActionItems([]);
     setEnrichedData({
       discoveredContacts: [],
@@ -724,6 +777,8 @@ Format each action exactly like this:
     setSelectedLead(null);
     setAiSuggestion(null);
     setAiSuggestionLoading(false);
+    setAiScoring(null);
+    setAiScoringError(null);
     setActionItems([]);
     setEnrichedData({
       discoveredContacts: [],
@@ -1341,6 +1396,160 @@ Format each action exactly like this:
                     {selectedLead.foundingYear && <div><span className="text-muted-foreground">Founded:</span> <span className="text-foreground/80">{selectedLead.foundingYear}</span></div>}
                     {selectedLead.ownershipType && <div><span className="text-muted-foreground">Ownership:</span> <span className="text-foreground/80">{selectedLead.ownershipType}</span></div>}
                   </div>
+                </div>
+
+                {/* AI Lead Scoring Panel */}
+                <div>
+                  <div className="flex items-center justify-between mb-2">
+                    <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/90">
+                      <Sparkles className="h-4 w-4 text-violet-400" />
+                      AI Lead Scoring
+                      <Badge variant="outline" className="text-[9px] border-violet-500/20 text-violet-400 bg-violet-500/5">glm-4.6v-flash</Badge>
+                    </h4>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7 gap-1.5 text-[10px] text-violet-400 hover:text-violet-400 hover:bg-violet-500/10"
+                      onClick={() => generateAIScore(selectedLead)}
+                      disabled={aiScoringLoading}
+                    >
+                      {aiScoringLoading ? (
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                      ) : (
+                        <Sparkles className="h-3 w-3" />
+                      )}
+                      {aiScoring ? 'Re-score' : 'Score with AI'}
+                    </Button>
+                  </div>
+
+                  {aiScoringError ? (
+                    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-400">
+                      {aiScoringError}
+                    </div>
+                  ) : aiScoringLoading && !aiScoring ? (
+                    <div className="rounded-lg border border-violet-500/10 bg-violet-500/5 p-3 space-y-2">
+                      <div className="flex items-center gap-2">
+                        <Loader2 className="h-3.5 w-3.5 text-violet-400 animate-spin" />
+                        <span className="text-xs text-muted-foreground">AI is scoring this lead across 5 dimensions...</span>
+                      </div>
+                      <div className="space-y-1.5">
+                        <div className="h-2.5 bg-secondary/30 rounded w-full" />
+                        <div className="h-2.5 bg-secondary/30 rounded w-4/5" />
+                        <div className="h-2.5 bg-secondary/30 rounded w-3/5" />
+                      </div>
+                    </div>
+                  ) : aiScoring ? (
+                    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 space-y-3">
+                      {/* Overall score */}
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <div className="text-xs text-muted-foreground">Overall AI Score</div>
+                          <div className="text-2xl font-bold text-violet-400">{aiScoring.overallScore}<span className="text-xs text-muted-foreground">/100</span></div>
+                        </div>
+                        <div className="text-right">
+                          <Badge variant="outline" className={`text-[9px] capitalize ${
+                            aiScoring.tier === 'hot' ? 'border-red-500/30 text-red-400 bg-red-500/10' :
+                            aiScoring.tier === 'warm' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
+                            'border-cyan-500/30 text-cyan-400 bg-cyan-500/10'
+                          }`}>
+                            {aiScoring.tier}
+                          </Badge>
+                          <div className="text-[10px] text-muted-foreground mt-1">Confidence: {Math.round(aiScoring.confidence * 100)}%</div>
+                        </div>
+                      </div>
+
+                      {/* Dimension scores */}
+                      <div className="space-y-1.5">
+                        {Object.entries(aiScoring.dimensions || {}).map(([dim, info]) => (
+                          <div key={dim}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground capitalize">{dim}</span>
+                              <span className="text-[10px] font-semibold text-foreground/80">{info.score}</span>
+                            </div>
+                            <div className="h-1 rounded-full bg-secondary/30 overflow-hidden">
+                              <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400" style={{ width: `${info.score}%` }} />
+                            </div>
+                            <p className="text-[10px] text-muted-foreground/80 mt-0.5 italic">{info.rationale}</p>
+                          </div>
+                        ))}
+                      </div>
+
+                      {/* Signals */}
+                      {aiScoring.signals && (aiScoring.signals.positive.length > 0 || aiScoring.signals.negative.length > 0) && (
+                        <div className="grid grid-cols-2 gap-2 text-[10px]">
+                          {aiScoring.signals.positive.length > 0 && (
+                            <div>
+                              <div className="text-emerald-400 font-medium mb-1">Positive signals</div>
+                              <ul className="text-muted-foreground space-y-0.5">
+                                {aiScoring.signals.positive.slice(0, 3).map((s, i) => <li key={i}>+ {s}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                          {aiScoring.signals.negative.length > 0 && (
+                            <div>
+                              <div className="text-red-400 font-medium mb-1">Negative signals</div>
+                              <ul className="text-muted-foreground space-y-0.5">
+                                {aiScoring.signals.negative.slice(0, 3).map((s, i) => <li key={i}>- {s}</li>)}
+                              </ul>
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* Outreach angle */}
+                      {aiScoring.outreachAngle && (
+                        <div className="pt-2 border-t border-border/20">
+                          <div className="text-[10px] text-muted-foreground mb-1">Recommended outreach angle ({aiScoring.nextBestChannel})</div>
+                          <p className="text-xs text-foreground/90 leading-relaxed">{aiScoring.outreachAngle}</p>
+                        </div>
+                      )}
+
+                      {/* Recommended actions */}
+                      {aiScoring.recommendedActions && aiScoring.recommendedActions.length > 0 && (
+                        <div className="pt-2 border-t border-border/20">
+                          <div className="text-[10px] text-muted-foreground mb-1">Recommended actions</div>
+                          <ul className="space-y-1">
+                            {aiScoring.recommendedActions.slice(0, 4).map((a, i) => (
+                              <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
+                                <span className="text-violet-400">→</span>
+                                {a}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+
+                      {/* Risk factors */}
+                      {aiScoring.riskFactors && aiScoring.riskFactors.length > 0 && (
+                        <div className="pt-2 border-t border-border/20">
+                          <div className="text-[10px] text-amber-400 mb-1">Risk factors</div>
+                          <ul className="space-y-0.5">
+                            {aiScoring.riskFactors.slice(0, 3).map((r, i) => (
+                              <li key={i} className="text-[10px] text-muted-foreground flex gap-1.5">
+                                <span className="text-amber-400">!</span>
+                                {r}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="rounded-lg border border-border/30 bg-secondary/10 p-3 text-center">
+                      <p className="text-xs text-muted-foreground mb-2">
+                        Run AI scoring for a 5-dimension analysis with recommended actions
+                      </p>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="gap-1.5 text-[10px] border-violet-500/20 text-violet-400 hover:bg-violet-500/10 hover:text-violet-400"
+                        onClick={() => generateAIScore(selectedLead)}
+                      >
+                        <Sparkles className="h-3 w-3" />
+                        Run AI Scoring
+                      </Button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Location */}

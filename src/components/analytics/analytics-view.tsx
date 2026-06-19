@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -21,7 +21,21 @@ import {
   CheckCircle2,
   FlaskConical,
   Heart,
+  Sparkles,
+  Loader2,
+  AlertCircle,
+  Lightbulb,
+  AlertTriangle,
 } from 'lucide-react';
+import { safeFetchJSON } from '@/lib/utils';
+
+interface AIInsight {
+  type: 'opportunity' | 'risk' | 'trend' | 'recommendation';
+  title: string;
+  description: string;
+  impact: 'high' | 'medium' | 'low';
+  actionRequired: boolean;
+}
 
 const FUNNEL_DATA = [
   { label: 'Leads', count: 2847, pct: 100, color: 'bg-blue-400' },
@@ -52,6 +66,48 @@ const SETTER_PERF = [
 ];
 
 export function AnalyticsView() {
+  const [insights, setInsights] = useState<AIInsight[]>([]);
+  const [executiveSummary, setExecutiveSummary] = useState<string>('');
+  const [insightsLoading, setInsightsLoading] = useState(false);
+  const [insightsError, setInsightsError] = useState<string | null>(null);
+
+  const loadInsights = useCallback(async () => {
+    setInsightsLoading(true);
+    setInsightsError(null);
+    try {
+      const data = await safeFetchJSON<{ insights: AIInsight[]; executiveSummary: string }>('/api/analytics/insights');
+      setInsights(data.insights || []);
+      setExecutiveSummary(data.executiveSummary || '');
+    } catch (err) {
+      setInsightsError(err instanceof Error ? err.message : 'Failed to load AI insights');
+    } finally {
+      setInsightsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadInsights();
+  }, [loadInsights]);
+
+  const insightIcon = (type: AIInsight['type']) => {
+    switch (type) {
+      case 'opportunity': return <Lightbulb className="h-3.5 w-3.5 text-emerald-400" />;
+      case 'risk': return <AlertTriangle className="h-3.5 w-3.5 text-amber-400" />;
+      case 'trend': return <TrendingUp className="h-3.5 w-3.5 text-cyan-400" />;
+      case 'recommendation': return <Sparkles className="h-3.5 w-3.5 text-violet-400" />;
+      default: return <Lightbulb className="h-3.5 w-3.5 text-emerald-400" />;
+    }
+  };
+
+  const insightBadge = (impact: AIInsight['impact']) => {
+    const styles = {
+      high: 'border-red-500/20 text-red-400 bg-red-500/5',
+      medium: 'border-amber-500/20 text-amber-400 bg-amber-500/5',
+      low: 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5',
+    } as const;
+    return styles[impact] || styles.medium;
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -61,6 +117,80 @@ export function AnalyticsView() {
           Get actionable data and insights instantly — conversion metrics, A/B tests, channel performance
         </p>
       </div>
+
+      {/* AI Insights Panel */}
+      <Card className="card-premium border-border/30 relative overflow-hidden">
+        <div className="absolute top-0 left-0 right-0 h-0.5 bg-gradient-to-r from-emerald-400 via-cyan-400 to-violet-400" />
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/90">
+              <Sparkles className="h-4 w-4 text-violet-400" />
+              AI-Generated Insights
+              <Badge variant="outline" className="text-[9px] border-violet-500/20 text-violet-400 bg-violet-500/5">
+                glm-4.6v-flash
+              </Badge>
+            </CardTitle>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={loadInsights}
+              disabled={insightsLoading}
+              className="h-7 text-[11px] gap-1.5"
+            >
+              {insightsLoading ? <Loader2 className="h-3 w-3 animate-spin" /> : <Sparkles className="h-3 w-3" />}
+              Refresh Insights
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          {insightsError ? (
+            <div className="flex items-center gap-2 text-sm text-red-400">
+              <AlertCircle className="h-4 w-4" />
+              {insightsError}
+            </div>
+          ) : insightsLoading && insights.length === 0 ? (
+            <div className="flex items-center gap-2 text-sm text-muted-foreground">
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Analyzing pipeline data with AI...
+            </div>
+          ) : (
+            <>
+              {executiveSummary && (
+                <div className="mb-4 p-3 rounded-lg bg-gradient-to-br from-violet-500/8 to-cyan-500/4 border border-violet-500/20">
+                  <div className="text-[10px] uppercase tracking-wider text-violet-400 mb-1">Executive Summary</div>
+                  <p className="text-sm text-foreground/90 leading-relaxed">{executiveSummary}</p>
+                </div>
+              )}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                {insights.map((insight, i) => (
+                  <div key={i} className="rounded-lg border border-border/25 bg-secondary/10 p-3">
+                    <div className="flex items-start justify-between gap-2 mb-2">
+                      <div className="flex items-center gap-2">
+                        {insightIcon(insight.type)}
+                        <span className="text-sm font-semibold text-foreground/90">{insight.title}</span>
+                      </div>
+                      <Badge variant="outline" className={`text-[9px] ${insightBadge(insight.impact)}`}>
+                        {insight.impact}
+                      </Badge>
+                    </div>
+                    <p className="text-xs text-muted-foreground leading-relaxed">{insight.description}</p>
+                    <div className="flex items-center gap-2 mt-2">
+                      <Badge variant="outline" className="text-[9px] border-border/40 text-muted-foreground capitalize">
+                        {insight.type}
+                      </Badge>
+                      {insight.actionRequired && (
+                        <Badge variant="outline" className="text-[9px] border-amber-500/20 text-amber-400 bg-amber-500/5">
+                          Action required
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </>
+          )}
+        </CardContent>
+      </Card>
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5">

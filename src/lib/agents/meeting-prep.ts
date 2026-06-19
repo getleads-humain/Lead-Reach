@@ -4,7 +4,7 @@
  * Generate comprehensive 11-section meeting briefings using LLM.
  */
 
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
 
 // ============================================================
@@ -107,14 +107,11 @@ Be specific and actionable. Reference real data where possible.
 Return ONLY valid JSON.`;
 
   try {
-    const zai = await getSDK();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    const parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+    const parsed = await callLLMForJSON<Record<string, unknown>>(
+      `You are an expert B2B sales strategist preparing a comprehensive meeting briefing. Always respond in English and return ONLY valid JSON.`,
+      prompt,
+      { temperature: 0.4, maxTokens: 5000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+    ) || {};
     const sections = (parsed.sections as Record<string, unknown>) || {};
 
     return {

@@ -5,7 +5,7 @@
  * Supports multiple frameworks and sequence types.
  */
 
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -138,21 +138,11 @@ Rules:
 - Return ONLY valid JSON, no markdown`;
 
   try {
-    const zai = await getSDK();
-    const result = await zai.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
-    });
-
-    const content = result.choices?.[0]?.message?.content || '';
-    
-    // Extract JSON from response
-    let parsed: Record<string, unknown>;
-    try {
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      parsed = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
-    } catch {
-      parsed = {};
-    }
+    const parsed = await callLLMForJSON<Record<string, unknown>>(
+      `You are an expert B2B sales outreach strategist. Generate personalized, high-converting outreach sequences. Always respond in English and return ONLY valid JSON.`,
+      prompt,
+      { temperature: 0.5, maxTokens: 5000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+    ) || {};
 
     const steps = Array.isArray(parsed.steps) ? parsed.steps.map((step: Record<string, unknown>, i: number) => ({
       stepNumber: (step.stepNumber as number) || i + 1,

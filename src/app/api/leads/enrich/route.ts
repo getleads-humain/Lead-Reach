@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
-import { getSDK } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 
 export async function POST(request: NextRequest) {
   try {
@@ -64,14 +64,11 @@ ${emptyFields.join(', ')}
 Respond ONLY with a JSON object containing the filled fields. Use null for fields you cannot determine.`;
 
     try {
-      const zai = await getSDK();
-      const llmResult = await zai.chat.completions.create({
-        messages: [{ role: 'user', content: prompt }],
-      });
-
-      const content = llmResult.choices?.[0]?.message?.content || '';
-      const jsonMatch = content.match(/\{[\s\S]*\}/);
-      const enrichedData = jsonMatch ? JSON.parse(jsonMatch[0]) : {};
+      const enrichedData = await callLLMForJSON<Record<string, unknown>>(
+        `You are a B2B data enrichment specialist. Fill in missing company fields based on the provided research data. Always respond in English and return ONLY a valid JSON object.`,
+        prompt,
+        { temperature: 0.2, maxTokens: 3000, model: MODEL_PRIMARY, thinkingBudget: 'standard' }
+      ) || {};
 
       const updateData: Record<string, unknown> = {
         enrichedAt: new Date(),
