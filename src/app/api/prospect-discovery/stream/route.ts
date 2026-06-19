@@ -167,14 +167,47 @@ export async function POST(request: NextRequest) {
           console.error('[StreamRoute] Fatal error:', error);
           const errorMsg = error instanceof Error ? error.message : 'Unknown error';
           send('error', { message: errorMsg, recoverable: true });
+
+          // ─── GRACEFUL DEGRADE: same pattern as the orchestrator's outer
+          // catch. Parse the user's query, build a fallback prospect from
+          // any pre-supplied data, and return that instead of an empty
+          // error message. Fixes "Pipeline Error: Both stream and chat API
+          // failed" with no data shown.
+          let fallbackProspect: Record<string, unknown> | undefined;
+          let fallbackContent = `I encountered an error during discovery: ${errorMsg.slice(0, 200)}. Please try again.`;
+
+          try {
+            // Inline import to avoid circular deps
+            const { parseQuery } = require('@/lib/prospect-agent/query-parser');
+            const parsed = parseQuery(message.trim());
+
+            if (parsed.signalsProvided > 0 && parsed.prepopulatedProspect) {
+              fallbackProspect = parsed.prepopulatedProspect;
+              const filledFields: string[] = [];
+              if (parsed.personName) filledFields.push(`**Name:** ${parsed.personName}`);
+              if (parsed.title) filledFields.push(`**Title:** ${parsed.title}`);
+              if (parsed.companyName) filledFields.push(`**Company:** ${parsed.companyName}`);
+              if (parsed.email) filledFields.push(`**Email:** ${parsed.email}`);
+              if (parsed.linkedinPersonUrl) filledFields.push(`**LinkedIn:** ${parsed.linkedinPersonUrl}`);
+              const loc = [parsed.city, parsed.country].filter(Boolean).join(', ');
+              if (loc) filledFields.push(`**Location:** ${loc}`);
+              if (parsed.industry) filledFields.push(`**Industry:** ${parsed.industry}`);
+
+              fallbackContent = `I encountered an error during discovery: ${errorMsg.slice(0, 150)}.\n\nHowever, I extracted the following information from your query:\n\n${filledFields.join('\n')}\n\nYou can use this data as-is, or try running your query again in a moment.`;
+            }
+          } catch (parseErr) {
+            console.error('[StreamRoute] Fallback parser failed:', parseErr);
+          }
+
           send('done', {
             message: {
               id: `agent-error-${Date.now()}`,
               role: 'assistant',
-              content: `I encountered an error during discovery: ${errorMsg.slice(0, 200)}. Please try again.`,
+              content: fallbackContent,
               timestamp: new Date().toISOString(),
               persona: 'navigator',
               actions: [],
+              prospectData: fallbackProspect,
             },
             updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
             suggestedActions: [

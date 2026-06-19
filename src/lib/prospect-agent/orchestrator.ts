@@ -174,21 +174,89 @@ export async function processWithOrchestrator(
     const errorMsg = error instanceof Error ? error.message : 'Unknown error';
     pipelineState.phase = 'error';
 
+    // ─── GRACEFUL DEGRADE: Build a fallback response from user-supplied data ───
+    // Even if the entire pipeline failed, we still want to:
+    //   1. Parse the user's query for any structured data they provided
+    //   2. Build a minimal ProspectResult from that data
+    //   3. Render a meaningful response instead of just "Pipeline Error"
+    //
+    // This is the fix for the "Both stream and chat API failed" failure mode
+    // where users saw all "Discovering..." placeholders with no data.
+    let fallbackProspect: ProspectResult | undefined;
+    let fallbackContent: string;
+
+    try {
+      const { parseQuery } = await import('./query-parser');
+      const parsed = parseQuery(userMessage);
+
+      if (parsed.signalsProvided > 0 && parsed.prepopulatedProspect) {
+        // Build a real ProspectResult from pre-populated data
+        fallbackProspect = {
+          ...({
+            queryType: parsed.guessedIntent === 'research_person' ? 'person' : 'company',
+            query: userMessage,
+            companyName: null, legalName: null, website: null, industry: null, subIndustry: null, description: null,
+            hqAddress: null, city: null, stateProvince: null, country: null, postalCode: null,
+            phoneMain: null, generalEmail: null, supportEmail: null,
+            ceoName: null, ceoEmail: null, keyContactName: null, keyContactTitle: null, keyContactEmail: null,
+            employeeCount: null, revenueEstimate: null, foundingYear: null, ownershipType: null,
+            linkedinUrl: null, twitterHandle: null, facebookPage: null, techStack: [],
+            boardMembers: [], recentNews: [], productsServices: [], partners: [], fundingInfo: null,
+            personName: null, personTitle: null, personCompany: null, personEmail: null,
+            personPhone: null, personLinkedin: null, personBio: null,
+            sources: [], dataCompleteness: 0,
+          } as ProspectResult),
+          ...(parsed.prepopulatedProspect as Record<string, unknown>),
+        } as unknown as ProspectResult;
+
+        // Calculate completeness based on what we have
+        fallbackProspect.dataCompleteness = Math.max(
+          fallbackProspect.dataCompleteness || 0,
+          Math.min(70, parsed.signalsProvided * 8), // cap at 70% since research is incomplete
+        );
+
+        // Build a user-friendly fallback message
+        const filledFields: string[] = [];
+        if (fallbackProspect.personName) filledFields.push(`**Name:** ${fallbackProspect.personName}`);
+        if (fallbackProspect.personTitle) filledFields.push(`**Title:** ${fallbackProspect.personTitle}`);
+        if (fallbackProspect.personCompany || fallbackProspect.companyName) {
+          filledFields.push(`**Company:** ${fallbackProspect.personCompany || fallbackProspect.companyName}`);
+        }
+        if (fallbackProspect.personEmail || fallbackProspect.generalEmail) {
+          filledFields.push(`**Email:** ${fallbackProspect.personEmail || fallbackProspect.generalEmail}`);
+        }
+        if (fallbackProspect.personLinkedin) filledFields.push(`**LinkedIn:** ${fallbackProspect.personLinkedin}`);
+        if (fallbackProspect.city || fallbackProspect.country) {
+          filledFields.push(`**Location:** ${[fallbackProspect.city, fallbackProspect.country].filter(Boolean).join(', ')}`);
+        }
+        if (fallbackProspect.industry) filledFields.push(`**Industry:** ${fallbackProspect.industry}`);
+        if (fallbackProspect.personBio) filledFields.push(`**Bio:** ${fallbackProspect.personBio.slice(0, 200)}${fallbackProspect.personBio.length > 200 ? '...' : ''}`);
+
+        fallbackContent = `I extracted the following information from your query. However, my external research services encountered an error (${errorMsg.slice(0, 100)}), so I couldn't enrich this with additional web data. Here's what you provided:\n\n${filledFields.join('\n')}\n\nYou can try running this query again in a moment, or use the data above as-is.`;
+      } else {
+        fallbackContent = `I encountered an error while processing your request. Let me try a different approach.\n\n**Error:** ${errorMsg.slice(0, 150)}\n\nYou can try:\n• Rephrasing your query (e.g., "Research Stripe")\n• Asking a more specific question`;
+      }
+    } catch (parseErr) {
+      console.error('[Orchestrator] Fallback parser also failed:', parseErr);
+      fallbackContent = `I encountered an error while processing your request. Let me try a different approach.\n\n**Error:** ${errorMsg.slice(0, 150)}\n\nYou can try:\n• Rephrasing your query (e.g., "Research Stripe")\n• Asking a more specific question`;
+    }
+
     return {
       message: {
         id: `agent-fallback-${Date.now()}`,
         role: 'assistant',
-        content: `I encountered an error while processing your request. Let me try a different approach.\n\n**Error:** ${errorMsg.slice(0, 150)}\n\nYou can try:\n• Rephrasing your query (e.g., "Research Stripe")\n• Asking a more specific question`,
+        content: fallbackContent,
         timestamp: new Date(),
         persona: 'navigator',
         thinking: {
           persona: 'navigator',
           intent: 'converse',
-          reasoning: `Fallback: ${errorMsg.slice(0, 100)}`,
-          plan: ['Error recovery'],
+          reasoning: `Fallback after pipeline error: ${errorMsg.slice(0, 100)}`,
+          plan: ['Error recovery', 'Render user-supplied data'],
           confidence: 0.1,
         },
         actions: [{ type: 'converse', label: 'Error', status: 'failed', message: errorMsg.slice(0, 100) }],
+        prospectData: fallbackProspect,
       },
       updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
       suggestedActions: [
@@ -679,12 +747,26 @@ async function processWithOrchestratorInner(
             sendCommMsg(pipelineState, 'atlas', 'scout', 'handoff',
               `Research target: "${companyName}"`, { target: companyName }, onEvent);
 
-            const result = await executeCompanyResearch(companyName, bridgeProgress);
+            // Emit an immediate data_update with pre-populated data so the UI
+            // can render user-supplied fields BEFORE the slow agent pipeline
+            // finishes. This fixes the "all fields say Discovering..." problem.
+            if (classification.prepopulatedProspect && Object.keys(classification.prepopulatedProspect).length > 0) {
+              emit(onEvent, { type: 'data_update', data: { prospect: classification.prepopulatedProspect } });
+            }
+
+            const result = await executeCompanyResearch(
+              companyName,
+              bridgeProgress,
+              classification.prepopulatedProspect,
+            );
             actions = [...actions, ...result.steps];
 
             if (result.prospect) {
               prospectData = result.prospect;
               updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
+
+              // Final data_update with the complete prospect data
+              emit(onEvent, { type: 'data_update', data: { prospect: prospectData as unknown as Record<string, unknown> } });
 
               sendCommMsg(pipelineState, 'scout', 'atlas', 'response',
                 `Found data for "${result.prospect.companyName}" — ${result.prospect.dataCompleteness}% complete`,
@@ -699,11 +781,25 @@ async function processWithOrchestratorInner(
             sendCommMsg(pipelineState, 'atlas', 'scout', 'handoff',
               `Research person: "${personName}"`, { target: personName }, onEvent);
 
-            const result = await executePersonResearch(personName, bridgeProgress);
+            // Emit an immediate data_update with pre-populated data so the UI
+            // can render user-supplied fields BEFORE the slow agent pipeline
+            // finishes.
+            if (classification.prepopulatedProspect && Object.keys(classification.prepopulatedProspect).length > 0) {
+              emit(onEvent, { type: 'data_update', data: { prospect: classification.prepopulatedProspect } });
+            }
+
+            const result = await executePersonResearch(
+              personName,
+              bridgeProgress,
+              classification.prepopulatedProspect,
+            );
             actions = [...actions, ...result.steps];
             if (result.prospect) {
               prospectData = result.prospect;
               updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
+
+              // Final data_update with the complete prospect data
+              emit(onEvent, { type: 'data_update', data: { prospect: prospectData as unknown as Record<string, unknown> } });
 
               sendCommMsg(pipelineState, 'scout', 'atlas', 'response',
                 `Found data for "${result.prospect.personName}" — ${result.prospect.dataCompleteness}% complete`,

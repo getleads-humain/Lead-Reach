@@ -5,6 +5,7 @@
 import { callLLMForJSON } from '@/lib/llm';
 import type { AgentPersona, UserIntent, ConversationContext, AgentThinking } from './types';
 import { getIntentClassificationPrompt } from './prompts';
+import { parseQuery } from './query-parser';
 
 /**
  * Result of intent classification.
@@ -23,17 +24,87 @@ export interface IntentClassification {
   };
   clarifyingQuestion: string | null;
   secondaryIntent?: UserIntent | null;
+  /**
+   * Pre-populated prospect data extracted directly from the user's query.
+   * The downstream agents should MERGE this into the empty prospect they
+   * create, so the user immediately sees all the data they provided
+   * rendered in the workspace — even if every external search fails.
+   */
+  prepopulatedProspect?: Record<string, unknown>;
+  /** How many structured signals the user provided in the query. */
+  signalsProvided?: number;
 }
 
 /**
  * Classify the user's message intent using the LLM.
  * Falls back to rule-based classification if LLM fails.
+ *
+ * PRE-FILTER: For research queries, we run the deterministic query-parser
+ * FIRST. If it returns strong signals (≥2 structured fields OR an explicit
+ * person/company keyword), we use its classification directly and skip the
+ * LLM call entirely. This:
+ *   1. Eliminates the "Find a person: Kavya Shah [...]" misclassification
+ *      where the LLM saw all the brackets and guessed "company".
+ *   2. Captures all user-supplied data (email, LinkedIn, location, etc.)
+ *      and propagates it through the pipeline so it shows up in the UI.
+ *   3. Cuts latency on rich queries by skipping the LLM round-trip.
  */
 export async function classifyIntent(
   userMessage: string,
   context?: ConversationContext,
 ): Promise<IntentClassification> {
-  // Try LLM-based classification first
+  // ═══════════════════════════════════════════════════════════
+  // PRE-FILTER: Deterministic parse of structured user queries.
+  // This catches rich queries like "Find a person: Kavya Shah [..]"
+  // that the LLM tends to misclassify as "company search" because of
+  // the dense bracketed text.
+  // ═══════════════════════════════════════════════════════════
+  const parsed = parseQuery(userMessage);
+
+  // If the parser found ≥2 structured signals AND has a confident intent,
+  // trust the parser over the LLM. The parser is deterministic and won't
+  // be fooled by bracketed text or long queries.
+  const PARSER_CONFIDENCE_THRESHOLD = 0.78;
+  const PARSER_MIN_SIGNALS = 2;
+
+  if (
+    parsed.confidence >= PARSER_CONFIDENCE_THRESHOLD &&
+    parsed.signalsProvided >= PARSER_MIN_SIGNALS &&
+    (parsed.guessedIntent === 'research_person' ||
+     parsed.guessedIntent === 'research_company' ||
+     parsed.guessedIntent === 'research_url')
+  ) {
+    const personaForIntent: Record<string, AgentPersona> = {
+      research_person: 'hound',
+      research_company: 'scout',
+      research_url: 'scout',
+    };
+
+    const location = [parsed.city, parsed.stateProvince, parsed.country]
+      .filter(Boolean)
+      .join(', ') || null;
+
+    return {
+      intent: parsed.guessedIntent,
+      persona: personaForIntent[parsed.guessedIntent],
+      confidence: parsed.confidence,
+      reasoning: `Pre-classified by query parser: ${parsed.reasoning} (${parsed.signalsProvided} structured fields extracted)`,
+      extractedEntities: {
+        companyName: parsed.companyName,
+        personName: parsed.personName,
+        url: parsed.url,
+        industry: parsed.industry,
+        location,
+      },
+      clarifyingQuestion: null,
+      prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown>,
+      signalsProvided: parsed.signalsProvided,
+    };
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // LLM CLASSIFICATION (for short / ambiguous queries)
+  // ═══════════════════════════════════════════════════════════
   try {
     const result = await callLLMForJSON<IntentClassification>(
       getIntentClassificationPrompt(userMessage, context),
@@ -50,15 +121,53 @@ export async function classifyIntent(
         'add_to_pipeline', 'clarify', 'converse',
       ];
       if (validIntents.includes(result.intent)) {
-        return result;
+        // Even if the LLM classified, attach the parser's pre-populated data
+        // and override extracted entities if the parser found more.
+        const location = [parsed.city, parsed.stateProvince, parsed.country]
+          .filter(Boolean)
+          .join(', ') || null;
+        return {
+          ...result,
+          extractedEntities: {
+            companyName: result.extractedEntities?.companyName || parsed.companyName,
+            personName: result.extractedEntities?.personName || parsed.personName,
+            url: result.extractedEntities?.url || parsed.url,
+            industry: result.extractedEntities?.industry || parsed.industry,
+            location: result.extractedEntities?.location || location,
+          },
+          prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown> | undefined,
+          signalsProvided: parsed.signalsProvided,
+        };
       }
     }
   } catch (error) {
     console.warn('[IntentClassifier] LLM classification failed, falling back to rules:', error);
   }
 
-  // Fallback: Rule-based classification
-  return ruleBasedClassification(userMessage, context);
+  // ═══════════════════════════════════════════════════════════
+  // FALLBACK: Rule-based classification
+  // ═══════════════════════════════════════════════════════════
+  const ruleBased = ruleBasedClassification(userMessage, context);
+
+  // Even in rule-based fallback, attach the parser's pre-populated data
+  // so user-supplied info still flows through.
+  const location = [parsed.city, parsed.stateProvince, parsed.country]
+    .filter(Boolean)
+    .join(', ') || null;
+  return {
+    ...ruleBased,
+    extractedEntities: {
+      ...ruleBased.extractedEntities,
+      // Prefer parser-extracted values if rule-based didn't find them
+      personName: ruleBased.extractedEntities.personName || parsed.personName,
+      companyName: ruleBased.extractedEntities.companyName || parsed.companyName,
+      url: ruleBased.extractedEntities.url || parsed.url,
+      industry: ruleBased.extractedEntities.industry || parsed.industry,
+      location: ruleBased.extractedEntities.location || location,
+    },
+    prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown> | undefined,
+    signalsProvided: parsed.signalsProvided,
+  };
 }
 
 /**

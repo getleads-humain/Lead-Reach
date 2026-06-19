@@ -299,6 +299,7 @@ export type ProgressCallback = (event: string, data: any) => void;
 export async function executeCompanyResearch(
   companyName: string,
   onProgress?: ProgressCallback,
+  prepopulatedProspect?: Record<string, unknown>,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [];
@@ -339,6 +340,39 @@ export async function executeCompanyResearch(
   const prospect = createEmptyProspect('company', cleanName);
   prospect.companyName = cleanName;
   let stepIdx = 0;
+
+  // ═══ MERGE PRE-POPULATED DATA ═══
+  // If the caller (orchestrator) extracted structured fields from the user's
+  // query (website, email, LinkedIn, location, etc.), merge them in BEFORE
+  // running any external research. This ensures user-supplied data shows up
+  // immediately in the workspace, even if every external search fails.
+  if (prepopulatedProspect && Object.keys(prepopulatedProspect).length > 0) {
+    const arrayKeys = new Set(['techStack', 'productsServices', 'recentNews', 'partners', 'boardMembers', 'sources']);
+    const target = prospect as unknown as Record<string, unknown>;
+    let prepopCount = 0;
+    for (const [key, value] of Object.entries(prepopulatedProspect)) {
+      if (value === null || value === undefined || value === '') continue;
+      if (arrayKeys.has(key)) {
+        if (Array.isArray(value) && value.length > 0) {
+          target[key] = value;
+          prepopCount++;
+        }
+      } else {
+        target[key] = value;
+        prepopCount++;
+      }
+    }
+
+    if (prepopCount > 0) {
+      steps.push({
+        type: 'research_company',
+        label: 'User-Supplied Data',
+        status: 'completed',
+        message: `Pre-populated ${prepopCount} fields from your query`,
+      });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+    }
+  }
 
   // ═══ DETECT DOMAIN ═══
   // Detect the domain from the company name + query context.
@@ -1053,11 +1087,53 @@ Return JSON with ONLY fields that have NEW info: companyName, legalName, website
 export async function executePersonResearch(
   personInput: string,
   onProgress?: ProgressCallback,
+  prepopulatedProspect?: Record<string, unknown>,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [];
   const prospect = createEmptyProspect('person', personInput);
   prospect.personName = personInput;
+
+  // ═══ MERGE PRE-POPULATED DATA ═══
+  // If the caller (orchestrator) extracted structured fields from the user's
+  // query (email, LinkedIn, location, etc.), merge them in BEFORE running
+  // any external research. This ensures user-supplied data shows up
+  // immediately in the workspace, even if every external search fails.
+  if (prepopulatedProspect && Object.keys(prepopulatedProspect).length > 0) {
+    const arrayKeys = new Set(['techStack', 'productsServices', 'recentNews', 'partners', 'boardMembers', 'sources']);
+    const target = prospect as unknown as Record<string, unknown>;
+    for (const [key, value] of Object.entries(prepopulatedProspect)) {
+      if (value === null || value === undefined || value === '') continue;
+      if (arrayKeys.has(key)) {
+        if (Array.isArray(value) && value.length > 0) {
+          target[key] = value;
+        }
+      } else {
+        target[key] = value;
+      }
+    }
+
+    // Emit a step showing the user what was pre-populated
+    const filledFields: string[] = [];
+    if (prospect.personName) filledFields.push(`Name: ${prospect.personName}`);
+    if (prospect.personTitle) filledFields.push(`Title: ${prospect.personTitle}`);
+    if (prospect.personCompany) filledFields.push(`Company: ${prospect.personCompany}`);
+    if (prospect.personEmail) filledFields.push(`Email: ${prospect.personEmail}`);
+    if (prospect.personLinkedin) filledFields.push(`LinkedIn: ${prospect.personLinkedin}`);
+    if (prospect.city) filledFields.push(`City: ${prospect.city}`);
+    if (prospect.country) filledFields.push(`Country: ${prospect.country}`);
+    if (prospect.industry) filledFields.push(`Industry: ${prospect.industry}`);
+
+    if (filledFields.length > 0) {
+      steps.push({
+        type: 'research_person',
+        label: 'User-Supplied Data',
+        status: 'completed',
+        message: `Pre-populated ${filledFields.length} fields from your query: ${filledFields.slice(0, 4).join(' | ')}${filledFields.length > 4 ? ` (+${filledFields.length - 4} more)` : ''}`,
+      });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+    }
+  }
 
   // ─── Detect input type: email vs name ───
   const inputIsEmail = isEmail(personInput);
@@ -1099,20 +1175,31 @@ export async function executePersonResearch(
     }
   } else {
     // ═══ NAME-BASED RESOLUTION (with smart disambiguation) ═══
-    steps.push({ type: 'research_person', label: 'Identity Resolution', status: 'running', message: `Resolving identity of "${personInput}"...` });
+    // Build context from pre-populated data so the resolver can disambiguate
+    // (e.g., "Kavya Shah at Credora" instead of any random Kavya Shah).
+    const resolverContext: { company?: string; title?: string; location?: string; industry?: string } = {};
+    if (prospect.personCompany) resolverContext.company = prospect.personCompany;
+    if (prospect.personTitle) resolverContext.title = prospect.personTitle;
+    if (prospect.city) resolverContext.location = prospect.city;
+    if (prospect.industry) resolverContext.industry = prospect.industry;
+
+    steps.push({ type: 'research_person', label: 'Identity Resolution', status: 'running', message: `Resolving identity of "${personInput}"${resolverContext.company ? ` at ${resolverContext.company}` : ''}...` });
     try {
       const resolved = await withTimeout(
-        () => resolveFromName(personInput),
+        () => resolveFromName(personInput, Object.keys(resolverContext).length > 0 ? resolverContext : undefined),
         90_000, 'Name-based person resolution',
       );
       if (resolved) {
         const id = resolved.identity;
         if (id.fullName) prospect.personName = id.fullName;
-        if (id.title) prospect.personTitle = id.title;
-        if (id.associatedCompany) { prospect.personCompany = id.associatedCompany; prospect.companyName = id.associatedCompany; }
-        if (id.email) prospect.personEmail = id.email;
-        if (id.location) { prospect.city = id.location; }
-        if (id.linkedinUrl) prospect.personLinkedin = id.linkedinUrl;
+        if (id.title && !prospect.personTitle) prospect.personTitle = id.title;
+        if (id.associatedCompany && !prospect.personCompany) {
+          prospect.personCompany = id.associatedCompany;
+          if (!prospect.companyName) prospect.companyName = id.associatedCompany;
+        }
+        if (id.email && !prospect.personEmail) prospect.personEmail = id.email;
+        if (id.location && !prospect.city) { prospect.city = id.location; }
+        if (id.linkedinUrl && !prospect.personLinkedin) prospect.personLinkedin = id.linkedinUrl;
 
         const data = resolved.mergedData;
         if (data.personPhone && !prospect.personPhone) prospect.personPhone = String(data.personPhone);
@@ -1265,11 +1352,42 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
 export async function executeUrlResearch(
   url: string,
   onProgress?: ProgressCallback,
+  prepopulatedProspect?: Record<string, unknown>,
 ): Promise<{ prospect: ProspectResult | null; steps: AgentAction[] }> {
   const steps: AgentAction[] = [];
   const sources: string[] = [url];
   const prospect = createEmptyProspect('url', url);
   let stepIdx = 0;
+
+  // ═══ MERGE PRE-POPULATED DATA ═══
+  // Same pattern as executeCompanyResearch — preserve user-supplied fields.
+  if (prepopulatedProspect && Object.keys(prepopulatedProspect).length > 0) {
+    const arrayKeys = new Set(['techStack', 'productsServices', 'recentNews', 'partners', 'boardMembers', 'sources']);
+    const target = prospect as unknown as Record<string, unknown>;
+    let prepopCount = 0;
+    for (const [key, value] of Object.entries(prepopulatedProspect)) {
+      if (value === null || value === undefined || value === '') continue;
+      if (arrayKeys.has(key)) {
+        if (Array.isArray(value) && value.length > 0) {
+          target[key] = value;
+          prepopCount++;
+        }
+      } else {
+        target[key] = value;
+        prepopCount++;
+      }
+    }
+
+    if (prepopCount > 0) {
+      steps.push({
+        type: 'research_url',
+        label: 'User-Supplied Data',
+        status: 'completed',
+        message: `Pre-populated ${prepopCount} fields from your query`,
+      });
+      onProgress?.('data_update', { prospect, completeness: calculateCompleteness(prospect) });
+    }
+  }
 
   // ═══════════════════════════════════════════════════════════
   // STEP 1: Deep Crawl — scrape every corner of the website
