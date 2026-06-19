@@ -107,3 +107,9 @@ python-workers/*/*.log
 python-workers/*/__pycache__/
 .news-worker-pid
 .server-pid
+
+# Runtime PID files (should never be committed)
+.server.pid
+server.pid
+.zscripts/dev.pid
+.zscripts/mini-service-*.log
