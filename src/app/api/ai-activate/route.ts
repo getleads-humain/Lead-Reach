@@ -4,6 +4,14 @@
  * POST /api/ai-activate
  * Body: { action: string, payload: any }
  *
+ * Every action dispatches to a single function in /lib/ai-activate/engine.ts.
+ * All engine functions accept ONE payload object, so the dispatcher simply
+ * forwards the payload — no bespoke argument-shape glue.
+ *
+ * All AI calls go through /lib/llm, which is hard-locked to:
+ *   - glm-4.7-flash  (primary text model)
+ *   - glm-4.6v-flash (fallback text + vision model)
+ *
  * Available actions:
  *   lead.score, lead.enrich, lead.next-action
  *   email.compose, email.reply, email.optimize-subject
@@ -19,6 +27,7 @@
  *   billing.analyze
  *   pipeline.analyze
  *   icp.refine
+ *   vision.analyze-image, vision.extract-company-screenshot
  *   generic.json, generic.text
  *
  * GET /api/ai-activate — returns health + capability list
@@ -40,9 +49,9 @@ import {
   aiAnalyzeBillingUsage,
   aiAnalyzeDeal,
   aiRefineICP,
+  aiAnalyzeImage, aiExtractCompanyFromScreenshot,
   aiGeneric, aiGenericText,
   aiActivationHealth,
-  type LeadContext, type EmailContext, type CampaignContext, type AnalyticsContext,
 } from '@/lib/ai-activate/engine';
 
 export const dynamic = 'force-dynamic';
@@ -99,81 +108,87 @@ async function dispatchAction(action: string, payload: any): Promise<{ success: 
   switch (action) {
     // ─── LEAD ──────────────────────────────────────────
     case 'lead.score':
-      return aiScoreLead(payload as LeadContext);
+      return aiScoreLead(payload);
     case 'lead.enrich':
-      return aiEnrichLead(payload as LeadContext);
+      return aiEnrichLead(payload);
     case 'lead.next-action':
-      return aiRecommendNextAction(payload as LeadContext);
+      return aiRecommendNextAction(payload);
 
     // ─── EMAIL ─────────────────────────────────────────
     case 'email.compose':
-      return aiComposeEmail(payload as EmailContext);
+      return aiComposeEmail(payload);
     case 'email.reply':
-      return aiReplyEmail(payload.receivedEmail, payload.context as EmailContext);
+      return aiReplyEmail(payload);
     case 'email.optimize-subject':
-      return aiOptimizeSubjectLine(payload.subject, payload.audience);
+      return aiOptimizeSubjectLine(payload);
 
     // ─── MESSAGING ─────────────────────────────────────
     case 'messaging.suggest-reply':
-      return aiSuggestReply(payload.conversation, payload.channel);
+      return aiSuggestReply(payload);
     case 'messaging.summarize':
-      return aiSummarizeConversation(payload.conversation);
+      return aiSummarizeConversation(payload);
 
     // ─── SETTER ────────────────────────────────────────
     case 'setter.coach':
-      return aiCoachSetter(payload.callTranscript, payload.setterName);
+      return aiCoachSetter(payload);
     case 'setter.qualifying-rules':
-      return aiGenerateQualifyingRules(payload.productContext);
+      return aiGenerateQualifyingRules(payload);
 
     // ─── CAMPAIGN ──────────────────────────────────────
     case 'campaign.generate':
-      return aiGenerateCampaign(payload as CampaignContext);
+      return aiGenerateCampaign(payload);
     case 'campaign.optimize':
-      return aiOptimizeCampaign(payload.performance);
+      return aiOptimizeCampaign(payload);
 
     // ─── REPORTS ───────────────────────────────────────
     case 'report.summary':
-      return aiGenerateReportSummary(payload.data, payload.reportType);
+      return aiGenerateReportSummary(payload);
 
     // ─── ANALYTICS ─────────────────────────────────────
     case 'analytics.annotate':
-      return aiAnnotateAnalytics(payload as AnalyticsContext);
+      return aiAnnotateAnalytics(payload);
     case 'analytics.forecast':
-      return aiForecastRevenue(payload.historicalData, payload.quarters);
+      return aiForecastRevenue(payload);
 
     // ─── OUTREACH ──────────────────────────────────────
     case 'outreach.sequence':
-      return aiGenerateOutreachSequence(payload.lead, payload.goal, payload.channels);
+      return aiGenerateOutreachSequence(payload);
 
     // ─── ABM ───────────────────────────────────────────
     case 'abm.score':
-      return aiScoreAccount(payload.account);
+      return aiScoreAccount(payload);
 
     // ─── BOOKING ───────────────────────────────────────
     case 'booking.brief':
-      return aiGenerateMeetingBrief(payload.lead, payload.meetingType, payload.previousConversations);
+      return aiGenerateMeetingBrief(payload);
 
     // ─── SETTINGS ──────────────────────────────────────
     case 'settings.recommend':
-      return aiRecommendSettingsOptimizations(payload.currentSettings);
+      return aiRecommendSettingsOptimizations(payload);
 
     // ─── BILLING ───────────────────────────────────────
     case 'billing.analyze':
-      return aiAnalyzeBillingUsage(payload.usage);
+      return aiAnalyzeBillingUsage(payload);
 
     // ─── PIPELINE ──────────────────────────────────────
     case 'pipeline.analyze':
-      return aiAnalyzeDeal(payload.deal);
+      return aiAnalyzeDeal(payload);
 
     // ─── ICP ───────────────────────────────────────────
     case 'icp.refine':
-      return aiRefineICP(payload.currentICP, payload.customerData);
+      return aiRefineICP(payload);
+
+    // ─── VISION (glm-4.6v-flash) ───────────────────────
+    case 'vision.analyze-image':
+      return aiAnalyzeImage(payload);
+    case 'vision.extract-company-screenshot':
+      return aiExtractCompanyFromScreenshot(payload);
 
     // ─── GENERIC ───────────────────────────────────────
     case 'generic.json':
-      return aiGeneric(payload.task, payload.input, payload.outputSchema, payload.systemPrompt);
+      return aiGeneric(payload);
     case 'generic.text':
-      return aiGenericText(payload.task, payload.input, payload.systemPrompt);
+      return aiGenericText(payload);
 
     default:
       return {
@@ -199,6 +214,7 @@ function listActions(): string[] {
     'billing.analyze',
     'pipeline.analyze',
     'icp.refine',
+    'vision.analyze-image', 'vision.extract-company-screenshot',
     'generic.json', 'generic.text',
   ];
 }

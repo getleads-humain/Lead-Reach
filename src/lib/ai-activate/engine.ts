@@ -7,14 +7,33 @@
  * outreach, abm, bookings, billing, revenue, settings) has its own AI function
  * that uses the shared callLLM() infrastructure with domain-specific prompts.
  *
+ * ─────────────────────────────────────────────────────────────────────────────
+ * MODEL POLICY (platform-wide, lifetime lock):
+ *   Every function in this engine calls `callLLM()` / `callLLMForJSON()` from
+ *   `@/lib/llm`, which is hard-locked to:
+ *     • glm-4.7-flash   (primary text model)
+ *     • glm-4.6v-flash  (fallback text + vision model)
+ *   No other model is ever invoked from this engine or any of its callers.
+ * ─────────────────────────────────────────────────────────────────────────────
+ *
  * Design principles:
- * 1. Every function is self-contained — caller passes data, gets back structured AI output
- * 2. Prompts are domain-specific and tuned for the task
- * 3. All functions gracefully degrade — if LLM fails, return null (caller decides fallback)
- * 4. JSON output is preferred for structured data; plain text for narrative content
+ * 1. Every function accepts a SINGLE payload object — this lets the unified
+ *    /api/ai-activate dispatcher and the per-domain route wrappers both call
+ *    `fn(payload)` without bespoke argument-shape glue.
+ * 2. Prompts are domain-specific and tuned for the task.
+ * 3. JSON output is preferred for structured data; plain text for narrative.
+ * 4. If the LLM returns null (rate-limited, gateway error, invalid JSON), the
+ *    engine returns `success: true` WITH the supplied fallback so the UI still
+ *    gets a usable response. Only when the LLM call throws synchronously does
+ *    the engine return `success: false`.
  */
 
-import { callLLM, callLLMForJSON, type ThinkingBudget } from '@/lib/llm';
+import {
+  callLLM,
+  callLLMForJSON,
+  MODEL_PRIMARY,
+  type ThinkingBudget,
+} from '@/lib/llm';
 
 // ============================================================
 // Types
@@ -78,40 +97,86 @@ export interface AIResult<T = string> {
 // Internal helpers
 // ============================================================
 
-function safeJsonCall<T>(
+/**
+ * Call the LLM for a JSON response, falling back to `fallback` if the LLM
+ * returns null (rate-limited / unavailable / unparseable).
+ *
+ * Returns `success: true` with either the LLM data or the fallback.
+ * Returns `success: false` only when the call itself throws synchronously
+ * (programming error, never an LLM outage).
+ */
+async function safeJsonCall<T>(
   prompt: string,
   systemPrompt: string,
   fallback: T,
-  budget: ThinkingBudget = 'standard'
+  budget: ThinkingBudget = 'standard',
 ): Promise<AIResult<T>> {
-  return callLLMForJSON<T>({
-    systemPrompt,
-    userPrompt: prompt,
-    thinkingBudget: budget,
-    fallback,
-  })
-    .then((data) => ({ success: true, data: data as T, modelUsed: 'glm-4.6' }))
-    .catch((error) => ({
+  try {
+    const data = await callLLMForJSON<T>(
+      systemPrompt,
+      prompt,
+      { thinkingBudget: budget },
+    );
+
+    if (data === null || data === undefined) {
+      // LLM unavailable or returned unparseable output — degrade gracefully
+      return {
+        success: true,
+        data: fallback,
+        modelUsed: `${MODEL_PRIMARY} (fallback)`,
+      };
+    }
+
+    return {
+      success: true,
+      data,
+      modelUsed: MODEL_PRIMARY,
+    };
+  } catch (error) {
+    return {
       success: false,
+      data: fallback,
       error: error instanceof Error ? error.message : 'AI call failed',
-    }));
+    };
+  }
 }
 
-function safeTextCall(
+/**
+ * Call the LLM for a free-form text response. Falls back to empty string
+ * on null return so callers always get a usable (if empty) string.
+ */
+async function safeTextCall(
   prompt: string,
   systemPrompt: string,
-  budget: ThinkingBudget = 'standard'
+  budget: ThinkingBudget = 'standard',
 ): Promise<AIResult<string>> {
-  return callLLM({
-    systemPrompt,
-    userPrompt: prompt,
-    thinkingBudget: budget,
-  })
-    .then((text) => ({ success: true, data: text ?? '', modelUsed: 'glm-4.6' }))
-    .catch((error) => ({
+  try {
+    const text = await callLLM({
+      systemPrompt,
+      userMessage: prompt,
+      thinkingBudget: budget,
+    });
+
+    if (text === null || text === undefined) {
+      return {
+        success: true,
+        data: '',
+        modelUsed: `${MODEL_PRIMARY} (fallback)`,
+      };
+    }
+
+    return {
+      success: true,
+      data: text,
+      modelUsed: MODEL_PRIMARY,
+    };
+  } catch (error) {
+    return {
       success: false,
+      data: '',
       error: error instanceof Error ? error.message : 'AI call failed',
-    }));
+    };
+  }
 }
 
 // ============================================================
@@ -252,15 +317,18 @@ Return JSON with:
   });
 }
 
-export async function aiReplyEmail(
-  receivedEmail: string,
-  ctx: EmailContext
-): Promise<AIResult<{
+export interface EmailReplyPayload {
+  receivedEmail: string;
+  context?: EmailContext;
+}
+
+export async function aiReplyEmail(payload: EmailReplyPayload): Promise<AIResult<{
   subject: string;
   body: string;
   intent: string;
   suggestedAction: string;
 }>> {
+  const { receivedEmail, context = {} } = payload;
   const systemPrompt = `You are an expert sales SDR. Draft a thoughtful reply that advances the conversation. Always return valid JSON.`;
   const prompt = `Draft a reply to this email:
 
@@ -268,7 +336,7 @@ RECEIVED EMAIL:
 ${receivedEmail}
 
 CONTEXT:
-${JSON.stringify(ctx, null, 2)}
+${JSON.stringify(context, null, 2)}
 
 Return JSON with:
 - subject: reply subject line (keep "Re:" if appropriate)
@@ -284,11 +352,17 @@ Return JSON with:
   });
 }
 
-export async function aiOptimizeSubjectLine(subject: string, audience?: string): Promise<AIResult<{
+export interface SubjectOptimizePayload {
+  subject: string;
+  audience?: string;
+}
+
+export async function aiOptimizeSubjectLine(payload: SubjectOptimizePayload): Promise<AIResult<{
   optimized: string;
   alternatives: string[];
   reasoning: string;
 }>> {
+  const { subject, audience } = payload;
   const systemPrompt = `You are an email deliverability and copy expert. Optimize subject lines for opens. Always return valid JSON.`;
   const prompt = `Optimize this subject line for higher open rates.
 
@@ -311,15 +385,18 @@ Return JSON with:
 // MESSAGING AI — chat replies, conversation summaries
 // ============================================================
 
-export async function aiSuggestReply(
-  conversation: Array<{ role: 'lead' | 'rep'; text: string; timestamp: string }>,
-  channel: string
-): Promise<AIResult<{
+export interface MessagingReplyPayload {
+  conversation: Array<{ role: 'lead' | 'rep'; text: string; timestamp: string }>;
+  channel: string;
+}
+
+export async function aiSuggestReply(payload: MessagingReplyPayload): Promise<AIResult<{
   suggestedReply: string;
   tone: string;
   alternativeReplies: string[];
   escalationNeeded: boolean;
 }>> {
+  const { conversation, channel } = payload;
   const systemPrompt = `You are a sales conversation expert. Suggest the best next reply in a live conversation. Always return valid JSON.`;
   const prompt = `Suggest the next reply in this ${channel} conversation:
 
@@ -339,15 +416,18 @@ Return JSON with:
   });
 }
 
-export async function aiSummarizeConversation(
-  conversation: Array<{ role: 'lead' | 'rep'; text: string; timestamp: string }>
-): Promise<AIResult<{
+export interface ConversationSummaryPayload {
+  conversation: Array<{ role: 'lead' | 'rep'; text: string; timestamp: string }>;
+}
+
+export async function aiSummarizeConversation(payload: ConversationSummaryPayload): Promise<AIResult<{
   summary: string;
   keyPoints: string[];
   actionItems: string[];
   sentiment: 'positive' | 'neutral' | 'negative';
   nextStep: string;
 }>> {
+  const { conversation } = payload;
   const systemPrompt = `You are a sales analyst. Summarize conversations concisely for CRM notes. Always return valid JSON.`;
   const prompt = `Summarize this conversation:
 
@@ -373,10 +453,12 @@ Return JSON with:
 // SETTER AI — call coaching, qualification, objection handling
 // ============================================================
 
-export async function aiCoachSetter(
-  callTranscript: string,
-  setterName: string
-): Promise<AIResult<{
+export interface SetterCoachPayload {
+  callTranscript: string;
+  setterName: string;
+}
+
+export async function aiCoachSetter(payload: SetterCoachPayload): Promise<AIResult<{
   score: number;
   strengths: string[];
   improvementAreas: string[];
@@ -386,6 +468,7 @@ export async function aiCoachSetter(
   closingTechnique: string;
   overallFeedback: string;
 }>> {
+  const { callTranscript, setterName } = payload;
   const systemPrompt = `You are a sales coaching expert for SDRs/setters. Analyze call transcripts and provide specific, actionable feedback. Always return valid JSON.`;
   const prompt = `Coach setter "${setterName}" based on this call transcript:
 
@@ -413,13 +496,18 @@ Return JSON with:
   }, 'deep');
 }
 
-export async function aiGenerateQualifyingRules(productContext: string): Promise<AIResult<{
+export interface QualifyingRulesPayload {
+  productContext: string;
+}
+
+export async function aiGenerateQualifyingRules(payload: QualifyingRulesPayload): Promise<AIResult<{
   mustHaves: string[];
   niceToHaves: string[];
   disqualifiers: string[];
   budgetRange: string;
   suggestedQuestions: string[];
 }>> {
+  const { productContext } = payload;
   const systemPrompt = `You are a B2B qualification framework expert. Design ICP-aware qualification rules. Always return valid JSON.`;
   const prompt = `Design qualification rules for setters taking calls about:
 
@@ -480,9 +568,11 @@ Return JSON with:
   }, 'deep');
 }
 
-export async function aiOptimizeCampaign(
-  performance: { opens?: number; clicks?: number; replies?: number; meetings?: number; sent?: number }
-): Promise<AIResult<{
+export interface CampaignOptimizePayload {
+  performance: { opens?: number; clicks?: number; replies?: number; meetings?: number; sent?: number };
+}
+
+export async function aiOptimizeCampaign(payload: CampaignOptimizePayload): Promise<AIResult<{
   diagnosis: string;
   optimization: string[];
   subjectLineSuggestions: string[];
@@ -490,6 +580,7 @@ export async function aiOptimizeCampaign(
   audienceRefinements: string[];
   projectedLift: string;
 }>> {
+  const { performance } = payload;
   const systemPrompt = `You are a campaign optimization expert. Diagnose performance issues and recommend fixes. Always return valid JSON.`;
   const prompt = `Diagnose and optimize this campaign:
 
@@ -517,10 +608,12 @@ Return JSON with:
 // REPORTS AI — executive summaries, insights
 // ============================================================
 
-export async function aiGenerateReportSummary(
-  data: Record<string, unknown>,
-  reportType: string
-): Promise<AIResult<{
+export interface ReportSummaryPayload {
+  data: Record<string, unknown>;
+  reportType: string;
+}
+
+export async function aiGenerateReportSummary(payload: ReportSummaryPayload): Promise<AIResult<{
   executiveSummary: string;
   keyFindings: string[];
   trends: string[];
@@ -528,6 +621,7 @@ export async function aiGenerateReportSummary(
   opportunities: string[];
   recommendations: string[];
 }>> {
+  const { data, reportType } = payload;
   const systemPrompt = `You are a CRO-grade analyst. Generate executive-level summaries of business data. Always return valid JSON.`;
   const prompt = `Generate an executive summary for a ${reportType} report.
 
@@ -587,15 +681,18 @@ Return JSON with:
   });
 }
 
-export async function aiForecastRevenue(
-  historicalData: Array<{ period: string; revenue: number; deals: number }>,
-  quarters: number = 2
-): Promise<AIResult<{
+export interface ForecastPayload {
+  historicalData: Array<{ period: string; revenue: number; deals: number }>;
+  quarters?: number;
+}
+
+export async function aiForecastRevenue(payload: ForecastPayload): Promise<AIResult<{
   forecast: Array<{ period: string; projectedRevenue: number; confidence: 'low' | 'medium' | 'high' }>;
   assumptions: string[];
   risks: string[];
   upsideScenarios: string[];
 }>> {
+  const { historicalData, quarters = 2 } = payload;
   const systemPrompt = `You are a revenue forecasting expert. Provide calibrated, honest forecasts. Always return valid JSON.`;
   const prompt = `Forecast revenue for the next ${quarters} quarters based on:
 
@@ -619,11 +716,13 @@ Return JSON with:
 // OUTREACH AI — sequence generation, personalization
 // ============================================================
 
-export async function aiGenerateOutreachSequence(
-  lead: LeadContext,
-  goal: string,
-  channels: string[] = ['email', 'linkedin', 'phone']
-): Promise<AIResult<{
+export interface OutreachSequencePayload {
+  lead: LeadContext;
+  goal: string;
+  channels?: string[];
+}
+
+export async function aiGenerateOutreachSequence(payload: OutreachSequencePayload): Promise<AIResult<{
   sequence: Array<{
     step: number;
     day: number;
@@ -635,6 +734,7 @@ export async function aiGenerateOutreachSequence(
   personalizationHooks: string[];
   exitCriteria: string;
 }>> {
+  const { lead, goal, channels = ['email', 'linkedin', 'phone'] } = payload;
   const systemPrompt = `You are a B2B outreach cadence expert. Design personalized multi-touch sequences. Always return valid JSON.`;
   const prompt = `Design a ${channels.length}-touch outreach sequence for this lead:
 
@@ -658,15 +758,19 @@ Return JSON with:
 // ABM AI — account selection, account plans
 // ============================================================
 
-export async function aiScoreAccount(account: {
-  name: string;
-  industry?: string;
-  size?: string;
-  revenue?: string;
-  techStack?: string[];
-  recentNews?: string;
-  currentVendor?: string;
-}): Promise<AIResult<{
+export interface ABMAccountPayload {
+  account: {
+    name: string;
+    industry?: string;
+    size?: string;
+    revenue?: string;
+    techStack?: string[];
+    recentNews?: string;
+    currentVendor?: string;
+  };
+}
+
+export async function aiScoreAccount(payload: ABMAccountPayload): Promise<AIResult<{
   fitScore: number;
   intentScore: number;
   totalScore: number;
@@ -675,6 +779,7 @@ export async function aiScoreAccount(account: {
   suggestedAngles: string[];
   estimatedDealSize: string;
 }>> {
+  const { account } = payload;
   const systemPrompt = `You are an ABM strategist. Score accounts on fit + intent and recommend engagement strategy. Always return valid JSON.`;
   const prompt = `Score this account for ABM targeting:
 
@@ -704,11 +809,13 @@ Return JSON with:
 // BOOKING AI — optimal times, prep briefs
 // ============================================================
 
-export async function aiGenerateMeetingBrief(
-  lead: LeadContext,
-  meetingType: string,
-  previousConversations?: string
-): Promise<AIResult<{
+export interface MeetingBriefPayload {
+  lead: LeadContext;
+  meetingType: string;
+  previousConversations?: string;
+}
+
+export async function aiGenerateMeetingBrief(payload: MeetingBriefPayload): Promise<AIResult<{
   brief: string;
   agenda: string[];
   discoveryQuestions: string[];
@@ -716,6 +823,7 @@ export async function aiGenerateMeetingBrief(
   expectedObjections: { objection: string; response: string }[];
   closingGoal: string;
 }>> {
+  const { lead, meetingType, previousConversations } = payload;
   const systemPrompt = `You are a sales engineer. Prepare concise meeting briefs that reps can read in 2 minutes. Always return valid JSON.`;
   const prompt = `Prepare a meeting brief for:
 
@@ -745,9 +853,11 @@ Return JSON with:
 // SETTINGS AI — optimization recommendations
 // ============================================================
 
-export async function aiRecommendSettingsOptimizations(
-  currentSettings: Record<string, unknown>
-): Promise<AIResult<{
+export interface SettingsOptimizePayload {
+  currentSettings: Record<string, unknown>;
+}
+
+export async function aiRecommendSettingsOptimizations(payload: SettingsOptimizePayload): Promise<AIResult<{
   recommendations: Array<{
     area: string;
     issue: string;
@@ -758,6 +868,7 @@ export async function aiRecommendSettingsOptimizations(
   quickWins: string[];
   strategicChanges: string[];
 }>> {
+  const { currentSettings } = payload;
   const systemPrompt = `You are a RevOps consultant. Recommend specific, high-impact configuration improvements. Always return valid JSON.`;
   const prompt = `Recommend optimizations for these LeadReach settings:
 
@@ -779,15 +890,26 @@ Return JSON with:
 // BILLING AI — cost insights
 // ============================================================
 
-export async function aiAnalyzeBillingUsage(
-  usage: { plan: string; seats?: number; apiCalls?: number; leadsUsed?: number; leadsLimit?: number; aiCreditsUsed?: number; aiCreditsLimit?: number }
-): Promise<AIResult<{
+export interface BillingUsagePayload {
+  usage: {
+    plan: string;
+    seats?: number;
+    apiCalls?: number;
+    leadsUsed?: number;
+    leadsLimit?: number;
+    aiCreditsUsed?: number;
+    aiCreditsLimit?: number;
+  };
+}
+
+export async function aiAnalyzeBillingUsage(payload: BillingUsagePayload): Promise<AIResult<{
   summary: string;
   efficiency: string;
   recommendedPlan: string;
   costOptimizations: string[];
   projectedSavings: string;
 }>> {
+  const { usage } = payload;
   const systemPrompt = `You are a SaaS billing analyst. Help customers optimize their plan and usage. Always return valid JSON.`;
   const prompt = `Analyze this customer's billing usage and recommend optimizations:
 
@@ -813,16 +935,20 @@ Return JSON with:
 // PIPELINE AI — deal health, forecasting, coaching
 // ============================================================
 
-export async function aiAnalyzeDeal(deal: {
-  name: string;
-  value: number;
-  stage: string;
-  age: number;
-  lastActivity: string;
-  nextStep: string;
-  competitors?: string[];
-  decisionMakers?: string[];
-}): Promise<AIResult<{
+export interface DealAnalysisPayload {
+  deal: {
+    name: string;
+    value: number;
+    stage: string;
+    age: number;
+    lastActivity: string;
+    nextStep: string;
+    competitors?: string[];
+    decisionMakers?: string[];
+  };
+}
+
+export async function aiAnalyzeDeal(payload: DealAnalysisPayload): Promise<AIResult<{
   healthScore: number;
   atRiskReasons: string[];
   recommendedActions: string[];
@@ -830,6 +956,7 @@ export async function aiAnalyzeDeal(deal: {
   winProbability: number;
   coachingTips: string[];
 }>> {
+  const { deal } = payload;
   const systemPrompt = `You are a sales manager reviewing pipeline deals. Assess deal health honestly. Always return valid JSON.`;
   const prompt = `Analyze this deal's health:
 
@@ -857,16 +984,30 @@ Return JSON with:
 // ICP AI — refine ideal customer profile
 // ============================================================
 
-export async function aiRefineICP(
-  currentICP: { industry?: string; size?: string; geography?: string; titles?: string[]; painPoints?: string[] },
-  customerData: { totalCustomers: number; topCustomers: string[]; churnedCustomers: string[]; averageACV?: number }
-): Promise<AIResult<{
+export interface RefineICPPayload {
+  currentICP: {
+    industry?: string;
+    size?: string;
+    geography?: string;
+    titles?: string[];
+    painPoints?: string[];
+  };
+  customerData: {
+    totalCustomers: number;
+    topCustomers: string[];
+    churnedCustomers: string[];
+    averageACV?: number;
+  };
+}
+
+export async function aiRefineICP(payload: RefineICPPayload): Promise<AIResult<{
   refinedICP: string;
   expansionOpportunities: string[];
   contractionRisks: string[];
   newSegmentsToExplore: string[];
   messagingImplications: string[];
 }>> {
+  const { currentICP, customerData } = payload;
   const systemPrompt = `You are an ICP strategist. Use customer data to refine the ideal customer profile. Always return valid JSON.`;
   const prompt = `Refine this ICP based on customer data:
 
@@ -890,15 +1031,162 @@ Return JSON with:
 }
 
 // ============================================================
+// VISION AI — glm-4.6v-flash multimodal helpers
+// ============================================================
+//
+// Per platform policy, glm-4.6v-flash is the ONLY vision model. These helpers
+// wrap callLLMVision() with domain-specific prompts for the most common
+// multimodal use cases on the platform.
+//
+// ============================================================
+
+import { callLLMVision, callLLMVisionForJSON } from '@/lib/llm';
+
+export interface VisionAnalyzeImagePayload {
+  /** Image as a data URL (`data:image/png;base64,...`) OR a publicly reachable URL */
+  image: string;
+  /** What the user wants to know about the image */
+  question: string;
+  /** Optional context to bias the analysis (e.g. "This is a prospect's website screenshot") */
+  context?: string;
+}
+
+export async function aiAnalyzeImage(payload: VisionAnalyzeImagePayload): Promise<AIResult<string>> {
+  const { image, question, context } = payload;
+  const systemPrompt = `You are a meticulous visual analyst for B2B sales and marketing teams. Use the image plus any provided context to answer the user's question precisely. If the image is unclear, say so.`;
+  const userText = `Context: ${context || 'No additional context provided.'}
+
+Question: ${question}
+
+Answer with concrete, specific observations tied to what you can see in the image. Avoid speculation beyond what the image shows.`;
+
+  try {
+    const text = await callLLMVision([
+      { role: 'system', text: systemPrompt },
+      { role: 'user', text: userText, image },
+    ]);
+
+    if (text === null || text === undefined) {
+      return {
+        success: true,
+        data: '',
+        modelUsed: 'glm-4.6v-flash (fallback)',
+      };
+    }
+
+    return {
+      success: true,
+      data: text,
+      modelUsed: 'glm-4.6v-flash',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      data: '',
+      error: error instanceof Error ? error.message : 'Vision call failed',
+    };
+  }
+}
+
+export interface VisionExtractCompanyFromScreenshotPayload {
+  /** Screenshot of a prospect's website or LinkedIn page as a data URL or URL */
+  image: string;
+}
+
+export async function aiExtractCompanyFromScreenshot(
+  payload: VisionExtractCompanyFromScreenshotPayload,
+): Promise<AIResult<{
+  companyName: string;
+  tagline: string;
+  industry: string;
+  valueProposition: string;
+  keyFeatures: string[];
+  contactInfo: { emails?: string[]; phones?: string[]; addresses?: string[] };
+  socialLinks: string[];
+  techStackSignals: string[];
+}>> {
+  const { image } = payload;
+  const systemPrompt = `You are an expert B2B research analyst. Given a screenshot of a company's website or LinkedIn page, extract structured company information visible in the image. Always return valid JSON.`;
+  const userText = `Extract every detail you can identify from this screenshot.
+
+Return JSON with:
+- companyName: the company name as shown
+- tagline: any tagline or slogan visible
+- industry: best-guess industry
+- valueProposition: the main value proposition stated in the image
+- keyFeatures: array of product features or services listed
+- contactInfo: object with emails/phones/addresses arrays (only what's visible)
+- socialLinks: array of social media URLs visible
+- techStackSignals: any visible tech stack signals (e.g. "Built with Next.js", "Powered by Shopify")`;
+
+  try {
+    const data = await callLLMVisionForJSON<{
+      companyName: string;
+      tagline: string;
+      industry: string;
+      valueProposition: string;
+      keyFeatures: string[];
+      contactInfo: { emails?: string[]; phones?: string[]; addresses?: string[] };
+      socialLinks: string[];
+      techStackSignals: string[];
+    }>([
+      { role: 'system', text: systemPrompt },
+      { role: 'user', text: userText, image },
+    ]);
+
+    if (data === null || data === undefined) {
+      return {
+        success: true,
+        data: {
+          companyName: '',
+          tagline: '',
+          industry: '',
+          valueProposition: '',
+          keyFeatures: [],
+          contactInfo: {},
+          socialLinks: [],
+          techStackSignals: [],
+        },
+        modelUsed: 'glm-4.6v-flash (fallback)',
+      };
+    }
+
+    return {
+      success: true,
+      data,
+      modelUsed: 'glm-4.6v-flash',
+    };
+  } catch (error) {
+    return {
+      success: false,
+      data: {
+        companyName: '',
+        tagline: '',
+        industry: '',
+        valueProposition: '',
+        keyFeatures: [],
+        contactInfo: {},
+        socialLinks: [],
+        techStackSignals: [],
+      },
+      error: error instanceof Error ? error.message : 'Vision call failed',
+    };
+  }
+}
+
+// ============================================================
 // GENERIC AI — for any domain that needs a quick LLM call
 // ============================================================
 
-export async function aiGeneric<T = string>(
-  task: string,
-  input: unknown,
-  outputSchema: string,
-  systemPrompt?: string
-): Promise<AIResult<T>> {
+export interface GenericAIPayload {
+  task: string;
+  input: unknown;
+  outputSchema: string;
+  systemPrompt?: string;
+}
+
+export async function aiGeneric<T = string>(payload: GenericAIPayload): Promise<AIResult<T>> {
+  const { task, input, outputSchema, systemPrompt } = payload;
   const fullSystemPrompt = systemPrompt || `You are an expert assistant. Always return valid JSON matching the requested schema.`;
   const prompt = `Task: ${task}
 
@@ -911,11 +1199,14 @@ ${outputSchema}`;
   return safeJsonCall<T>(prompt, fullSystemPrompt, {} as T);
 }
 
-export async function aiGenericText(
-  task: string,
-  input: unknown,
-  systemPrompt?: string
-): Promise<AIResult<string>> {
+export interface GenericTextPayload {
+  task: string;
+  input: unknown;
+  systemPrompt?: string;
+}
+
+export async function aiGenericText(payload: GenericTextPayload): Promise<AIResult<string>> {
+  const { task, input, systemPrompt } = payload;
   const fullSystemPrompt = systemPrompt || `You are an expert assistant. Provide a clear, helpful response.`;
   const prompt = `${task}
 
@@ -929,32 +1220,41 @@ ${JSON.stringify(input, null, 2)}`;
 // Health check
 // ============================================================
 
-export async function aiActivationHealth(): Promise<{ ready: boolean; capabilities: string[] }> {
-  const capabilities = [
-    'lead-scoring',
-    'lead-enrichment',
-    'lead-next-action',
-    'email-compose',
-    'email-reply',
-    'email-subject-optimize',
-    'messaging-suggest-reply',
-    'messaging-summarize',
-    'setter-coach',
-    'setter-qualifying-rules',
-    'campaign-generate',
-    'campaign-optimize',
-    'report-summary',
-    'analytics-annotate',
-    'analytics-forecast',
-    'outreach-sequence',
-    'abm-score',
-    'booking-brief',
-    'settings-recommend',
-    'billing-analyze',
-    'pipeline-analyze',
-    'icp-refine',
-    'generic-json',
-    'generic-text',
-  ];
-  return { ready: true, capabilities };
+export async function aiActivationHealth(): Promise<{
+  ready: boolean;
+  models: string[];
+  capabilities: string[];
+}> {
+  return {
+    ready: true,
+    models: ['glm-4.7-flash', 'glm-4.6v-flash'],
+    capabilities: [
+      'lead-scoring',
+      'lead-enrichment',
+      'lead-next-action',
+      'email-compose',
+      'email-reply',
+      'email-subject-optimize',
+      'messaging-suggest-reply',
+      'messaging-summarize',
+      'setter-coach',
+      'setter-qualifying-rules',
+      'campaign-generate',
+      'campaign-optimize',
+      'report-summary',
+      'analytics-annotate',
+      'analytics-forecast',
+      'outreach-sequence',
+      'abm-score',
+      'booking-brief',
+      'settings-recommend',
+      'billing-analyze',
+      'pipeline-analyze',
+      'icp-refine',
+      'vision-analyze-image',
+      'vision-extract-company-screenshot',
+      'generic-json',
+      'generic-text',
+    ],
+  };
 }

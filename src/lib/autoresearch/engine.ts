@@ -140,7 +140,7 @@ async function callLLM(options: {
   userMessage: string;
   temperature?: number;
   maxTokens?: number;
-  model?: string;
+  model?: 'glm-4.7-flash' | 'glm-4.6v-flash';
 }): Promise<string | null> {
   const mod = await import('@/lib/llm');
   return mod.callLLM(options);
@@ -155,7 +155,7 @@ async function callLLMForJSON<T>(
   options?: {
     temperature?: number;
     maxTokens?: number;
-    model?: string;
+    model?: 'glm-4.7-flash' | 'glm-4.6v-flash';
   },
 ): Promise<T | null> {
   const mod = await import('@/lib/llm');

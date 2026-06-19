@@ -1,51 +1,57 @@
 /**
  * Centralized LLM Utility — LeadReach AI
  *
- * Uses Zhipu AI's GLM models via JWT-authenticated HTTP API.
+ * Uses Z.AI's GLM flash models via JWT-authenticated HTTP API.
  *
- * Model Configuration (as of 2026-06):
- *   - glm-4.6  (PRIMARY — reasoning-capable, current Z.AI model)
- *   - glm-4.5  (SECONDARY — cheaper/faster fallback)
+ * Model Configuration (LOCKED for lifetime use on this platform):
+ *   - glm-4.7-flash   (PRIMARY — fast text/reasoning model, used for all customer-facing text tasks)
+ *   - glm-4.6v-flash   (FALLBACK + VISION — multimodal model, used when primary is rate-limited
+ *                       AND for any task that requires image understanding / OCR / vision)
  *
- * Note: Z.AI deprecated the old "-flash" suffix names (glm-4.6v-flash,
- * glm-4.7-flash) in late 2025. Current names drop the suffix.
+ * These two models are the ONLY customer-facing models on the LeadReach platform.
+ * Per platform policy, no other model may be invoked from any user-facing code path.
  *
  * IMPORTANT DESIGN NOTES:
- * 1. Zhipu AI requires JWT authentication. The API key format is
+ * 1. Z.AI requires JWT authentication. The API key format is
  *    `{id}.{secret}`, converted to a JWT token by zhipu-jwt.ts.
- * 2. GLM reasoning models (4.6, 4.7) use the `thinking`
- *    parameter. With `thinking: {type: "enabled", budget_tokens: N}`,
- *    the model separates reasoning (in `reasoning_content`) from the
- *    clean answer (in `content`). With `thinking: {type: "disabled"}`,
- *    ALL output goes into `reasoning_content` and `content` is empty.
+ * 2. GLM flash models use the `thinking` parameter. With
+ *    `thinking: {type: "enabled", budget_tokens: N}`, the model separates
+ *    reasoning (in `reasoning_content`) from the clean answer (in `content`).
  * 3. We use `thinking: enabled` with a budget to get clean, structured
- *    output in the `content` field while still benefiting from the
- *    model's reasoning capability.
+ *    output in the `content` field while still benefiting from the model's
+ *    reasoning capability.
  */
 
 import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from './zhipu-jwt';
 
 // ============================================================
-// Model Definitions
+// Model Definitions — LOCKED to {glm-4.7-flash; glm-4.6v-flash}
 // ============================================================
 
 /**
- * Primary model — glm-4.6 (reasoning-capable, currently active on Z.AI).
- * Note: Z.AI deprecated the old "-flash" suffix model names (glm-4.6v-flash, glm-4.7-flash)
- * in late 2025. The current naming convention drops the suffix entirely.
+ * Primary model — glm-4.7-flash.
+ * Fast text + reasoning model. Used for every customer-facing text task
+ * (lead scoring, email composition, conversation summaries, forecasts, etc.).
  */
-export const MODEL_PRIMARY = 'glm-4.6' as const;
+export const MODEL_PRIMARY = 'glm-4.7-flash' as const;
 
 /**
- * Secondary/fallback model — glm-4.5 (cheaper, faster, good for simple tasks).
- * May be rate-limited on the free tier; skipped quickly on 429.
+ * Fallback model — glm-4.6v-flash.
+ * Multimodal (vision) model. Used in two cases:
+ *   1. As a text fallback when glm-4.7-flash is rate-limited / in cooldown.
+ *   2. As the primary model for any task that requires image understanding
+ *      (logo analysis, screenshot OCR, creative review, etc.) via callLLMVision().
  */
-export const MODEL_FALLBACK = 'glm-4.5' as const;
+export const MODEL_FALLBACK = 'glm-4.6v-flash' as const;
 
-/** Legacy alias for MODEL_FALLBACK (used by some importers) */
-export const MODEL_VISION = MODEL_PRIMARY;
+/**
+ * Vision model — glm-4.6v-flash.
+ * Same as MODEL_FALLBACK; exported under a separate name for clarity at
+ * call sites that explicitly need vision capabilities.
+ */
+export const MODEL_VISION = 'glm-4.6v-flash' as const;
 
-/** All available models for iteration */
+/** All customer-facing models on the platform (lifetime set). */
 export const LLM_MODELS = [MODEL_PRIMARY, MODEL_FALLBACK] as const;
 
 export type LLMModel = typeof LLM_MODELS[number];
@@ -955,3 +961,124 @@ export function generateStructuredFallback(params: {
 // ============================================================
 
 export { getSDK };
+
+// ============================================================
+// Vision (glm-4.6v-flash) — multimodal image+text inference
+// ============================================================
+//
+// Per platform policy, glm-4.6v-flash is the ONLY vision-capable model
+// available on the platform. Use this helper for any task that needs to
+// understand image content: logo analysis, screenshot OCR, creative
+// review, document understanding, etc.
+//
+// ============================================================
+
+export interface VisionMessage {
+  role: 'system' | 'user' | 'assistant';
+  /** Text content for this message */
+  text?: string;
+  /** Inline image (data URL: `data:image/png;base64,...`) OR a publicly-reachable image URL */
+  image?: string;
+}
+
+export interface LLMVisionOptions {
+  /** Temperature (0-1), default 0.3 */
+  temperature?: number;
+  /** Max tokens, default 4096 */
+  maxTokens?: number;
+  /** Thinking budget: 'quick' (1024), 'standard' (2048), or 'deep' (4096), default 'standard' */
+  thinkingBudget?: ThinkingBudget;
+  /** Abort signal for cancellation */
+  signal?: AbortSignal;
+}
+
+/**
+ * Call glm-4.6v-flash with a multimodal (image + text) prompt.
+ *
+ * Each message can carry text, an image (data URL or HTTP URL), or both.
+ * Returns the model's text response, or null on failure.
+ *
+ * Example:
+ *   const result = await callLLMVision([
+ *     { role: 'system', text: 'You are a brand analyst.' },
+ *     { role: 'user', text: 'Describe this logo.', image: dataUrl },
+ *   ]);
+ */
+export async function callLLMVision(
+  messages: VisionMessage[],
+  options?: LLMVisionOptions,
+): Promise<string | null> {
+  if (!isZhipuConfigured()) {
+    console.error('[callLLMVision] Z.AI API key not configured');
+    return null;
+  }
+
+  const budget = THINKING_BUDGETS[options?.thinkingBudget || 'standard'];
+  const effectiveMaxTokens = Math.max(options?.maxTokens || 4096, budget + 500);
+
+  // Convert our VisionMessage format to Z.AI's content-array format
+  const apiMessages = messages.map((m) => {
+    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+    if (m.text) content.push({ type: 'text', text: m.text });
+    if (m.image) content.push({ type: 'image_url', image_url: { url: m.image } });
+    return { role: m.role, content };
+  });
+
+  try {
+    await waitForRateLimit();
+    try {
+      const token = getZhipuToken();
+      if (!token) {
+        return null;
+      }
+
+      const url = `${getZhipuApiBase()}/chat/completions`;
+      const body = {
+        model: MODEL_VISION,
+        messages: apiMessages,
+        temperature: options?.temperature ?? 0.3,
+        max_tokens: effectiveMaxTokens,
+        thinking: { type: 'enabled', budget_tokens: budget },
+      };
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`,
+        },
+        body: JSON.stringify(body),
+        signal: options?.signal || AbortSignal.timeout(90_000),
+      });
+
+      if (!response.ok) {
+        const errorText = await response.text().catch(() => 'Unknown error');
+        console.warn(`[callLLMVision] API failed (${response.status}): ${errorText.slice(0, 200)}`);
+        return null;
+      }
+
+      const completion = await response.json();
+      const content = extractContent(completion);
+      return content || null;
+    } finally {
+      releaseRateLimit();
+    }
+  } catch (error) {
+    releaseRateLimit();
+    console.warn('[callLLMVision] Error:', error instanceof Error ? error.message.slice(0, 200) : error);
+    return null;
+  }
+}
+
+/**
+ * Call glm-4.6v-flash and parse the response as JSON.
+ * Same as callLLMVision but extracts and parses a JSON object from the response.
+ */
+export async function callLLMVisionForJSON<T>(
+  messages: VisionMessage[],
+  options?: LLMVisionOptions,
+): Promise<T | null> {
+  const text = await callLLMVision(messages, options);
+  if (!text) return null;
+  return extractJSONFromString<T>(text);
+}

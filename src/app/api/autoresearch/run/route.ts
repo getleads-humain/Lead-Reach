@@ -25,7 +25,7 @@ async function callLLM(options: {
   userMessage: string;
   temperature?: number;
   maxTokens?: number;
-  model?: string;
+  model?: 'glm-4.7-flash' | 'glm-4.6v-flash';
 }) {
   const mod = await import('@/lib/llm');
   return mod.callLLM(options);
