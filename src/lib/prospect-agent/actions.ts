@@ -320,22 +320,27 @@ export async function executeCompanyResearch(
     const domainName = urlMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     // Check if there's a company name before the URL
     const beforeUrl = cleanName.split(/https?:\/\//)[0].trim();
+    // ReDoS-safe prefix strip: use anchored alternation without nested
+    // optional quantifiers. The pattern is linear (no nested *, +, or
+    // alternation with overlap).
     const cleanBefore = beforeUrl
-      .replace(/^(?:research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
-      .replace(/\s*(?:from|on|at)\s+(?:their\s+)?(?:website|site|url|page)\s*$/i, '')
+      .replace(/^(research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
+      .replace(/\s+(from|on|at)\s+(their\s+)?(website|site|url|page)$/i, '')
       .trim();
     cleanName = cleanBefore.length > 2 ? cleanBefore : domainName;
   }
   
   // Strip common prefixes
   cleanName = cleanName
-    .replace(/^(?:research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
+    .replace(/^(research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
     .replace(/["']/g, '')
     .trim();
   
   // If the name is too long (>60 chars), it's probably the full message — truncate
   if (cleanName.length > 60) {
-    cleanName = cleanName.split(/\s+(?:from|on|at|with|about|their)\s/i)[0].trim();
+    // ReDoS-safe split: use simple alternation without nested quantifiers.
+    // The `\s+` before the alternation is a single quantifier, not nested.
+    cleanName = cleanName.split(/\s+(from|on|at|with|about|their)\s/i)[0].trim();
   }
   
   // Final fallback

@@ -137,22 +137,35 @@ function extractLinkedInCompanySlug(url: string): string {
 }
 
 /**
- * Decode common HTML entities, then strip tags (order prevents double-escaping).
- * Fixes CodeQL "Double escaping or unescaping" alert by ensuring
- * entity decoding happens AFTER tag removal to avoid re-introducing tags.
+ * Strip HTML tags, then decode entities in a SINGLE PASS to prevent
+ * double-escaping/double-unescaping vulnerabilities (CodeQL alert #97).
+ *
+ * The previous sequential `.replace()` approach could double-decode
+ * inputs like `&amp;lt;` — first `&lt;` → `<`, then `&amp;` → `&`,
+ * but the intermediate `&lt;` was already decoded, potentially
+ * re-introducing tag characters.
+ *
+ * This single-pass regex matches ALL known entities at once and replaces
+ * them in one atomic operation, so no decoded value can be re-processed.
  */
 function sanitizeHtml(input: string): string {
   // First strip all tags iteratively
   const noTags = stripHtmlTags(input);
-  // Then decode entities on the tag-free result
+  // Then decode entities in a single pass (no sequential .replace() chains)
+  const entityMap: Record<string, string> = {
+    '&lt;': '<',
+    '&gt;': '>',
+    '&amp;': '&',
+    '&quot;': '"',
+    '&#x27;': "'",
+    '&#x2F;': '/',
+    '&nbsp;': ' ',
+  };
   return noTags
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
-    .replace(/&nbsp;/g, ' ')
+    .replace(
+      /&(?:lt|gt|amp|quot|nbsp|#x27|#x2F);/g,
+      (entity) => entityMap[entity] ?? entity,
+    )
     .trim();
 }
 

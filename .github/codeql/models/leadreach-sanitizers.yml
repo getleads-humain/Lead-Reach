@@ -1,0 +1,45 @@
+# LeadReach CodeQL Data Extensions
+# =================================
+# Registers custom SSRF sanitizer functions so CodeQL's dataflow analysis
+# recognizes them as sanitizer barriers for the js/server-side-request-forgery
+# query.
+#
+# Without this file, CodeQL treats `sanitizeUrl()` and `sanitizeBrowserUrl()`
+# as opaque function calls and does not cut the taint flow from user-controlled
+# URL parameters to fetch()/page.goto() sinks.
+#
+# The `package` field matches the module specifier used in import statements.
+# We include multiple variants to cover different import styles:
+#   - "@/lib/url-guard"  → TypeScript path alias used in src/ files
+#   - "./url-guard"       → Relative import used in mini-services
+#   - "lib/url-guard"     → Resolved path (fallback)
+#   - "../url-guard"      → Relative import variant
+
+extensions:
+  - addsTo: javascript/request-forgery
+    data:
+      sanitizers:
+        # src/lib/url-guard.ts — sanitizeUrl (async, for fetch/http.request)
+        - package: "@/lib/url-guard"
+          name: sanitizeUrl
+        - package: "lib/url-guard"
+          name: sanitizeUrl
+        - package: "src/lib/url-guard"
+          name: sanitizeUrl
+        # src/lib/url-guard.ts — sanitizeBrowserUrl (sync, for page.goto)
+        - package: "@/lib/url-guard"
+          name: sanitizeBrowserUrl
+        - package: "lib/url-guard"
+          name: sanitizeBrowserUrl
+        - package: "src/lib/url-guard"
+          name: sanitizeBrowserUrl
+        # mini-services/browser-service/url-guard.ts
+        - package: "./url-guard"
+          name: sanitizeBrowserUrl
+        - package: "./url-guard"
+          name: sanitizeUrl
+        # mini-services/gmaps-service/url-guard.ts
+        - package: "./url-guard"
+          name: sanitizeBrowserUrl
+        - package: "./url-guard"
+          name: sanitizeUrl

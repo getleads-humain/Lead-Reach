@@ -41,12 +41,7 @@ jobs:
         with:
           languages: ${{ matrix.language }}
           queries: security-extended,security-and-quality
-          config-file: |
-            paths-ignore:
-              - '**/node_modules/**'
-              - '**/dist/**'
-              - '**/*.min.js'
-              - '**/*.bundle.js'
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Autobuild
         uses: github/codeql-action/autobuild@v3

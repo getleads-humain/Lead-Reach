@@ -205,8 +205,18 @@ const abmCampaigns = new Map<string, ABMCampaign>();
 // ID Generation
 // ============================================================
 
+/**
+ * Generate a unique ID with the given prefix.
+ * Uses crypto.randomBytes for cryptographically secure randomness
+ * (replaces Math.random() which CodeQL flags as insecure randomness).
+ */
 function generateId(prefix: string): string {
-  return `${prefix}_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+  // Use Node.js crypto for secure randomness — Math.random() is not
+  // cryptographically secure and is predictable, which could allow
+  // ID guessing/enumeration attacks.
+  const { randomBytes } = require('crypto') as typeof import('crypto');
+  const randomPart = randomBytes(6).toString('hex'); // 12 hex chars
+  return `${prefix}_${Date.now()}_${randomPart}`;
 }
 
 // ============================================================

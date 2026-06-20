@@ -301,20 +301,51 @@ export function assertSafeBrowserUrl(url: string): void {
  * Sanitize a URL for safe use in `fetch()` / `http.request()` calls.
  *
  * This is the recommended sanitizer barrier for SSRF defense. It:
- *   1. Performs a full async check (syntactic + DNS resolution).
- *   2. Re-serializes the URL via `new URL(url).toString()` so the
- *      returned string is a fresh value (not the original tainted input).
+ *   1. Parses the URL with `new URL()` (constructor recognized by CodeQL
+ *      as a dataflow barrier for URL strings).
+ *   2. Validates the protocol (only http/https allowed).
+ *   3. Validates the hostname (blocks private/internal IPs and hostnames).
+ *   4. Performs DNS resolution to block DNS-rebinding attacks.
+ *   5. Returns the `.href` property of the parsed URL object — a fresh
+ *      string derived from the parsed object, not the original input.
  *
  * CodeQL's dataflow analysis recognizes the return value of this function
- * as a separate value from the input, cutting the taint flow.
+ * as a separate value from the input (registered via data extension at
+ * `.github/codeql/models/leadreach-sanitizers.yml`), cutting the taint flow
+ * from user-controlled URL parameters to fetch()/http.request() sinks.
  *
  * @throws UnsafeUrlError if the URL is unsafe.
  * @returns A re-serialized, validated URL string safe for outbound requests.
  */
 export async function sanitizeUrl(url: string): Promise<string> {
+  // Step 1: Parse with new URL() — CodeQL recognizes this as a barrier
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new UnsafeUrlError(
+      `Refused to load URL for SSRF safety: malformed URL`,
+      'malformed-url',
+      url,
+    );
+  }
+
+  // Step 2: Validate scheme — only http/https allowed
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UnsafeUrlError(
+      `Refused to load URL for SSRF safety: scheme "${parsed.protocol}" not allowed`,
+      'bad-scheme',
+      url,
+    );
+  }
+
+  // Step 3: Full safety check (hostname + IP + DNS resolution)
   await assertSafeUrl(url);
-  // Re-serialize through URL parser to normalize and cut taint flow.
-  return new URL(url).toString();
+
+  // Step 4: Return .href from the parsed URL object — this is a NEW string
+  // derived from the URL object, not the original `url` input. CodeQL
+  // recognizes this as a sanitizer barrier.
+  return parsed.href;
 }
 
 /**
@@ -322,14 +353,40 @@ export async function sanitizeUrl(url: string): Promise<string> {
  * Playwright `page.goto()`). Performs syntactic + hostname validation
  * but skips DNS resolution (use `sanitizeUrl()` for full checks).
  *
- * Returns a re-serialized URL string that CodeQL recognizes as a
- * sanitizer barrier.
+ * Returns the `.href` property of the parsed URL object — a fresh string
+ * derived from the parsed object, not the original input. CodeQL recognizes
+ * this as a sanitizer barrier (registered via data extension).
  *
  * @throws UnsafeUrlError if the URL is unsafe.
  * @returns A re-serialized, validated URL string safe for `page.goto()`.
  */
 export function sanitizeBrowserUrl(url: string): string {
+  // Step 1: Parse with new URL() — CodeQL recognizes this as a barrier
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new UnsafeUrlError(
+      `Refused to load URL for SSRF safety: malformed URL`,
+      'malformed-url',
+      url,
+    );
+  }
+
+  // Step 2: Validate scheme — only http/https allowed
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UnsafeUrlError(
+      `Refused to load URL for SSRF safety: scheme "${parsed.protocol}" not allowed`,
+      'bad-scheme',
+      url,
+    );
+  }
+
+  // Step 3: Full sync safety check (hostname + IP literal checks)
   assertSafeUrlSync(url);
-  // Re-serialize through URL parser to normalize and cut taint flow.
-  return new URL(url).toString();
+
+  // Step 4: Return .href from the parsed URL object — this is a NEW string
+  // derived from the URL object, not the original `url` input. CodeQL
+  // recognizes this as a sanitizer barrier.
+  return parsed.href;
 }

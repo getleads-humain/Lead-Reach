@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useMemo } from 'react';
+import React, { useMemo, useEffect, useState } from 'react';
+import DOMPurify from 'dompurify';
 import { cn } from '@/lib/utils';
 
 // ============================================================
@@ -349,7 +350,34 @@ interface MarkdownRendererProps {
 }
 
 export function MarkdownRenderer({ content, className, isStreaming }: MarkdownRendererProps) {
-  const html = useMemo(() => markdownToHtml(content), [content]);
+  // SSR safety: DOMPurify requires the browser `window` object, so on the
+  // server we render an empty div and hydrate on the client. This avoids
+  // "window is not defined" errors during Next.js SSR.
+  const [isClient, setIsClient] = useState(false);
+  useEffect(() => { setIsClient(true); }, []);
+
+  const html = useMemo(() => {
+    if (!isClient) return '';
+    // Convert markdown to HTML, then sanitize with DOMPurify to strip
+    // any XSS payloads (script tags, javascript: URLs, on* event handlers,
+    // etc.) that may have survived the markdown→HTML conversion.
+    //
+    // This replaces the previous `dangerouslySetInnerHTML` without
+    // sanitization, which CodeQL flagged as "DOM text reinterpreted as
+    // HTML". DOMPurify is the industry-standard sanitizer recommended by
+    // OWASP for this use case.
+    const rawHtml = markdownToHtml(content);
+    return DOMPurify.sanitize(rawHtml, {
+      ALLOWED_TAGS: [
+        'p', 'br', 'hr', 'h1', 'h2', 'h3', 'h4', 'h5', 'h6',
+        'ul', 'ol', 'li', 'blockquote', 'pre', 'code',
+        'a', 'img', 'strong', 'em', 'del', 'span', 'div',
+        'table', 'thead', 'tbody', 'tr', 'th', 'td',
+      ],
+      ALLOWED_ATTR: ['href', 'src', 'alt', 'class', 'target', 'rel', 'colspan', 'rowspan'],
+      ALLOW_DATA_ATTR: false,
+    });
+  }, [content, isClient]);
 
   return (
     <div

@@ -342,7 +342,10 @@ export async function trackEvent(
       data: updateData,
     });
   } catch (error) {
-    console.error(`[LeadIntel] trackEvent failed for lead ${leadId}:`, error);
+    // Pass leadId as separate arg — using template literal as first arg
+    // to console.error is a format-string vulnerability if leadId
+    // contains %s/%d (CodeQL "externally-controlled format string").
+    console.error('[LeadIntel] trackEvent failed for lead:', leadId, error);
   }
 
   return event;
@@ -529,7 +532,8 @@ export async function buildBehavioralProfile(leadId: string): Promise<Behavioral
       activityTimeline,
     };
   } catch (error) {
-    console.error(`[LeadIntel] buildBehavioralProfile failed for ${leadId}:`, error);
+    // Pass leadId as separate arg (format-string safety)
+    console.error('[LeadIntel] buildBehavioralProfile failed for:', leadId, error);
     return emptyProfile(leadId);
   }
 }
@@ -706,7 +710,8 @@ What are this lead's top interests? Return a JSON array of 1-5 concise interest 
 
     return null;
   } catch (error) {
-    console.warn(`[LeadIntel] identifyInterests LLM failed for ${leadId}:`, error);
+    // Pass leadId as separate arg (format-string safety)
+    console.warn('[LeadIntel] identifyInterests LLM failed for:', leadId, error);
     return null;
   }
 }
@@ -884,7 +889,8 @@ export async function calculateScoreDecay(
       recommendation,
     };
   } catch (error) {
-    console.error(`[LeadIntel] calculateScoreDecay failed for ${leadId}:`, error);
+    // Pass leadId as separate arg (format-string safety)
+    console.error('[LeadIntel] calculateScoreDecay failed for:', leadId, error);
     return {
       leadId,
       originalScore: currentScore,
@@ -1075,7 +1081,8 @@ Provide your predictive analysis as the specified JSON.`;
     // Fallback to heuristic prediction
     return heuristicPredictiveScore(leadId, leadData);
   } catch (error) {
-    console.warn(`[LeadIntel] predictConversionProbability LLM failed for ${leadId}:`, error);
+    // Pass leadId as separate arg (format-string safety)
+    console.warn('[LeadIntel] predictConversionProbability LLM failed for:', leadId, error);
     try {
       const lead = await db.lead.findUnique({ where: { id: leadId } });
       return heuristicPredictiveScore(leadId, lead || {});
@@ -1486,13 +1493,15 @@ What additional alerts should be raised?`;
           data: { notes: updatedNotes },
         });
       } catch (err) {
-        console.warn(`[LeadIntel] generateAlerts: failed to persist alerts for ${leadId}:`, err);
+        // Pass leadId as separate arg (format-string safety)
+        console.warn('[LeadIntel] generateAlerts: failed to persist alerts for:', leadId, err);
       }
     }
 
     return allAlerts;
   } catch (error) {
-    console.error(`[LeadIntel] generateAlerts failed for ${leadId}:`, error);
+    // Pass leadId as separate arg (format-string safety)
+    console.error('[LeadIntel] generateAlerts failed for:', leadId, error);
     return [];
   }
 }
@@ -1648,7 +1657,8 @@ export async function calculateCompositeScore(leadId: string): Promise<Composite
       updatedAt: new Date().toISOString(),
     };
   } catch (error) {
-    console.error(`[LeadIntel] calculateCompositeScore failed for ${leadId}:`, error);
+    // Pass leadId as separate arg (format-string safety)
+    console.error('[LeadIntel] calculateCompositeScore failed for:', leadId, error);
     return {
       leadId,
       compositeScore: 0,

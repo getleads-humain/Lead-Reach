@@ -35,20 +35,31 @@ function stripHtml(input: string): string {
     current = current.replace(/<[^>]*>/g, '');
     iterations++;
   }
-  // Decode entities AFTER stripping tags (prevents re-introducing tags via entities)
-  // This order is critical: if we decoded first, &lt;script&gt; would become <script>
-  // which would then be stripped, but nested double-encoding like &amp;lt; could bypass
-  // by becoming &lt; after first decode pass, then < after second. By stripping tags
-  // first, we ensure no HTML structure survives before decoding.
-  return current
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&amp;/g, '&')
-    .replace(/&quot;/g, '"')
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
-    .replace(/&nbsp;/g, ' ')
-    .trim();
+  // Decode HTML entities in a SINGLE PASS to prevent double-escaping/
+  // double-unescaping vulnerabilities (CodeQL alert #98).
+  //
+  // The previous sequential `.replace()` approach could double-decode
+  // inputs like `&amp;lt;` → first pass decodes `&lt;` to `<`, then
+  // `&amp;` to `&`, but the intermediate `&lt;` was already decoded,
+  // potentially re-introducing tag characters.
+  //
+  // This single-pass regex matches ALL known entities at once and
+  // replaces them with their decoded values in one atomic operation,
+  // so no decoded value can be re-processed by a subsequent replace.
+  const entityMap: Record<string, string> = {
+    '&lt;': '<',
+    '&gt;': '>',
+    '&amp;': '&',
+    '&quot;': '"',
+    '&#x27;': "'",
+    '&#x2F;': '/',
+    '&nbsp;': ' ',
+  };
+  current = current.replace(
+    /&(?:lt|gt|amp|quot|nbsp|#x27|#x2F);/g,
+    (entity) => entityMap[entity] ?? entity,
+  );
+  return current.trim();
 }
 
 /**

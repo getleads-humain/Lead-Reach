@@ -1,0 +1,32 @@
+# LeadReach CodeQL Configuration
+# ===============================
+# This file configures CodeQL analysis for the LeadReach project.
+# It is referenced by .github/workflows/codeql.yml via the `config-file`
+# parameter of github/codeql-action/init@v3.
+#
+# Key features:
+#   - Excludes generated/bundled files from analysis
+#   - Uses security-extended + security-and-quality query suites
+#   - Data extensions in .github/codeql/models/ are loaded automatically
+#     (they register custom SSRF sanitizers like sanitizeUrl/sanitizeBrowserUrl)
+
+name: "LeadReach CodeQL Config"
+
+# Query suites to run — security-extended adds more security queries
+# beyond the default, and security-and-quality adds code-quality checks.
+queries:
+  - uses: security-extended
+  - uses: security-and-quality
+
+# Paths to include/exclude in analysis
+paths:
+  - src
+  - mini-services
+paths-ignore:
+  - '**/node_modules/**'
+  - '**/dist/**'
+  - '**/.next/**'
+  - '**/*.min.js'
+  - '**/*.bundle.js'
+  - '**/build/**'
+  - '**/coverage/**'

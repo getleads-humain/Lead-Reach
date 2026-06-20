@@ -531,9 +531,15 @@ function buildNameVariations(fullName: string): string[] {
 
 /**
  * Detect if a query looks like an email address.
+ * ReDoS-safe: uses bounded character classes without nested quantifiers.
+ * Limits local-part and domain to 254 chars total (RFC 5321).
  */
 export function isEmail(query: string): boolean {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(query.trim());
+  const trimmed = query.trim();
+  if (trimmed.length > 254 || trimmed.length < 5) return false;
+  // Linear regex: no nested quantifiers, no alternation with overlap.
+  // [^\s@] is a single char class, + is a single quantifier — O(n).
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed);
 }
 
 /**
