@@ -514,25 +514,37 @@ export function detectDomain(query: string): DomainSchema {
   for (const [domainKey, schema] of Object.entries(DOMAIN_SCHEMAS)) {
     if (domainKey === 'general') continue;
     let score = 0;
+    let keywordMatches = 0;
+    let phraseMatches = 0;
+    let regulatoryMatches = 0;
 
-    // Keyword matching (1 point per match)
+    // Keyword matching (1 point per match — STRONG signal)
     for (const keyword of schema.triggerKeywords) {
       if (lowerQuery.includes(keyword.toLowerCase())) {
         score += 1;
+        keywordMatches++;
       }
     }
 
-    // Phrase matching (3 points per match — more specific)
+    // Phrase matching (3 points per match — VERY STRONG signal)
     for (const phrase of schema.triggerPhrases) {
       if (lowerQuery.includes(phrase.toLowerCase())) {
         score += 3;
+        phraseMatches++;
       }
     }
 
-    // Bonus: regulatory body mentions (2 points)
+    // Regulatory body matching (2 points per match — STRICT match required)
+    // IMPORTANT: We require the FULL regulatory body name to match, not just
+    // the first word. Previously, "Health Canada" → "health" matched any text
+    // containing "health" or "Healthcare", causing false positives like
+    // "Healthcare & FinTech Systems" being misclassified as pharma_biotech.
     for (const reg of schema.regulatoryBodies) {
-      if (lowerQuery.includes(reg.toLowerCase().split(' ')[0].toLowerCase())) {
+      const regLower = reg.toLowerCase();
+      // Match the full name OR (for multi-word names) the full name as a phrase
+      if (lowerQuery.includes(regLower)) {
         score += 2;
+        regulatoryMatches++;
       }
     }
 
@@ -542,9 +554,33 @@ export function detectDomain(query: string): DomainSchema {
   // Find the highest scoring domain
   const bestDomain = Object.entries(scores).sort((a, b) => b[1] - a[1])[0];
 
-  // If best score is >= 2, use that domain; otherwise fall back to general
-  if (bestDomain && bestDomain[1] >= 2) {
-    return DOMAIN_SCHEMAS[bestDomain[0] as DomainType];
+  // Require at least 2 different TYPES of matches (keyword + phrase, or
+  // keyword + regulatory, etc.) to avoid false positives from a single
+  // keyword match. Also require a minimum score of 3.
+  if (bestDomain && bestDomain[1] >= 3) {
+    const domainKey = bestDomain[0] as DomainType;
+    const schema = DOMAIN_SCHEMAS[domainKey];
+    // Re-count match types for the winner
+    let keywordMatches = 0;
+    let phraseMatches = 0;
+    let regulatoryMatches = 0;
+    for (const keyword of schema.triggerKeywords) {
+      if (lowerQuery.includes(keyword.toLowerCase())) keywordMatches++;
+    }
+    for (const phrase of schema.triggerPhrases) {
+      if (lowerQuery.includes(phrase.toLowerCase())) phraseMatches++;
+    }
+    for (const reg of schema.regulatoryBodies) {
+      if (lowerQuery.includes(reg.toLowerCase())) regulatoryMatches++;
+    }
+    const matchTypes = [keywordMatches > 0, phraseMatches > 0, regulatoryMatches > 0].filter(Boolean).length;
+    if (matchTypes >= 2) {
+      return schema;
+    }
+    // Single match type but score is high (>= 5) — accept anyway
+    if (bestDomain[1] >= 5) {
+      return schema;
+    }
   }
 
   return DOMAIN_SCHEMAS.general;

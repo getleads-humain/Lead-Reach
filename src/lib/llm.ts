@@ -23,6 +23,7 @@
  */
 
 import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from './zhipu-jwt';
+import { fetchIPv4, withRateLimit, markHostRateLimited, isInRateLimitCooldown, getRateLimitCooldownRemaining, exponentialBackoff } from './network-helpers';
 
 // ============================================================
 // Model Definitions — LOCKED to {glm-4.7-flash; glm-4.6v-flash}
@@ -95,12 +96,16 @@ let lastCallTime = 0;
 let inFlightRequests = 0;
 const MAX_CONCURRENCY = 1; // GLM-4.7-Flash and GLM-4.6V-Flash both limit to 1
 
-// Minimum interval between calls (2s to respect rate limits)
-const MIN_INTERVAL_MS = 2000;
-// "Deep breath" cooldown buffer after each call completes (2-3s)
-const COOLDOWN_BUFFER_MS = 2000;
-// Random jitter to avoid thundering herd (0-1000ms)
-const JITTER_MS = 1000;
+// Minimum interval between calls. Z.AI's free/flash tier enforces
+// ~1 request per minute per account, so we use a longer interval
+// to avoid burning the budget on rapid retries.
+// Tunable: lower = faster but more 429s; higher = slower but more reliable.
+const MIN_INTERVAL_MS = 3500;
+// "Deep breath" cooldown buffer after each call completes (3-4s)
+// Adds a small pause after each call so the next one doesn't fire instantly.
+const COOLDOWN_BUFFER_MS = 3000;
+// Random jitter to avoid thundering herd (0-1500ms)
+const JITTER_MS = 1500;
 
 /**
  * Wait for rate limit clearance before making an API call.
@@ -109,8 +114,20 @@ const JITTER_MS = 1000;
  *   2. Minimum interval between calls
  *   3. "Deep breath" cooldown buffer
  *   4. Random jitter
+ *   5. Respect for host-level rate-limit cooldown (set when 429 received)
  */
 async function waitForRateLimit() {
+  // 0. Respect host-level rate-limit cooldown (set when 429 received)
+  // This is a separate mechanism from the model-level cooldown — when
+  // ANY call to api.z.ai returns 429, we mark the entire host as in
+  // cooldown so ALL concurrent calls (including those to the fallback
+  // model) wait for the rate limit to reset.
+  if (isInRateLimitCooldown('api.z.ai')) {
+    const waitMs = getRateLimitCooldownRemaining('api.z.ai');
+    console.log(`[waitForRateLimit] Z.AI host in cooldown — waiting ${Math.round(waitMs / 1000)}s`);
+    await new Promise(r => setTimeout(r, waitMs));
+  }
+
   // 1. Wait for concurrency slot
   while (inFlightRequests >= MAX_CONCURRENCY) {
     await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
@@ -229,14 +246,14 @@ async function directChatCompletion(params: {
     thinking: { type: 'enabled', budget_tokens: budget },
   };
 
-  const response = await fetch(url, {
+  const response = await fetchIPv4(url, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       'Authorization': `Bearer ${token}`,
     },
     body: JSON.stringify(body),
-    signal: AbortSignal.timeout(90000), // 90s timeout (increased for reasoning models)
+    timeoutMs: 90_000,
   });
 
   if (!response.ok) {
@@ -248,14 +265,14 @@ async function directChatCompletion(params: {
       refreshToken();
       const newToken = getZhipuToken();
       if (newToken && newToken !== token) {
-        const retryResponse = await fetch(url, {
+        const retryResponse = await fetchIPv4(url, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
             'Authorization': `Bearer ${newToken}`,
           },
           body: JSON.stringify(body),
-          signal: AbortSignal.timeout(60000),
+          timeoutMs: 60_000,
         });
         if (!retryResponse.ok) {
           const retryErrorText = await retryResponse.text().catch(() => 'Unknown error');
@@ -424,6 +441,28 @@ function isRateLimitError(msg: string): boolean {
   return msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit') || msg.includes('速率限制');
 }
 
+/**
+ * Detect TLS/connection errors that indicate Z.AI is dropping connections
+ * (typically due to per-IP rate limiting or server overload).
+ *
+ * These should be treated like 429s — back off and wait before retrying.
+ */
+function isConnectionError(msg: string): boolean {
+  return (
+    msg.includes('Client network socket disconnected before secure TLS connection was established')
+    || msg.includes('socket disconnected')
+    || msg.includes('ECONNRESET')
+    || msg.includes('ECONNREFUSED')
+    || msg.includes('ETIMEDOUT')
+    || msg.includes('EPIPE')
+    || msg.includes('UND_ERR_SOCKET')
+    || msg.includes('fetch failed')
+    || msg.includes('network is unreachable')
+    || msg.includes('TLS connection')
+    || msg.includes('unexpected eof')
+  );
+}
+
 function isQuotaError(msg: string): boolean {
   return msg.includes('余额不足') || msg.includes('insufficient') || msg.includes('quota');
 }
@@ -549,11 +588,17 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
         const isGatewayErr = isHtmlOrGatewayError(msg, errorName);
         const isRateErr = isRateLimitError(msg);
+        const isConnErr = isConnectionError(msg);
         const isQuotaErr = isQuotaError(msg);
 
-        // Track 429s for cooldown logic
-        if (isRateErr) {
+        // Track 429s AND connection errors for cooldown logic.
+        // Z.AI often drops TLS connections when the per-IP rate limit is hit
+        // (instead of returning a proper 429 response). We treat these the
+        // same as 429s — back off and wait for the limit to reset.
+        if (isRateErr || isConnErr) {
           record429(currentModel);
+          // Mark Z.AI host as rate-limited for 60s so concurrent calls back off
+          markHostRateLimited('api.z.ai', 60_000);
         }
 
         // Quota exhaustion — don't retry this model
@@ -562,17 +607,28 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
           break; // Skip to next model immediately
         }
 
-        if (isGatewayErr || isRateErr) {
-          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: gateway/rate error — ${msg.slice(0, 150)}`);
+        if (isRateErr || isConnErr) {
+          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: rate/connection error — ${msg.slice(0, 150)}`);
+        } else if (isGatewayErr) {
+          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: gateway error — ${msg.slice(0, 150)}`);
         } else {
           console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1} failed: ${msg.slice(0, 200)}`);
         }
 
         if (attempt < retriesPerModel) {
-          // Backoff strategy — increased for rate limit compliance
-          let backoffMs = 2000;
-          if (isRateErr) backoffMs = (attempt + 1) * 5000 + Math.random() * 2000; // 5s, 10s for rate errors
-          else if (isGatewayErr) backoffMs = (attempt + 1) * 3000 + Math.random() * 1000; // 3s, 6s for gateway errors
+          // Backoff strategy — significantly increased for rate limit compliance
+          // Z.AI's glm-4.7-flash tier limit is roughly 1 req/min, so we need
+          // to wait long enough on 429s and connection errors before retrying.
+          let backoffMs: number;
+          if (isRateErr || isConnErr) {
+            // Wait for the host cooldown to expire (60s default) plus jitter
+            const cooldownRemaining = getRateLimitCooldownRemaining('api.z.ai');
+            backoffMs = Math.max(60_000, cooldownRemaining) + Math.random() * 5000;
+          } else if (isGatewayErr) {
+            backoffMs = exponentialBackoff(attempt, 3000, 30_000);
+          } else {
+            backoffMs = exponentialBackoff(attempt, 2000, 20_000);
+          }
 
           console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
           await new Promise(resolve => setTimeout(resolve, backoffMs));
@@ -663,19 +719,21 @@ export async function* callLLMStreaming(
         thinking: { type: 'enabled', budget_tokens: budget },
       };
 
-      const response = await fetch(url, {
+      const response = await fetchIPv4(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(body),
-        signal: options?.signal || AbortSignal.timeout(90000),
+        timeoutMs: 90_000,
       });
 
       if (response.status === 429) {
         releaseRateLimit();
         record429(currentModel);
+        // Mark Z.AI host as rate-limited for 60s so other concurrent calls back off too
+        markHostRateLimited('api.z.ai', 60_000);
         const backoffMs = 3000 + Math.random() * 2000;
         console.warn(`[callLLMStreaming] 429 on ${currentModel}, backing off ${backoffMs}ms`);
         await new Promise(r => setTimeout(r, backoffMs));
@@ -1041,14 +1099,14 @@ export async function callLLMVision(
         thinking: { type: 'enabled', budget_tokens: budget },
       };
 
-      const response = await fetch(url, {
+      const response = await fetchIPv4(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
           'Authorization': `Bearer ${token}`,
         },
         body: JSON.stringify(body),
-        signal: options?.signal || AbortSignal.timeout(90_000),
+        timeoutMs: 90_000,
       });
 
       if (!response.ok) {

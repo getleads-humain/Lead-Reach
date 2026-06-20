@@ -686,12 +686,15 @@ async function processWithOrchestratorInner(
 
     // ═══ REDUCED COOLDOWN ═══
     // Cooldown between agent phases to respect rate limit (concurrency=1).
-    // Reduced from 2-3.5s to 0.5-1.5s for faster pipeline execution.
+    // Reduced further for faster pipeline execution — the LLM module's own
+    // rate limiter (waitForRateLimit) handles the actual API call pacing.
     if (stepIdx > 0) {
       const isSearchPhase = phase.agent === 'scout';
+      // Search phases don't call LLM, so they need minimal cooldown
+      // LLM phases need more, but still less than before
       const cooldownMs = isSearchPhase
-        ? 500 + Math.random() * 500    // 0.5-1s for search phases
-        : 1000 + Math.random() * 500;  // 1-1.5s for LLM phases
+        ? 200 + Math.random() * 300    // 0.2-0.5s for search phases
+        : 500 + Math.random() * 500;  // 0.5-1s for LLM phases
 
       updateAgentState(pipelineState, agentKey, {
         status: 'waiting',
@@ -811,6 +814,33 @@ async function processWithOrchestratorInner(
 
         case 'forge':
           // Forge: Data enrichment — deep crawl and gap fill
+          //
+          // SKIP LOGIC:
+          // - For person searches where the user already provided >=60% of the
+          //   data (name, email, LinkedIn, location, etc.), skip forge enrichment
+          //   entirely. Running forge would actually REDUCE the completeness
+          //   score (because calculateQuickCompleteness was company-focused
+          //   and would mark all missing company fields as "incomplete").
+          //   We've now made the calculation person-aware, but the underlying
+          //   issue remains: forge enrichment for person searches adds little
+          //   value and wastes time (3+ LLM calls + 5+ web fetches).
+          // - For person searches, the user-supplied data is typically all
+          //   we need. Forge would just try to find the company's CEO/employees,
+          //   which isn't what the user asked for.
+          const shouldSkipForge = prospectData?.queryType === 'person' && (prospectData?.dataCompleteness ?? 0) >= 60;
+          if (shouldSkipForge) {
+            sendCommMsg(pipelineState, 'atlas', 'forge', 'status',
+              `Skipping enrichment — person prospect already at ${prospectData?.dataCompleteness}% completeness. User-supplied data is sufficient.`,
+              { completeness: prospectData?.dataCompleteness, reason: 'person_search_adequate' },
+              onEvent);
+            updateAgentState(pipelineState, 'forge', {
+              status: 'completed',
+              currentStep: `Skipped — person prospect already ${prospectData?.dataCompleteness}% complete`,
+              progress: 100,
+              completedAt: Date.now(),
+            }, onEvent);
+            break;
+          }
           if (prospectData && prospectData.dataCompleteness < 80) {
             sendCommMsg(pipelineState, 'scout', 'forge', 'handoff',
               `Enriching data (currently ${prospectData.dataCompleteness}% complete)`,
@@ -1168,15 +1198,29 @@ async function processWithOrchestratorInner(
   sendCommMsg(pipelineState, 'atlas', 'echo', 'request',
     'Synthesize all agent outputs into a coherent response', undefined, onEvent);
 
-  // Generate conversational response with robust fallback chain
+  // Generate conversational response with robust fallback chain.
+  //
+  // SKIP LLM IF IN COOLDOWN: If Z.AI is currently in rate-limit cooldown
+  // (e.g., due to TLS drops), skip the LLM synthesis call entirely and use
+  // the structured fallback instead. This prevents the pipeline from hanging
+  // for 60+ seconds waiting for the cooldown to expire.
+  const { isInRateLimitCooldown } = await import('@/lib/network-helpers');
+  const zaiInCooldown = isInRateLimitCooldown('api.z.ai');
+
   if (!responseContent) {
     if (prospectData) {
       const actionSummary = buildResearchSummary(prospectData);
-      try {
-        responseContent = await generateConversationResponse(
-          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
-        );
-      } catch { /* LLM unavailable — will use fallback */ }
+      if (!zaiInCooldown) {
+        try {
+          responseContent = await generateConversationResponse(
+            classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+          );
+        } catch { /* LLM unavailable — will use fallback */ }
+      } else {
+        sendCommMsg(pipelineState, 'atlas', 'echo', 'status',
+          'Z.AI in cooldown — using structured fallback response instead of LLM synthesis',
+          { reason: 'zai_cooldown' }, onEvent);
+      }
       if (!responseContent) {
         responseContent = buildFallbackResponse(prospectData, classification.intent);
       }
@@ -1304,6 +1348,69 @@ async function processWithOrchestratorInner(
 // ============================================================
 
 function calculateQuickCompleteness(prospect: ProspectResult): number {
+  // Use person-aware or company-aware completeness based on queryType
+  // Person prospects shouldn't be penalized for missing CEO/employeeCount/etc.
+  // (those are company-focused fields that don't apply to a person search).
+  if (prospect.queryType === 'person') {
+    return calculatePersonCompleteness(prospect);
+  }
+  return calculateCompanyCompleteness(prospect);
+}
+
+/**
+ * Person-aware completeness calculation.
+ * Weights person-specific fields (name, title, email, LinkedIn, bio, location)
+ * more heavily than company-specific fields (CEO, employees, revenue).
+ * This prevents person prospects from being marked "incomplete" just because
+ * they don't have company firmographics.
+ */
+function calculatePersonCompleteness(prospect: ProspectResult): number {
+  const fields: Array<{ key: keyof ProspectResult; weight: number }> = [
+    // Person-specific (high weight)
+    { key: 'personName', weight: 12 },
+    { key: 'personTitle', weight: 8 },
+    { key: 'personEmail', weight: 10 },
+    { key: 'personLinkedin', weight: 10 },
+    { key: 'personBio', weight: 6 },
+    { key: 'personPhone', weight: 5 },
+    { key: 'personCompany', weight: 8 },
+    // Location (applies to person too)
+    { key: 'city', weight: 5 },
+    { key: 'stateProvince', weight: 3 },
+    { key: 'country', weight: 4 },
+    // Industry (applies, but lower weight)
+    { key: 'industry', weight: 5 },
+    // Company-side fields (low weight — bonus, not required)
+    { key: 'companyName', weight: 4 },
+    { key: 'website', weight: 3 },
+    { key: 'generalEmail', weight: 3 },
+    { key: 'linkedinUrl', weight: 3 },
+    { key: 'twitterHandle', weight: 3 },
+    { key: 'description', weight: 3 },
+    { key: 'techStack', weight: 2 },
+    { key: 'recentNews', weight: 2 },
+    { key: 'productsServices', weight: 2 },
+    // Skip: ceoName, employeeCount, revenueEstimate, fundingInfo, foundingYear
+    // (these are company-only fields that don't apply to a person search)
+  ];
+
+  let total = 0;
+  let maxTotal = 0;
+  for (const { key, weight } of fields) {
+    maxTotal += weight;
+    const val = prospect[key];
+    if (val !== null && val !== undefined && val !== '' && !(Array.isArray(val) && val.length === 0)) {
+      total += weight;
+    }
+  }
+  return Math.round((total / maxTotal) * 100);
+}
+
+/**
+ * Company-aware completeness calculation (original logic).
+ * Used when queryType is 'company' or 'url'.
+ */
+function calculateCompanyCompleteness(prospect: ProspectResult): number {
   const fields: Array<{ key: keyof ProspectResult; weight: number }> = [
     { key: 'companyName', weight: 10 },
     { key: 'website', weight: 8 },

@@ -667,14 +667,46 @@ function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, o
   const completenessColor = (pct: number) => pct >= 70 ? 'text-emerald-400' : pct >= 40 ? 'text-amber-400' : 'text-red-400';
   const completenessBarColor = (pct: number) => pct >= 70 ? '[&>div]:bg-emerald-400' : pct >= 40 ? '[&>div]:bg-amber-400' : '[&>div]:bg-red-400';
 
+  // ─── Person vs Company rendering ─────────────────────────────
+  // For person queries (queryType === 'person'), render person-focused
+  // sections (Identity, Contact, Professional, etc.) instead of the
+  // company-focused sections (Firmographics, Key People).
+  // This avoids the "Discovering..." placeholder bug where sections
+  // that don't apply (CEO, Firmographics for a person) would show
+  // pulsing placeholders indefinitely.
+  const isPerson = prospect.queryType === 'person' || (!prospect.companyName && !!prospect.personName);
+
   return (
     <Card className="border-border/30 ml-9">
       <CardContent className="p-4 space-y-3">
-        {prospect.companyName && (
+        {/* ─── Header (Person or Company) ─── */}
+        {isPerson && prospect.personName ? (
           <div className="flex items-start justify-between">
-            <div>
-              <div className="flex items-center gap-2">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h4 className="text-base font-bold text-foreground/90">{prospect.personName}</h4>
+                <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[9px]">PERSON</Badge>
+                {isLive && (
+                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+                  </Badge>
+                )}
+              </div>
+              {prospect.personTitle && <p className="text-xs text-cyan-400 mt-1">{prospect.personTitle}</p>}
+              {prospect.personCompany && <p className="text-xs text-muted-foreground mt-0.5">at <span className="text-foreground/80">{prospect.personCompany}</span></p>}
+              {prospect.personBio && <p className="text-xs text-muted-foreground mt-2 line-clamp-3">{prospect.personBio}</p>}
+            </div>
+            <div className="flex items-center gap-2 shrink-0 ml-3">
+              <Progress value={prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(prospect.dataCompleteness)}`} />
+              <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
+            </div>
+          </div>
+        ) : prospect.companyName ? (
+          <div className="flex items-start justify-between">
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-2 flex-wrap">
                 <h4 className="text-base font-bold text-foreground/90">{prospect.companyName}</h4>
+                <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[9px]">COMPANY</Badge>
                 {isLive && (
                   <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
                     <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
@@ -688,54 +720,82 @@ function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, o
               <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
             </div>
           </div>
-        )}
-        {prospect.personName && !prospect.companyName && (
-          <div className="flex items-start justify-between">
-            <div>
-              <h4 className="text-base font-bold text-foreground/90">{prospect.personName}</h4>
-              {prospect.personTitle && <p className="text-xs text-cyan-400">{prospect.personTitle}</p>}
-              {prospect.personBio && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{prospect.personBio}</p>}
-            </div>
-            <div className="flex items-center gap-2 shrink-0 ml-3">
-              <Progress value={prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(prospect.dataCompleteness)}`} />
-              <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
-            </div>
+        ) : null}
+
+        {/* ─── Person Sections ─── */}
+        {isPerson ? (
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <SectionCard title="Person Contact" icon={Mail} isLoading={isLive}>
+              <DataField icon={Mail} label="Email" value={prospect.personEmail || prospect.generalEmail} href={(prospect.personEmail || prospect.generalEmail) ? `mailto:${prospect.personEmail || prospect.generalEmail}` : null} />
+              <DataField icon={Phone} label="Phone" value={prospect.personPhone || prospect.phoneMain} href={(prospect.personPhone || prospect.phoneMain) ? `tel:${prospect.personPhone || prospect.phoneMain}` : null} />
+              <DataField icon={Linkedin} label="LinkedIn" value={prospect.personLinkedin} href={prospect.personLinkedin} />
+              <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
+            </SectionCard>
+            <SectionCard title="Location" icon={MapPin} isLoading={isLive}>
+              <DataField icon={MapPin} label="City" value={prospect.city} />
+              <DataField icon={MapPin} label="State/Province" value={prospect.stateProvince} />
+              <DataField icon={MapPin} label="Country" value={prospect.country} />
+            </SectionCard>
+            <SectionCard title="Professional" icon={Briefcase} isLoading={isLive}>
+              <DataField icon={Briefcase} label="Title" value={prospect.personTitle} />
+              <DataField icon={Building2} label="Company" value={prospect.personCompany || prospect.companyName} />
+              <DataField icon={BarChart3} label="Industry" value={prospect.industry} />
+            </SectionCard>
+            <SectionCard title="Company Context" icon={Building2} isLoading={isLive}>
+              <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
+              <DataField icon={Linkedin} label="Company LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
+              <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
+              <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
+            </SectionCard>
+            {((prospect.techStack?.length || 0) > 0 || (prospect.productsServices?.length || 0) > 0) && (
+              <SectionCard title="Products & Tech" icon={FileText} defaultOpen={false} isLoading={isLive}>
+                <TagList items={prospect.productsServices || []} color="emerald" />
+                {prospect.techStack?.length > 0 && (
+                  <div className="mt-2">
+                    <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
+                    <TagList items={prospect.techStack} color="violet" />
+                  </div>
+                )}
+              </SectionCard>
+            )}
+          </div>
+        ) : (
+          /* ─── Company Sections (original) ─── */
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+            <SectionCard title="Contact" icon={Mail} isLoading={isLive}>
+              <DataField icon={Mail} label="Email" value={prospect.generalEmail} href={prospect.generalEmail ? `mailto:${prospect.generalEmail}` : null} />
+              <DataField icon={Phone} label="Phone" value={prospect.phoneMain} href={prospect.phoneMain ? `tel:${prospect.phoneMain}` : null} />
+              <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
+            </SectionCard>
+            <SectionCard title="Location" icon={MapPin} isLoading={isLive}>
+              <DataField icon={MapPin} label="City" value={prospect.city} />
+              <DataField icon={MapPin} label="Country" value={prospect.country} />
+            </SectionCard>
+            <SectionCard title="Firmographics" icon={BarChart3} isLoading={isLive}>
+              <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
+              <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
+              <DataField icon={Building2} label="Industry" value={prospect.industry} />
+            </SectionCard>
+            <SectionCard title="Key People" icon={Users} isLoading={isLive}>
+              <DataField icon={Star} label="CEO" value={prospect.ceoName} />
+              <DataField icon={Mail} label="CEO Email" value={prospect.ceoEmail} href={prospect.ceoEmail ? `mailto:${prospect.ceoEmail}` : null} />
+            </SectionCard>
+            <SectionCard title="Digital" icon={Globe} isLoading={isLive}>
+              <DataField icon={Linkedin} label="LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
+              <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
+            </SectionCard>
+            <SectionCard title="Products & Tech" icon={FileText} defaultOpen={(prospect.productsServices?.length || 0) > 0} isLoading={isLive}>
+              <TagList items={prospect.productsServices || []} color="emerald" />
+              {prospect.techStack?.length > 0 && (
+                <div className="mt-2">
+                  <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
+                  <TagList items={prospect.techStack} color="violet" />
+                </div>
+              )}
+              <DataField icon={DollarSign} label="Funding" value={prospect.fundingInfo} />
+            </SectionCard>
           </div>
         )}
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
-          <SectionCard title="Contact" icon={Mail} isLoading={isLive}>
-            <DataField icon={Mail} label="Email" value={prospect.generalEmail} href={prospect.generalEmail ? `mailto:${prospect.generalEmail}` : null} />
-            <DataField icon={Phone} label="Phone" value={prospect.phoneMain} href={prospect.phoneMain ? `tel:${prospect.phoneMain}` : null} />
-            <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
-          </SectionCard>
-          <SectionCard title="Location" icon={MapPin} isLoading={isLive}>
-            <DataField icon={MapPin} label="City" value={prospect.city} />
-            <DataField icon={MapPin} label="Country" value={prospect.country} />
-          </SectionCard>
-          <SectionCard title="Firmographics" icon={BarChart3} isLoading={isLive}>
-            <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
-            <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
-            <DataField icon={Building2} label="Industry" value={prospect.industry} />
-          </SectionCard>
-          <SectionCard title="Key People" icon={Users} isLoading={isLive}>
-            <DataField icon={Star} label="CEO" value={prospect.ceoName} />
-            <DataField icon={Mail} label="CEO Email" value={prospect.ceoEmail} href={prospect.ceoEmail ? `mailto:${prospect.ceoEmail}` : null} />
-          </SectionCard>
-          <SectionCard title="Digital" icon={Globe} isLoading={isLive}>
-            <DataField icon={Linkedin} label="LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
-            <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
-          </SectionCard>
-          <SectionCard title="Products & Tech" icon={FileText} defaultOpen={(prospect.productsServices?.length || 0) > 0} isLoading={isLive}>
-            <TagList items={prospect.productsServices || []} color="emerald" />
-            {prospect.techStack?.length > 0 && (
-              <div className="mt-2">
-                <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
-                <TagList items={prospect.techStack} color="violet" />
-              </div>
-            )}
-            <DataField icon={DollarSign} label="Funding" value={prospect.fundingInfo} />
-          </SectionCard>
-        </div>
         {prospect.recentNews?.length > 0 && (
           <SectionCard title="Recent News" icon={FileText} defaultOpen={false}>
             {prospect.recentNews.map((news, i) => (

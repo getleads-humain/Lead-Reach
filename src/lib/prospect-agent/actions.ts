@@ -1144,7 +1144,7 @@ export async function executePersonResearch(
     try {
       const resolved = await withTimeout(
         () => resolveFromEmail(personInput),
-        90_000, 'Email-based person resolution',
+        30_000, 'Email-based person resolution',
       );
       if (resolved) {
         const id = resolved.identity;
@@ -1187,7 +1187,7 @@ export async function executePersonResearch(
     try {
       const resolved = await withTimeout(
         () => resolveFromName(personInput, Object.keys(resolverContext).length > 0 ? resolverContext : undefined),
-        90_000, 'Name-based person resolution',
+        30_000, 'Name-based person resolution',
       );
       if (resolved) {
         const id = resolved.identity;
@@ -1225,7 +1225,7 @@ export async function executePersonResearch(
   if (!prospect.personLinkedin) {
     steps.push({ type: 'research_person', label: 'LinkedIn Search', status: 'running', message: 'Searching LinkedIn...' });
     try {
-      const liResult = await withTimeout(() => linkedInSearchPeople(personInput, 3), 20_000, 'LinkedIn person');
+      const liResult = await withTimeout(() => linkedInSearchPeople(personInput, 3), 10_000, 'LinkedIn person');
       if (liResult?.success && liResult.data.length > 0) {
         const person = liResult.data[0];
         if (person.name && !prospect.personName) prospect.personName = person.name;
@@ -1249,10 +1249,13 @@ export async function executePersonResearch(
   if (companyName) {
     steps.push({ type: 'research_person', label: 'Company Research', status: 'running', message: `Researching ${companyName}...` });
     try {
-      // Run targeted searches in parallel for company data
+      // Run targeted searches in parallel for company data.
+      // Use REDUCED timeouts (10s) so the pipeline doesn't hang when DDG is slow.
+      // Person searches are time-sensitive — better to return partial data quickly
+      // than to wait 30s per search and risk the user giving up.
       const [companySearchResult, contactSearchResult] = await Promise.allSettled([
-        withTimeout(() => exaSearch(`"${companyName}" company overview`, 3), 30_000, 'Person company search'),
-        withTimeout(() => exaSearch(`"${companyName}" email phone contact`, 3), 30_000, 'Person company contact'),
+        withTimeout(() => exaSearch(`"${companyName}" company overview`, 3), 12_000, 'Person company search'),
+        withTimeout(() => exaSearch(`"${companyName}" email phone contact`, 3), 12_000, 'Person company contact'),
       ]);
 
       const allCompanySnippets: SearchSnippet[] = [];
@@ -1278,10 +1281,10 @@ export async function executePersonResearch(
         extractStructuredFromSnippets(prospect, allCompanySnippets);
       }
 
-      // Read top pages and try LLM extraction
+      // Read top pages and try LLM extraction (REDUCED timeout)
       if (urlsToRead.length > 0) {
         const readResults = await Promise.allSettled(
-          urlsToRead.slice(0, 3).map(u => withTimeout(() => webRead(u), 25_000, `Company read: ${u.slice(0, 50)}`)),
+          urlsToRead.slice(0, 2).map(u => withTimeout(() => webRead(u), 12_000, `Company read: ${u.slice(0, 50)}`)),
         );
         const webContents: string[] = [];
         for (const result of readResults) {
@@ -1291,16 +1294,22 @@ export async function executePersonResearch(
         }
 
         if (webContents.length > 0) {
-          const companyData = await withTimeout(
-            () => callLLMForJSON<Partial<ProspectResult>>(
-              `Extract company info about "${companyName}" from this content.
+          // LLM extraction is OPTIONAL — skip if Z.AI is in cooldown
+          // (avoids the 60s backoff hang)
+          const { isInRateLimitCooldown } = await import('@/lib/network-helpers');
+          if (!isInRateLimitCooldown('api.z.ai')) {
+            const companyData = await withTimeout(
+              () => callLLMForJSON<Partial<ProspectResult>>(
+                `Extract company info about "${companyName}" from this content.
 Return JSON: companyName, website, industry, city, country, phoneMain, generalEmail, employeeCount, revenueEstimate, linkedinUrl, twitterHandle. Use null for not found.`,
-              webContents.join('\n---\n'),
-            ),
-            45_000, 'Person company LLM',
-          );
-          if (companyData) {
-            safeMerge(prospect, companyData);
+                webContents.join('\n---\n'),
+                { retriesPerModel: 0 }, // No retries — fail fast if Z.AI is down
+              ),
+              20_000, 'Person company LLM',
+            );
+            if (companyData) {
+              safeMerge(prospect, companyData);
+            }
           }
         }
       }
@@ -1317,7 +1326,7 @@ Return JSON: companyName, website, industry, city, country, phoneMain, generalEm
   if (!prospect.twitterHandle) {
     steps.push({ type: 'research_person', label: 'Twitter/X', status: 'running', message: 'Searching Twitter/X...' });
     try {
-      const twResult = await withTimeout(() => twitterSearch(prospect.personName || personInput, 3), 20_000, 'Twitter search');
+      const twResult = await withTimeout(() => twitterSearch(prospect.personName || personInput, 3), 10_000, 'Twitter search');
       if (twResult?.success && twResult.data.length > 0) {
         const tweet = twResult.data[0] as unknown as Record<string, unknown>;
         if (tweet.author) {

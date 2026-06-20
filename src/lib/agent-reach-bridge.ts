@@ -17,6 +17,13 @@ import { execFile } from 'child_process';
 import { promisify } from 'util';
 import { proxyRotator, USE_PROXY_ROTATION } from '@/lib/proxy-rotator';
 import { waitForRateLimit, releaseRateLimit, getSDK } from '@/lib/llm'; // Unified rate limiter + SDK with JWT auth
+import {
+  directDuckDuckGoSearch,
+  directDuckDuckGoSiteSearch,
+  directWebRead,
+  type SearchResult as DirectSearchResult,
+} from '@/lib/direct-search';
+import { fetchIPv4 } from '@/lib/network-helpers';
 
 const execFileAsync = promisify(execFile);
 
@@ -410,11 +417,16 @@ function safeJsonParse<T>(str: string): T | null {
 // ============================================================
 
 /**
- * Read any webpage using Jina Reader API.
- * Zero configuration required — works out of the box.
- * 
+ * Read any webpage.
+ *
+ * PRIMARY PATH: Direct fetch via `directWebRead` (no third-party dependency,
+ * uses fetchIPv4 to bypass broken IPv6 connectivity).
+ *
+ * FALLBACK: Jina Reader (https://r.jina.ai/URL) — only tried if direct
+ * fetch fails. Note: Jina may return HTTP 401 ("bad IP reputation")
+ * when called from this server, so the direct path is preferred.
+ *
  * Agent-Reach Reference: SKILL_en.md → "Web — Any URL"
- * Command: curl -s "https://r.jina.ai/URL"
  */
 export async function webRead(url: string, format: 'markdown' | 'text' = 'markdown', options?: { useProxy?: boolean }): Promise<ToolResult<WebReadResult>> {
   const channel = 'web';
@@ -423,6 +435,34 @@ export async function webRead(url: string, format: 'markdown' | 'text' = 'markdo
     return makeError<WebReadResult>('Invalid or blocked URL (SSRF protection)', channel);
   }
   const shouldUseProxy = USE_PROXY_ROTATION && (options?.useProxy ?? false);
+
+  // ═══ METHOD 1 (PRIMARY): Direct fetch via directWebRead ═══
+  // This bypasses Jina entirely and works around Jina's IP block (HTTP 401).
+  try {
+    const directResult = await directWebRead(url);
+    if (directResult.success && directResult.data) {
+      return makeResult<WebReadResult>(
+        {
+          url: directResult.data.url,
+          title: directResult.data.title || new URL(url).hostname,
+          content: directResult.data.content,
+          wordCount: directResult.data.wordCount,
+        },
+        channel,
+        'Direct fetch (no Jina)',
+        directResult.data.content.slice(0, 2000),
+      );
+    }
+    // Direct fetch failed — log and fall through to Jina
+    console.warn(`[webRead] Direct fetch failed for ${url.slice(0, 60)}: ${directResult.error?.slice(0, 100)}`);
+  } catch (error) {
+    console.warn(`[webRead] Direct fetch threw for ${url.slice(0, 60)}: ${error instanceof Error ? error.message : error}`);
+  }
+
+  // ═══ METHOD 2 (FALLBACK): Jina Reader ═══
+  // Jina may return HTTP 401 from this server's IP, but we try anyway
+  // in case the direct fetch failed for a different reason (e.g., 403 from
+  // the target site, which Jina can sometimes bypass).
   try {
     return await retryWithBackoff(async () => {
       const jinaUrl = `${JINA_READER_BASE}/${url}`;
@@ -432,15 +472,13 @@ export async function webRead(url: string, format: 'markdown' | 'text' = 'markdo
 
       let response: Response;
       if (shouldUseProxy) {
-        // Use proxy rotation for this request
         response = await proxyRotator.fetchWithProxy(jinaUrl, { headers });
       } else {
-        response = await fetch(jinaUrl, { headers, signal: AbortSignal.timeout(20000) });
+        response = await fetchIPv4(jinaUrl, { headers, timeoutMs: 20_000 });
       }
-      
+
       if (!response.ok) {
         const errorMsg = `Jina Reader returned ${response.status}: ${response.statusText}`;
-        // Throw for 502/503/429 so retryWithBackoff can catch and retry
         if (response.status === 502 || response.status === 503 || response.status === 429) {
           throw new Error(errorMsg);
         }
@@ -455,7 +493,7 @@ export async function webRead(url: string, format: 'markdown' | 'text' = 'markdo
         {
           url,
           title,
-          content: content.slice(0, 50000), // Cap at 50k chars
+          content: content.slice(0, 50000),
           wordCount: content.split(/\s+/).length,
         },
         channel,
@@ -465,7 +503,7 @@ export async function webRead(url: string, format: 'markdown' | 'text' = 'markdo
     }, 2, `webRead(${url.slice(0, 60)})`);
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    return makeError<WebReadResult>(`Web read failed: ${msg}`, channel);
+    return makeError<WebReadResult>(`Web read failed (both direct + Jina): ${msg}`, channel);
   }
 }
 
@@ -482,9 +520,10 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
 
 /**
  * AI-powered web search using multiple sources with smart fallback.
- * 
+ *
  * Pipeline (tries each in order until one returns results):
- * 1. DuckDuckGo HTML via Jina Reader (MOST RELIABLE — zero config, no API key)
+ * 0. DIRECT DuckDuckGo HTML fetch (NEW PRIMARY — no Jina dependency, works around Jina IP block)
+ * 1. DuckDuckGo HTML via Jina Reader (FALLBACK — may return 401 if Jina has blocked this server's IP)
  * 2. z-ai-web-dev-sdk web_search (if gateway supports functions.invoke)
  * 3. mcporter Exa (if available)
  * 4. Jina Search API (requires API key)
@@ -492,12 +531,32 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
 export async function exaSearch(query: string, numResults = 25): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
 
-  // ===== METHOD 1: DuckDuckGo HTML Search via Jina Reader (Primary — zero config, always works) =====
+  // ===== METHOD 0 (PRIMARY): DIRECT DuckDuckGo HTML fetch =====
+  // Bypasses Jina entirely. Uses fetchIPv4 to work around broken IPv6.
+  // This is the most reliable path: zero config, no API keys, no third-party deps.
+  try {
+    const ddgResult = await directDuckDuckGoSearch(query, Math.min(numResults, 15));
+    if (ddgResult.success && ddgResult.data.length > 0) {
+      const results: SearchResult[] = ddgResult.data.map(r => ({
+        title: r.title,
+        url: r.url,
+        snippet: r.snippet,
+      }));
+      console.log(`[exaSearch] Direct DuckDuckGo returned ${results.length} results for "${query.slice(0, 60)}"`);
+      return makeResult(results, channel, 'Direct DuckDuckGo (no Jina)', JSON.stringify(results).slice(0, 2000));
+    }
+    console.warn(`[exaSearch] Direct DuckDuckGo returned 0 results for "${query.slice(0, 60)}": ${ddgResult.error || 'no error'}`);
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[exaSearch] Direct DuckDuckGo failed: ${msg.slice(0, 200)}`);
+  }
+
+  // ===== METHOD 1 (FALLBACK): DuckDuckGo HTML Search via Jina Reader =====
   try {
     const ddgUrl = `https://r.jina.ai/https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
-    const response = await fetch(ddgUrl, {
+    const response = await fetchIPv4(ddgUrl, {
       headers: { 'Accept': 'text/markdown' },
-      signal: AbortSignal.timeout(20000),
+      timeoutMs: 20_000,
     });
 
     if (response.ok) {
@@ -675,15 +734,15 @@ export async function exaSearch(query: string, numResults = 25): Promise<ToolRes
         });
       } catch (proxyErr) {
         console.warn(`[exaSearch] Proxy rotation failed for Jina Search, falling back to direct: ${proxyErr instanceof Error ? proxyErr.message : proxyErr}`);
-        response = await fetch(searchUrl, {
+        response = await fetchIPv4(searchUrl, {
           headers: { 'Accept': 'text/plain' },
-          signal: AbortSignal.timeout(20000),
+          timeoutMs: 20_000,
         });
       }
     } else {
-      response = await fetch(searchUrl, {
+      response = await fetchIPv4(searchUrl, {
         headers: { 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(20000),
+        timeoutMs: 20_000,
       });
     }
 
@@ -802,9 +861,9 @@ export async function redditSearch(query: string, limit = 25): Promise<ToolResul
   const channel = 'reddit';
   try {
     const url = `https://www.reddit.com/search.json?q=${encodeURIComponent(query)}&limit=${limit}&sort=relevance`;
-    const response = await fetch(url, {
+    const response = await fetchIPv4(url, {
       headers: { 'User-Agent': 'agent-reach/1.0' },
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     });
 
     if (!response.ok) {
@@ -853,9 +912,9 @@ export async function redditSubreddit(subreddit: string, limit = 25): Promise<To
   const channel = 'reddit';
   try {
     const url = `https://www.reddit.com/r/${subreddit}/hot.json?limit=${limit}`;
-    const response = await fetch(url, {
+    const response = await fetchIPv4(url, {
       headers: { 'User-Agent': 'agent-reach/1.0' },
-      signal: AbortSignal.timeout(15000),
+      timeoutMs: 15000,
     });
 
     if (!response.ok) {
@@ -1182,9 +1241,9 @@ export async function linkedInSearchPeople(query: string, limit = 25): Promise<T
     // Method 3: Jina Search as final fallback
     try {
       const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:linkedin.com/in ${query}`)}`;
-      const response = await fetch(searchUrl, {
+      const response = await fetchIPv4(searchUrl, {
         headers: { 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15_000,
       });
       if (response.ok) {
         const text = await response.text();
@@ -1240,9 +1299,9 @@ export async function linkedInSearchCompanies(query: string, limit = 25): Promis
     // Method 2: Jina Search as fallback
     try {
       const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:linkedin.com/company ${query}`)}`;
-      const response = await fetch(searchUrl, {
+      const response = await fetchIPv4(searchUrl, {
         headers: { 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15000,
       });
       if (response.ok) {
         const text = await response.text();
@@ -1389,9 +1448,9 @@ export async function twitterSearch(query: string, limit = 25): Promise<ToolResu
     // Method 3: Jina Search as final fallback
     try {
       const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:twitter.com OR site:x.com ${query}`)}`;
-      const response = await fetch(searchUrl, {
+      const response = await fetchIPv4(searchUrl, {
         headers: { 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15000,
       });
       if (response.ok) {
         const text = await response.text();
@@ -1494,9 +1553,9 @@ export async function twitterSearchUsers(query: string, limit = 25): Promise<Too
     // Fallback: Jina Search
     try {
       const searchUrl = `https://s.jina.ai/${encodeURIComponent(`site:twitter.com ${query} profile`)}`;
-      const response = await fetch(searchUrl, {
+      const response = await fetchIPv4(searchUrl, {
         headers: { 'Accept': 'text/plain' },
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15000,
       });
       if (response.ok) {
         const text = await response.text();
@@ -1779,13 +1838,13 @@ async function bilibiliFetch(url: string, retries = 3): Promise<Response> {
     const keyedUrl = `${url}${separator}access_key=${key}`;
     
     try {
-      const response = await fetch(keyedUrl, {
+      const response = await fetchIPv4(keyedUrl, {
         headers: {
           'User-Agent': BILIBILI_UA,
           'Referer': 'https://www.bilibili.com',
           'Origin': 'https://www.bilibili.com',
         },
-        signal: AbortSignal.timeout(15000),
+        timeoutMs: 15000,
       });
       
       if (response.status === 412) {
@@ -2038,9 +2097,9 @@ export function getBilibiliKeyStats() {
 export async function v2exHotTopics(limit = 25): Promise<ToolResult<V2EXResult[]>> {
   const channel = 'v2ex';
   try {
-    const response = await fetch('https://www.v2ex.com/api/topics/hot.json', {
+    const response = await fetchIPv4('https://www.v2ex.com/api/topics/hot.json', {
       headers: { 'User-Agent': 'agent-reach/1.0' },
-      signal: AbortSignal.timeout(10000),
+      timeoutMs: 10000,
     });
 
     if (!response.ok) {
