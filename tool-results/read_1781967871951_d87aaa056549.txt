@@ -1,0 +1,1143 @@
+     1→     1→/**
+     2→     2→ * Centralized LLM Utility — LeadReach AI
+     3→     3→ *
+     4→     4→ * Uses Z.AI's GLM flash models via JWT-authenticated HTTP API.
+     5→     5→ *
+     6→     6→ * Model Configuration (LOCKED for lifetime use on this platform):
+     7→     7→ *   - glm-4.7-flash   (PRIMARY — fast text/reasoning model, used for all customer-facing text tasks)
+     8→     8→ *   - glm-4.6v-flash   (FALLBACK + VISION — multimodal model, used when primary is rate-limited
+     9→     9→ *                       AND for any task that requires image understanding / OCR / vision)
+    10→    10→ *
+    11→    11→ * These two models are the ONLY customer-facing models on the LeadReach platform.
+    12→    12→ * Per platform policy, no other model may be invoked from any user-facing code path.
+    13→    13→ *
+    14→    14→ * IMPORTANT DESIGN NOTES:
+    15→    15→ * 1. Z.AI requires JWT authentication. The API key format is
+    16→    16→ *    `{id}.{secret}`, converted to a JWT token by zhipu-jwt.ts.
+    17→    17→ * 2. GLM flash models use the `thinking` parameter. With
+    18→    18→ *    `thinking: {type: "enabled", budget_tokens: N}`, the model separates
+    19→    19→ *    reasoning (in `reasoning_content`) from the clean answer (in `content`).
+    20→    20→ * 3. We use `thinking: enabled` with a budget to get clean, structured
+    21→    21→ *    output in the `content` field while still benefiting from the model's
+    22→    22→ *    reasoning capability.
+    23→    23→ */
+    24→    24→
+    25→    25→import { getZhipuToken, getZhipuApiBase, isZhipuConfigured, refreshToken } from './zhipu-jwt';
+    26→    26→import { fetchIPv4, withRateLimit, markHostRateLimited, isInRateLimitCooldown, getRateLimitCooldownRemaining, exponentialBackoff } from './network-helpers';
+    27→    27→
+    28→    28→// ============================================================
+    29→    29→// Model Definitions — LOCKED to {glm-4.7-flash; glm-4.6v-flash}
+    30→    30→// ============================================================
+    31→    31→
+    32→    32→/**
+    33→    33→ * Primary model — glm-4.7-flash.
+    34→    34→ * Fast text + reasoning model. Used for every customer-facing text task
+    35→    35→ * (lead scoring, email composition, conversation summaries, forecasts, etc.).
+    36→    36→ */
+    37→    37→export const MODEL_PRIMARY = 'glm-4.7-flash' as const;
+    38→    38→
+    39→    39→/**
+    40→    40→ * Fallback model — glm-4.6v-flash.
+    41→    41→ * Multimodal (vision) model. Used in two cases:
+    42→    42→ *   1. As a text fallback when glm-4.7-flash is rate-limited / in cooldown.
+    43→    43→ *   2. As the primary model for any task that requires image understanding
+    44→    44→ *      (logo analysis, screenshot OCR, creative review, etc.) via callLLMVision().
+    45→    45→ */
+    46→    46→export const MODEL_FALLBACK = 'glm-4.6v-flash' as const;
+    47→    47→
+    48→    48→/**
+    49→    49→ * Vision model — glm-4.6v-flash.
+    50→    50→ * Same as MODEL_FALLBACK; exported under a separate name for clarity at
+    51→    51→ * call sites that explicitly need vision capabilities.
+    52→    52→ */
+    53→    53→export const MODEL_VISION = 'glm-4.6v-flash' as const;
+    54→    54→
+    55→    55→/** All customer-facing models on the platform (lifetime set). */
+    56→    56→export const LLM_MODELS = [MODEL_PRIMARY, MODEL_FALLBACK] as const;
+    57→    57→
+    58→    58→export type LLMModel = typeof LLM_MODELS[number];
+    59→    59→
+    60→    60→// ============================================================
+    61→    61→// Thinking Budget Configuration
+    62→    62→// ============================================================
+    63→    63→
+    64→    64→/**
+    65→    65→ * Thinking budget per request type.
+    66→    66→ * Higher budget = more reasoning before answering, but costs more tokens.
+    67→    67→ */
+    68→    68→const THINKING_BUDGETS = {
+    69→    69→  /** Quick responses (intent classification, health checks) — must be >= 1024 to leave tokens for content */
+    70→    70→  quick: 1024,
+    71→    71→  /** Standard responses (chat, data extraction) */
+    72→    72→  standard: 2048,
+    73→    73→  /** Complex reasoning (deep research, multi-step analysis) */
+    74→    74→  deep: 4096,
+    75→    75→} as const;
+    76→    76→
+    77→    77→export type ThinkingBudget = keyof typeof THINKING_BUDGETS;
+    78→    78→
+    79→    79→// ============================================================
+    80→    80→// Unified Rate Limiter (shared across ALL API calls)
+    81→    81→// ============================================================
+    82→    82→//
+    83→    83→// IMPORTANT: GLM-4.7-Flash and GLM-4.6V-Flash both have a
+    84→    84→// concurrency limit of 1. This means we can only have ONE
+    85→    85→// in-flight request at a time per model.
+    86→    86→//
+    87→    87→// Strategy:
+    88→    88→//   - Enforce a minimum interval between consecutive API calls
+    89→    89→//   - Add a "deep breath" cooldown buffer after each call completes
+    90→    90→//     to ensure we don't overwhelm the rate limiter
+    91→    91→//   - Add jitter to avoid thundering herd when multiple requests queue
+    92→    92→//   - Track in-flight requests to enforce true concurrency = 1
+    93→    93→// ============================================================
+    94→    94→
+    95→    95→let lastCallTime = 0;
+    96→    96→let inFlightRequests = 0;
+    97→    97→const MAX_CONCURRENCY = 1; // GLM-4.7-Flash and GLM-4.6V-Flash both limit to 1
+    98→    98→
+    99→    99→// Minimum interval between calls. Z.AI's free/flash tier enforces
+   100→   100→// ~1 request per minute per account, so we use a longer interval
+   101→   101→// to avoid burning the budget on rapid retries.
+   102→   102→// Tunable: lower = faster but more 429s; higher = slower but more reliable.
+   103→   103→const MIN_INTERVAL_MS = 3500;
+   104→   104→// "Deep breath" cooldown buffer after each call completes (3-4s)
+   105→   105→// Adds a small pause after each call so the next one doesn't fire instantly.
+   106→   106→const COOLDOWN_BUFFER_MS = 3000;
+   107→   107→// Random jitter to avoid thundering herd (0-1500ms)
+   108→   108→const JITTER_MS = 1500;
+   109→   109→
+   110→   110→/**
+   111→   111→ * Wait for rate limit clearance before making an API call.
+   112→   112→ * Implements:
+   113→   113→ *   1. Concurrency gate (max 1 in-flight request)
+   114→   114→ *   2. Minimum interval between calls
+   115→   115→ *   3. "Deep breath" cooldown buffer
+   116→   116→ *   4. Random jitter
+   117→   117→ *   5. Respect for host-level rate-limit cooldown (set when 429 received)
+   118→   118→ */
+   119→   119→async function waitForRateLimit() {
+   120→   120→  // 0. Respect host-level rate-limit cooldown (set when 429 received)
+   121→   121→  // This is a separate mechanism from the model-level cooldown — when
+   122→   122→  // ANY call to api.z.ai returns 429, we mark the entire host as in
+   123→   123→  // cooldown so ALL concurrent calls (including those to the fallback
+   124→   124→  // model) wait for the rate limit to reset.
+   125→   125→  if (isInRateLimitCooldown('api.z.ai')) {
+   126→   126→    const waitMs = getRateLimitCooldownRemaining('api.z.ai');
+   127→   127→    console.log(`[waitForRateLimit] Z.AI host in cooldown — waiting ${Math.round(waitMs / 1000)}s`);
+   128→   128→    await new Promise(r => setTimeout(r, waitMs));
+   129→   129→  }
+   130→   130→
+   131→   131→  // 1. Wait for concurrency slot
+   132→   132→  while (inFlightRequests >= MAX_CONCURRENCY) {
+   133→   133→    await new Promise(r => setTimeout(r, 200 + Math.random() * 300));
+   134→   134→  }
+   135→   135→
+   136→   136→  // 2. Wait for minimum interval + cooldown buffer since last call
+   137→   137→  const now = Date.now();
+   138→   138→  const elapsed = now - lastCallTime;
+   139→   139→  const requiredWait = MIN_INTERVAL_MS + COOLDOWN_BUFFER_MS;
+   140→   140→  const waitTime = requiredWait - elapsed + Math.random() * JITTER_MS;
+   141→   141→  if (waitTime > 0) {
+   142→   142→    await new Promise(r => setTimeout(r, waitTime));
+   143→   143→  }
+   144→   144→
+   145→   145→  inFlightRequests++;
+   146→   146→  lastCallTime = Date.now();
+   147→   147→}
+   148→   148→
+   149→   149→/**
+   150→   150→ * Release the concurrency slot after a call completes.
+   151→   151→ * Should be called after every API call (success or failure).
+   152→   152→ */
+   153→   153→function releaseRateLimit() {
+   154→   154→  inFlightRequests = Math.max(0, inFlightRequests - 1);
+   155→   155→}
+   156→   156→
+   157→   157→/**
+   158→   158→ * Exported so agent-reach-bridge.ts can share the same rate limiter.
+   159→   159→ */
+   160→   160→export { waitForRateLimit };
+   161→   161→
+   162→   162→/**
+   163→   163→ * Exported so agent-reach-bridge.ts can release rate limit slots after calls.
+   164→   164→ */
+   165→   165→export { releaseRateLimit };
+   166→   166→
+   167→   167→// ============================================================
+   168→   168→// Model Health Tracker (skips models that return persistent 429s)
+   169→   169→// ============================================================
+   170→   170→
+   171→   171→interface ModelHealth {
+   172→   172→  last429At: number;
+   173→   173→  consecutive429s: number;
+   174→   174→  cooldownUntil: number;
+   175→   175→}
+   176→   176→
+   177→   177→const modelHealth: Map<string, ModelHealth> = new Map();
+   178→   178→
+   179→   179→const COOLDOWN_AFTER_429_MS = 30_000; // 30s cooldown after consecutive 429s (reduced from 2min for better UX)
+   180→   180→const MAX_CONSECUTIVE_429S = 3; // After 3 consecutive 429s, skip model for cooldown period
+   181→   181→
+   182→   182→function isModelInCooldown(model: string): boolean {
+   183→   183→  const health = modelHealth.get(model);
+   184→   184→  if (!health) return false;
+   185→   185→  return Date.now() < health.cooldownUntil;
+   186→   186→}
+   187→   187→
+   188→   188→function record429(model: string): void {
+   189→   189→  const health = modelHealth.get(model) || { last429At: 0, consecutive429s: 0, cooldownUntil: 0 };
+   190→   190→  health.last429At = Date.now();
+   191→   191→  health.consecutive429s += 1;
+   192→   192→  if (health.consecutive429s >= MAX_CONSECUTIVE_429S) {
+   193→   193→    health.cooldownUntil = Date.now() + COOLDOWN_AFTER_429_MS;
+   194→   194→    console.warn(`[callLLM] Model ${model} hit ${health.consecutive429s} consecutive 429s — cooldown for ${COOLDOWN_AFTER_429_MS / 1000}s`);
+   195→   195→  }
+   196→   196→  modelHealth.set(model, health);
+   197→   197→}
+   198→   198→
+   199→   199→function recordSuccess(model: string): void {
+   200→   200→  const health = modelHealth.get(model);
+   201→   201→  if (health) {
+   202→   202→    health.consecutive429s = 0;
+   203→   203→    health.cooldownUntil = 0;
+   204→   204→  }
+   205→   205→}
+   206→   206→
+   207→   207→// ============================================================
+   208→   208→// Direct HTTP LLM Call
+   209→   209→// ============================================================
+   210→   210→
+   211→   211→async function directChatCompletion(params: {
+   212→   212→  model: string;
+   213→   213→  messages: Array<{ role: string; content: string }>;
+   214→   214→  temperature?: number;
+   215→   215→  max_tokens?: number;
+   216→   216→  thinking_budget?: ThinkingBudget;
+   217→   217→}): Promise<{
+   218→   218→  choices?: Array<{
+   219→   219→    finish_reason?: string;
+   220→   220→    index?: number;
+   221→   221→    message?: { content?: string; role?: string; reasoning_content?: string };
+   222→   222→  }>;
+   223→   223→  created?: number;
+   224→   224→  model?: string;
+   225→   225→  usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
+   226→   226→} | null> {
+   227→   227→  const token = getZhipuToken();
+   228→   228→  if (!token) {
+   229→   229→    throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
+   230→   230→  }
+   231→   231→
+   232→   232→  const baseUrl = getZhipuApiBase();
+   233→   233→  const url = `${baseUrl}/chat/completions`;
+   234→   234→
+   235→   235→  // Use thinking:enabled with a budget to get clean content output.
+   236→   236→  // Without this, the model puts everything in reasoning_content and leaves content empty.
+   237→   237→  const budget = THINKING_BUDGETS[params.thinking_budget || 'standard'];
+   238→   238→  // Ensure max_tokens is always at least budget + 500 to leave room for the actual content
+   239→   239→  // The thinking budget is consumed FIRST, then content is generated from remaining tokens
+   240→   240→  const effectiveMaxTokens = Math.max(params.max_tokens || 4096, budget + 500);
+   241→   241→  const body = {
+   242→   242→    model: params.model,
+   243→   243→    messages: params.messages,
+   244→   244→    temperature: params.temperature,
+   245→   245→    max_tokens: effectiveMaxTokens,
+   246→   246→    thinking: { type: 'enabled', budget_tokens: budget },
+   247→   247→  };
+   248→   248→
+   249→   249→  const response = await fetchIPv4(url, {
+   250→   250→    method: 'POST',
+   251→   251→    headers: {
+   252→   252→      'Content-Type': 'application/json',
+   253→   253→      'Authorization': `Bearer ${token}`,
+   254→   254→    },
+   255→   255→    body: JSON.stringify(body),
+   256→   256→    timeoutMs: 90_000,
+   257→   257→  });
+   258→   258→
+   259→   259→  if (!response.ok) {
+   260→   260→    const errorText = await response.text().catch(() => 'Unknown error');
+   261→   261→
+   262→   262→    // If we get a 401, the JWT may have expired — refresh and retry once
+   263→   263→    if (response.status === 401) {
+   264→   264→      console.warn('[directChatCompletion] Got 401 — refreshing JWT token and will retry');
+   265→   265→      refreshToken();
+   266→   266→      const newToken = getZhipuToken();
+   267→   267→      if (newToken && newToken !== token) {
+   268→   268→        const retryResponse = await fetchIPv4(url, {
+   269→   269→          method: 'POST',
+   270→   270→          headers: {
+   271→   271→            'Content-Type': 'application/json',
+   272→   272→            'Authorization': `Bearer ${newToken}`,
+   273→   273→          },
+   274→   274→          body: JSON.stringify(body),
+   275→   275→          timeoutMs: 60_000,
+   276→   276→        });
+   277→   277→        if (!retryResponse.ok) {
+   278→   278→          const retryErrorText = await retryResponse.text().catch(() => 'Unknown error');
+   279→   279→          throw new Error(`API request failed with status ${retryResponse.status}: ${retryErrorText.slice(0, 200)}`);
+   280→   280→        }
+   281→   281→        return retryResponse.json();
+   282→   282→      }
+   283→   283→    }
+   284→   284→
+   285→   285→    throw new Error(`API request failed with status ${response.status}: ${errorText.slice(0, 200)}`);
+   286→   286→  }
+   287→   287→
+   288→   288→  return response.json();
+   289→   289→}
+   290→   290→
+   291→   291→// ============================================================
+   292→   292→// SDK Compatibility Layer (for agent-reach-bridge.ts web search)
+   293→   293→// ============================================================
+   294→   294→
+   295→   295→let zaiInstance: any = null;
+   296→   296→let zaiTokenUsed = '';
+   297→   297→
+   298→   298→async function getSDK(): Promise<any> {
+   299→   299→  const token = getZhipuToken();
+   300→   300→  if (!token) {
+   301→   301→    throw new Error('Zhipu AI API key not configured — cannot generate JWT token');
+   302→   302→  }
+   303→   303→
+   304→   304→  if (!zaiInstance || zaiTokenUsed !== token) {
+   305→   305→    try {
+   306→   306→      const ZAI = (await import('z-ai-web-dev-sdk')).default;
+   307→   307→      const config = {
+   308→   308→        baseUrl: getZhipuApiBase(),
+   309→   309→        apiKey: token,
+   310→   310→      };
+   311→   311→      zaiInstance = new ZAI(config);
+   312→   312→      zaiTokenUsed = token;
+   313→   313→      console.log('[getSDK] Created ZAI instance with fresh JWT token');
+   314→   314→    } catch (initError) {
+   315→   315→      const msg = initError instanceof Error ? initError.message : 'Unknown error';
+   316→   316→      console.error(`[getSDK] Failed to create ZAI instance: ${msg}`);
+   317→   317→      throw initError;
+   318→   318→    }
+   319→   319→  }
+   320→   320→
+   321→   321→  return zaiInstance;
+   322→   322→}
+   323→   323→
+   324→   324→export function resetSDK(): void {
+   325→   325→  zaiInstance = null;
+   326→   326→  zaiTokenUsed = '';
+   327→   327→  console.log('[resetSDK] SDK instance reset — next call will reinitialize');
+   328→   328→}
+   329→   329→
+   330→   330→// ============================================================
+   331→   331→// Health Check
+   332→   332→// ============================================================
+   333→   333→
+   334→   334→export async function checkLLMHealth(): Promise<{
+   335→   335→  ok: boolean;
+   336→   336→  model: string;
+   337→   337→  latencyMs: number;
+   338→   338→  error?: string;
+   339→   339→}> {
+   340→   340→  const start = Date.now();
+   341→   341→  try {
+   342→   342→    if (!isZhipuConfigured()) {
+   343→   343→      return {
+   344→   344→        ok: false,
+   345→   345→        model: MODEL_PRIMARY,
+   346→   346→        latencyMs: Date.now() - start,
+   347→   347→        error: 'Zhipu AI API key not configured (ZHIPU_AI_API_KEY env var missing)',
+   348→   348→      };
+   349→   349→    }
+   350→   350→
+   351→   351→    const completion = await directChatCompletion({
+   352→   352→      model: MODEL_PRIMARY,
+   353→   353→      messages: [
+   354→   354→        { role: 'system', content: 'You are a health check endpoint. Reply with exactly the word OK and nothing else.' },
+   355→   355→        { role: 'user', content: 'Health check' },
+   356→   356→      ],
+   357→   357→      max_tokens: 20,
+   358→   358→      temperature: 0,
+   359→   359→      thinking_budget: 'quick',
+   360→   360→    });
+   361→   361→
+   362→   362→    // With thinking:enabled, content should have the clean answer
+   363→   363→    const rawContent = completion?.choices?.[0]?.message?.content || '';
+   364→   364→    const reasoningContent = completion?.choices?.[0]?.message?.reasoning_content || '';
+   365→   365→    const content = rawContent || reasoningContent;
+   366→   366→
+   367→   367→    return {
+   368→   368→      ok: content.trim().length > 0,
+   369→   369→      model: MODEL_PRIMARY,
+   370→   370→      latencyMs: Date.now() - start,
+   371→   371→    };
+   372→   372→  } catch (error) {
+   373→   373→    return {
+   374→   374→      ok: false,
+   375→   375→      model: MODEL_PRIMARY,
+   376→   376→      latencyMs: Date.now() - start,
+   377→   377→      error: error instanceof Error ? error.message : 'Unknown error',
+   378→   378→    };
+   379→   379→  }
+   380→   380→}
+   381→   381→
+   382→   382→// ============================================================
+   383→   383→// Content Extraction
+   384→   384→// ============================================================
+   385→   385→
+   386→   386→/**
+   387→   387→ * Extract the clean content from a Zhipu AI response.
+   388→   388→ * With thinking:enabled, the model puts the answer in `content` and
+   389→   389→ * reasoning in `reasoning_content`. We prefer `content` when available.
+   390→   390→ * Falls back to `reasoning_content` for backward compatibility.
+   391→   391→ */
+   392→   392→function extractContent(completion: {
+   393→   393→  choices?: Array<{
+   394→   394→    message?: { content?: string; reasoning_content?: string };
+   395→   395→  }>;
+   396→   396→} | null): string {
+   397→   397→  if (!completion?.choices?.[0]?.message) return '';
+   398→   398→
+   399→   399→  const msg = completion.choices[0].message;
+   400→   400→  const content = msg.content?.trim() || '';
+   401→   401→  const reasoning = msg.reasoning_content?.trim() || '';
+   402→   402→
+   403→   403→  // Prefer content (the clean answer) over reasoning_content (the thinking steps)
+   404→   404→  if (content) return content;
+   405→   405→  if (reasoning) {
+   406→   406→    // When thinking is disabled, all output goes to reasoning_content.
+   407→   407→    // Try to extract the useful part (after reasoning, if there's a clear split).
+   408→   408→    // Often the last part of reasoning_content contains the actual answer.
+   409→   409→    return reasoning;
+   410→   410→  }
+   411→   411→
+   412→   412→  return '';
+   413→   413→}
+   414→   414→
+   415→   415→// ============================================================
+   416→   416→// HTML / Error Detection Helpers
+   417→   417→// ============================================================
+   418→   418→
+   419→   419→function isHtmlContent(text: string): boolean {
+   420→   420→  const trimmed = text.trim();
+   421→   421→  return trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html') || trimmed.startsWith('<HTML');
+   422→   422→}
+   423→   423→
+   424→   424→function isHtmlOrGatewayError(msg: string, errorName?: string): boolean {
+   425→   425→  return (
+   426→   426→    msg.includes('Unexpected token')
+   427→   427→    || (errorName === 'SyntaxError')
+   428→   428→    || msg.includes('is not valid JSON')
+   429→   429→    || msg.includes('HTML instead of')
+   430→   430→    || msg.includes('HTML error page')
+   431→   431→    || msg.includes('invalid response structure')
+   432→   432→    || msg.includes('fetch failed')
+   433→   433→    || msg.includes('502')
+   434→   434→    || msg.includes('Bad Gateway')
+   435→   435→    || msg.includes('gateway error')
+   436→   436→    || msg.includes('Service Unavailable')
+   437→   437→  );
+   438→   438→}
+   439→   439→
+   440→   440→function isRateLimitError(msg: string): boolean {
+   441→   441→  return msg.includes('429') || msg.includes('Too many requests') || msg.includes('rate limit') || msg.includes('速率限制');
+   442→   442→}
+   443→   443→
+   444→   444→/**
+   445→   445→ * Detect TLS/connection errors that indicate Z.AI is dropping connections
+   446→   446→ * (typically due to per-IP rate limiting or server overload).
+   447→   447→ *
+   448→   448→ * These should be treated like 429s — back off and wait before retrying.
+   449→   449→ */
+   450→   450→function isConnectionError(msg: string): boolean {
+   451→   451→  return (
+   452→   452→    msg.includes('Client network socket disconnected before secure TLS connection was established')
+   453→   453→    || msg.includes('socket disconnected')
+   454→   454→    || msg.includes('ECONNRESET')
+   455→   455→    || msg.includes('ECONNREFUSED')
+   456→   456→    || msg.includes('ETIMEDOUT')
+   457→   457→    || msg.includes('EPIPE')
+   458→   458→    || msg.includes('UND_ERR_SOCKET')
+   459→   459→    || msg.includes('fetch failed')
+   460→   460→    || msg.includes('network is unreachable')
+   461→   461→    || msg.includes('TLS connection')
+   462→   462→    || msg.includes('unexpected eof')
+   463→   463→  );
+   464→   464→}
+   465→   465→
+   466→   466→function isQuotaError(msg: string): boolean {
+   467→   467→  return msg.includes('余额不足') || msg.includes('insufficient') || msg.includes('quota');
+   468→   468→}
+   469→   469→
+   470→   470→// ============================================================
+   471→   471→// Core LLM Call — with model fallback, rate limit tracking, and retry
+   472→   472→// ============================================================
+   473→   473→
+   474→   474→export interface LLMCallOptions {
+   475→   475→  /** System prompt */
+   476→   476→  systemPrompt: string;
+   477→   477→  /** User message */
+   478→   478→  userMessage: string;
+   479→   479→  /** Temperature (0-1), default 0.3 */
+   480→   480→  temperature?: number;
+   481→   481→  /** Max tokens, default 4096 */
+   482→   482→  maxTokens?: number;
+   483→   483→  /** Preferred model (defaults to MODEL_PRIMARY) */
+   484→   484→  model?: LLMModel;
+   485→   485→  /** Number of retries per model before falling back, default 2 */
+   486→   486→  retriesPerModel?: number;
+   487→   487→  /** Whether to fall back to the other model on failure, default true */
+   488→   488→  useFallback?: boolean;
+   489→   489→  /** Thinking budget: 'quick' (512), 'standard' (2048), or 'deep' (4096), default 'standard' */
+   490→   490→  thinkingBudget?: ThinkingBudget;
+   491→   491→}
+   492→   492→
+   493→   493→/**
+   494→   494→ * Call the LLM with automatic model fallback and rate-limit-aware routing.
+   495→   495→ *
+   496→   496→ * Strategy:
+   497→   497→ * 1. Try the primary model (glm-4.6v-flash) with retries
+   498→   498→ * 2. If all retries fail, try the secondary model (glm-4.7-flash)
+   499→   499→ * 3. Skips models that are in cooldown from consecutive 429s
+   500→   500→ * 4. Returns null if both models fail (graceful degradation)
+   501→   501→ */
+   502→   502→export async function callLLM(options: LLMCallOptions): Promise<string | null> {
+   503→   503→  const {
+   504→   504→    systemPrompt,
+   505→   505→    userMessage,
+   506→   506→    temperature = 0.3,
+   507→   507→    maxTokens = 4096,
+   508→   508→    model = MODEL_PRIMARY,
+   509→   509→    retriesPerModel = 2,
+   510→   510→    useFallback = true,
+   511→   511→    thinkingBudget = 'standard',
+   512→   512→  } = options;
+   513→   513→
+   514→   514→  if (!isZhipuConfigured()) {
+   515→   515→    console.error('[callLLM] Zhipu AI API key not configured — check ZHIPU_AI_API_KEY env var');
+   516→   516→    return null;
+   517→   517→  }
+   518→   518→
+   519→   519→  // Build model list, skipping any in cooldown
+   520→   520→  const modelsToTry: LLMModel[] = [];
+   521→   521→  if (!isModelInCooldown(model)) {
+   522→   522→    modelsToTry.push(model);
+   523→   523→  } else {
+   524→   524→    console.warn(`[callLLM] Skipping ${model} — in 429 cooldown`);
+   525→   525→  }
+   526→   526→
+   527→   527→  if (useFallback) {
+   528→   528→    const fallback = model === MODEL_PRIMARY ? MODEL_FALLBACK : MODEL_PRIMARY;
+   529→   529→    if (!modelsToTry.includes(fallback) && !isModelInCooldown(fallback)) {
+   530→   530→      modelsToTry.push(fallback);
+   531→   531→    } else if (!modelsToTry.includes(fallback)) {
+   532→   532→      console.warn(`[callLLM] Skipping fallback ${fallback} — in 429 cooldown`);
+   533→   533→    }
+   534→   534→  }
+   535→   535→
+   536→   536→  // If all models are in cooldown, force primary anyway (it might have recovered)
+   537→   537→  if (modelsToTry.length === 0) {
+   538→   538→    console.warn('[callLLM] All models in cooldown — attempting primary anyway');
+   539→   539→    modelsToTry.push(MODEL_PRIMARY);
+   540→   540→  }
+   541→   541→
+   542→   542→  for (const currentModel of modelsToTry) {
+   543→   543→    for (let attempt = 0; attempt <= retriesPerModel; attempt++) {
+   544→   544→      try {
+   545→   545→        await waitForRateLimit();
+   546→   546→
+   547→   547→        const completion = await directChatCompletion({
+   548→   548→          model: currentModel,
+   549→   549→          messages: [
+   550→   550→            { role: 'system', content: systemPrompt },
+   551→   551→            { role: 'user', content: userMessage },
+   552→   552→          ],
+   553→   553→          temperature,
+   554→   554→          max_tokens: maxTokens,
+   555→   555→          thinking_budget: thinkingBudget,
+   556→   556→        });
+   557→   557→
+   558→   558→        // Validate response structure
+   559→   559→        if (!completion || !completion.choices || !Array.isArray(completion.choices)) {
+   560→   560→          throw new Error('LLM returned invalid response structure (possible gateway error)');
+   561→   561→        }
+   562→   562→
+   563→   563→        // Extract clean content
+   564→   564→        const content = extractContent(completion);
+   565→   565→
+   566→   566→        // Detect HTML in response
+   567→   567→        if (isHtmlContent(content)) {
+   568→   568→          throw new Error('LLM returned HTML instead of text (API gateway error page)');
+   569→   569→        }
+   570→   570→
+   571→   571→        if (content.trim()) {
+   572→   572→          recordSuccess(currentModel);
+   573→   573→          releaseRateLimit();
+   574→   574→          console.log(`[callLLM] Success with ${currentModel} on attempt ${attempt + 1}`);
+   575→   575→          return content;
+   576→   576→        }
+   577→   577→
+   578→   578→        // Empty response — retry
+   579→   579→        releaseRateLimit();
+   580→   580→        if (attempt < retriesPerModel) {
+   581→   581→          console.warn(`[callLLM] Empty response from ${currentModel}, attempt ${attempt + 1}, retrying...`);
+   582→   582→          continue;
+   583→   583→        }
+   584→   584→      } catch (error) {
+   585→   585→        releaseRateLimit();
+   586→   586→        const msg = error instanceof Error ? error.message : 'Unknown error';
+   587→   587→        const errorName = error instanceof Error ? error.name : '';
+   588→   588→
+   589→   589→        const isGatewayErr = isHtmlOrGatewayError(msg, errorName);
+   590→   590→        const isRateErr = isRateLimitError(msg);
+   591→   591→        const isConnErr = isConnectionError(msg);
+   592→   592→        const isQuotaErr = isQuotaError(msg);
+   593→   593→
+   594→   594→        // Track 429s AND connection errors for cooldown logic.
+   595→   595→        // Z.AI often drops TLS connections when the per-IP rate limit is hit
+   596→   596→        // (instead of returning a proper 429 response). We treat these the
+   597→   597→        // same as 429s — back off and wait for the limit to reset.
+   598→   598→        if (isRateErr || isConnErr) {
+   599→   599→          record429(currentModel);
+   600→   600→          // Mark Z.AI host as rate-limited for 60s so concurrent calls back off
+   601→   601→          markHostRateLimited('api.z.ai', 60_000);
+   602→   602→        }
+   603→   603→
+   604→   604→        // Quota exhaustion — don't retry this model
+   605→   605→        if (isQuotaErr) {
+   606→   606→          console.error(`[callLLM] ${currentModel} quota exhausted: ${msg.slice(0, 150)}`);
+   607→   607→          break; // Skip to next model immediately
+   608→   608→        }
+   609→   609→
+   610→   610→        if (isRateErr || isConnErr) {
+   611→   611→          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: rate/connection error — ${msg.slice(0, 150)}`);
+   612→   612→        } else if (isGatewayErr) {
+   613→   613→          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1}: gateway error — ${msg.slice(0, 150)}`);
+   614→   614→        } else {
+   615→   615→          console.warn(`[callLLM] ${currentModel} attempt ${attempt + 1} failed: ${msg.slice(0, 200)}`);
+   616→   616→        }
+   617→   617→
+   618→   618→        if (attempt < retriesPerModel) {
+   619→   619→          // Backoff strategy — significantly increased for rate limit compliance
+   620→   620→          // Z.AI's glm-4.7-flash tier limit is roughly 1 req/min, so we need
+   621→   621→          // to wait long enough on 429s and connection errors before retrying.
+   622→   622→          let backoffMs: number;
+   623→   623→          if (isRateErr || isConnErr) {
+   624→   624→            // Wait for the host cooldown to expire (60s default) plus jitter
+   625→   625→            const cooldownRemaining = getRateLimitCooldownRemaining('api.z.ai');
+   626→   626→            backoffMs = Math.max(60_000, cooldownRemaining) + Math.random() * 5000;
+   627→   627→          } else if (isGatewayErr) {
+   628→   628→            backoffMs = exponentialBackoff(attempt, 3000, 30_000);
+   629→   629→          } else {
+   630→   630→            backoffMs = exponentialBackoff(attempt, 2000, 20_000);
+   631→   631→          }
+   632→   632→
+   633→   633→          console.warn(`[callLLM] Waiting ${Math.round(backoffMs)}ms before retry ${attempt + 2} on ${currentModel}...`);
+   634→   634→          await new Promise(resolve => setTimeout(resolve, backoffMs));
+   635→   635→          continue;
+   636→   636→        }
+   637→   637→
+   638→   638→        console.warn(`[callLLM] ${currentModel} exhausted all ${retriesPerModel + 1} attempts, ${useFallback ? 'trying fallback model...' : 'giving up.'}`);
+   639→   639→      }
+   640→   640→    }
+   641→   641→  }
+   642→   642→
+   643→   643→  console.error('[callLLM] All models failed, returning null for graceful degradation');
+   644→   644→  return null;
+   645→   645→}
+   646→   646→
+   647→   647→// ============================================================
+   648→   648→// Streaming LLM Call — for real-time SSE output
+   649→   649→// ============================================================
+   650→   650→
+   651→   651→export interface LLMStreamEvent {
+   652→   652→  type: 'text_delta' | 'thinking_delta' | 'usage' | 'done' | 'error';
+   653→   653→  text?: string;
+   654→   654→  thinking?: string;
+   655→   655→  inputTokens?: number;
+   656→   656→  outputTokens?: number;
+   657→   657→  model?: string;
+   658→   658→  stopReason?: string;
+   659→   659→  error?: string;
+   660→   660→}
+   661→   661→
+   662→   662→/**
+   663→   663→ * Stream a chat completion from Z.AI with real-time token output.
+   664→   664→ * Uses the same rate limiter and auth as callLLM, but yields events
+   665→   665→ * as they arrive instead of waiting for the full response.
+   666→   666→ */
+   667→   667→export async function* callLLMStreaming(
+   668→   668→  messages: Array<{ role: string; content: string }>,
+   669→   669→  options?: {
+   670→   670→    temperature?: number;
+   671→   671→    maxTokens?: number;
+   672→   672→    model?: LLMModel;
+   673→   673→    thinkingBudget?: ThinkingBudget;
+   674→   674→    signal?: AbortSignal;
+   675→   675→  },
+   676→   676→): AsyncGenerator<LLMStreamEvent> {
+   677→   677→  const model = options?.model || MODEL_PRIMARY;
+   678→   678→  const budget = THINKING_BUDGETS[options?.thinkingBudget || 'standard'];
+   679→   679→  const effectiveMaxTokens = Math.max(options?.maxTokens || 4096, budget + 500);
+   680→   680→
+   681→   681→  if (!isZhipuConfigured()) {
+   682→   682→    yield { type: 'error', error: 'Z.AI API key not configured' };
+   683→   683→    return;
+   684→   684→  }
+   685→   685→
+   686→   686→  // Build model list, skipping cooldown
+   687→   687→  const modelsToTry: LLMModel[] = [];
+   688→   688→  if (!isModelInCooldown(model)) {
+   689→   689→    modelsToTry.push(model);
+   690→   690→  }
+   691→   691→  const fallback = model === MODEL_PRIMARY ? MODEL_FALLBACK : MODEL_PRIMARY;
+   692→   692→  if (!modelsToTry.includes(fallback) && !isModelInCooldown(fallback)) {
+   693→   693→    modelsToTry.push(fallback);
+   694→   694→  }
+   695→   695→  if (modelsToTry.length === 0) {
+   696→   696→    modelsToTry.push(MODEL_PRIMARY);
+   697→   697→  }
+   698→   698→
+   699→   699→  for (const currentModel of modelsToTry) {
+   700→   700→    try {
+   701→   701→      await waitForRateLimit();
+   702→   702→
+   703→   703→      const token = getZhipuToken();
+   704→   704→      if (!token) {
+   705→   705→        releaseRateLimit();
+   706→   706→        yield { type: 'error', error: 'Cannot generate JWT token' };
+   707→   707→        return;
+   708→   708→      }
+   709→   709→
+   710→   710→      const baseUrl = getZhipuApiBase();
+   711→   711→      const url = `${baseUrl}/chat/completions`;
+   712→   712→
+   713→   713→      const body = {
+   714→   714→        model: currentModel,
+   715→   715→        messages,
+   716→   716→        temperature: options?.temperature ?? 0.3,
+   717→   717→        max_tokens: effectiveMaxTokens,
+   718→   718→        stream: true,
+   719→   719→        thinking: { type: 'enabled', budget_tokens: budget },
+   720→   720→      };
+   721→   721→
+   722→   722→      const response = await fetchIPv4(url, {
+   723→   723→        method: 'POST',
+   724→   724→        headers: {
+   725→   725→          'Content-Type': 'application/json',
+   726→   726→          'Authorization': `Bearer ${token}`,
+   727→   727→        },
+   728→   728→        body: JSON.stringify(body),
+   729→   729→        timeoutMs: 90_000,
+   730→   730→      });
+   731→   731→
+   732→   732→      if (response.status === 429) {
+   733→   733→        releaseRateLimit();
+   734→   734→        record429(currentModel);
+   735→   735→        // Mark Z.AI host as rate-limited for 60s so other concurrent calls back off too
+   736→   736→        markHostRateLimited('api.z.ai', 60_000);
+   737→   737→        const backoffMs = 3000 + Math.random() * 2000;
+   738→   738→        console.warn(`[callLLMStreaming] 429 on ${currentModel}, backing off ${backoffMs}ms`);
+   739→   739→        await new Promise(r => setTimeout(r, backoffMs));
+   740→   740→        continue;
+   741→   741→      }
+   742→   742→
+   743→   743→      if (!response.ok) {
+   744→   744→        releaseRateLimit();
+   745→   745→        const errorText = await response.text().catch(() => 'Unknown error');
+   746→   746→        throw new Error(`API request failed with status ${response.status}: ${errorText.slice(0, 200)}`);
+   747→   747→      }
+   748→   748→
+   749→   749→      // Parse SSE stream
+   750→   750→      recordSuccess(currentModel);
+   751→   751→      const reader = response.body?.getReader();
+   752→   752→      if (!reader) {
+   753→   753→        releaseRateLimit();
+   754→   754→        yield { type: 'error', error: 'No response body' };
+   755→   755→        return;
+   756→   756→      }
+   757→   757→
+   758→   758→      const decoder = new TextDecoder();
+   759→   759→      let buffer = '';
+   760→   760→      let totalInputTokens = 0;
+   761→   761→      let totalOutputTokens = 0;
+   762→   762→
+   763→   763→      try {
+   764→   764→        while (true) {
+   765→   765→          const { done, value } = await reader.read();
+   766→   766→          if (done) break;
+   767→   767→
+   768→   768→          buffer += decoder.decode(value, { stream: true });
+   769→   769→          const lines = buffer.split('\n');
+   770→   770→          buffer = lines.pop() || '';
+   771→   771→
+   772→   772→          for (const line of lines) {
+   773→   773→            const trimmed = line.trim();
+   774→   774→            if (!trimmed || trimmed.startsWith(':')) continue;
+   775→   775→
+   776→   776→            if (trimmed === 'data: [DONE]') {
+   777→   777→              releaseRateLimit();
+   778→   778→              yield {
+   779→   779→                type: 'usage',
+   780→   780→                inputTokens: totalInputTokens,
+   781→   781→                outputTokens: totalOutputTokens,
+   782→   782→                model: currentModel,
+   783→   783→              };
+   784→   784→              yield { type: 'done', stopReason: 'stop' };
+   785→   785→              return;
+   786→   786→            }
+   787→   787→
+   788→   788→            if (trimmed.startsWith('data: ')) {
+   789→   789→              try {
+   790→   790→                const event = JSON.parse(trimmed.slice(6));
+   791→   791→                const choices = event.choices as Array<{
+   792→   792→                  delta?: {
+   793→   793→                    content?: string;
+   794→   794→                    reasoning_content?: string;
+   795→   795→                  };
+   796→   796→                  finish_reason?: string;
+   797→   797→                }> | undefined;
+   798→   798→
+   799→   799→                if (choices) {
+   800→   800→                  for (const choice of choices) {
+   801→   801→                    if (choice.delta?.reasoning_content) {
+   802→   802→                      yield { type: 'thinking_delta', thinking: choice.delta.reasoning_content };
+   803→   803→                    }
+   804→   804→                    if (choice.delta?.content) {
+   805→   805→                      yield { type: 'text_delta', text: choice.delta.content };
+   806→   806→                    }
+   807→   807→                    if (choice.finish_reason) {
+   808→   808→                      // Track usage from the event
+   809→   809→                      if (event.usage) {
+   810→   810→                        totalInputTokens += event.usage.prompt_tokens || 0;
+   811→   811→                        totalOutputTokens += event.usage.completion_tokens || 0;
+   812→   812→                      }
+   813→   813→                    }
+   814→   814→                  }
+   815→   815→                }
+   816→   816→
+   817→   817→                if (event.usage) {
+   818→   818→                  totalInputTokens += event.usage.prompt_tokens || 0;
+   819→   819→                  totalOutputTokens += event.usage.completion_tokens || 0;
+   820→   820→                }
+   821→   821→              } catch {
+   822→   822→                // Skip malformed JSON
+   823→   823→              }
+   824→   824→            }
+   825→   825→          }
+   826→   826→        }
+   827→   827→      } finally {
+   828→   828→        reader.releaseLock();
+   829→   829→        releaseRateLimit();
+   830→   830→      }
+   831→   831→
+   832→   832→      // If we exit the loop without [DONE], still emit done
+   833→   833→      yield { type: 'done', stopReason: 'stop' };
+   834→   834→      return;
+   835→   835→    } catch (error) {
+   836→   836→      releaseRateLimit();
+   837→   837→      const msg = error instanceof Error ? error.message : 'Unknown error';
+   838→   838→      console.warn(`[callLLMStreaming] ${currentModel} failed: ${msg.slice(0, 200)}`);
+   839→   839→
+   840→   840→      if (isRateLimitError(msg)) {
+   841→   841→        record429(currentModel);
+   842→   842→        continue;
+   843→   843→      }
+   844→   844→
+   845→   845→      // Non-retryable error
+   846→   846→      yield { type: 'error', error: msg };
+   847→   847→      return;
+   848→   848→    }
+   849→   849→  }
+   850→   850→
+   851→   851→  yield { type: 'error', error: 'All models failed' };
+   852→   852→}
+   853→   853→
+   854→   854→// ============================================================
+   855→   855→// JSON Extraction Helper
+   856→   856→// ============================================================
+   857→   857→
+   858→   858→export async function callLLMForJSON<T>(
+   859→   859→  systemPrompt: string,
+   860→   860→  userMessage: string,
+   861→   861→  options?: Partial<LLMCallOptions>
+   862→   862→): Promise<T | null> {
+   863→   863→  const MAX_JSON_RETRIES = 1;
+   864→   864→
+   865→   865→  for (let attempt = 0; attempt <= MAX_JSON_RETRIES; attempt++) {
+   866→   866→    try {
+   867→   867→      const response = await callLLM({
+   868→   868→        systemPrompt,
+   869→   869→        userMessage,
+   870→   870→        temperature: options?.temperature ?? 0.2,
+   871→   871→        maxTokens: options?.maxTokens ?? 4096,
+   872→   872→        model: options?.model,
+   873→   873→        retriesPerModel: options?.retriesPerModel ?? 1,
+   874→   874→        useFallback: options?.useFallback ?? true,
+   875→   875→        thinkingBudget: options?.thinkingBudget ?? 'standard',
+   876→   876→      });
+   877→   877→
+   878→   878→      if (response === null || response === undefined) {
+   879→   879→        console.warn('[callLLMForJSON] callLLM returned null — LLM unavailable');
+   880→   880→        return null;
+   881→   881→      }
+   882→   882→
+   883→   883→      // Strategy 1: JSON in markdown code blocks
+   884→   884→      const codeBlockMatch = response.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+   885→   885→      if (codeBlockMatch) {
+   886→   886→        try { return JSON.parse(codeBlockMatch[1]) as T; } catch { /* continue */ }
+   887→   887→      }
+   888→   888→
+   889→   889→      // Strategy 2: First balanced { } or [ ]
+   890→   890→      const jsonMatch = response.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+   891→   891→      if (jsonMatch) {
+   892→   892→        try { return JSON.parse(jsonMatch[1]) as T; } catch { /* continue */ }
+   893→   893→      }
+   894→   894→
+   895→   895→      // Strategy 3: Direct parse
+   896→   896→      try { return JSON.parse(response) as T; } catch { /* continue */ }
+   897→   897→
+   898→   898→      console.warn(`[callLLMForJSON] Could not extract JSON on attempt ${attempt + 1}`);
+   899→   899→    } catch (error) {
+   900→   900→      console.warn(`[callLLMForJSON] Error on attempt ${attempt + 1}: ${error instanceof Error ? error.message : 'Unknown'}`);
+   901→   901→    }
+   902→   902→
+   903→   903→    if (attempt < MAX_JSON_RETRIES) {
+   904→   904→      await new Promise(r => setTimeout(r, 1500));
+   905→   905→    }
+   906→   906→  }
+   907→   907→
+   908→   908→  console.warn('[callLLMForJSON] Could not extract JSON after all retries, returning null');
+   909→   909→  return null;
+   910→   910→}
+   911→   911→
+   912→   912→/**
+   913→   913→ * Extract JSON from a raw LLM string response.
+   914→   914→ * Pure utility — no LLM call, just string parsing.
+   915→   915→ */
+   916→   916→export function extractJSONFromString<T>(text: string): T | null {
+   917→   917→  // Strategy 1: JSON in markdown code blocks
+   918→   918→  const codeBlockMatch = text.match(/```(?:json)?\s*\n?([\s\S]*?)\n?```/);
+   919→   919→  if (codeBlockMatch) {
+   920→   920→    try { return JSON.parse(codeBlockMatch[1]) as T; } catch { /* continue */ }
+   921→   921→  }
+   922→   922→
+   923→   923→  // Strategy 2: First balanced { } or [ ]
+   924→   924→  const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
+   925→   925→  if (jsonMatch) {
+   926→   926→    try { return JSON.parse(jsonMatch[1]) as T; } catch { /* continue */ }
+   927→   927→  }
+   928→   928→
+   929→   929→  // Strategy 3: Direct parse
+   930→   930→  try { return JSON.parse(text) as T; } catch { /* continue */ }
+   931→   931→
+   932→   932→  return null;
+   933→   933→}
+   934→   934→
+   935→   935→// ============================================================
+   936→   936→// Structured Fallback (no LLM needed)
+   937→   937→// ============================================================
+   938→   938→
+   939→   939→/**
+   940→   940→ * Generate a structured fallback response when LLM is unavailable.
+   941→   941→ * This creates a useful response from the provided data without needing AI.
+   942→   942→ */
+   943→   943→export function generateStructuredFallback(params: {
+   944→   944→  persona: string;
+   945→   945→  intent: string;
+   946→   946→  userMessage: string;
+   947→   947→  actionSummary: string;
+   948→   948→  context?: string;
+   949→   949→}): string {
+   950→   950→  const { persona, intent, userMessage, actionSummary, context } = params;
+   951→   951→
+   952→   952→  try {
+   953→   953→    // Try to parse the action summary for structured data
+   954→   954→    const data = JSON.parse(actionSummary);
+   955→   955→
+   956→   956→    if (intent === 'research_company' || intent === 'research_url') {
+   957→   957→      const company = data.company || 'the company';
+   958→   958→      const industry = data.industry || '';
+   959→   959→      const employees = data.employees || '';
+   960→   960→      const revenue = data.revenue || '';
+   961→   961→      const ceo = data.ceo || '';
+   962→   962→      const email = data.email || '';
+   963→   963→      const linkedin = data.linkedin || '';
+   964→   964→      const completeness = data.completeness || 0;
+   965→   965→
+   966→   966→      let response = `I've completed my research on **${company}**.`;
+   967→   967→      if (industry) response += ` They operate in the ${industry} industry.`;
+   968→   968→      if (employees) response += ` The company has approximately ${employees} employees.`;
+   969→   969→      if (revenue) response += ` Estimated revenue: ${revenue}.`;
+   970→   970→      if (ceo) response += ` The CEO is ${ceo}.`;
+   971→   971→      if (email) response += ` Contact email: ${email}.`;
+   972→   972→      if (linkedin) response += ` LinkedIn: available.`;
+   973→   973→
+   974→   974→      if (completeness < 30) {
+   975→   975→        response += `\n\nData completeness is at ${completeness}%. For deeper results, try providing a company website URL.`;
+   976→   976→      } else if (completeness >= 60) {
+   977→   977→        response += `\n\nData completeness is at ${completeness}% — good research coverage! I recommend scoring this lead against your ICP or composing personalized outreach.`;
+   978→   978→      }
+   979→   979→
+   980→   980→      return response;
+   981→   981→    }
+   982→   982→
+   983→   983→    if (intent === 'research_person') {
+   984→   984→      const person = data.person || 'the contact';
+   985→   985→      const title = data.title || '';
+   986→   986→      const company = data.company || '';
+   987→   987→      const email = data.email || '';
+   988→   988→
+   989→   989→      let response = `I've found information about **${person}**.`;
+   990→   990→      if (title) response += ` Their title is ${title}.`;
+   991→   991→      if (company) response += ` They work at ${company}.`;
+   992→   992→      if (email) response += ` Email: ${email}.`;
+   993→   993→
+   994→   994→      return response;
+   995→   995→    }
+   996→   996→
+   997→   997→    if (intent === 'analyze_market' || intent === 'analyze_competitors') {
+   998→   998→      const summary = data.summary || '';
+   999→   999→      const competitors = data.competitors || [];
+  1000→  1000→      const trends = data.trends || [];
+  1001→  1001→
+  1002→  1002→      let response = `Here's my market analysis:`;
+  1003→  1003→      if (summary) response += `\n\n${summary}`;
+  1004→  1004→      if (Array.isArray(competitors) && competitors.length > 0) response += `\n\nKey competitors: ${competitors.join(', ')}.`;
+  1005→  1005→      if (Array.isArray(trends) && trends.length > 0) response += `\n\nTrends identified: ${trends.join('; ')}.`;
+  1006→  1006→
+  1007→  1007→      return response;
+  1008→  1008→    }
+  1009→  1009→  } catch {
+  1010→  1010→    // JSON parse failed — use raw text
+  1011→  1011→  }
+  1012→  1012→
+  1013→  1013→  // Generic fallback
+  1014→  1014→  return `I've processed your request about "${userMessage.slice(0, 50)}". The research pipeline has completed and I've gathered available data. You can review the structured results below, and I'd recommend taking the next step — scoring this lead, composing outreach, or building an ICP based on what we found.`;
+  1015→  1015→}
+  1016→  1016→
+  1017→  1017→// ============================================================
+  1018→  1018→// Export getSDK for agent-reach-bridge.ts
+  1019→  1019→// ============================================================
+  1020→  1020→
+  1021→  1021→export { getSDK };
+  1022→  1022→
+  1023→  1023→// ============================================================
+  1024→  1024→// Vision (glm-4.6v-flash) — multimodal image+text inference
+  1025→  1025→// ============================================================
+  1026→  1026→//
+  1027→  1027→// Per platform policy, glm-4.6v-flash is the ONLY vision-capable model
+  1028→  1028→// available on the platform. Use this helper for any task that needs to
+  1029→  1029→// understand image content: logo analysis, screenshot OCR, creative
+  1030→  1030→// review, document understanding, etc.
+  1031→  1031→//
+  1032→  1032→// ============================================================
+  1033→  1033→
+  1034→  1034→export interface VisionMessage {
+  1035→  1035→  role: 'system' | 'user' | 'assistant';
+  1036→  1036→  /** Text content for this message */
+  1037→  1037→  text?: string;
+  1038→  1038→  /** Inline image (data URL: `data:image/png;base64,...`) OR a publicly-reachable image URL */
+  1039→  1039→  image?: string;
+  1040→  1040→}
+  1041→  1041→
+  1042→  1042→export interface LLMVisionOptions {
+  1043→  1043→  /** Temperature (0-1), default 0.3 */
+  1044→  1044→  temperature?: number;
+  1045→  1045→  /** Max tokens, default 4096 */
+  1046→  1046→  maxTokens?: number;
+  1047→  1047→  /** Thinking budget: 'quick' (1024), 'standard' (2048), or 'deep' (4096), default 'standard' */
+  1048→  1048→  thinkingBudget?: ThinkingBudget;
+  1049→  1049→  /** Abort signal for cancellation */
+  1050→  1050→  signal?: AbortSignal;
+  1051→  1051→}
+  1052→  1052→
+  1053→  1053→/**
+  1054→  1054→ * Call glm-4.6v-flash with a multimodal (image + text) prompt.
+  1055→  1055→ *
+  1056→  1056→ * Each message can carry text, an image (data URL or HTTP URL), or both.
+  1057→  1057→ * Returns the model's text response, or null on failure.
+  1058→  1058→ *
+  1059→  1059→ * Example:
+  1060→  1060→ *   const result = await callLLMVision([
+  1061→  1061→ *     { role: 'system', text: 'You are a brand analyst.' },
+  1062→  1062→ *     { role: 'user', text: 'Describe this logo.', image: dataUrl },
+  1063→  1063→ *   ]);
+  1064→  1064→ */
+  1065→  1065→export async function callLLMVision(
+  1066→  1066→  messages: VisionMessage[],
+  1067→  1067→  options?: LLMVisionOptions,
+  1068→  1068→): Promise<string | null> {
+  1069→  1069→  if (!isZhipuConfigured()) {
+  1070→  1070→    console.error('[callLLMVision] Z.AI API key not configured');
+  1071→  1071→    return null;
+  1072→  1072→  }
+  1073→  1073→
+  1074→  1074→  const budget = THINKING_BUDGETS[options?.thinkingBudget || 'standard'];
+  1075→  1075→  const effectiveMaxTokens = Math.max(options?.maxTokens || 4096, budget + 500);
+  1076→  1076→
+  1077→  1077→  // Convert our VisionMessage format to Z.AI's content-array format
+  1078→  1078→  const apiMessages = messages.map((m) => {
+  1079→  1079→    const content: Array<{ type: string; text?: string; image_url?: { url: string } }> = [];
+  1080→  1080→    if (m.text) content.push({ type: 'text', text: m.text });
+  1081→  1081→    if (m.image) content.push({ type: 'image_url', image_url: { url: m.image } });
+  1082→  1082→    return { role: m.role, content };
+  1083→  1083→  });
+  1084→  1084→
+  1085→  1085→  try {
+  1086→  1086→    await waitForRateLimit();
+  1087→  1087→    try {
+  1088→  1088→      const token = getZhipuToken();
+  1089→  1089→      if (!token) {
+  1090→  1090→        return null;
+  1091→  1091→      }
+  1092→  1092→
+  1093→  1093→      const url = `${getZhipuApiBase()}/chat/completions`;
+  1094→  1094→      const body = {
+  1095→  1095→        model: MODEL_VISION,
+  1096→  1096→        messages: apiMessages,
+  1097→  1097→        temperature: options?.temperature ?? 0.3,
+  1098→  1098→        max_tokens: effectiveMaxTokens,
+  1099→  1099→        thinking: { type: 'enabled', budget_tokens: budget },
+  1100→  1100→      };
+  1101→  1101→
+  1102→  1102→      const response = await fetchIPv4(url, {
+  1103→  1103→        method: 'POST',
+  1104→  1104→        headers: {
+  1105→  1105→          'Content-Type': 'application/json',
+  1106→  1106→          'Authorization': `Bearer ${token}`,
+  1107→  1107→        },
+  1108→  1108→        body: JSON.stringify(body),
+  1109→  1109→        timeoutMs: 90_000,
+  1110→  1110→      });
+  1111→  1111→
+  1112→  1112→      if (!response.ok) {
+  1113→  1113→        const errorText = await response.text().catch(() => 'Unknown error');
+  1114→  1114→        console.warn(`[callLLMVision] API failed (${response.status}): ${errorText.slice(0, 200)}`);
+  1115→  1115→        return null;
+  1116→  1116→      }
+  1117→  1117→
+  1118→  1118→      const completion = await response.json();
+  1119→  1119→      const content = extractContent(completion);
+  1120→  1120→      return content || null;
+  1121→  1121→    } finally {
+  1122→  1122→      releaseRateLimit();
+  1123→  1123→    }
+  1124→  1124→  } catch (error) {
+  1125→  1125→    releaseRateLimit();
+  1126→  1126→    console.warn('[callLLMVision] Error:', error instanceof Error ? error.message.slice(0, 200) : error);
+  1127→  1127→    return null;
+  1128→  1128→  }
+  1129→  1129→}
+  1130→  1130→
+  1131→  1131→/**
+  1132→  1132→ * Call glm-4.6v-flash and parse the response as JSON.
+  1133→  1133→ * Same as callLLMVision but extracts and parses a JSON object from the response.
+  1134→  1134→ */
+  1135→  1135→export async function callLLMVisionForJSON<T>(
+  1136→  1136→  messages: VisionMessage[],
+  1137→  1137→  options?: LLMVisionOptions,
+  1138→  1138→): Promise<T | null> {
+  1139→  1139→  const text = await callLLMVision(messages, options);
+  1140→  1140→  if (!text) return null;
+  1141→  1141→  return extractJSONFromString<T>(text);
+  1142→  1142→}
+  1143→  1143→

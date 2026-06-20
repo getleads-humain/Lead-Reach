@@ -1,0 +1,502 @@
+     1→   300→      {/* Header */}
+     2→   301→      <div className="px-3 py-2 border-b border-border/20 flex items-center justify-between">
+     3→   302→        <div className="flex items-center gap-2">
+     4→   303→          <Activity className="h-3.5 w-3.5 text-emerald-400" />
+     5→   304→          <span className="text-xs font-semibold text-foreground/80">Agent Workspace</span>
+     6→   305→        </div>
+     7→   306→        <button onClick={onToggle} className="text-muted-foreground/50 hover:text-foreground transition-colors">
+     8→   307→          <PanelRightClose className="h-3.5 w-3.5" />
+     9→   308→        </button>
+    10→   309→      </div>
+    11→   310→
+    12→   311→      <style>{AGENT_WORKSPACE_SCROLLBAR_STYLES}</style>
+    13→   312→      <ScrollArea className="flex-1 overflow-y-auto agent-workspace-scroll" style={{ scrollbarGutter: 'stable' }}>
+    14→   313→        <div className="p-3 space-y-3">
+    15→   314→          {/* Thinking Mode */}
+    16→   315→          {(pipelineState.phase === 'thinking' || pipelineState.totalThinkTimeMs) && (
+    17→   316→            <ThinkingModeIndicator
+    18→   317→              thinkStartTime={pipelineState.thinkStartTime}
+    19→   318→              totalThinkTimeMs={pipelineState.totalThinkTimeMs}
+    20→   319→              phase={pipelineState.phase}
+    21→   320→            />
+    22→   321→          )}
+    23→   322→
+    24→   323→          {/* Pipeline Progress */}
+    25→   324→          <div className="rounded-lg border border-border/30 bg-secondary/10 p-2.5">
+    26→   325→            <div className="flex items-center justify-between mb-1.5">
+    27→   326→              <span className="text-[10px] font-semibold text-foreground/60 uppercase tracking-wider">Pipeline</span>
+    28→   327→              <span className="text-[9px] font-mono text-muted-foreground/50">
+    29→   328→                {pipelineState.phase === 'idle' ? 'Ready' :
+    30→   329→                 pipelineState.phase === 'thinking' ? 'Thinking...' :
+    31→   330→                 pipelineState.phase === 'executing' ? 'Executing...' :
+    32→   331→                 pipelineState.phase === 'synthesizing' ? 'Synthesizing...' :
+    33→   332→                 pipelineState.phase === 'complete' ? 'Complete' : 'Error'}
+    34→   333→              </span>
+    35→   334→              {/* Show cooldown indicator if any agent is in waiting state */}
+    36→   335→              {Object.values(pipelineState.agents).some(a => a.status === 'waiting') && (
+    37→   336→                <span className="text-[8px] text-amber-400 flex items-center gap-0.5 ml-1">
+    38→   337→                  <Clock className="h-2 w-2" /> Rate limit cooldown
+    39→   338→                </span>
+    40→   339→              )}
+    41→   340→            </div>
+    42→   341→            <Progress value={pipelineState.overallProgress} className="h-1.5 bg-secondary/40 [&>div]:bg-emerald-400" />
+    43→   342→            <span className="text-[9px] text-muted-foreground/50 mt-1 block">{pipelineState.overallProgress}%</span>
+    44→   343→          </div>
+    45→   344→
+    46→   345→          {/* 8-Agent Status Grid */}
+    47→   346→          <div>
+    48→   347→            <div className="flex items-center gap-1.5 mb-2">
+    49→   348→              <Bot className="h-3 w-3 text-cyan-400" />
+    50→   349→              <span className="text-[10px] font-semibold text-foreground/60 uppercase tracking-wider">8-Agent System</span>
+    51→   350→            </div>
+    52→   351→            <div className="grid grid-cols-2 gap-1.5">
+    53→   352→              {Object.entries(AGENT_8_DISPLAY).map(([key, display]) => {
+    54→   353→                // pipelineState.agents now uses 8-agent display keys directly
+    55→   354→                const state = pipelineState.agents[key];
+    56→   355→                const isRelevant = isProcessing && state && state.status !== 'idle';
+    57→   356→
+    58→   357→                return (
+    59→   358→                  <div key={key} className={`rounded-md border p-1.5 ${isRelevant ? 'border-border/40 bg-secondary/10' : 'border-border/20 bg-transparent opacity-40'}`}>
+    60→   359→                    <div className="flex items-center gap-1">
+    61→   360→                      <span className="text-[10px]">{display.emoji}</span>
+    62→   361→                      <span className="text-[9px] font-medium text-foreground/70">{display.name}</span>
+    63→   362→                    </div>
+    64→   363→                    <div className="mt-0.5">
+    65→   364→                      {state?.status === 'thinking' && (
+    66→   365→                        <span className="text-[8px] text-violet-400 flex items-center gap-0.5">
+    67→   366→                          <Clock className="h-2 w-2 animate-spin" /> Thinking...
+    68→   367→                        </span>
+    69→   368→                      )}
+    70→   369→                      {state?.status === 'working' && (
+    71→   370→                        <span className="text-[8px] text-cyan-400 flex items-center gap-0.5">
+    72→   371→                          <Loader2 className="h-2 w-2 animate-spin" /> {state.currentStep || 'Working...'}
+    73→   372→                        </span>
+    74→   373→                      )}
+    75→   374→                      {state?.status === 'waiting' && (
+    76→   375→                        <span className="text-[8px] text-amber-400 flex items-center gap-0.5">
+    77→   376→                          <Clock className="h-2 w-2 opacity-60" /> Cooldown...
+    78→   377→                        </span>
+    79→   378→                      )}
+    80→   379→                      {state?.status === 'completed' && (
+    81→   380→                        <span className="text-[8px] text-emerald-400 flex items-center gap-0.5">
+    82→   381→                          <CheckCircle2 className="h-2 w-2" /> {state.currentStep?.slice(0, 25) || 'Done'}
+    83→   382→                        </span>
+    84→   383→                      )}
+    85→   384→                      {state?.status === 'failed' && (
+    86→   385→                        <span className="text-[8px] text-red-400 flex items-center gap-0.5">
+    87→   386→                          <AlertCircle className="h-2 w-2" /> Failed
+    88→   387→                        </span>
+    89→   388→                      )}
+    90→   389→                      {state?.status === 'idle' && (
+    91→   390→                        <span className="text-[8px] text-muted-foreground/40">{display.role}</span>
+    92→   391→                      )}
+    93→   392→                    </div>
+    94→   393→                    {isRelevant && state.progress > 0 && (
+    95→   394→                      <Progress value={state.progress} className="h-0.5 mt-1 bg-secondary/20 [&>div]:bg-emerald-400" />
+    96→   395→                    )}
+    97→   396→                  </div>
+    98→   397→                );
+    99→   398→              })}
+   100→   399→            </div>
+   101→   400→          </div>
+   102→   401→
+   103→   402→          {/* Agent Communication Log */}
+   104→   403→          <div>
+   105→   404→            <div className="flex items-center gap-1.5 mb-2">
+   106→   405→              <MessagesSquare className="h-3 w-3 text-amber-400" />
+   107→   406→              <span className="text-[10px] font-semibold text-foreground/60 uppercase tracking-wider">
+   108→   407→                Agent Communication
+   109→   408→              </span>
+   110→   409→              {pipelineState.commLog.length > 0 && (
+   111→   410→                <Badge variant="outline" className="text-[8px] h-4 px-1 border-border/30 text-muted-foreground/50">
+   112→   411→                  {pipelineState.commLog.length}
+   113→   412→                </Badge>
+   114→   413→              )}
+   115→   414→            </div>
+   116→   415→            <div ref={commLogRef} className="space-y-1.5 max-h-[600px] overflow-y-auto scroll-smooth">
+   117→   416→              {pipelineState.commLog.length === 0 ? (
+   118→   417→                <p className="text-[9px] text-muted-foreground/40 italic">Agent messages will appear here during processing...</p>
+   119→   418→              ) : (
+   120→   419→                pipelineState.commLog.map((msg) => (
+   121→   420→                  <CommMessageBubble key={msg.id} msg={msg} />
+   122→   421→                ))
+   123→   422→              )}
+   124→   423→            </div>
+   125→   424→          </div>
+   126→   425→        </div>
+   127→   426→      </ScrollArea>
+   128→   427→    </div>
+   129→   428→  );
+   130→   429→}
+   131→   430→
+   132→   431→// ============================================================
+   133→   432→// Persona Badge Component
+   134→   433→// ============================================================
+   135→   434→
+   136→   435→function PersonaBadge({ persona, size = 'sm' }: { persona: AgentPersona; size?: 'sm' | 'lg' }) {
+   137→   436→  const meta = PERSONA_META[persona];
+   138→   437→  const colorMap: Record<string, string> = {
+   139→   438→    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+   140→   439→    cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+   141→   440→    violet: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+   142→   441→    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+   143→   442→    rose: 'bg-rose-500/10 text-rose-400 border-rose-500/20',
+   144→   443→    sky: 'bg-sky-500/10 text-sky-400 border-sky-500/20',
+   145→   444→    indigo: 'bg-indigo-500/10 text-indigo-400 border-indigo-500/20',
+   146→   445→  };
+   147→   446→  const colorClass = colorMap[meta.color] || colorMap.emerald;
+   148→   447→  const sizeClass = size === 'lg' ? 'text-xs px-2.5 py-1' : 'text-[9px] px-1.5 py-0.5';
+   149→   448→
+   150→   449→  return (
+   151→   450→    <Badge variant="outline" className={`${colorClass} ${sizeClass} font-medium gap-1`}>
+   152→   451→      <span>{meta.emoji}</span>
+   153→   452→      <span>{meta.name}</span>
+   154→   453→    </Badge>
+   155→   454→  );
+   156→   455→}
+   157→   456→
+   158→   457→// ============================================================
+   159→   458→// Thinking Indicator
+   160→   459→// ============================================================
+   161→   460→
+   162→   461→function ThinkingIndicator({ thinking }: { thinking: AgentThinking }) {
+   163→   462→  const [expanded, setExpanded] = useState(true);
+   164→   463→  const meta = PERSONA_META[thinking.persona];
+   165→   464→
+   166→   465→  return (
+   167→   466→    <div className="rounded-lg border border-border/30 bg-secondary/10 overflow-hidden">
+   168→   467→      <button
+   169→   468→        onClick={() => setExpanded(!expanded)}
+   170→   469→        className="w-full flex items-center justify-between px-3 py-2 hover:bg-secondary/20 transition-colors"
+   171→   470→      >
+   172→   471→        <div className="flex items-center gap-2">
+   173→   472→          <Brain className="h-3.5 w-3.5 text-violet-400" />
+   174→   473→          <span className="text-[10px] font-medium text-violet-400">Agent Thinking</span>
+   175→   474→          <PersonaBadge persona={thinking.persona} />
+   176→   475→          <span className="text-[9px] text-muted-foreground/50">
+   177→   476→            {Math.round(thinking.confidence * 100)}% confidence
+   178→   477→          </span>
+   179→   478→        </div>
+   180→   479→        {expanded ? <ChevronUp className="h-3 w-3 text-muted-foreground" /> : <ChevronDown className="h-3 w-3 text-muted-foreground" />}
+   181→   480→      </button>
+   182→   481→      {expanded && (
+   183→   482→        <div className="px-3 py-2 space-y-2 border-t border-border/20">
+   184→   483→          <p className="text-[10px] text-muted-foreground/70">{thinking.reasoning}</p>
+   185→   484→          <div className="space-y-1">
+   186→   485→            {thinking.plan.map((step, i) => (
+   187→   486→              <div key={i} className="flex items-center gap-1.5">
+   188→   487→                <div className="h-1 w-1 rounded-full bg-violet-400/50" />
+   189→   488→                <span className="text-[9px] text-muted-foreground/60">{step}</span>
+   190→   489→              </div>
+   191→   490→            ))}
+   192→   491→          </div>
+   193→   492→        </div>
+   194→   493→      )}
+   195→   494→    </div>
+   196→   495→  );
+   197→   496→}
+   198→   497→
+   199→   498→// ============================================================
+   200→   499→// Action Step Indicator
+   201→   500→// ============================================================
+   202→   501→
+   203→   502→function ActionStepIndicator({ action }: { action: AgentAction }) {
+   204→   503→  return (
+   205→   504→    <div className="flex items-center gap-2 py-1.5 px-2.5 rounded-lg bg-secondary/20 text-xs">
+   206→   505→      {action.status === 'running' && <Loader2 className="h-3.5 w-3.5 animate-spin text-cyan-400" />}
+   207→   506→      {action.status === 'completed' && <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />}
+   208→   507→      {action.status === 'failed' && <AlertCircle className="h-3.5 w-3.5 text-red-400" />}
+   209→   508→      {action.status === 'pending' && <div className="h-3.5 w-3.5 rounded-full border-2 border-muted-foreground/30" />}
+   210→   509→      <span className={`font-medium ${
+   211→   510→        action.status === 'running' ? 'text-cyan-400' :
+   212→   511→        action.status === 'completed' ? 'text-emerald-400' :
+   213→   512→        'text-muted-foreground'
+   214→   513→      }`}>
+   215→   514→        {action.label}
+   216→   515→      </span>
+   217→   516→      <span className="text-muted-foreground/60 text-[10px] flex-1 truncate">{action.message}</span>
+   218→   517→    </div>
+   219→   518→  );
+   220→   519→}
+   221→   520→
+   222→   521→// ============================================================
+   223→   522→// Data Field, Section Card, Tag List (reused from original)
+   224→   523→// ============================================================
+   225→   524→
+   226→   525→function DataField({ icon: Icon, label, value, href }: { icon: React.ElementType; label: string; value: string | null | undefined; href?: string | null }) {
+   227→   526→  if (!value) return null;
+   228→   527→  return (
+   229→   528→    <div className="flex items-start gap-2 py-1.5">
+   230→   529→      <Icon className="h-3.5 w-3.5 text-muted-foreground/60 mt-0.5 shrink-0" />
+   231→   530→      <div className="min-w-0">
+   232→   531→        <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">{label}</span>
+   233→   532→        {href ? (
+   234→   533→          <a href={href} target="_blank" rel="noopener noreferrer" className="block text-xs text-cyan-400 hover:text-cyan-300 truncate">
+   235→   534→            {value} <ExternalLink className="h-2.5 w-2.5 inline" />
+   236→   535→          </a>
+   237→   536→        ) : (
+   238→   537→          <p className="text-xs text-foreground/90 break-words">{value}</p>
+   239→   538→        )}
+   240→   539→      </div>
+   241→   540→    </div>
+   242→   541→  );
+   243→   542→}
+   244→   543→
+   245→   544→function SectionCard({ title, icon: Icon, children, defaultOpen = true, isLoading = false }: { title: string; icon: React.ElementType; children: React.ReactNode; defaultOpen?: boolean; isLoading?: boolean }) {
+   246→   545→  const [open, setOpen] = useState(defaultOpen);
+   247→   546→  const hasContent = React.Children.toArray(children).some(child => child !== null && child !== undefined);
+   248→   547→
+   249→   548→  if (!hasContent && !isLoading) return null; // Auto-hide empty sections
+   250→   549→
+   251→   550→  return (
+   252→   551→    <div className="rounded-lg border border-border/30 overflow-hidden">
+   253→   552→      <button onClick={() => setOpen(!open)} className="w-full flex items-center justify-between px-3 py-2 bg-secondary/20 hover:bg-secondary/30 transition-colors">
+   254→   553→        <div className="flex items-center gap-2">
+   255→   554→          <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+   256→   555→          <span className="text-xs font-medium text-foreground/80">{title}</span>
+   257→   556→        </div>
+   258→   557→        {open ? <ChevronUp className="h-3.5 w-3.5 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 text-muted-foreground" />}
+   259→   558→      </button>
+   260→   559→      {open && (
+   261→   560→        <div className="px-3 py-2 space-y-0.5">
+   262→   561→          {hasContent ? children : (
+   263→   562→            <div className="flex items-center gap-2 py-1">
+   264→   563→              <div className="h-2.5 w-2.5 rounded-full bg-emerald-400/30 animate-pulse" />
+   265→   564→              <div className="h-2.5 w-20 rounded bg-secondary/30 animate-pulse" />
+   266→   565→            </div>
+   267→   566→          )}
+   268→   567→        </div>
+   269→   568→      )}
+   270→   569→    </div>
+   271→   570→  );
+   272→   571→}
+   273→   572→
+   274→   573→function TagList({ items, color = 'cyan' }: { items: string[]; color?: string }) {
+   275→   574→  if (!items || items.length === 0) return null;
+   276→   575→  const colorMap: Record<string, string> = {
+   277→   576→    cyan: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
+   278→   577→    emerald: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
+   279→   578→    amber: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+   280→   579→    violet: 'bg-violet-500/10 text-violet-400 border-violet-500/20',
+   281→   580→  };
+   282→   581→  return (
+   283→   582→    <div className="flex flex-wrap gap-1">
+   284→   583→      {items.map((item, i) => (
+   285→   584→        <Badge key={i} variant="outline" className={`text-[9px] ${colorMap[color] || colorMap.cyan}`}>
+   286→   585→          {item}
+   287→   586→        </Badge>
+   288→   587→      ))}
+   289→   588→    </div>
+   290→   589→  );
+   291→   590→}
+   292→   591→
+   293→   592→function SuggestedActionButtons({ actions, onAction }: { actions: SuggestedAction[]; onAction: (prompt: string) => void }) {
+   294→   593→  if (!actions || actions.length === 0) return null;
+   295→   594→  return (
+   296→   595→    <div className="flex flex-wrap gap-2 mt-2">
+   297→   596→      {actions.map((action, i) => {
+   298→   597→        const Icon = ICON_MAP[action.icon] || Sparkles;
+   299→   598→        return (
+   300→   599→          <Button key={i} variant="outline" size="sm"
+   301→   600→            className="text-[10px] h-7 gap-1.5 border-border/40 hover:border-emerald-500/30 hover:bg-emerald-500/5 hover:text-emerald-400 transition-colors"
+   302→   601→            onClick={() => onAction(action.prompt)}
+   303→   602→          >
+   304→   603→            <Icon className="h-3 w-3" />
+   305→   604→            {action.label}
+   306→   605→          </Button>
+   307→   606→        );
+   308→   607→      })}
+   309→   608→    </div>
+   310→   609→  );
+   311→   610→}
+   312→   611→
+   313→   612→// ============================================================
+   314→   613→// Response Template Card — Incremental KPI Fields
+   315→   614→// ============================================================
+   316→   615→
+   317→   616→function ResponseTemplateCard({ template }: { template: ResponseTemplate }) {
+   318→   617→  const fillPct = getTemplateFillPercentage(template);
+   319→   618→
+   320→   619→  return (
+   321→   620→    <Card className="border-cyan-500/20 ml-9">
+   322→   621→      <CardContent className="p-4 space-y-3">
+   323→   622→        <div className="flex items-center justify-between">
+   324→   623→          <div className="flex items-center gap-2">
+   325→   624→            <Sparkles className="h-4 w-4 text-cyan-400" />
+   326→   625→            <h4 className="text-sm font-bold text-foreground/90">{template.title}</h4>
+   327→   626→          </div>
+   328→   627→          <div className="flex items-center gap-2">
+   329→   628→            <Progress value={fillPct} className="h-1.5 w-16 bg-secondary/40 [&>div]:bg-cyan-400" />
+   330→   629→            <span className="text-xs text-cyan-400">{fillPct}%</span>
+   331→   630→          </div>
+   332→   631→        </div>
+   333→   632→        <p className="text-[10px] text-muted-foreground/60">{template.description}</p>
+   334→   633→        {template.sections.map(section => (
+   335→   634→          <div key={section.key} className="space-y-1.5">
+   336→   635→            <div className="flex items-center gap-1.5">
+   337→   636→              <span className="text-[10px] font-semibold text-foreground/60 uppercase tracking-wider">{section.title}</span>
+   338→   637→            </div>
+   339→   638→            <div className="grid grid-cols-2 gap-1">
+   340→   639→              {section.fields.map(field => (
+   341→   640→                <div key={field.key} className={`rounded-md border px-2 py-1 ${field.filled ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-border/20 bg-secondary/5'}`}>
+   342→   641→                  <span className="text-[9px] text-muted-foreground/60 uppercase tracking-wider">{field.label}</span>
+   343→   642→                  {field.filled ? (
+   344→   643→                    <p className="text-[10px] text-foreground/90 truncate">
+   345→   644→                      {Array.isArray(field.value) ? field.value.join(', ') : String(field.value || '')}
+   346→   645→                    </p>
+   347→   646→                  ) : (
+   348→   647→                    <p className="text-[10px] text-muted-foreground/30 italic">{field.placeholder || '—'}</p>
+   349→   648→                  )}
+   350→   649→                </div>
+   351→   650→              ))}
+   352→   651→            </div>
+   353→   652→          </div>
+   354→   653→        ))}
+   355→   654→      </CardContent>
+   356→   655→    </Card>
+   357→   656→  );
+   358→   657→}
+   359→   658→
+   360→   659→// ============================================================
+   361→   660→// Prospect Data Card
+   362→   661→// ============================================================
+   363→   662→
+   364→   663→function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, onViewLeads, isLive }: {
+   365→   664→  prospect: ProspectResult; messageId: string; converted?: boolean; leadId?: string;
+   366→   665→  onConvert: (msgId: string, p: ProspectResult) => void; onViewLeads: () => void; isLive?: boolean;
+   367→   666→}) {
+   368→   667→  const completenessColor = (pct: number) => pct >= 70 ? 'text-emerald-400' : pct >= 40 ? 'text-amber-400' : 'text-red-400';
+   369→   668→  const completenessBarColor = (pct: number) => pct >= 70 ? '[&>div]:bg-emerald-400' : pct >= 40 ? '[&>div]:bg-amber-400' : '[&>div]:bg-red-400';
+   370→   669→
+   371→   670→  // ─── Person vs Company rendering ─────────────────────────────
+   372→   671→  // For person queries (queryType === 'person'), render person-focused
+   373→   672→  // sections (Identity, Contact, Professional, etc.) instead of the
+   374→   673→  // company-focused sections (Firmographics, Key People).
+   375→   674→  // This avoids the "Discovering..." placeholder bug where sections
+   376→   675→  // that don't apply (CEO, Firmographics for a person) would show
+   377→   676→  // pulsing placeholders indefinitely.
+   378→   677→  const isPerson = prospect.queryType === 'person' || (!prospect.companyName && !!prospect.personName);
+   379→   678→
+   380→   679→  return (
+   381→   680→    <Card className="border-border/30 ml-9">
+   382→   681→      <CardContent className="p-4 space-y-3">
+   383→   682→        {/* ─── Header (Person or Company) ─── */}
+   384→   683→        {isPerson && prospect.personName ? (
+   385→   684→          <div className="flex items-start justify-between">
+   386→   685→            <div className="min-w-0 flex-1">
+   387→   686→              <div className="flex items-center gap-2 flex-wrap">
+   388→   687→                <h4 className="text-base font-bold text-foreground/90">{prospect.personName}</h4>
+   389→   688→                <Badge className="bg-cyan-500/10 text-cyan-400 border-cyan-500/20 text-[9px]">PERSON</Badge>
+   390→   689→                {isLive && (
+   391→   690→                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+   392→   691→                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+   393→   692→                  </Badge>
+   394→   693→                )}
+   395→   694→              </div>
+   396→   695→              {prospect.personTitle && <p className="text-xs text-cyan-400 mt-1">{prospect.personTitle}</p>}
+   397→   696→              {prospect.personCompany && <p className="text-xs text-muted-foreground mt-0.5">at <span className="text-foreground/80">{prospect.personCompany}</span></p>}
+   398→   697→              {prospect.personBio && <p className="text-xs text-muted-foreground mt-2 line-clamp-3">{prospect.personBio}</p>}
+   399→   698→            </div>
+   400→   699→            <div className="flex items-center gap-2 shrink-0 ml-3">
+   401→   700→              <Progress value={prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(prospect.dataCompleteness)}`} />
+   402→   701→              <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
+   403→   702→            </div>
+   404→   703→          </div>
+   405→   704→        ) : prospect.companyName ? (
+   406→   705→          <div className="flex items-start justify-between">
+   407→   706→            <div className="min-w-0 flex-1">
+   408→   707→              <div className="flex items-center gap-2 flex-wrap">
+   409→   708→                <h4 className="text-base font-bold text-foreground/90">{prospect.companyName}</h4>
+   410→   709→                <Badge className="bg-violet-500/10 text-violet-400 border-violet-500/20 text-[9px]">COMPANY</Badge>
+   411→   710→                {isLive && (
+   412→   711→                  <Badge className="bg-emerald-500/10 text-emerald-400 border-emerald-500/20 text-[9px] animate-pulse">
+   413→   712→                    <span className="h-1.5 w-1.5 rounded-full bg-emerald-400 mr-1" />Live
+   414→   713→                  </Badge>
+   415→   714→                )}
+   416→   715→              </div>
+   417→   716→              {prospect.description && <p className="text-xs text-muted-foreground mt-1 line-clamp-3">{prospect.description}</p>}
+   418→   717→            </div>
+   419→   718→            <div className="flex items-center gap-2 shrink-0 ml-3">
+   420→   719→              <Progress value={prospect.dataCompleteness} className={`h-1.5 w-16 bg-secondary/40 ${completenessBarColor(prospect.dataCompleteness)}`} />
+   421→   720→              <span className={`text-xs font-bold ${completenessColor(prospect.dataCompleteness)}`}>{prospect.dataCompleteness}%</span>
+   422→   721→            </div>
+   423→   722→          </div>
+   424→   723→        ) : null}
+   425→   724→
+   426→   725→        {/* ─── Person Sections ─── */}
+   427→   726→        {isPerson ? (
+   428→   727→          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+   429→   728→            <SectionCard title="Person Contact" icon={Mail} isLoading={isLive}>
+   430→   729→              <DataField icon={Mail} label="Email" value={prospect.personEmail || prospect.generalEmail} href={(prospect.personEmail || prospect.generalEmail) ? `mailto:${prospect.personEmail || prospect.generalEmail}` : null} />
+   431→   730→              <DataField icon={Phone} label="Phone" value={prospect.personPhone || prospect.phoneMain} href={(prospect.personPhone || prospect.phoneMain) ? `tel:${prospect.personPhone || prospect.phoneMain}` : null} />
+   432→   731→              <DataField icon={Linkedin} label="LinkedIn" value={prospect.personLinkedin} href={prospect.personLinkedin} />
+   433→   732→              <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
+   434→   733→            </SectionCard>
+   435→   734→            <SectionCard title="Location" icon={MapPin} isLoading={isLive}>
+   436→   735→              <DataField icon={MapPin} label="City" value={prospect.city} />
+   437→   736→              <DataField icon={MapPin} label="State/Province" value={prospect.stateProvince} />
+   438→   737→              <DataField icon={MapPin} label="Country" value={prospect.country} />
+   439→   738→            </SectionCard>
+   440→   739→            <SectionCard title="Professional" icon={Briefcase} isLoading={isLive}>
+   441→   740→              <DataField icon={Briefcase} label="Title" value={prospect.personTitle} />
+   442→   741→              <DataField icon={Building2} label="Company" value={prospect.personCompany || prospect.companyName} />
+   443→   742→              <DataField icon={BarChart3} label="Industry" value={prospect.industry} />
+   444→   743→            </SectionCard>
+   445→   744→            <SectionCard title="Company Context" icon={Building2} isLoading={isLive}>
+   446→   745→              <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
+   447→   746→              <DataField icon={Linkedin} label="Company LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
+   448→   747→              <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
+   449→   748→              <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
+   450→   749→            </SectionCard>
+   451→   750→            {((prospect.techStack?.length || 0) > 0 || (prospect.productsServices?.length || 0) > 0) && (
+   452→   751→              <SectionCard title="Products & Tech" icon={FileText} defaultOpen={false} isLoading={isLive}>
+   453→   752→                <TagList items={prospect.productsServices || []} color="emerald" />
+   454→   753→                {prospect.techStack?.length > 0 && (
+   455→   754→                  <div className="mt-2">
+   456→   755→                    <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
+   457→   756→                    <TagList items={prospect.techStack} color="violet" />
+   458→   757→                  </div>
+   459→   758→                )}
+   460→   759→              </SectionCard>
+   461→   760→            )}
+   462→   761→          </div>
+   463→   762→        ) : (
+   464→   763→          /* ─── Company Sections (original) ─── */
+   465→   764→          <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+   466→   765→            <SectionCard title="Contact" icon={Mail} isLoading={isLive}>
+   467→   766→              <DataField icon={Mail} label="Email" value={prospect.generalEmail} href={prospect.generalEmail ? `mailto:${prospect.generalEmail}` : null} />
+   468→   767→              <DataField icon={Phone} label="Phone" value={prospect.phoneMain} href={prospect.phoneMain ? `tel:${prospect.phoneMain}` : null} />
+   469→   768→              <DataField icon={Globe} label="Website" value={prospect.website} href={prospect.website} />
+   470→   769→            </SectionCard>
+   471→   770→            <SectionCard title="Location" icon={MapPin} isLoading={isLive}>
+   472→   771→              <DataField icon={MapPin} label="City" value={prospect.city} />
+   473→   772→              <DataField icon={MapPin} label="Country" value={prospect.country} />
+   474→   773→            </SectionCard>
+   475→   774→            <SectionCard title="Firmographics" icon={BarChart3} isLoading={isLive}>
+   476→   775→              <DataField icon={Users} label="Employees" value={prospect.employeeCount} />
+   477→   776→              <DataField icon={DollarSign} label="Revenue" value={prospect.revenueEstimate} />
+   478→   777→              <DataField icon={Building2} label="Industry" value={prospect.industry} />
+   479→   778→            </SectionCard>
+   480→   779→            <SectionCard title="Key People" icon={Users} isLoading={isLive}>
+   481→   780→              <DataField icon={Star} label="CEO" value={prospect.ceoName} />
+   482→   781→              <DataField icon={Mail} label="CEO Email" value={prospect.ceoEmail} href={prospect.ceoEmail ? `mailto:${prospect.ceoEmail}` : null} />
+   483→   782→            </SectionCard>
+   484→   783→            <SectionCard title="Digital" icon={Globe} isLoading={isLive}>
+   485→   784→              <DataField icon={Linkedin} label="LinkedIn" value={prospect.linkedinUrl} href={prospect.linkedinUrl} />
+   486→   785→              <DataField icon={Twitter} label="Twitter/X" value={prospect.twitterHandle} />
+   487→   786→            </SectionCard>
+   488→   787→            <SectionCard title="Products & Tech" icon={FileText} defaultOpen={(prospect.productsServices?.length || 0) > 0} isLoading={isLive}>
+   489→   788→              <TagList items={prospect.productsServices || []} color="emerald" />
+   490→   789→              {prospect.techStack?.length > 0 && (
+   491→   790→                <div className="mt-2">
+   492→   791→                  <span className="text-[10px] text-muted-foreground/60 uppercase tracking-wider">Tech Stack</span>
+   493→   792→                  <TagList items={prospect.techStack} color="violet" />
+   494→   793→                </div>
+   495→   794→              )}
+   496→   795→              <DataField icon={DollarSign} label="Funding" value={prospect.fundingInfo} />
+   497→   796→            </SectionCard>
+   498→   797→          </div>
+   499→   798→        )}
+   500→   799→        {prospect.recentNews?.length > 0 && (
+   501→
+   502→[showing lines 300-799 of 1997; use offset=800 with limit to continue reading]
