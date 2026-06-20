@@ -1067,11 +1067,19 @@ export function ProspectDiscoveryView() {
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Check AI health on mount
+  // The health endpoint probes Z.AI with a tiny LLM call, which can take 2-5s.
+  // We use a short fetch timeout (8s) so the UI never gets stuck in "Checking..."
+  // state for too long. Failures default to 'unknown' rather than 'down' so the
+  // user can still try sending a message — the pipeline itself has its own
+  // retry/backoff logic and may succeed even when the health probe fails.
   useEffect(() => {
     const checkHealth = async () => {
       setAiHealth('checking');
       try {
-        const res = await fetch('/api/prospect-discovery/health');
+        const ctrl = new AbortController();
+        const tid = setTimeout(() => ctrl.abort(), 8_000);
+        const res = await fetch('/api/prospect-discovery/health', { signal: ctrl.signal });
+        clearTimeout(tid);
         if (res.ok) { const data = await res.json(); setAiHealth(data.overall || 'unknown'); }
         else setAiHealth('unknown');
       } catch { setAiHealth('unknown'); }
@@ -1146,16 +1154,60 @@ export function ProspectDiscoveryView() {
     };
 
     try {
-      // Try SSE streaming with the new orchestrator
-      const response = await fetch('/api/prospect-discovery/stream', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, context, resumeFrom: checkpoint }),
-      });
+      // Try SSE streaming with the new orchestrator.
+      // ───────────────────────────────────────────────────────────
+      // IMPORTANT: Use an AbortController with a 280s timeout — longer
+      // than the server-side maxDuration (300s) but short enough that
+      // the user gets feedback before the browser kills the request.
+      // Without an explicit signal, browsers will silently abort SSE
+      // fetches after ~30-60s on idle proxies, which manifests as
+      // "Stream failed: network error" / "Failed to fetch" in the UI.
+      // ───────────────────────────────────────────────────────────
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 280_000);
+
+      let response: Response;
+      try {
+        response = await fetch('/api/prospect-discovery/stream', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Accept': 'text/event-stream',
+          },
+          body: JSON.stringify({ message: text, context, resumeFrom: checkpoint }),
+          signal: controller.signal,
+          // keepalive:true is for one-shot requests, not streams — leave default.
+        });
+      } catch (fetchErr) {
+        // Browser-side network failure (DNS, connection refused, CORS, abort).
+        // Translate to a human-readable message instead of "Failed to fetch".
+        clearTimeout(timeoutId);
+        const errMsg = fetchErr instanceof Error ? fetchErr.message : 'Unknown';
+        const isAbort = errMsg === 'The operation was aborted.' || fetchErr instanceof DOMException;
+        throw new Error(
+          isAbort
+            ? 'Request timed out after 280s — server took too long to respond.'
+            : `Could not reach server (${errMsg.slice(0, 80)}) — please check your connection and try again.`
+        );
+      }
+
+      // Once we have the response, the request didn't abort — clear the timeout
+      // and let the SSE reader take over (its keepalive keeps the connection open).
+      clearTimeout(timeoutId);
 
       const contentType = response.headers.get('content-type') || '';
       if (!response.ok || !response.body || (!contentType.includes('text/event-stream') && !contentType.includes('text/plain'))) {
-        throw new Error(`Stream failed: ${response.status}`);
+        // Server returned an error response (e.g., 500, 502) instead of an SSE stream.
+        // Try to extract the JSON error message if present.
+        let errBody = '';
+        try {
+          const txt = await response.text();
+          try { errBody = JSON.parse(txt).error || txt; }
+          catch { errBody = txt.slice(0, 200); }
+        } catch { /* ignore */ }
+        throw new Error(
+          `Server returned HTTP ${response.status}${errBody ? `: ${errBody.slice(0, 120)}` : ''}`
+        );
       }
 
       const reader = response.body.getReader();
@@ -1183,6 +1235,12 @@ export function ProspectDiscoveryView() {
 
             // Handle all orchestrator events
             switch (currentEventType) {
+              case 'stream_open':
+                // First byte from server — confirms stream is alive.
+                // No state change needed, but consuming this event prevents
+                // it from falling through to the default case.
+                break;
+
               case 'thinking_start':
                 setPipelineState(prev => ({ ...prev, phase: 'thinking', thinkStartTime: data.timestamp }));
                 break;
@@ -1416,9 +1474,20 @@ export function ProspectDiscoveryView() {
         }
       }
     } catch (streamError) {
-      const errorMsg = streamError instanceof Error ? streamError.message : 'Unknown error';
-      console.warn('[ProspectDiscovery] SSE failed, falling back:', errorMsg);
+      const rawMsg = streamError instanceof Error ? streamError.message : 'Unknown error';
+      console.warn('[ProspectDiscovery] SSE failed, falling back:', rawMsg);
       setLastFailedQuery(text);
+
+      // Translate common browser-level error messages to user-friendly text.
+      // The opaque "Failed to fetch" / "network error" strings are unhelpful
+      // and make the user think the whole platform is broken.
+      let errorMsg = rawMsg;
+      const lowerMsg = rawMsg.toLowerCase();
+      if (lowerMsg.includes('failed to fetch') || lowerMsg.includes('network error')) {
+        errorMsg = 'Network connection to the AI server failed. This is usually transient — please retry.';
+      } else if (lowerMsg.includes('aborted')) {
+        errorMsg = 'Request timed out (280s). The pipeline may still be running on the server — please try again.';
+      }
 
       // Preserve partial data on the agent message instead of removing it
       setMessages(prev => prev.map(m => {
@@ -1512,8 +1581,11 @@ export function ProspectDiscoveryView() {
             };
           }));
         }
-      } catch {
-        // Both stream and chat failed — update agent message with error info, keep partial data
+      } catch (chatFallbackErr) {
+        // Both stream and chat failed — update agent message with error info, keep partial data.
+        // The chatFallbackErr contains the upstream error message — surface it to the user
+        // instead of the opaque "Both stream and chat API failed" string.
+        const upstreamErr = chatFallbackErr instanceof Error ? chatFallbackErr.message : 'Unknown error';
         setMessages(prev => prev.map(m => {
           if (m.id !== agentMsgId) return m;
           const completedAgents = Object.entries(pipelineState.agents)
@@ -1537,9 +1609,9 @@ export function ProspectDiscoveryView() {
           setActiveCheckpoint(checkpoint);
           return {
             ...m,
-            content: "I'm having trouble connecting to the AI service right now.",
+            content: `I'm having trouble reaching the AI service right now. The error was: ${upstreamErr.slice(0, 200)}.`,
             errorState: {
-              message: 'Both stream and chat API failed',
+              message: `Both stream and chat API failed — ${upstreamErr.slice(0, 120)}`,
               timestamp: Date.now(),
               lastCompletedAgent,
               completedAgents,
@@ -1547,7 +1619,11 @@ export function ProspectDiscoveryView() {
             },
             retryQuery: text,
             persona: m.persona || 'navigator',
-            thinking: m.thinking || { persona: 'navigator', intent: 'converse', reasoning: 'Both stream and chat API failed', plan: ['Error recovery'], confidence: 0.3 },
+            thinking: m.thinking || {
+              persona: 'navigator', intent: 'converse',
+              reasoning: `Both stream and chat API failed: ${upstreamErr.slice(0, 100)}`,
+              plan: ['Error recovery'], confidence: 0.3,
+            },
           };
         }));
       }

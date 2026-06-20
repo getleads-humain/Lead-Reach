@@ -61,14 +61,26 @@ export async function POST(request: NextRequest) {
         }
       };
 
-      // Keepalive to prevent proxy timeouts
+      // ──────────────────────────────────────────────────────────
+      // INITIAL BYTE — send immediately so the browser's fetch()
+      // promise resolves with response.ok=true and a valid body
+      // BEFORE we start any slow async work. Without this, browser
+      // fetch() can time out / abort if the server takes >30s to
+      // send the first byte (visible as "Stream failed: network error"
+      // in the UI).
+      // ──────────────────────────────────────────────────────────
+      send('stream_open', { timestamp: Date.now() });
+
+      // Keepalive to prevent proxy timeouts — every 5s (not 10s)
+      // because some browsers / proxies will close idle SSE streams
+      // after ~10s of silence.
       keepaliveInterval = setInterval(() => {
         try {
           controller.enqueue(encoder.encode(': keepalive\n\n'));
         } catch {
           if (keepaliveInterval) clearInterval(keepaliveInterval);
         }
-      }, 10_000);
+      }, 5_000);
 
       // Thinking timer — emit tick events every second while in thinking phase
       const startThinkingTimer = () => {
