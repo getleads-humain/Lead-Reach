@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { callLLM, callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 import { exaSearch, webRead } from '@/lib/agent-reach-bridge';
+import { filterJunkEmails } from '@/lib/email-filter';
 
 export const maxDuration = 120;
 
@@ -114,11 +115,12 @@ async function discoverLeads(query: string, industry?: string, location?: string
 
         // Extract emails from content
         const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
-        const foundEmails = description.match(emailRegex);
-        if (foundEmails) {
-          contactEmails = [...new Set(foundEmails)].filter(e =>
-            !e.includes('example.com') && !e.includes('email.com') && !e.includes('domain.com')
-          );
+        const foundEmails = description.match(emailRegex) as string[] | null;
+        if (foundEmails && foundEmails.length > 0) {
+          // Proper domain-suffix filtering — uses `extractEmailDomain()` +
+          // `isJunkEmail()` instead of substring `.includes()` checks,
+          // which CodeQL flags as incomplete URL substring sanitization.
+          contactEmails = filterJunkEmails([...new Set(foundEmails)]);
         }
 
         // Simple tech detection from content

@@ -15,7 +15,8 @@
  */
 import express from 'express';
 import cors from 'cors';
-import { assertSafeBrowserUrl, UnsafeUrlError } from './url-guard';
+import { assertSafeBrowserUrl, sanitizeBrowserUrl, UnsafeUrlError } from './url-guard';
+import { filterJunkEmails } from './email-filter';
 
 const app = express();
 const PORT = 5340;
@@ -396,43 +397,13 @@ app.post('/place', async (req: any, res: any) => {
 
     let placeUrl: string;
     if (urlOrPlaceId.startsWith('http')) {
-      // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
-      // inline (CodeQL sanitizer barrier). Use the re-serialized `safePlaceUrl`
-      // for `page.goto()` so the taint flow on the user-supplied input is cut.
-      let safePlaceUrl: string;
+      // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
+      // hostname, and blocks private/internal IP literals. It returns a
+      // fresh re-serialized URL string that CodeQL recognizes as untainted,
+      // cutting the dataflow from the user-supplied `urlOrPlaceId` to
+      // `page.goto()` below.
       try {
-        const parsed = new URL(urlOrPlaceId);
-        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-          return res.status(400).json({
-            error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`,
-            data_source: 'google_maps',
-          });
-        }
-        const host = parsed.hostname.toLowerCase();
-        if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-            host.endsWith('.local') || host.endsWith('.internal') ||
-            host.endsWith('.localhost') || host.endsWith('.intranet') ||
-            /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-            /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-            /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-            host.startsWith('fe8') || host.startsWith('fe9') ||
-            host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-          return res.status(400).json({
-            error: `Refused URL for SSRF safety: internal/private host ${host}`,
-            data_source: 'google_maps',
-          });
-        }
-        safePlaceUrl = parsed.toString();
-      } catch {
-        return res.status(400).json({
-          error: 'Refused URL for SSRF safety: malformed URL',
-          data_source: 'google_maps',
-        });
-      }
-
-      // Defense-in-depth: full DNS-rebinding check via url-guard.
-      try {
-        assertSafeBrowserUrl(safePlaceUrl);
+        placeUrl = sanitizeBrowserUrl(urlOrPlaceId);
       } catch (err) {
         const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
         return res.status(400).json({
@@ -440,7 +411,6 @@ app.post('/place', async (req: any, res: any) => {
           data_source: 'google_maps',
         });
       }
-      placeUrl = safePlaceUrl;
     } else {
       // It's a place ID, search for it — constructed URL is safe (Google domain).
       placeUrl = `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(urlOrPlaceId)}`;
@@ -568,20 +538,20 @@ app.post('/place', async (req: any, res: any) => {
           const bodyText = document.body?.innerText || '';
           const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
           const matches = bodyText.match(emailRegex) || [];
-          // Filter out common non-business emails
-          const filtered = matches.filter(
-            (e: string) =>
-              !e.includes('example.com') &&
-              !e.includes('sentry.io') &&
-              !e.includes('wixpress.com') &&
-              !e.includes('googleapis.com') &&
-              !e.endsWith('.png') &&
-              !e.endsWith('.jpg')
-          );
-          return filtered[0] || null;
+          // Return raw matches — proper domain-suffix filtering is done
+          // server-side via `filterJunkEmails()` (replaces substring
+          // `.includes()` checks that CodeQL flags as incomplete URL
+          // substring sanitization).
+          return matches[0] || null;
         });
 
-        place.email = extractedEmail;
+        // Apply proper domain-suffix filtering server-side.
+        if (extractedEmail) {
+          const filtered = filterJunkEmails([extractedEmail]);
+          place.email = filtered[0] || null;
+        } else {
+          place.email = null;
+        }
         await emailPage.close().catch(() => {});
       } catch {
         // Email extraction failed, continue without it
@@ -712,46 +682,16 @@ app.post('/extract-email', async (req: any, res: any) => {
     return res.status(400).json({ error: 'url is required' });
   }
 
-  // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
-  // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
-  // for `page.goto()` so the taint flow on the user-supplied input is cut.
+  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
+  // hostname, and blocks private/internal IP literals. It returns a fresh
+  // re-serialized URL string that CodeQL recognizes as untainted, cutting
+  // the dataflow from the user-supplied `url` to `page.goto()` below.
   // Without this, an attacker could ask our service to navigate to
   // http://169.254.169.254/... or http://localhost:3000/... and exfiltrate
   // the response body via the email extraction output.
   let safeUrl: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return res.status(400).json({
-        error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`,
-        data_source: 'puppeteer',
-      });
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-        host.endsWith('.local') || host.endsWith('.internal') ||
-        host.endsWith('.localhost') || host.endsWith('.intranet') ||
-        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-        host.startsWith('fe8') || host.startsWith('fe9') ||
-        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-      return res.status(400).json({
-        error: `Refused URL for SSRF safety: internal/private host ${host}`,
-        data_source: 'puppeteer',
-      });
-    }
-    safeUrl = parsed.toString();
-  } catch {
-    return res.status(400).json({
-      error: 'Refused URL for SSRF safety: malformed URL',
-      data_source: 'puppeteer',
-    });
-  }
-
-  // Defense-in-depth: full DNS-rebinding check via url-guard.
-  try {
-    assertSafeBrowserUrl(safeUrl);
+    safeUrl = sanitizeBrowserUrl(url);
   } catch (err) {
     const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
     return res.status(400).json({
@@ -778,23 +718,20 @@ app.post('/extract-email', async (req: any, res: any) => {
       const textEmails = bodyText.match(emailRegex) || [];
       const htmlEmails = html.match(emailRegex) || [];
 
+      // Return de-duplicated raw matches — proper domain-suffix filtering
+      // is done server-side via `filterJunkEmails()` (replaces substring
+      // `.includes()` checks that CodeQL flags as incomplete URL
+      // substring sanitization).
       const allEmails = [...new Set([...textEmails, ...htmlEmails])];
-      const filtered = allEmails.filter(
-        (e: string) =>
-          !e.includes('example.com') &&
-          !e.includes('sentry.io') &&
-          !e.includes('wixpress.com') &&
-          !e.includes('googleapis.com') &&
-          !e.endsWith('.png') &&
-          !e.endsWith('.jpg') &&
-          !e.endsWith('.svg')
-      );
-      return filtered;
+      return allEmails;
     });
+
+    // Apply proper domain-suffix filtering server-side.
+    const filteredEmails = filterJunkEmails(emails);
 
     res.json({
       success: true,
-      emails,
+      emails: filteredEmails,
       url,
     });
   } catch (err: any) {

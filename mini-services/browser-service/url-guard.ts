@@ -296,3 +296,40 @@ export function assertSafeUrlSync(url: string): void {
 export function assertSafeBrowserUrl(url: string): void {
   assertSafeUrlSync(url);
 }
+
+/**
+ * Sanitize a URL for safe use in `fetch()` / `http.request()` calls.
+ *
+ * This is the recommended sanitizer barrier for SSRF defense. It:
+ *   1. Performs a full async check (syntactic + DNS resolution).
+ *   2. Re-serializes the URL via `new URL(url).toString()` so the
+ *      returned string is a fresh value (not the original tainted input).
+ *
+ * CodeQL's dataflow analysis recognizes the return value of this function
+ * as a separate value from the input, cutting the taint flow.
+ *
+ * @throws UnsafeUrlError if the URL is unsafe.
+ * @returns A re-serialized, validated URL string safe for outbound requests.
+ */
+export async function sanitizeUrl(url: string): Promise<string> {
+  await assertSafeUrl(url);
+  // Re-serialize through URL parser to normalize and cut taint flow.
+  return new URL(url).toString();
+}
+
+/**
+ * Synchronous URL sanitizer for browser-based code paths (Puppeteer /
+ * Playwright `page.goto()`). Performs syntactic + hostname validation
+ * but skips DNS resolution (use `sanitizeUrl()` for full checks).
+ *
+ * Returns a re-serialized URL string that CodeQL recognizes as a
+ * sanitizer barrier.
+ *
+ * @throws UnsafeUrlError if the URL is unsafe.
+ * @returns A re-serialized, validated URL string safe for `page.goto()`.
+ */
+export function sanitizeBrowserUrl(url: string): string {
+  assertSafeUrlSync(url);
+  // Re-serialize through URL parser to normalize and cut taint flow.
+  return new URL(url).toString();
+}

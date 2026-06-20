@@ -15,7 +15,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError } from '@/lib/url-guard';
+import { assertSafeUrl, checkUrlSafetySync, sanitizeUrl, UnsafeUrlError } from '@/lib/url-guard';
 
 const execFileAsync = promisify(execFile);
 
@@ -493,39 +493,19 @@ class ProxyRotator {
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
-    // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
-    // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
-    // for the curl invocation so the taint flow on the original `url` is cut.
+    // SSRF sanitizer barrier — `sanitizeUrl()` validates scheme, hostname,
+    // and DNS-resolves to block private/internal IPs. It returns a fresh
+    // re-serialized URL string that CodeQL recognizes as untainted, cutting
+    // the dataflow from the user-controlled `url` parameter to the curl
+    // invocation below.
     let safeUrl: string;
     try {
-      const parsed = new URL(url);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        throw new Error(`Disallowed URL scheme: ${parsed.protocol}`);
-      }
-      const host = parsed.hostname.toLowerCase();
-      if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-          host.endsWith('.local') || host.endsWith('.internal') ||
-          host.endsWith('.localhost') || host.endsWith('.intranet') ||
-          /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-          /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-          /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-          host.startsWith('fe8') || host.startsWith('fe9') ||
-          host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-        throw new Error(`Internal/private host blocked: ${host}`);
-      }
-      safeUrl = parsed.toString();
-    } catch (err) {
-      throw new Error(`Blocked fetch URL (SSRF): ${err instanceof Error ? err.message : err}`);
-    }
-
-    // Defense-in-depth: full DNS-rebinding check via url-guard.
-    try {
-      await assertSafeUrl(safeUrl);
+      safeUrl = await sanitizeUrl(url);
     } catch (err) {
       if (err instanceof UnsafeUrlError) {
-        throw new Error(`Blocked fetch URL (${err.reason}): ${safeUrl.slice(0, 100)}`);
+        throw new Error(`Blocked fetch URL (${err.reason}): ${url.slice(0, 100)}`);
       }
-      throw err;
+      throw new Error(`Blocked fetch URL (SSRF): ${err instanceof Error ? err.message : err}`);
     }
 
     // Validate proxy host/port to prevent injection via proxy URL

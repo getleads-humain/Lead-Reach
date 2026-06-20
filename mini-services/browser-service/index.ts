@@ -5,7 +5,7 @@
  */
 import express from 'express';
 import cors from 'cors';
-import { assertSafeBrowserUrl, UnsafeUrlError } from './url-guard';
+import { sanitizeBrowserUrl, UnsafeUrlError } from './url-guard';
 
 const app = express();
 const PORT = 5330;
@@ -49,34 +49,13 @@ app.post('/screenshot', async (req: any, res: any) => {
   const { url, fullPage = true, selector } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
 
-  // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
-  // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
-  // for `page.goto()` so the taint flow on the user-supplied input is cut.
+  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
+  //  hostname, and blocks private/internal IP literals. It returns a fresh
+  //  re-serialized URL string that CodeQL recognizes as untainted, cutting
+  //  the dataflow from the user-supplied `url` to `page.goto()` below.
   let safeUrl: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return res.status(400).json({ error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`, data_source: 'puppeteer' });
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-        host.endsWith('.local') || host.endsWith('.internal') ||
-        host.endsWith('.localhost') || host.endsWith('.intranet') ||
-        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-        host.startsWith('fe8') || host.startsWith('fe9') ||
-        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-      return res.status(400).json({ error: `Refused URL for SSRF safety: internal/private host ${host}`, data_source: 'puppeteer' });
-    }
-    safeUrl = parsed.toString();
-  } catch {
-    return res.status(400).json({ error: 'Refused URL for SSRF safety: malformed URL', data_source: 'puppeteer' });
-  }
-
-  // Defense-in-depth: full DNS-rebinding check via url-guard.
-  try {
-    assertSafeBrowserUrl(safeUrl);
+    safeUrl = sanitizeBrowserUrl(url);
   } catch (err) {
     const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
     return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
@@ -112,34 +91,13 @@ app.post('/render', async (req: any, res: any) => {
   const { url, waitSelector, timeout = 10000 } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
 
-  // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
-  // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
-  // for `page.goto()` so the taint flow on the user-supplied input is cut.
+  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
+  //  hostname, and blocks private/internal IP literals. It returns a fresh
+  //  re-serialized URL string that CodeQL recognizes as untainted, cutting
+  //  the dataflow from the user-supplied `url` to `page.goto()` below.
   let safeUrl: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return res.status(400).json({ error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`, data_source: 'puppeteer' });
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-        host.endsWith('.local') || host.endsWith('.internal') ||
-        host.endsWith('.localhost') || host.endsWith('.intranet') ||
-        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-        host.startsWith('fe8') || host.startsWith('fe9') ||
-        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-      return res.status(400).json({ error: `Refused URL for SSRF safety: internal/private host ${host}`, data_source: 'puppeteer' });
-    }
-    safeUrl = parsed.toString();
-  } catch {
-    return res.status(400).json({ error: 'Refused URL for SSRF safety: malformed URL', data_source: 'puppeteer' });
-  }
-
-  // Defense-in-depth: full DNS-rebinding check via url-guard.
-  try {
-    assertSafeBrowserUrl(safeUrl);
+    safeUrl = sanitizeBrowserUrl(url);
   } catch (err) {
     const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
     return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
@@ -260,34 +218,13 @@ app.post('/extract', async (req: any, res: any) => {
   const { url, selectors, waitMs = 2000 } = req.body;
   if (!url || !selectors) return res.status(400).json({ error: 'url and selectors are required' });
 
-  // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
-  // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
-  // for `page.goto()` so the taint flow on the user-supplied input is cut.
+  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
+  //  hostname, and blocks private/internal IP literals. It returns a fresh
+  //  re-serialized URL string that CodeQL recognizes as untainted, cutting
+  //  the dataflow from the user-supplied `url` to `page.goto()` below.
   let safeUrl: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      return res.status(400).json({ error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`, data_source: 'puppeteer' });
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-        host.endsWith('.local') || host.endsWith('.internal') ||
-        host.endsWith('.localhost') || host.endsWith('.intranet') ||
-        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-        host.startsWith('fe8') || host.startsWith('fe9') ||
-        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-      return res.status(400).json({ error: `Refused URL for SSRF safety: internal/private host ${host}`, data_source: 'puppeteer' });
-    }
-    safeUrl = parsed.toString();
-  } catch {
-    return res.status(400).json({ error: 'Refused URL for SSRF safety: malformed URL', data_source: 'puppeteer' });
-  }
-
-  // Defense-in-depth: full DNS-rebinding check via url-guard.
-  try {
-    assertSafeBrowserUrl(safeUrl);
+    safeUrl = sanitizeBrowserUrl(url);
   } catch (err) {
     const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
     return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
@@ -322,44 +259,21 @@ app.post('/crawl', async (req: any, res: any) => {
   const { urls, extractText = true, extractLinks = true } = req.body;
   if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'urls array is required' });
 
-  // SSRF guard — pre-validate every URL with inline `new URL()` parse +
-  // protocol/hostname check (CodeQL sanitizer barrier). The re-serialized
-  // `safeUrl` is what we navigate to, so the taint flow on the user-supplied
-  // URL array is cut. We refuse the entire batch if ANY URL is unsafe
-  // (rather than silently dropping individual entries) so callers know they
-  // need to filter their input.
+  // SSRF sanitizer barrier — pre-sanitize every URL via
+  //  `sanitizeBrowserUrl()` (validates scheme, hostname, and blocks
+  //  private/internal IPs). It returns a fresh re-serialized URL string
+  //  that CodeQL recognizes as untainted, cutting the dataflow from the
+  //  user-supplied URL array to `page.goto()` below. We refuse the entire
+  //  batch if ANY URL is unsafe (rather than silently dropping individual
+  //  entries) so callers know they need to filter their input.
   const safeUrls: string[] = [];
   for (const targetUrl of urls.slice(0, 10)) {
     if (typeof targetUrl !== 'string') continue;
     try {
-      const parsed = new URL(targetUrl);
-      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-        return res.status(400).json({ error: `Refused URL "${targetUrl.slice(0, 80)}" for SSRF safety: disallowed scheme ${parsed.protocol}`, data_source: 'puppeteer' });
-      }
-      const host = parsed.hostname.toLowerCase();
-      if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-          host.endsWith('.local') || host.endsWith('.internal') ||
-          host.endsWith('.localhost') || host.endsWith('.intranet') ||
-          /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-          /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-          /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-          host.startsWith('fe8') || host.startsWith('fe9') ||
-          host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-        return res.status(400).json({ error: `Refused URL "${targetUrl.slice(0, 80)}" for SSRF safety: internal/private host ${host}`, data_source: 'puppeteer' });
-      }
-      safeUrls.push(parsed.toString());
-    } catch {
-      return res.status(400).json({ error: `Refused URL "${targetUrl.slice(0, 80)}" for SSRF safety: malformed URL`, data_source: 'puppeteer' });
-    }
-  }
-
-  // Defense-in-depth: full DNS-rebinding check via url-guard for each URL.
-  for (const safeUrl of safeUrls) {
-    try {
-      assertSafeBrowserUrl(safeUrl);
+      safeUrls.push(sanitizeBrowserUrl(targetUrl));
     } catch (err) {
       const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
-      return res.status(400).json({ error: `Refused URL "${safeUrl.slice(0, 80)}" for SSRF safety: ${reason}`, data_source: 'puppeteer' });
+      return res.status(400).json({ error: `Refused URL "${targetUrl.slice(0, 80)}" for SSRF safety: ${reason}`, data_source: 'puppeteer' });
     }
   }
 

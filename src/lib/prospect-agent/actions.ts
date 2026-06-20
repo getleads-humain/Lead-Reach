@@ -33,6 +33,7 @@ import { getConversationResponsePrompt } from './prompts';
 import { deepCrawlWebsite } from './deep-crawler';
 import { extractCompanyIdentity, smartCompanySearch } from './company-verifier';
 import { resolveFromEmail, resolveFromName, isEmail } from './person-resolver';
+import { isJunkEmail, filterJunkEmails } from '@/lib/email-filter';
 import {
   detectDomain,
   getDomainSearchQueries,
@@ -104,7 +105,10 @@ function extractStructuredFromSnippets(prospect: ProspectResult, results: Search
   const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
   const emails = allText.match(emailRegex) || [];
   if (emails.length > 0 && !prospect.generalEmail) {
-    prospect.generalEmail = emails.find(e => !e.includes('example.com') && !e.includes('email.com') && !e.includes('test.com') && !e.includes('sentry.io') && !e.includes('wixpress.com') && !e.includes('gitbook.io')) || null;
+    // Proper domain-suffix filtering via `isJunkEmail()` — replaces naive
+    // substring `.includes()` checks that CodeQL flags as incomplete URL
+    // substring sanitization.
+    prospect.generalEmail = emails.find(e => !isJunkEmail(e)) || null;
   }
 
   // Extract phone numbers — validate it's a plausible phone (not an ID/hash)
@@ -564,10 +568,13 @@ export async function executeCompanyResearch(
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
       const pageEmails = allPageText.match(emailRegex) || [];
       if (pageEmails.length > 0 && !prospect.generalEmail) {
-        prospect.generalEmail = pageEmails.find(e => !e.includes('example.com') && !e.includes('email.com') && !e.includes('test.com') && !e.includes('sentry.io') && !e.includes('wixpress.com')) || null;
+        // Proper domain-suffix filtering via `isJunkEmail()` — replaces naive
+        // substring `.includes()` checks that CodeQL flags as incomplete URL
+        // substring sanitization.
+        prospect.generalEmail = pageEmails.find(e => !isJunkEmail(e)) || null;
       }
       if (pageEmails.length > 0 && !prospect.supportEmail) {
-        const supportEmail = pageEmails.find(e => e.startsWith('support@') || e.startsWith('info@') || e.startsWith('hello@'));
+        const supportEmail = pageEmails.find(e => !isJunkEmail(e) && (e.startsWith('support@') || e.startsWith('info@') || e.startsWith('hello@')));
         if (supportEmail && supportEmail !== prospect.generalEmail) prospect.supportEmail = supportEmail;
       }
       // Extract phone from web content
@@ -855,10 +862,13 @@ foundingYear: ${prospect.foundingYear || 'unknown'}`;
         const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
         const crawlEmails = crawlText.match(emailRegex) || [];
         if (crawlEmails.length > 0 && !prospect.generalEmail) {
-          prospect.generalEmail = crawlEmails.find(e => !e.includes('example.com') && !e.includes('email.com') && !e.includes('test.com') && !e.includes('sentry.io') && !e.includes('wixpress.com')) || null;
+          // Proper domain-suffix filtering via `isJunkEmail()` — replaces naive
+          // substring `.includes()` checks that CodeQL flags as incomplete URL
+          // substring sanitization.
+          prospect.generalEmail = crawlEmails.find(e => !isJunkEmail(e)) || null;
         }
         if (crawlEmails.length > 0 && !prospect.supportEmail) {
-          const supportEmail = crawlEmails.find(e => e.startsWith('support@') || e.startsWith('info@') || e.startsWith('hello@'));
+          const supportEmail = crawlEmails.find(e => !isJunkEmail(e) && (e.startsWith('support@') || e.startsWith('info@') || e.startsWith('hello@')));
           if (supportEmail && supportEmail !== prospect.generalEmail) prospect.supportEmail = supportEmail;
         }
         const phoneRegex = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
@@ -1456,7 +1466,10 @@ export async function executeUrlResearch(
       const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
       const emails = pageContent.match(emailRegex) || [];
       if (emails.length > 0) {
-        const filtered = emails.filter(e => !e.includes('example.com') && !e.includes('email.com') && !e.includes('test.com') && !e.includes('sentry.io') && !e.includes('wixpress.com'));
+        // Proper domain-suffix filtering via `filterJunkEmails()` — replaces
+        // naive substring `.includes()` checks that CodeQL flags as
+        // incomplete URL substring sanitization.
+        const filtered = filterJunkEmails(emails);
         if (filtered.length > 0 && !prospect.generalEmail) prospect.generalEmail = filtered[0];
         const supportEmail = filtered.find(e => e.startsWith('support@') || e.startsWith('info@') || e.startsWith('hello@'));
         if (supportEmail && supportEmail !== prospect.generalEmail && !prospect.supportEmail) prospect.supportEmail = supportEmail;

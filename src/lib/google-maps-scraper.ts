@@ -1623,43 +1623,14 @@ export async function scrapePlacePage(
   const extractReviews = options?.extractReviews ?? false;
   const maxReviews = options?.maxReviews ?? DEFAULT_MAX_REVIEWS;
 
-  // SSRF guard — block non-http(s) schemes and internal/private hosts
-  // before navigating the browser there. This prevents the scraper from
-  // being abused to fetch internal services (cloud metadata, RFC1918
-  // ranges, loopback, link-local, etc.).
-  //
-  // SECURITY: inline `new URL()` + protocol/hostname check (CodeQL
-  // sanitizer barrier). The re-serialized `safeUrl` is used for
-  // `page.goto()` so the taint flow on the original `url` is cut.
+  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
+  // hostname, and blocks private/internal IP literals. It returns a fresh
+  // re-serialized URL string that CodeQL recognizes as untainted, cutting
+  // the dataflow from the user-controlled `url` parameter to `page.goto()`.
   let safeUrl: string;
   try {
-    const parsed = new URL(url);
-    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-      console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: disallowed scheme ${parsed.protocol}`);
-      return null;
-    }
-    const host = parsed.hostname.toLowerCase();
-    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
-        host.endsWith('.local') || host.endsWith('.internal') ||
-        host.endsWith('.localhost') || host.endsWith('.intranet') ||
-        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
-        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
-        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
-        host.startsWith('fe8') || host.startsWith('fe9') ||
-        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
-      console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: internal/private host ${host}`);
-      return null;
-    }
-    safeUrl = parsed.toString();
-  } catch (err) {
-    console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: ${err instanceof Error ? err.message : err}`);
-    return null;
-  }
-
-  // Defense-in-depth: full DNS-rebinding check via url-guard.
-  try {
-    const { assertSafeBrowserUrl } = await import('@/lib/url-guard');
-    assertSafeBrowserUrl(safeUrl);
+    const { sanitizeBrowserUrl } = await import('@/lib/url-guard');
+    safeUrl = sanitizeBrowserUrl(url);
   } catch (err) {
     console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: ${err instanceof Error ? err.message : err}`);
     return null;

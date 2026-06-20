@@ -12,21 +12,69 @@ function escapeHtml(text: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#x27;');
+}
+
+/**
+ * Allowed URL schemes for markdown links and images. Blocks
+ * `javascript:`, `data:`, `vbscript:`, and other dangerous schemes
+ * that could execute scripts when rendered in an href/src attribute.
+ */
+const ALLOWED_URL_SCHEMES = new Set(['http:', 'https:', 'mailto:', 'tel:']);
+
+/**
+ * Validate a URL for safe use in href/src attributes. Returns the
+ * re-serialized URL string if safe, or `null` if the URL is unsafe
+ * (dangerous scheme, malformed, etc.).
+ *
+ * This blocks XSS vectors like `[click](javascript:alert(1))` and
+ * `[img](data:text/html,<script>...)`.
+ */
+function safeUrlOrNull(rawUrl: string): string | null {
+  if (typeof rawUrl !== 'string' || rawUrl.length === 0) return null;
+  // Strip leading/trailing whitespace and quotes that some markdown
+  // authors use to wrap URLs.
+  const trimmed = rawUrl.trim().replace(/^["']|["']$/g, '');
+  // Relative URLs (starting with /, #, or ./) are safe.
+  if (trimmed.startsWith('/') || trimmed.startsWith('#') || trimmed.startsWith('./')) {
+    return trimmed;
+  }
+  try {
+    const parsed = new URL(trimmed);
+    if (!ALLOWED_URL_SCHEMES.has(parsed.protocol.toLowerCase())) {
+      return null;
+    }
+    return parsed.toString();
+  } catch {
+    return null;
+  }
 }
 
 function processInlineMarkdown(text: string): string {
-  let result = text;
+  // SECURITY: escape HTML first to prevent DOM text from being
+  // reinterpreted as HTML (CodeQL alert "DOM text reinterpreted as
+  // HTML"). All markdown transformations below operate on the
+  // escaped text, and any user-controlled URLs are scheme-validated
+  // before being inserted into href/src attributes.
+  let result = escapeHtml(text);
 
   // Inline code (must be processed first to avoid conflicts)
   result = result.replace(/`([^`]+)`/g, '<code class="inline-code">$1</code>');
 
-  // Images ![alt](url)
-  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="max-w-full rounded-md my-1" />');
+  // Images ![alt](url) — validate URL scheme before insertion
+  result = result.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, (_match, alt, rawUrl) => {
+    const safeUrl = safeUrlOrNull(rawUrl);
+    if (!safeUrl) return ''; // drop unsafe images
+    return `<img src="${safeUrl}" alt="${alt}" class="max-w-full rounded-md my-1" />`;
+  });
 
-  // Links [text](url)
-  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g,
-    '<a href="$2" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:text-emerald-300 underline decoration-emerald-400/30 hover:decoration-emerald-300 transition-colors">$1</a>');
+  // Links [text](url) — validate URL scheme before insertion
+  result = result.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, linkText, rawUrl) => {
+    const safeUrl = safeUrlOrNull(rawUrl);
+    if (!safeUrl) return linkText; // render text only, drop unsafe link
+    return `<a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-emerald-400 hover:text-emerald-300 underline decoration-emerald-400/30 hover:decoration-emerald-300 transition-colors">${linkText}</a>`;
+  });
 
   // Bold
   result = result.replace(/\*\*(.+?)\*\*/g, '<strong class="font-semibold text-foreground/95">$1</strong>');
