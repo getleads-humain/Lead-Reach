@@ -75,14 +75,42 @@ def _extract_serp_results(soup: BeautifulSoup, limit: int = 10) -> List[Dict[str
                 continue
 
             href = a_tag.get("href", "")
-            
-            # Skip non-organic results
-            if not href.startswith("http"):
+
+            # CodeQL #19/#20: use proper URL parsing instead of substring
+            # checks. Substring matching (e.g. `"google.com" in href`) can
+            # be bypassed by attackers using URLs like
+            # `https://attacker.com/?redirect=http://google.com/...` where
+            # "google.com" appears in the query string. We parse the URL
+            # and check the netloc (network location) instead.
+            try:
+                parsed_href = urlparse(href)
+            except Exception:
                 continue
-            if "google.com" in href and "/search?" not in href:
+
+            # Skip non-organic results — only allow http/https schemes
+            if parsed_href.scheme not in ("http", "https"):
                 continue
-            if "youtube.com" in href and "/watch" not in href:
-                pass  # YouTube results can be valid
+
+            # Get the network location (hostname[:port]) in lowercase
+            netloc = parsed_href.netloc.lower()
+            # Strip 'www.' prefix for consistent matching
+            hostname = netloc.split(":")[0]
+            if hostname.startswith("www."):
+                hostname = hostname[4:]
+
+            # Skip Google search results (but allow Google search URLs
+            # which have /search? path — these are valid search queries)
+            if hostname == "google.com" or hostname.endswith(".google.com"):
+                if not parsed_href.path.startswith("/search"):
+                    continue
+
+            # YouTube results can be valid (but only /watch URLs)
+            if hostname == "youtube.com" or hostname.endswith(".youtube.com"):
+                if not parsed_href.path.startswith("/watch"):
+                    continue
+            if hostname in ("youtu.be",):
+                if not parsed_href.path.startswith("/"):
+                    continue
 
             title = h3.get_text(strip=True)
 

@@ -1044,7 +1044,11 @@ export async function assessDataQualityBatch(leadIds: string[]): Promise<DataQua
     try {
       results.push(await assessDataQuality(leadId));
     } catch (error) {
-      console.warn(`[DataAccuracy] Failed to assess lead ${leadId}:`, error);
+      // CodeQL #81: avoid externally-controlled format string. Pass leadId
+      // as a separate argument instead of interpolating into the message —
+      // if leadId contained "%s" it would be interpreted as a format
+      // specifier and consume the next argument.
+      console.warn('[DataAccuracy] Failed to assess lead:', leadId, error);
       results.push({
         leadId,
         overallScore: 0,
@@ -1797,7 +1801,9 @@ Return ONLY valid JSON:
       };
     }
   } catch (error) {
-    console.warn(`[DataAccuracy] LLM verification failed for lead ${leadId}:`, error);
+    // CodeQL #82: avoid externally-controlled format string. Pass leadId
+    // as a separate argument instead of interpolating into the message.
+    console.warn('[DataAccuracy] LLM verification failed for lead:', leadId, error);
   }
 
   return {

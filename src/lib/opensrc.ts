@@ -17,12 +17,13 @@
  * Version: 0.7.2
  */
 
-import { exec } from 'child_process';
+import { exec, execFile } from 'child_process';
 import { promisify } from 'util';
 import { readFile, readdir, stat } from 'fs/promises';
 import { join } from 'path';
 
 const execAsync = promisify(exec);
+const execFileAsync = promisify(execFile);
 
 // ============================================================
 // Types
@@ -556,8 +557,14 @@ export async function searchPackageSource(
       return { success: false, data: [], error: `Package not cached: ${packageRef}` };
     }
 
-    const { stdout } = await execAsync(
-      `rg --line-number --max-count ${maxResults} "${pattern.replace(/"/g, '\\"')}" "${pathResult.data.path}"`,
+    // CodeQL #61: use execFile with an argument array (no shell) instead of
+    // building a shell command string. This eliminates the need to escape the
+    // pattern (which was previously done with a regex that only escaped `"`,
+    // missing backslashes, $`, and other shell metacharacters). execFile
+    // passes arguments directly to the binary without shell interpretation.
+    const { stdout } = await execFileAsync(
+      'rg',
+      ['--line-number', '--max-count', String(maxResults), pattern, pathResult.data.path],
       { timeout: 10000, maxBuffer: 5 * 1024 * 1024 },
     );
 

@@ -128,15 +128,22 @@ export function extractSocialLinks(html: string): Record<string, string[]> {
 // ─────────────────────────────────────────────────────────────
 
 export function extractContactInfo(html: string): { emails: string[]; phones: string[] } {
-  const emailPattern = /[\w.+-]+@[\w-]+\.[\w.-]+/g;
+  // ReDoS-safe: bound input to 200KB before regex (CodeQL #41).
+  // The email regex `[\w.+-]+@[\w-]+\.[\w.-]+` has nested quantifiers
+  // (`+` followed by `+`) which is polynomial on adversarial input.
+  // Bounding the input length makes any backtracking bounded.
+  const boundedHtml = html.length > 200_000 ? html.slice(0, 200_000) : html;
+  // Anchored, bounded-length email pattern with explicit length cap.
+  const emailPattern = /[\w.+-]{1,64}@[\w-]{1,64}\.[\w.-]{1,64}/g;
+  // Phone pattern with bounded quantifiers (no nested +).
   const phonePattern = /(?:\+?1[-.\s]?)?\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4}/g;
 
-  const emails = (html.match(emailPattern) || [])
+  const emails = (boundedHtml.match(emailPattern) || [])
     .filter(e => !e.endsWith('.png') && !e.endsWith('.jpg') && !e.endsWith('.svg'))
     .filter((e, i, a) => a.indexOf(e) === i)
     .slice(0, 5);
 
-  const phones = (html.match(phonePattern) || [])
+  const phones = (boundedHtml.match(phonePattern) || [])
     .filter((p, i, a) => a.indexOf(p) === i)
     .slice(0, 3);
 
@@ -154,10 +161,16 @@ export function estimateCompanySize(html: string): {
 } {
   const signals: Record<string, any> = {};
 
-  const empMatch = html.match(/(\d[\d,]*)\+?\s*(?:employees?|team\s*members?|people)/i);
+  // ReDoS-safe: bound input to 200KB before regex (CodeQL #42).
+  // The empMatch regex `(\d[\d,]*)\+?\s*(?:employees?|team\s*members?|people)`
+  // has nested optional quantifiers (`*` followed by `?`) which is polynomial.
+  // Bounding the input length makes any backtracking bounded.
+  const boundedHtml = html.length > 200_000 ? html.slice(0, 200_000) : html;
+
+  const empMatch = boundedHtml.match(/(\d[\d,]{0,20})\+?\s*(?:employees?|team\s*members?|people)/i);
   if (empMatch) signals.estimatedEmployees = empMatch[1].replace(/,/g, '');
 
-  const locPatterns = html.match(/(?:offices?\s*in|locations?\s*in|headquartered\s*in)\s*([A-Z][\w\s,]+)/g);
+  const locPatterns = boundedHtml.match(/(?:offices?\s*in|locations?\s*in|headquartered\s*in)\s*([A-Z][\w\s,]{1,80})/g);
   if (locPatterns) {
     signals.locationsMentioned = locPatterns.map(l => l.replace(/^(?:offices?\s*in|locations?\s*in|headquartered\s*in)\s*/i, '').trim()).slice(0, 5);
   }

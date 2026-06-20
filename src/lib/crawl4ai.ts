@@ -340,20 +340,29 @@ from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
 md_gen = DefaultMarkdownGenerator(content_filter=PruningContentFilter(threshold=0.48, threshold_type="fixed", min_word_threshold=0))
 run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheModeStr}, markdown_generator=md_gen)`;
   } else if (options.markdownGenerator === 'bm25' && options.bm25Query) {
+    // CodeQL #59: use JSON.stringify() to produce a properly-escaped Python
+    // string literal. The previous `.replace(/"/g, '\\"')` only escaped
+    // double quotes, missing backslashes, newlines, tabs, and other chars
+    // that are special in Python string literals. JSON.stringify escapes
+    // all special characters correctly AND produces valid Python syntax.
+    const safeBm25Query = JSON.stringify(options.bm25Query);
     markdownGeneratorCode = `
 from crawl4ai.content_filter_strategy import BM25ContentFilter
 from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-md_gen = DefaultMarkdownGenerator(content_filter=BM25ContentFilter(user_query="${options.bm25Query.replace(/"/g, '\\"')}", bm25_threshold=1.0))
+md_gen = DefaultMarkdownGenerator(content_filter=BM25ContentFilter(user_query=${safeBm25Query}, bm25_threshold=1.0))
 run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheModeStr}, markdown_generator=md_gen)`;
   } else {
     markdownGeneratorCode = `run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheModeStr})`;
   }
 
+  // CodeQL #59/#60: use JSON.stringify for all user-controlled strings
+  // interpolated into the Python script. This properly escapes backslashes,
+  // quotes, newlines, and other special chars.
   const screenshotArg = options.includeScreenshot ? ', screenshot=True' : '';
   const shadowDomArg = options.flattenShadowDom ? ', flatten_shadow_dom=True' : '';
-  const waitForArg = options.waitFor ? `, wait_for="${options.waitFor}"` : '';
+  const waitForArg = options.waitFor ? `, wait_for=${JSON.stringify(options.waitFor)}` : '';
   const jsCodeArg = options.jsCode ? `, js_code=[${JSON.stringify(options.jsCode)}]` : '';
-  const proxyArg = options.proxy ? `, proxy="${options.proxy}"` : '';
+  const proxyArg = options.proxy ? `, proxy=${JSON.stringify(options.proxy)}` : '';
 
   const script = `
 import asyncio
@@ -476,8 +485,13 @@ export async function deepCrawl(
     strategyImport = 'from crawl4ai.deep_crawling import DFSDeepCrawlStrategy';
     strategyCode = `strategy = DFSDeepCrawlStrategy(max_depth=${maxDepth}, max_pages=${maxPages})`;
   } else if (strategy === 'bestfirst' && options.query) {
+    // CodeQL #60: use JSON.stringify() to produce a properly-escaped Python
+    // string literal. The previous `.replace(/"/g, '\\"')` only escaped
+    // double quotes, missing backslashes, newlines, tabs, and other chars
+    // that are special in Python string literals.
     strategyImport = 'from crawl4ai.deep_crawling import BestFirstCrawlingStrategy';
-    strategyCode = `strategy = BestFirstCrawlingStrategy(max_depth=${maxDepth}, max_pages=${maxPages}, query="${options.query.replace(/"/g, '\\"')}")`;
+    const safeQuery = JSON.stringify(options.query);
+    strategyCode = `strategy = BestFirstCrawlingStrategy(max_depth=${maxDepth}, max_pages=${maxPages}, query=${safeQuery})`;
   } else {
     strategyImport = 'from crawl4ai.deep_crawling import BFSDeepCrawlStrategy';
     strategyCode = `strategy = BFSDeepCrawlStrategy(max_depth=${maxDepth}, max_pages=${maxPages})`;

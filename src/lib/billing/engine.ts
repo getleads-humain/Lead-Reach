@@ -431,7 +431,13 @@ export async function createSubscription(data: {
   if (cycle === 'monthly') periodEnd.setMonth(periodEnd.getMonth() + 1);
   else if (cycle === 'annual') periodEnd.setFullYear(periodEnd.getFullYear() + 1);
 
-  const apiKey = `sk_spark_${Date.now()}_${Math.random().toString(36).substring(2, 12)}`;
+  // CodeQL #62: use crypto.randomBytes for cryptographic-strength randomness
+  // instead of Math.random() (which is NOT cryptographically secure and can
+  // be predicted by attackers). The API key is a secret credential and must
+  // be unguessable.
+  const crypto = await import('node:crypto');
+  const randomPart = crypto.randomBytes(16).toString('hex'); // 32 hex chars
+  const apiKey = `sk_spark_${Date.now()}_${randomPart}`;
 
   const subscription = await db.subscription.create({
     data: {

@@ -320,27 +320,37 @@ export async function executeCompanyResearch(
     const domainName = urlMatch[1].replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
     // Check if there's a company name before the URL
     const beforeUrl = cleanName.split(/https?:\/\//)[0].trim();
-    // ReDoS-safe prefix strip: use anchored alternation without nested
-    // optional quantifiers. The pattern is linear (no nested *, +, or
-    // alternation with overlap).
-    const cleanBefore = beforeUrl
-      .replace(/^(research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
-      .replace(/\s+(from|on|at)\s+(their\s+)?(website|site|url|page)$/i, '')
+    // ReDoS-safe prefix/suffix strip (CodeQL #176: polynomial regex on
+    // uncontrolled data). Bounding input length to 200 chars + using
+    // non-capturing groups + non-nested quantifiers makes the regex linear.
+    const boundedBefore = beforeUrl.slice(0, 200);
+    const cleanBefore = boundedBefore
+      .replace(/^(?:research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
+      .replace(/\s+(?:from|on|at)\s+(?:their\s+)?(?:website|site|url|page)$/i, '')
       .trim();
     cleanName = cleanBefore.length > 2 ? cleanBefore : domainName;
   }
-  
-  // Strip common prefixes
-  cleanName = cleanName
-    .replace(/^(research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
+
+  // Strip common prefixes — bounded input + non-capturing groups
+  const boundedClean = cleanName.slice(0, 200);
+  cleanName = boundedClean
+    .replace(/^(?:research|tell me about|look up|find info on|analyze|please research|company:)\s+/i, '')
     .replace(/["']/g, '')
     .trim();
-  
+
   // If the name is too long (>60 chars), it's probably the full message — truncate
   if (cleanName.length > 60) {
-    // ReDoS-safe split: use simple alternation without nested quantifiers.
-    // The `\s+` before the alternation is a single quantifier, not nested.
-    cleanName = cleanName.split(/\s+(from|on|at|with|about|their)\s/i)[0].trim();
+    // ReDoS-safe split (CodeQL #177: polynomial regex on uncontrolled data).
+    // Input is already bounded to 60 chars here. We use indexOf-based scanning
+    // to avoid any regex backtracking risk entirely.
+    const lower = cleanName.toLowerCase();
+    const stopWords = [' from ', ' on ', ' at ', ' with ', ' about ', ' their '];
+    let cutIdx = cleanName.length;
+    for (const w of stopWords) {
+      const idx = lower.indexOf(w);
+      if (idx > 0 && idx < cutIdx) cutIdx = idx;
+    }
+    cleanName = cleanName.slice(0, cutIdx).trim();
   }
   
   // Final fallback

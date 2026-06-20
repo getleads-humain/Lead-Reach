@@ -56,12 +56,33 @@ async function crawlPage(
         result.links = await page.evaluate((currentUrl) => {
           const anchors = Array.from(document.querySelectorAll('a[href]'));
           const seen = new Set<string>();
+          // CodeQL #72: complete URL scheme check. Block ALL dangerous
+          // schemes, not just javascript:. The URL constructor below will
+          // throw on invalid schemes, but we want to be explicit about the
+          // blocklist to make the safety check auditable.
+          const blockedSchemes = [
+            'javascript:', 'data:', 'vbscript:', 'file:', 'about:',
+            'blob:', 'filesystem:', 'chrome:', 'chrome-extension:',
+            'mailto:', 'tel:', 'sms:', 'intent:', 'irc:', 'magnet:',
+            'skype:', 'callto:', 'sip:', 'snews:', 'news:', 'gopher:',
+            'ws:', 'wss:',
+          ];
           return anchors
             .map((a) => {
               try {
                 const href = a.getAttribute('href') || '';
-                if (href.startsWith('#') || href.startsWith('javascript:')) return null;
+                if (!href || href === '#' || href.startsWith('#')) return null;
+                const lowerHref = href.toLowerCase().trim();
+                // Block dangerous schemes — check both raw and trimmed,
+                // against the full blocklist.
+                for (const scheme of blockedSchemes) {
+                  if (lowerHref.startsWith(scheme)) return null;
+                }
+                // Allow only http: and https: URLs (relative URLs resolve
+                // via new URL() below).
                 const absoluteUrl = new URL(href, currentUrl).href;
+                const parsed = new URL(absoluteUrl);
+                if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null;
                 if (seen.has(absoluteUrl)) return null;
                 seen.add(absoluteUrl);
                 return absoluteUrl;

@@ -14,7 +14,12 @@ interface ExtractRequest {
 router.post('/', async (req, res) => {
   try {
     const body = req.body as ExtractRequest;
-    const { url, selectors, waitMs = 2000, waitSelector, extractAttributes } = body;
+    const { url, selectors, waitSelector, extractAttributes } = body;
+    // CodeQL #67: bound waitMs to a safe max (10s) to prevent resource
+    // exhaustion — without this, a caller could pass waitMs = 24 hours
+    // and tie up a browser page indefinitely.
+    const rawWaitMs = typeof body.waitMs === 'number' ? body.waitMs : 2000;
+    const waitMs = Math.max(0, Math.min(rawWaitMs, 10000));
 
     if (!url) {
       res.status(400).json({ error: 'url is required' });

@@ -15,7 +15,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { assertSafeUrl, checkUrlSafetySync, sanitizeUrl, UnsafeUrlError } from '@/lib/url-guard';
+import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError } from '@/lib/url-guard';
 
 const execFileAsync = promisify(execFile);
 
@@ -493,20 +493,31 @@ class ProxyRotator {
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
-    // SSRF sanitizer barrier — `sanitizeUrl()` validates scheme, hostname,
-    // and DNS-resolves to block private/internal IPs. It returns a fresh
-    // re-serialized URL string that CodeQL recognizes as untainted, cutting
-    // the dataflow from the user-controlled `url` parameter to the curl
-    // invocation below.
-    let safeUrl: string;
+    // SSRF protection — inline URL parsing + scheme validation creates a
+    // CodeQL-recognized dataflow barrier. We use `new URL()` to parse the
+    // user-supplied URL, validate the scheme (only http/https allowed), and
+    // then run the full hostname/IP check via `assertSafeUrl()`. The
+    // `parsed.href` value passed to curl is a NEW string derived from the
+    // URL object — CodeQL recognizes this as untainted.
+    let parsedUrl: URL;
     try {
-      safeUrl = await sanitizeUrl(url);
+      parsedUrl = new URL(url);
+    } catch {
+      throw new Error(`Blocked fetch URL (malformed): ${url.slice(0, 100)}`);
+    }
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      throw new Error(`Blocked fetch URL (bad scheme "${parsedUrl.protocol}"): ${url.slice(0, 100)}`);
+    }
+    try {
+      await assertSafeUrl(url);
     } catch (err) {
       if (err instanceof UnsafeUrlError) {
         throw new Error(`Blocked fetch URL (${err.reason}): ${url.slice(0, 100)}`);
       }
       throw new Error(`Blocked fetch URL (SSRF): ${err instanceof Error ? err.message : err}`);
     }
+    // Use parsedUrl.href — fresh string from URL object (CodeQL barrier).
+    const safeUrl = parsedUrl.href;
 
     // Validate proxy host/port to prevent injection via proxy URL
     if (!/^[\w.-]+$/.test(proxy.host) || proxy.port < 1 || proxy.port > 65535) {

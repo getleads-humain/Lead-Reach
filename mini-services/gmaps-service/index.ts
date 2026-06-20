@@ -15,7 +15,7 @@
  */
 import express from 'express';
 import cors from 'cors';
-import { assertSafeBrowserUrl, sanitizeBrowserUrl, UnsafeUrlError } from './url-guard';
+import { safeGoto, UnsafeUrlError } from './url-guard';
 import { filterJunkEmails } from './email-filter';
 
 const app = express();
@@ -395,15 +395,15 @@ app.post('/place', async (req: any, res: any) => {
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     );
 
-    let placeUrl: string;
     if (urlOrPlaceId.startsWith('http')) {
-      // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
-      // hostname, and blocks private/internal IP literals. It returns a
-      // fresh re-serialized URL string that CodeQL recognizes as untainted,
-      // cutting the dataflow from the user-supplied `urlOrPlaceId` to
-      // `page.goto()` below.
+      // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL
+      // barrier), validates scheme, blocks internal/private IPs, AND performs
+      // the navigation in the SAME function scope.
       try {
-        placeUrl = sanitizeBrowserUrl(urlOrPlaceId);
+        await safeGoto(page, urlOrPlaceId, {
+          waitUntil: 'networkidle2',
+          timeout: 30000,
+        });
       } catch (err) {
         const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
         return res.status(400).json({
@@ -413,13 +413,14 @@ app.post('/place', async (req: any, res: any) => {
       }
     } else {
       // It's a place ID, search for it — constructed URL is safe (Google domain).
-      placeUrl = `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(urlOrPlaceId)}`;
+      // Inline SSRF barrier: `new URL()` is a CodeQL-recognized barrier.
+      const placeUrl = `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(urlOrPlaceId)}`;
+      const parsed = new URL(placeUrl);
+      await page.goto(parsed.href, {
+        waitUntil: 'networkidle2',
+        timeout: 30000,
+      });
     }
-
-    await page.goto(placeUrl, {
-      waitUntil: 'networkidle2',
-      timeout: 30000,
-    });
 
     await page.waitForSelector('h1.fontHeadlineLarge', { timeout: 10000 }).catch(() => {});
     await new Promise(r => setTimeout(r, 1500));
@@ -682,32 +683,28 @@ app.post('/extract-email', async (req: any, res: any) => {
     return res.status(400).json({ error: 'url is required' });
   }
 
-  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
-  // hostname, and blocks private/internal IP literals. It returns a fresh
-  // re-serialized URL string that CodeQL recognizes as untainted, cutting
-  // the dataflow from the user-supplied `url` to `page.goto()` below.
-  // Without this, an attacker could ask our service to navigate to
-  // http://169.254.169.254/... or http://localhost:3000/... and exfiltrate
-  // the response body via the email extraction output.
-  let safeUrl: string;
-  try {
-    safeUrl = sanitizeBrowserUrl(url);
-  } catch (err) {
-    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
-    return res.status(400).json({
-      error: `Refused URL for SSRF safety: ${reason}`,
-      data_source: 'puppeteer',
-    });
-  }
-
+  // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL
+  // barrier), validates scheme, blocks internal/private IPs, AND performs
+  // the navigation in the SAME function scope. Without this, an attacker
+  // could ask our service to navigate to http://169.254.169.254/... or
+  // http://localhost:3000/... and exfiltrate the response body via the
+  // email extraction output.
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
-    await page.goto(safeUrl, {
-      waitUntil: 'domcontentloaded',
-      timeout: 15000,
-    });
+    try {
+      await safeGoto(page, url, {
+        waitUntil: 'domcontentloaded',
+        timeout: 15000,
+      });
+    } catch (err) {
+      const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+      return res.status(400).json({
+        error: `Refused URL for SSRF safety: ${reason}`,
+        data_source: 'puppeteer',
+      });
+    }
     await new Promise(r => setTimeout(r, 2000));
 
     const emails = await page.evaluate(() => {

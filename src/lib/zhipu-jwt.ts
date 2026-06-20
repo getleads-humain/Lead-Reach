@@ -67,6 +67,13 @@ function generateJWT(apiKey: string): string {
     })
   ).toString('base64url');
 
+  // HMAC-SHA256 is mandated by the Zhipu AI JWT specification (alg: HS256).
+  // This is a keyed MAC for API token authentication, NOT password hashing.
+  // CodeQL flags HMAC-SHA256 as "password hash with insufficient computational
+  // effort" but the query is a false positive here — HS256 cannot be replaced
+  // with bcrypt/scrypt/argon2 without breaking JWT interoperability with the
+  // Zhipu AI server. The query ID is `js/hashing-weak-crypto-algorithm`.
+  // codeql[js/hashing-weak-crypto-algorithm] HS256 is mandated by Zhipu AI JWT spec.
   const signature = crypto
     .createHmac('sha256', secret)
     .update(`${header}.${payload}`)

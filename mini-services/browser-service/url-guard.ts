@@ -390,3 +390,42 @@ export function sanitizeBrowserUrl(url: string): string {
   // recognizes this as a sanitizer barrier.
   return parsed.href;
 }
+
+/**
+ * Navigate a Puppeteer/Playwright page to a URL with SSRF protection.
+ *
+ * This function performs BOTH the validation AND the navigation in the SAME
+ * function scope. The validation throws before navigation can occur, so
+ * CodeQL's dataflow analysis sees the URL as guarded before reaching the
+ * `page.goto()` sink.
+ *
+ * @throws UnsafeUrlError if the URL is unsafe.
+ */
+export async function safeGoto(
+  page: { goto: (url: string, options?: Record<string, unknown>) => Promise<unknown> },
+  url: string,
+  options?: Record<string, unknown>,
+): Promise<unknown> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new UnsafeUrlError(
+      `Refused to load URL for SSRF safety: malformed URL`,
+      'malformed-url',
+      url,
+    );
+  }
+
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new UnsafeUrlError(
+      `Refused to load URL for SSRF safety: scheme "${parsed.protocol}" not allowed`,
+      'bad-scheme',
+      url,
+    );
+  }
+
+  assertSafeUrlSync(url);
+
+  return page.goto(parsed.href, options);
+}

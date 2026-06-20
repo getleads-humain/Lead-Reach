@@ -35,7 +35,7 @@ import {
   type McpTransport,
   createNamespacedToolName,
 } from './types';
-import { sanitizeUrl } from '@/lib/url-guard';
+import { safeFetch } from '@/lib/url-guard';
 
 // ── HTTP Client for MCP ─────────────────────────────────────────
 
@@ -54,34 +54,23 @@ async function mcpHttpRequest(
   body?: Record<string, unknown>,
   headers?: Record<string, string>
 ): Promise<Record<string, unknown>> {
-  // SSRF sanitizer barrier — `sanitizeUrl()` validates scheme, hostname,
-  // and DNS-resolves to block private/internal IPs. It returns a fresh
-  // re-serialized URL string that CodeQL recognizes as untainted, cutting
-  // the dataflow from the user-controlled `url` parameter to the `fetch()`
-  // call below.
-  const safeUrl = await sanitizeUrl(url);
-
+  // SSRF protection: `safeFetch()` parses the URL with `new URL()` (which
+  // CodeQL recognizes as a dataflow barrier), validates the scheme, blocks
+  // internal/private IPs, AND performs the fetch — all in the same function
+  // scope. This cuts the taint flow from the user-controlled `url` parameter
+  // to the underlying `fetch()` call.
   const fetchHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(headers ?? {}),
   };
 
-  const response = await fetch(safeUrl, {
+  const response = await safeFetch(url, {
     method,
     headers: fetchHeaders,
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30000), // 30s timeout
-    redirect: 'manual', // re-validate every redirect hop
+    // safeFetch already uses redirect: 'manual' and re-validates each hop
   });
-
-  // Manually follow redirects so each hop is SSRF-checked.
-  if (response.status >= 300 && response.status < 400) {
-    const location = response.headers.get('location');
-    if (location) {
-      const next = new URL(location, safeUrl).toString();
-      return mcpHttpRequest(next, method, body, headers);
-    }
-  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');

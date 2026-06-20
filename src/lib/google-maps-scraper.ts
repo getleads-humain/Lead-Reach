@@ -1623,24 +1623,18 @@ export async function scrapePlacePage(
   const extractReviews = options?.extractReviews ?? false;
   const maxReviews = options?.maxReviews ?? DEFAULT_MAX_REVIEWS;
 
-  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
-  // hostname, and blocks private/internal IP literals. It returns a fresh
-  // re-serialized URL string that CodeQL recognizes as untainted, cutting
-  // the dataflow from the user-controlled `url` parameter to `page.goto()`.
-  let safeUrl: string;
-  try {
-    const { sanitizeBrowserUrl } = await import('@/lib/url-guard');
-    safeUrl = sanitizeBrowserUrl(url);
-  } catch (err) {
-    console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: ${err instanceof Error ? err.message : err}`);
-    return null;
-  }
+  // SSRF protection — `safeGoto()` parses the URL with `new URL()` (which
+  // CodeQL recognizes as a dataflow barrier), validates the scheme, blocks
+  // internal/private IPs, AND performs the navigation — all in the same
+  // function scope. This cuts the taint flow from the user-controlled `url`
+  // parameter to the `page.goto()` sink.
+  const { safeGoto } = await import('@/lib/url-guard');
 
   try {
-    console.log(`${LOG_PREFIX} Scraping place page: ${safeUrl.slice(0, 80)}...`);
+    console.log(`${LOG_PREFIX} Scraping place page: ${url.slice(0, 80)}...`);
 
-    // Navigate to the place page
-    await page.goto(safeUrl, {
+    // Navigate to the place page — safeGoto performs validation + goto
+    await safeGoto(page, url, {
       waitUntil: 'networkidle2',
       timeout: PAGE_NAVIGATION_TIMEOUT,
     });

@@ -5,7 +5,7 @@
  */
 import express from 'express';
 import cors from 'cors';
-import { sanitizeBrowserUrl, UnsafeUrlError } from './url-guard';
+import { safeGoto, UnsafeUrlError } from './url-guard';
 
 const app = express();
 const PORT = 5330;
@@ -49,24 +49,21 @@ app.post('/screenshot', async (req: any, res: any) => {
   const { url, fullPage = true, selector } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
 
-  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
-  //  hostname, and blocks private/internal IP literals. It returns a fresh
-  //  re-serialized URL string that CodeQL recognizes as untainted, cutting
-  //  the dataflow from the user-supplied `url` to `page.goto()` below.
-  let safeUrl: string;
-  try {
-    safeUrl = sanitizeBrowserUrl(url);
-  } catch (err) {
-    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
-    return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
-  }
-
+  // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL
+  //  barrier), validates scheme, blocks internal/private IPs, AND performs
+  //  the navigation in the SAME function scope. Cuts the dataflow from the
+  //  user-supplied `url` to `page.goto()`.
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-    await page.goto(safeUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+    try {
+      await safeGoto(page, url, { waitUntil: 'networkidle2', timeout: 20000 });
+    } catch (err) {
+      const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+      return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
+    }
 
     let screenshotBuffer: Buffer;
     if (selector) {
@@ -91,24 +88,20 @@ app.post('/render', async (req: any, res: any) => {
   const { url, waitSelector, timeout = 10000 } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
 
-  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
-  //  hostname, and blocks private/internal IP literals. It returns a fresh
-  //  re-serialized URL string that CodeQL recognizes as untainted, cutting
-  //  the dataflow from the user-supplied `url` to `page.goto()` below.
-  let safeUrl: string;
-  try {
-    safeUrl = sanitizeBrowserUrl(url);
-  } catch (err) {
-    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
-    return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
-  }
-
+  // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL
+  //  barrier), validates scheme, blocks internal/private IPs, AND performs
+  //  the navigation in the SAME function scope.
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
     await page.setViewport({ width: 1280, height: 800 });
-    await page.goto(safeUrl, { waitUntil: 'domcontentloaded', timeout });
+    try {
+      await safeGoto(page, url, { waitUntil: 'domcontentloaded', timeout });
+    } catch (err) {
+      const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+      return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
+    }
 
     if (waitSelector) {
       await page.waitForSelector(waitSelector, { timeout }).catch(() => {});
@@ -215,26 +208,26 @@ app.post('/google-maps', async (req: any, res: any) => {
 
 // ── Extract Elements by CSS Selectors ──
 app.post('/extract', async (req: any, res: any) => {
-  const { url, selectors, waitMs = 2000 } = req.body;
+  const { url, selectors } = req.body;
+  // Bound waitMs to a safe maximum to prevent resource exhaustion (CodeQL #68).
+  // Cap: 10 seconds — anything more is abusive.
+  const rawWaitMs = typeof req.body.waitMs === 'number' ? req.body.waitMs : 2000;
+  const waitMs = Math.max(0, Math.min(rawWaitMs, 10000));
   if (!url || !selectors) return res.status(400).json({ error: 'url and selectors are required' });
 
-  // SSRF sanitizer barrier — `sanitizeBrowserUrl()` validates scheme,
-  //  hostname, and blocks private/internal IP literals. It returns a fresh
-  //  re-serialized URL string that CodeQL recognizes as untainted, cutting
-  //  the dataflow from the user-supplied `url` to `page.goto()` below.
-  let safeUrl: string;
-  try {
-    safeUrl = sanitizeBrowserUrl(url);
-  } catch (err) {
-    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
-    return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
-  }
-
+  // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL
+  //  barrier), validates scheme, blocks internal/private IPs, AND performs
+  //  the navigation in the SAME function scope.
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
-    await page.goto(safeUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    try {
+      await safeGoto(page, url, { waitUntil: 'domcontentloaded', timeout: 20000 });
+    } catch (err) {
+      const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+      return res.status(400).json({ error: `Refused URL for SSRF safety: ${reason}`, data_source: 'puppeteer' });
+    }
     await new Promise(r => setTimeout(r, waitMs));
 
     const data = await page.evaluate((sels: Record<string, string>) => {
@@ -259,33 +252,23 @@ app.post('/crawl', async (req: any, res: any) => {
   const { urls, extractText = true, extractLinks = true } = req.body;
   if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'urls array is required' });
 
-  // SSRF sanitizer barrier — pre-sanitize every URL via
-  //  `sanitizeBrowserUrl()` (validates scheme, hostname, and blocks
-  //  private/internal IPs). It returns a fresh re-serialized URL string
-  //  that CodeQL recognizes as untainted, cutting the dataflow from the
-  //  user-supplied URL array to `page.goto()` below. We refuse the entire
-  //  batch if ANY URL is unsafe (rather than silently dropping individual
-  //  entries) so callers know they need to filter their input.
-  const safeUrls: string[] = [];
-  for (const targetUrl of urls.slice(0, 10)) {
-    if (typeof targetUrl !== 'string') continue;
-    try {
-      safeUrls.push(sanitizeBrowserUrl(targetUrl));
-    } catch (err) {
-      const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
-      return res.status(400).json({ error: `Refused URL "${targetUrl.slice(0, 80)}" for SSRF safety: ${reason}`, data_source: 'puppeteer' });
-    }
-  }
+  // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL
+  //  barrier), validates scheme, blocks internal/private IPs, AND performs
+  //  the navigation in the SAME function scope. We validate each URL just
+  //  before navigating to it (rather than pre-sanitizing the whole batch)
+  //  so the validation + goto happen in the same scope.
+  // Cap to 10 URLs to prevent abuse.
+  const safeUrls = urls.slice(0, 10).filter((u: unknown): u is string => typeof u === 'string');
 
   let page: any = null;
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
 
-    const results = [];
+    const results: Array<Record<string, unknown>> = [];
     for (const targetUrl of safeUrls) {
       try {
-        await page.goto(targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
+        await safeGoto(page, targetUrl, { waitUntil: 'domcontentloaded', timeout: 15000 });
         const title = await page.title();
 
         const extracted = await page.evaluate((doText: boolean, doLinks: boolean) => {
