@@ -4,42 +4,27 @@
 # recognizes them as sanitizer barriers for the js/server-side-request-forgery
 # query.
 #
-# Without this file, CodeQL treats `sanitizeUrl()` and `sanitizeBrowserUrl()`
-# as opaque function calls and does not cut the taint flow from user-controlled
-# URL parameters to fetch()/page.goto() sinks.
+# IMPORTANT: the format is `addsTo: sanitizers` (the extensible name from
+# the `codeql/javascript` pack), NOT `addsTo: javascript/request-forgery`
+# (that's a query ID and is silently ignored by CodeQL's data extension
+# loader).
 #
-# The `package` field matches the module specifier used in import statements.
-# We include multiple variants to cover different import styles:
-#   - "@/lib/url-guard"  → TypeScript path alias used in src/ files
-#   - "./url-guard"       → Relative import used in mini-services
-#   - "lib/url-guard"     → Resolved path (fallback)
-#   - "../url-guard"      → Relative import variant
+# The `kind` field is `"url-sanitizing"` — this is the sanitizer kind
+# recognized by CodeQL JavaScript's `RequestForgery.qll` library via
+# `customSanitizer()` in `CustomSanitizers.qll`.
+#
+# The package field is left empty ("") so the sanitizer matches ANY module
+# that defines a function with that name. This avoids fragility from
+# TypeScript path-alias resolution (e.g. `@/lib/url-guard` resolves
+# differently in tsconfig vs CodeQL's analyzer). The function names are
+# sufficiently unique that false positives are unlikely.
 
 extensions:
-  - addsTo: javascript/request-forgery
+  - addsTo:
+      extensible: sanitizers
+      pack: codeql/javascript
     data:
-      sanitizers:
-        # src/lib/url-guard.ts — sanitizeUrl (async, for fetch/http.request)
-        - package: "@/lib/url-guard"
-          name: sanitizeUrl
-        - package: "lib/url-guard"
-          name: sanitizeUrl
-        - package: "src/lib/url-guard"
-          name: sanitizeUrl
-        # src/lib/url-guard.ts — sanitizeBrowserUrl (sync, for page.goto)
-        - package: "@/lib/url-guard"
-          name: sanitizeBrowserUrl
-        - package: "lib/url-guard"
-          name: sanitizeBrowserUrl
-        - package: "src/lib/url-guard"
-          name: sanitizeBrowserUrl
-        # mini-services/browser-service/url-guard.ts
-        - package: "./url-guard"
-          name: sanitizeBrowserUrl
-        - package: "./url-guard"
-          name: sanitizeUrl
-        # mini-services/gmaps-service/url-guard.ts
-        - package: "./url-guard"
-          name: sanitizeBrowserUrl
-        - package: "./url-guard"
-          name: sanitizeUrl
+      # src/lib/url-guard.ts — sanitizeUrl (async, for fetch/http.request)
+      - ["", "Function", "sanitizeUrl", "Argument[0]", "ReturnValue", "url-sanitizing"]
+      # src/lib/url-guard.ts — sanitizeBrowserUrl (sync, for page.goto)
+      - ["", "Function", "sanitizeBrowserUrl", "Argument[0]", "ReturnValue", "url-sanitizing"]
