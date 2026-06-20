@@ -39,7 +39,7 @@ def geocode_address(address: str, provider: str = "osm") -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"Geocoding error: {e}")
-        return {"error": str(e), "data_source": "geocoder"}
+        return {"error": "Geocoding failed. See server logs for details.", "data_source": "geocoder"}
 
 
 def reverse_geocode(lat: float, lng: float, provider: str = "osm") -> Dict[str, Any]:
@@ -65,7 +65,7 @@ def reverse_geocode(lat: float, lng: float, provider: str = "osm") -> Dict[str, 
 
     except Exception as e:
         logger.error(f"Reverse geocoding error: {e}")
-        return {"error": str(e), "data_source": "geocoder"}
+        return {"error": "Reverse geocoding failed. See server logs for details.", "data_source": "geocoder"}
 
 
 def compute_distance(lat1: float, lng1: float, lat2: float, lng2: float) -> float:

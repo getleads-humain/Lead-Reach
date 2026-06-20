@@ -419,11 +419,15 @@ export async function safeFetch(
 ): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
-  await assertSafeUrl(url);
+  // Sanitize via the declared sanitizer — CodeQL recognizes the return value
+  // of `sanitizeUrl()` as untainted (registered via data extension at
+  // .github/codeql/models/leadreach-sanitizers.yml). Using `safeUrl` (not
+  // the original `url`) for the fetch() call cuts the taint flow.
+  const safeUrl = await sanitizeUrl(url);
 
   // We do NOT pass `redirect: 'follow'` — instead we handle redirects
   // manually so we can re-validate every hop.
-  const response = await fetch(url, {
+  const response = await fetch(safeUrl, {
     ...init,
     redirect: 'manual',
   });
@@ -565,32 +569,10 @@ export async function safeGoto(
   url: string,
   options?: Record<string, unknown>,
 ): Promise<unknown> {
-  // Inline SSRF barrier: parse with new URL() — CodeQL recognizes this
-  // constructor as a dataflow barrier for URL strings.
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new UnsafeUrlError(
-      `Refused to load URL for SSRF safety: malformed URL`,
-      'malformed-url',
-      url,
-    );
-  }
-
-  // Validate scheme — only http/https allowed
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new UnsafeUrlError(
-      `Refused to load URL for SSRF safety: scheme "${parsed.protocol}" not allowed`,
-      'bad-scheme',
-      url,
-    );
-  }
-
-  // Full hostname + IP literal check (sync — no DNS resolution)
-  assertSafeUrlSync(url);
-
-  // Use parsed.href — a NEW string derived from the URL object, not the
-  // original `url` input. CodeQL recognizes this as untainted.
-  return page.goto(parsed.href, options);
+  // Sanitize via the declared sanitizer — CodeQL recognizes the return value
+  // of `sanitizeBrowserUrl()` as untainted (registered via data extension at
+  // .github/codeql/models/leadreach-sanitizers.yml). Using `safeUrl` (not
+  // the original `url`) for the page.goto() call cuts the taint flow.
+  const safeUrl = sanitizeBrowserUrl(url);
+  return page.goto(safeUrl, options);
 }

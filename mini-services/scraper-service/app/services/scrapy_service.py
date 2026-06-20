@@ -200,7 +200,7 @@ def scrape_url(
 
     except Exception as e:
         logger.error(f"Scrape error for {url}: {e}")
-        return {"url": url, "error": str(e), "data_source": "scrapy"}
+        return {"url": url, "error": "Scrape failed. See server logs for details.", "data_source": "scrapy"}
 
 
 def scrape_google_serp(query: str, limit: int = 10) -> Dict[str, Any]:
@@ -252,6 +252,6 @@ def scrape_google_serp(query: str, limit: int = 10) -> Dict[str, Any]:
             "query": query,
             "results": [],
             "total": 0,
-            "error": str(e),
+            "error": "Google Search scrape failed. See server logs for details.",
             "data_source": "gsctool",
         }

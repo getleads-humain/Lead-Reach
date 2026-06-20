@@ -95,7 +95,7 @@ def extract_news(query: str, max_articles: int = 5) -> Dict[str, Any]:
             "intent_signals": [],
             "mention_count": 0,
             "top_keywords": [],
-            "error": str(e),
+            "error": "News extraction failed. See server logs for details.",
             "data_source": "newspaper3k",
         }
 

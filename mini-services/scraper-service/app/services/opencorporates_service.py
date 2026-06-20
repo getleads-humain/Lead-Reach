@@ -82,6 +82,6 @@ def search_company(company: str, jurisdiction: Optional[str] = None) -> Dict[str
             "company": company,
             "companies": [],
             "directors": [],
-            "error": str(e),
+            "error": "OpenCorporates lookup failed. See server logs for details.",
             "data_source": "opencorporates",
         }

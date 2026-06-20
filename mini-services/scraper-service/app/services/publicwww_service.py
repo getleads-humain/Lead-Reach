@@ -84,6 +84,6 @@ def search_technology(query: str, limit: int = 20) -> Dict[str, Any]:
             "results": [],
             "total_found": 0,
             "tech_categories": [],
-            "error": str(e),
+            "error": "PublicWWW lookup failed. See server logs for details.",
             "data_source": "publicwww",
         }

@@ -108,6 +108,6 @@ def search_filings(company: str, filing_types: List[str] = None, limit: int = 5)
             "key_executives": [],
             "risk_keywords": [],
             "insider_transactions": [],
-            "error": str(e),
+            "error": "EDGAR lookup failed. See server logs for details.",
             "data_source": "edgar",
         }

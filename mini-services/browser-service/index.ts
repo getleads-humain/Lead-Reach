@@ -210,9 +210,12 @@ app.post('/google-maps', async (req: any, res: any) => {
 app.post('/extract', async (req: any, res: any) => {
   const { url, selectors } = req.body;
   // Bound waitMs to a safe maximum to prevent resource exhaustion (CodeQL #68).
-  // Cap: 10 seconds — anything more is abusive.
-  const rawWaitMs = typeof req.body.waitMs === 'number' ? req.body.waitMs : 2000;
-  const waitMs = Math.max(0, Math.min(rawWaitMs, 10000));
+  // Use an explicit branch check with a constant ceiling rather than Math.min
+  // so CodeQL's dataflow analysis recognizes the bound (Math.min is not a
+  // recognized sanitizer for the js/resource-exhaustion query).
+  const MAX_WAIT_MS = 10000;
+  const requestedWaitMs = typeof req.body.waitMs === 'number' ? req.body.waitMs : 2000;
+  const waitMs = (requestedWaitMs >= 0 && requestedWaitMs <= MAX_WAIT_MS) ? requestedWaitMs : 2000;
   if (!url || !selectors) return res.status(400).json({ error: 'url and selectors are required' });
 
   // SSRF protection — `safeGoto()` parses URL with `new URL()` (CodeQL

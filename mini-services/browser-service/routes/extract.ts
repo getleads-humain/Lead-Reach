@@ -16,10 +16,13 @@ router.post('/', async (req, res) => {
     const body = req.body as ExtractRequest;
     const { url, selectors, waitSelector, extractAttributes } = body;
     // CodeQL #67: bound waitMs to a safe max (10s) to prevent resource
-    // exhaustion — without this, a caller could pass waitMs = 24 hours
-    // and tie up a browser page indefinitely.
-    const rawWaitMs = typeof body.waitMs === 'number' ? body.waitMs : 2000;
-    const waitMs = Math.max(0, Math.min(rawWaitMs, 10000));
+    // exhaustion. Use an explicit branch check with a constant ceiling rather
+    // than Math.min so CodeQL's dataflow analysis recognizes the bound
+    // (Math.min is not a recognized sanitizer for the js/resource-exhaustion
+    // query).
+    const MAX_WAIT_MS = 10000;
+    const requestedWaitMs = typeof body.waitMs === 'number' ? body.waitMs : 2000;
+    const waitMs = (requestedWaitMs >= 0 && requestedWaitMs <= MAX_WAIT_MS) ? requestedWaitMs : 2000;
 
     if (!url) {
       res.status(400).json({ error: 'url is required' });

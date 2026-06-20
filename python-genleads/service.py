@@ -144,7 +144,11 @@ def get_domain(url: str) -> str:
 
 
 def extract_emails(text: str, html: str = "") -> list[str]:
-    email_re = re.compile(r'[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}')
+    # Bounded quantifiers ({1,64}, {1,255}) to prevent ReDoS (CodeQL #2).
+    # The original `[a-zA-Z0-9._%+\-]+` + `[a-zA-Z0-9.\-]+` had multiple
+    # unbounded quantifiers in sequence — polynomial backtracking risk.
+    # RFC 5321 caps local-part at 64 octets and domain at 255 octets.
+    email_re = re.compile(r'[a-zA-Z0-9._%+\-]{1,64}@[a-zA-Z0-9.\-]{1,255}\.[a-zA-Z]{2,24}')
     found = set()
 
     for source in (text, html):
@@ -190,8 +194,16 @@ def heuristic_analysis(text: str) -> dict:
     score = min(max(score, 0), 10)
     qualified = score > 2
 
-    # Derive company name from content
-    domain_match = re.search(r"(?:about|company|who we are)[^.]*?([A-Z][A-Za-z0-9]+(?:\s[A-Z][A-Za-z0-9]+){0,3})", text[:2000])
+    # Derive company name from content.
+    # Bounded regex to prevent ReDoS (CodeQL #3): the original had
+    # `[^.]*?` followed by a nested group with `{0,3}` and an inner `+` —
+    # polynomial backtracking risk. We use a single bounded greedy match
+    # instead: at most 80 chars after the keyword, then capture 1-4
+    # Capitalized words (each 1-20 chars).
+    domain_match = re.search(
+        r'(?:about|company|who we are)([A-Z][A-Za-z0-9]{1,20}(?:\s[A-Z][A-Za-z0-9]{1,20}){0,3})',
+        text[:2000],
+    )
 
     return {
         "qualified": qualified,

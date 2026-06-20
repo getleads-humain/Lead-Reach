@@ -458,7 +458,9 @@ export function validatePhone(phone: string, countryCode?: string): ValidationRe
   } else if (normalized.startsWith('+')) {
     // Try to match country codes
     for (const [cc, info] of Object.entries(COUNTRY_CODES)) {
-      if (normalized.startsWith(info.code.replace('+', '+')) || normalized.startsWith(info.code)) {
+      // Note: previously had `info.code.replace('+', '+')` here — that was
+      // a no-op (replacing '+' with itself). Removed per CodeQL #80.
+      if (normalized.startsWith(info.code)) {
         detectedCountry = cc;
         countryCodeValid = true;
         break;

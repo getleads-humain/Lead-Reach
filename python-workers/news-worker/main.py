@@ -192,11 +192,13 @@ async def extract_article(req: ExtractRequest):
             word_count=len(article.text.split()) if article.text else 0,
         )
     except Exception as e:
-        log.error(f'Extract failed for {req.url}: {e}')
+        # Log the real exception for debugging; return a generic message to
+        # the client to avoid information exposure (CodeQL #150).
+        log.error(f'Extract failed for {req.url}: {e}', exc_info=True)
         return ArticleResult(
             url=str(req.url),
             success=False,
-            error=str(e),
+            error='Extraction failed. See server logs for details.',
         )
 
 
@@ -340,10 +342,12 @@ async def search_intent(req: IntentSearchRequest):
         }
 
     except Exception as e:
-        log.error(f'search-intent failed: {e}')
+        # Log the real exception for debugging; return a generic message to
+        # the client to avoid information exposure (CodeQL #150).
+        log.error(f'search-intent failed: {e}', exc_info=True)
         return JSONResponse(
             status_code=500,
-            content={'success': False, 'error': str(e)},
+            content={'success': False, 'error': 'Internal server error. See server logs for details.'},
         )
 
 

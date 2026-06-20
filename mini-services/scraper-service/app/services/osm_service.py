@@ -129,7 +129,7 @@ def search_places(
 
     except Exception as e:
         logger.error(f"OSM Overpass error: {e}")
-        return {"places": [], "count": 0, "error": str(e), "data_source": "osm"}
+        return {"places": [], "count": 0, "error": "OSM Overpass query failed. See server logs for details.", "data_source": "osm"}
 
 
 def _format_address(tags: dict) -> str:

@@ -83,4 +83,4 @@ def get_financial_data(symbol: str, metrics: list = None) -> Dict[str, Any]:
 
     except Exception as e:
         logger.error(f"yfinance error for {symbol}: {e}")
-        return {"error": str(e), "symbol": symbol, "data_source": "yfinance"}
+        return {"error": "yfinance lookup failed. See server logs for details.", "symbol": symbol, "data_source": "yfinance"}

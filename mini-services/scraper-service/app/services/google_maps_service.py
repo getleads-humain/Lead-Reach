@@ -124,7 +124,7 @@ async def scrape_google_maps(query: str, max_results: int = 20, language: str = 
         return {
             "places": places,
             "total": len(places),
-            "error": str(e),
+            "error": "Google Maps scrape failed. See server logs for details.",
             "data_source": "google_maps",
         }
 

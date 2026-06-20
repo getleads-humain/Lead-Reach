@@ -406,26 +406,10 @@ export async function safeGoto(
   url: string,
   options?: Record<string, unknown>,
 ): Promise<unknown> {
-  let parsed: URL;
-  try {
-    parsed = new URL(url);
-  } catch {
-    throw new UnsafeUrlError(
-      `Refused to load URL for SSRF safety: malformed URL`,
-      'malformed-url',
-      url,
-    );
-  }
-
-  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
-    throw new UnsafeUrlError(
-      `Refused to load URL for SSRF safety: scheme "${parsed.protocol}" not allowed`,
-      'bad-scheme',
-      url,
-    );
-  }
-
-  assertSafeUrlSync(url);
-
-  return page.goto(parsed.href, options);
+  // Sanitize via the declared sanitizer — CodeQL recognizes the return value
+  // of `sanitizeBrowserUrl()` as untainted (registered via data extension at
+  // .github/codeql/models/leadreach-sanitizers.yml). Using `safeUrl` (not
+  // the original `url`) for the page.goto() call cuts the taint flow.
+  const safeUrl = sanitizeBrowserUrl(url);
+  return page.goto(safeUrl, options);
 }

@@ -15,7 +15,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError } from '@/lib/url-guard';
+import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError, sanitizeUrl } from '@/lib/url-guard';
 
 const execFileAsync = promisify(execFile);
 
@@ -493,31 +493,21 @@ class ProxyRotator {
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
-    // SSRF protection — inline URL parsing + scheme validation creates a
-    // CodeQL-recognized dataflow barrier. We use `new URL()` to parse the
-    // user-supplied URL, validate the scheme (only http/https allowed), and
-    // then run the full hostname/IP check via `assertSafeUrl()`. The
-    // `parsed.href` value passed to curl is a NEW string derived from the
-    // URL object — CodeQL recognizes this as untainted.
-    let parsedUrl: URL;
+    // SSRF protection — use the declared sanitizer `sanitizeUrl()` so the
+    // return value is recognized as untainted by CodeQL (registered via
+    // data extension at .github/codeql/models/leadreach-sanitizers.yml).
+    // The sanitizer parses with `new URL()`, validates scheme, blocks
+    // internal/private IPs, performs DNS resolution, and returns a fresh
+    // re-serialized href string that CodeQL treats as untainted.
+    let safeUrl: string;
     try {
-      parsedUrl = new URL(url);
-    } catch {
-      throw new Error(`Blocked fetch URL (malformed): ${url.slice(0, 100)}`);
-    }
-    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
-      throw new Error(`Blocked fetch URL (bad scheme "${parsedUrl.protocol}"): ${url.slice(0, 100)}`);
-    }
-    try {
-      await assertSafeUrl(url);
+      safeUrl = await sanitizeUrl(url);
     } catch (err) {
       if (err instanceof UnsafeUrlError) {
         throw new Error(`Blocked fetch URL (${err.reason}): ${url.slice(0, 100)}`);
       }
       throw new Error(`Blocked fetch URL (SSRF): ${err instanceof Error ? err.message : err}`);
     }
-    // Use parsedUrl.href — fresh string from URL object (CodeQL barrier).
-    const safeUrl = parsedUrl.href;
 
     // Validate proxy host/port to prevent injection via proxy URL
     if (!/^[\w.-]+$/.test(proxy.host) || proxy.port < 1 || proxy.port > 65535) {

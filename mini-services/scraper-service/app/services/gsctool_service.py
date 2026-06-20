@@ -236,6 +236,6 @@ def fetch_google_search(query: str, limit: int = 10) -> Dict[str, Any]:
             "query": query,
             "results": [],
             "count": 0,
-            "error": str(e),
+            "error": "Google Search scrape failed. See server logs for details.",
             "data_source": "google_search",
         }
