@@ -409,9 +409,11 @@ export async function safeGoto(
   // Use the declared sanitizer `sanitizeBrowserUrl()` — its return value is
   // recognized as untainted by CodeQL via the data extension at
   // .github/codeql/models/leadreach-sanitizers.yml (kind: "url-sanitizing").
-  // Suppression comment below is a backup in case the data extension is
-  // not loaded by the CodeQL workflow.
-  // codeql[js/server-side-request-forgery]
+  // Suppression comment is a backup in case the data extension is not
+  // loaded by the CodeQL workflow. Query ID is `js/request-forgery`
+  // (NOT `js/server-side-request-forgery`, which is the alert's display
+  // name). Suppression comments must be on the same line as the alerted
+  // expression.
   const safeUrl = sanitizeBrowserUrl(url);
-  return page.goto(safeUrl, options);
+  return page.goto(safeUrl, options); // codeql[js/request-forgery] lgtm[js/request-forgery]
 }

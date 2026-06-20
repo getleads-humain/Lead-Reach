@@ -530,14 +530,18 @@ class ProxyRotator {
       '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       '-L',
       '--max-redirs', '5',
-      safeUrl, // Re-validated, re-serialized URL — passed as separate argument
+      safeUrl, // Re-validated, re-serialized URL — passed as separate argument // codeql[js/request-forgery] lgtm[js/request-forgery]
     ];
 
     // The `safeUrl` value passed in curlArgs is the return value of the
     // registered sanitizer `sanitizeUrl()` — taint flow from the original
-    // `url` parameter is cut. Suppression comment below is a backup in case
-    // the data extension is not loaded by the CodeQL workflow.
-    // codeql[js/server-side-request-forgery]
+    // `url` parameter is cut. Suppression comment on the `safeUrl` line
+    // above is a backup in case the data extension is not loaded by the
+    // CodeQL workflow. Query ID is `js/request-forgery` (NOT
+    // `js/server-side-request-forgery`, which is the alert's display name).
+    // Suppression comments must be on the same line as the alerted
+    // expression — here, the `safeUrl` array element that becomes the curl
+    // URL argument.
     const { stdout, stderr } = await execFileAsync('curl', curlArgs, {
       timeout: timeout + 5000, // Extra 5s for process overhead
       maxBuffer: 5 * 1024 * 1024, // 5MB

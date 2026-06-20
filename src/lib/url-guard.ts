@@ -429,12 +429,16 @@ export async function safeFetch(
 
   // We do NOT pass `redirect: 'follow'` — instead we handle redirects
   // manually so we can re-validate every hop.
+  //
   // The `safeUrl` value passed to fetch() is the return value of the
-  // registered sanitizer — taint flow from the original `url` parameter
-  // is cut. Suppression comment below is a backup in case the data
-  // extension is not loaded by the CodeQL workflow.
-  // codeql[js/server-side-request-forgery]
-  const response = await fetch(safeUrl, {
+  // registered sanitizer `sanitizeUrl()` — taint flow from the original
+  // `url` parameter is cut. Suppression comment is a backup in case the
+  // data extension is not loaded by the CodeQL workflow.
+  //
+  // The query ID is `js/request-forgery` (NOT `js/server-side-request-forgery`,
+  // which is the alert's display name, not its query ID). Suppression
+  // comments must be on the same line as the alerted expression.
+  const response = await fetch(safeUrl, { // codeql[js/request-forgery] lgtm[js/request-forgery]
     ...init,
     redirect: 'manual',
   });
@@ -579,11 +583,11 @@ export async function safeGoto(
   // Use the declared sanitizer `sanitizeBrowserUrl()` — its return value is
   // recognized as untainted by CodeQL via the data extension at
   // .github/codeql/models/leadreach-sanitizers.yml (kind: "url-sanitizing").
-  // The sanitizer parses with `new URL()`, validates scheme, blocks
-  // internal/private IPs, and returns a fresh re-serialized href string.
-  // Suppression comment below is a backup in case the data extension is
-  // not loaded by the CodeQL workflow.
-  // codeql[js/server-side-request-forgery]
+  // Suppression comment is a backup in case the data extension is not
+  // loaded by the CodeQL workflow. Query ID is `js/request-forgery`
+  // (NOT `js/server-side-request-forgery`, which is the alert's display
+  // name). Suppression comments must be on the same line as the alerted
+  // expression.
   const safeUrl = sanitizeBrowserUrl(url);
-  return page.goto(safeUrl, options);
+  return page.goto(safeUrl, options); // codeql[js/request-forgery] lgtm[js/request-forgery]
 }

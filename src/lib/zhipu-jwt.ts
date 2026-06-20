@@ -80,15 +80,12 @@ function generateJWT(apiKey: string): string {
   //
   // Suppression comments: modern CodeQL uses `// codeql[query-id]` syntax
   // (the legacy `// lgtm[query-id]` form is also recognized but deprecated).
-  // We include both forms for maximum compatibility. The suppression comment
-  // must be on the line immediately before the flagged expression.
-  // codeql[js/hashing-weak-crypto-algorithm]
-  // codeql[js/insufficient-password-hash]
-  // lgtm[js/hashing-weak-crypto-algorithm]
-  // lgtm[js/insufficient-password-hash]
+  // Suppression comments must be on the SAME LINE as the alerted expression.
+  // The alert fires on the `.createHmac('sha256', ...)` call (the method
+  // that selects the hashing algorithm), so the suppression goes there.
   const signingKeyBytes = Buffer.from(keyMaterial, 'utf8');
-  const signature = crypto // codeql[js/hashing-weak-crypto-algorithm] codeql[js/insufficient-password-hash]
-    .createHmac('sha256', signingKeyBytes)
+  const signature = crypto
+    .createHmac('sha256', signingKeyBytes) // codeql[js/insufficient-password-hash] codeql[js/hashing-weak-crypto-algorithm] lgtm[js/insufficient-password-hash] lgtm[js/hashing-weak-crypto-algorithm]
     .update(`${header}.${payload}`)
     .digest('base64url');
 
