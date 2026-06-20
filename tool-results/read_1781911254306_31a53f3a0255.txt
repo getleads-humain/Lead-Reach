@@ -1,0 +1,1528 @@
+     1→     1→// ============================================================
+     2→     2→// 8-Agent Orchestrator — Real Multi-Agent Pipeline
+     3→     3→// ============================================================
+     4→     4→// Implements the full 8-agent processing pipeline with:
+     5→     5→//   - Atlas (Orchestrator): Coordinates all agents
+     6→     6→//   - Scout (Discovery): Company & web research
+     7→     7→//   - Forge (Enrichment): Data enrichment & deep crawl
+     8→     8→//   - Sage (Research): Market & competitive analysis
+     9→     9→//   - Judge (Qualification): Lead scoring & ICP matching
+    10→    10→//   - Bard (Outreach): Message composition
+    11→    11→//   - Flow (Pipeline): Pipeline & session management
+    12→    12→//   - Echo (Reports): Insights & reporting
+    13→    13→//
+    14→    14→// Each agent step is visible in the UI workspace with
+    15→    15→// inter-agent communication messages.
+    16→    16→//
+    17→    17→// FIXES APPLIED:
+    18→    18→//   - createInitialPipelineState() now uses 8-agent display keys
+    19→    19→//   - Fast path for converse/clarify intents (skip full pipeline)
+    20→    20→//   - Reduced cooldowns for faster execution
+    21→    21→//   - Comm messages use 8-agent display names for correct UI display
+    22→    22→//   - Robust fallback responses for all intent types
+    23→    23→//   - Echo phase skips autoCurateICP LLM call for research queries
+    24→    24→//   - research_company intent uses Atlas→Scout→Forge→Echo fast path
+    25→    25→// ============================================================
+    26→    26→
+    27→    27→import { generateStructuredFallback } from '@/lib/llm';
+    28→    28→import {
+    29→    29→  exaSearch,
+    30→    30→  linkedInSearchCompanies,
+    31→    31→} from '@/lib/agent-reach-bridge';
+    32→    32→import {
+    33→    33→  executeChannelEnrichment,
+    34→    34→  refreshNewsIntent,
+    35→    35→  discoverPlaces,
+    36→    36→} from './channel-enrichment';
+    37→    37→import type {
+    38→    38→  AgentPersona,
+    39→    39→  UserIntent,
+    40→    40→  AgentMessage,
+    41→    41→  AgentThinking,
+    42→    42→  AgentAction,
+    43→    43→  ProspectResult,
+    44→    44→  ICPResult,
+    45→    45→  OutreachResult,
+    46→    46→  MarketResult,
+    47→    47→  ScoreResult,
+    48→    48→  ConversationContext,
+    49→    49→  SuggestedAction,
+    50→    50→  InsightItem,
+    51→    51→  NavigationSuggestion,
+    52→    52→  ViewType,
+    53→    53→  PipelineCheckpoint,
+    54→    54→} from './types';
+    55→    55→import { classifyIntent, intentToThinking, type IntentClassification } from './intents';
+    56→    56→import {
+    57→    57→  executeCompanyResearch,
+    58→    58→  executePersonResearch,
+    59→    59→  executeUrlResearch,
+    60→    60→  executeMarketAnalysis,
+    61→    61→  executeCompetitiveAnalysis,
+    62→    62→  executeICPBuilding,
+    63→    63→  executeLeadScoring,
+    64→    64→  executeOutreachComposition,
+    65→    65→  generateConversationResponse,
+    66→    66→  type ProgressCallback,
+    67→    67→} from './actions';
+    68→    68→import {
+    69→    69→  type AgentCommMessage,
+    70→    70→  type AgentState,
+    71→    71→  type PipelineState,
+    72→    72→  type OrchestratorEvent,
+    73→    73→  type OrchestratorCallback,
+    74→    74→  AGENT_8_DISPLAY,
+    75→    75→  AGENT_8_MAP,
+    76→    76→} from './orchestrator-types';
+    77→    77→
+    78→    78→// Re-export types for backward compatibility
+    79→    79→export type { AgentCommMessage, AgentState, PipelineState, OrchestratorEvent, OrchestratorCallback };
+    80→    80→export { AGENT_8_DISPLAY, AGENT_8_MAP };
+    81→    81→
+    82→    82→// ============================================================
+    83→    83→// Pipeline Phases per Intent
+    84→    84→// ============================================================
+    85→    85→
+    86→    86→interface PipelinePhase {
+    87→    87→  agent: string;           // 8-agent name (atlas, scout, forge, etc.)
+    88→    88→  action: string;          // What this phase does
+    89→    89→  intentRequired?: UserIntent[];  // Only run for these intents
+    90→    90→  optional?: boolean;     // Skip if previous phases had errors
+    91→    91→}
+    92→    92→
+    93→    93→const PIPELINE_PHASES: PipelinePhase[] = [
+    94→    94→  // Phase 1: Atlas classifies intent and plans the pipeline
+    95→    95→  { agent: 'atlas', action: 'Classify intent and orchestrate pipeline' },
+    96→    96→  // Phase 2: Scout discovers company/person data
+    97→    97→  { agent: 'scout', action: 'Discover and research target', intentRequired: ['research_company', 'research_person', 'research_url', 'refine_search'] },
+    98→    98→  // Phase 3: Forge enriches the data with deep crawl
+    99→    99→  { agent: 'forge', action: 'Enrich discovered data', intentRequired: ['research_company', 'research_person', 'research_url'], optional: true },
+   100→   100→  // Phase 4: Sage analyzes market/competitors if relevant
+   101→   101→  { agent: 'sage', action: 'Analyze market and competitors', intentRequired: ['analyze_market', 'analyze_competitors'] },
+   102→   102→  // Phase 5: Judge scores the lead against ICP
+   103→   103→  { agent: 'judge', action: 'Score and qualify lead', intentRequired: ['score_lead'], optional: true },
+   104→   104→  // Phase 6: Bard composes outreach if requested
+   105→   105→  { agent: 'bard', action: 'Compose outreach message', intentRequired: ['compose_outreach'], optional: true },
+   106→   106→  // Phase 7: Flow manages pipeline operations
+   107→   107→  { agent: 'flow', action: 'Manage pipeline and session data', optional: true },
+   108→   108→  // Phase 8: Echo generates insights and reports (lightweight — no LLM calls)
+   109→   109→  { agent: 'echo', action: 'Generate insights and report' },
+   110→   110→];
+   111→   111→
+   112→   112→// ============================================================
+   113→   113→// Initial Pipeline State — 8-Agent Keys
+   114→   114→// ============================================================
+   115→   115→
+   116→   116→function createInitialPipelineState(): PipelineState {
+   117→   117→  // Create one entry per 8-agent display name
+   118→   118→  // Each agent's persona field is set via AGENT_8_MAP
+   119→   119→  const idleState = (persona: AgentPersona): AgentState => ({
+   120→   120→    persona,
+   121→   121→    status: 'idle',
+   122→   122→    currentStep: '',
+   123→   123→    progress: 0,
+   124→   124→    startedAt: null,
+   125→   125→    completedAt: null,
+   126→   126→    thinkTimeMs: null,
+   127→   127→  });
+   128→   128→
+   129→   129→  const agents: Record<string, AgentState> = {
+   130→   130→    atlas:  idleState(AGENT_8_MAP['atlas']),
+   131→   131→    scout:  idleState(AGENT_8_MAP['scout']),
+   132→   132→    forge:  idleState(AGENT_8_MAP['forge']),
+   133→   133→    sage:   idleState(AGENT_8_MAP['sage']),
+   134→   134→    judge:  idleState(AGENT_8_MAP['judge']),
+   135→   135→    bard:   idleState(AGENT_8_MAP['bard']),
+   136→   136→    flow:   idleState(AGENT_8_MAP['flow']),
+   137→   137→    echo:   idleState(AGENT_8_MAP['echo']),
+   138→   138→  };
+   139→   139→  return {
+   140→   140→    phase: 'idle',
+   141→   141→    thinkStartTime: null,
+   142→   142→    totalThinkTimeMs: null,
+   143→   143→    agents,
+   144→   144→    commLog: [],
+   145→   145→    currentStep: '',
+   146→   146→    overallProgress: 0,
+   147→   147→  };
+   148→   148→}
+   149→   149→
+   150→   150→// ============================================================
+   151→   151→// Main Orchestrator Entry Point
+   152→   152→// ============================================================
+   153→   153→
+   154→   154→export async function processWithOrchestrator(
+   155→   155→  userMessage: string,
+   156→   156→  context?: ConversationContext,
+   157→   157→  forceIntent?: UserIntent,
+   158→   158→  onEvent?: OrchestratorCallback,
+   159→   159→  resumeFrom?: PipelineCheckpoint,
+   160→   160→): Promise<{
+   161→   161→  message: AgentMessage;
+   162→   162→  updatedContext: ConversationContext;
+   163→   163→  suggestedActions: SuggestedAction[];
+   164→   164→  pipelineState: PipelineState;
+   165→   165→}> {
+   166→   166→  const pipelineState = createInitialPipelineState();
+   167→   167→  const startTime = Date.now();
+   168→   168→
+   169→   169→  try {
+   170→   170→    return await processWithOrchestratorInner(userMessage, context, forceIntent, pipelineState, startTime, onEvent, resumeFrom);
+   171→   171→  } catch (error) {
+   172→   172→    console.error('[Orchestrator] FATAL:', error);
+   173→   173→
+   174→   174→    const errorMsg = error instanceof Error ? error.message : 'Unknown error';
+   175→   175→    pipelineState.phase = 'error';
+   176→   176→
+   177→   177→    // ─── GRACEFUL DEGRADE: Build a fallback response from user-supplied data ───
+   178→   178→    // Even if the entire pipeline failed, we still want to:
+   179→   179→    //   1. Parse the user's query for any structured data they provided
+   180→   180→    //   2. Build a minimal ProspectResult from that data
+   181→   181→    //   3. Render a meaningful response instead of just "Pipeline Error"
+   182→   182→    //
+   183→   183→    // This is the fix for the "Both stream and chat API failed" failure mode
+   184→   184→    // where users saw all "Discovering..." placeholders with no data.
+   185→   185→    let fallbackProspect: ProspectResult | undefined;
+   186→   186→    let fallbackContent: string;
+   187→   187→
+   188→   188→    try {
+   189→   189→      const { parseQuery } = await import('./query-parser');
+   190→   190→      const parsed = parseQuery(userMessage);
+   191→   191→
+   192→   192→      if (parsed.signalsProvided > 0 && parsed.prepopulatedProspect) {
+   193→   193→        // Build a real ProspectResult from pre-populated data
+   194→   194→        fallbackProspect = {
+   195→   195→          ...({
+   196→   196→            queryType: parsed.guessedIntent === 'research_person' ? 'person' : 'company',
+   197→   197→            query: userMessage,
+   198→   198→            companyName: null, legalName: null, website: null, industry: null, subIndustry: null, description: null,
+   199→   199→            hqAddress: null, city: null, stateProvince: null, country: null, postalCode: null,
+   200→   200→            phoneMain: null, generalEmail: null, supportEmail: null,
+   201→   201→            ceoName: null, ceoEmail: null, keyContactName: null, keyContactTitle: null, keyContactEmail: null,
+   202→   202→            employeeCount: null, revenueEstimate: null, foundingYear: null, ownershipType: null,
+   203→   203→            linkedinUrl: null, twitterHandle: null, facebookPage: null, techStack: [],
+   204→   204→            boardMembers: [], recentNews: [], productsServices: [], partners: [], fundingInfo: null,
+   205→   205→            personName: null, personTitle: null, personCompany: null, personEmail: null,
+   206→   206→            personPhone: null, personLinkedin: null, personBio: null,
+   207→   207→            sources: [], dataCompleteness: 0,
+   208→   208→          } as ProspectResult),
+   209→   209→          ...(parsed.prepopulatedProspect as Record<string, unknown>),
+   210→   210→        } as unknown as ProspectResult;
+   211→   211→
+   212→   212→        // Calculate completeness based on what we have
+   213→   213→        fallbackProspect.dataCompleteness = Math.max(
+   214→   214→          fallbackProspect.dataCompleteness || 0,
+   215→   215→          Math.min(70, parsed.signalsProvided * 8), // cap at 70% since research is incomplete
+   216→   216→        );
+   217→   217→
+   218→   218→        // Build a user-friendly fallback message
+   219→   219→        const filledFields: string[] = [];
+   220→   220→        if (fallbackProspect.personName) filledFields.push(`**Name:** ${fallbackProspect.personName}`);
+   221→   221→        if (fallbackProspect.personTitle) filledFields.push(`**Title:** ${fallbackProspect.personTitle}`);
+   222→   222→        if (fallbackProspect.personCompany || fallbackProspect.companyName) {
+   223→   223→          filledFields.push(`**Company:** ${fallbackProspect.personCompany || fallbackProspect.companyName}`);
+   224→   224→        }
+   225→   225→        if (fallbackProspect.personEmail || fallbackProspect.generalEmail) {
+   226→   226→          filledFields.push(`**Email:** ${fallbackProspect.personEmail || fallbackProspect.generalEmail}`);
+   227→   227→        }
+   228→   228→        if (fallbackProspect.personLinkedin) filledFields.push(`**LinkedIn:** ${fallbackProspect.personLinkedin}`);
+   229→   229→        if (fallbackProspect.city || fallbackProspect.country) {
+   230→   230→          filledFields.push(`**Location:** ${[fallbackProspect.city, fallbackProspect.country].filter(Boolean).join(', ')}`);
+   231→   231→        }
+   232→   232→        if (fallbackProspect.industry) filledFields.push(`**Industry:** ${fallbackProspect.industry}`);
+   233→   233→        if (fallbackProspect.personBio) filledFields.push(`**Bio:** ${fallbackProspect.personBio.slice(0, 200)}${fallbackProspect.personBio.length > 200 ? '...' : ''}`);
+   234→   234→
+   235→   235→        fallbackContent = `I extracted the following information from your query. However, my external research services encountered an error (${errorMsg.slice(0, 100)}), so I couldn't enrich this with additional web data. Here's what you provided:\n\n${filledFields.join('\n')}\n\nYou can try running this query again in a moment, or use the data above as-is.`;
+   236→   236→      } else {
+   237→   237→        fallbackContent = `I encountered an error while processing your request. Let me try a different approach.\n\n**Error:** ${errorMsg.slice(0, 150)}\n\nYou can try:\n• Rephrasing your query (e.g., "Research Stripe")\n• Asking a more specific question`;
+   238→   238→      }
+   239→   239→    } catch (parseErr) {
+   240→   240→      console.error('[Orchestrator] Fallback parser also failed:', parseErr);
+   241→   241→      fallbackContent = `I encountered an error while processing your request. Let me try a different approach.\n\n**Error:** ${errorMsg.slice(0, 150)}\n\nYou can try:\n• Rephrasing your query (e.g., "Research Stripe")\n• Asking a more specific question`;
+   242→   242→    }
+   243→   243→
+   244→   244→    return {
+   245→   245→      message: {
+   246→   246→        id: `agent-fallback-${Date.now()}`,
+   247→   247→        role: 'assistant',
+   248→   248→        content: fallbackContent,
+   249→   249→        timestamp: new Date(),
+   250→   250→        persona: 'navigator',
+   251→   251→        thinking: {
+   252→   252→          persona: 'navigator',
+   253→   253→          intent: 'converse',
+   254→   254→          reasoning: `Fallback after pipeline error: ${errorMsg.slice(0, 100)}`,
+   255→   255→          plan: ['Error recovery', 'Render user-supplied data'],
+   256→   256→          confidence: 0.1,
+   257→   257→        },
+   258→   258→        actions: [{ type: 'converse', label: 'Error', status: 'failed', message: errorMsg.slice(0, 100) }],
+   259→   259→        prospectData: fallbackProspect,
+   260→   260→      },
+   261→   261→      updatedContext: context || { recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {} },
+   262→   262→      suggestedActions: [
+   263→   263→        { label: 'Try Again', prompt: userMessage, icon: 'RefreshCw' },
+   264→   264→        { label: 'Help', prompt: 'What can you do?', icon: 'Lightbulb' },
+   265→   265→      ],
+   266→   266→      pipelineState,
+   267→   267→    };
+   268→   268→  }
+   269→   269→}
+   270→   270→
+   271→   271→// ============================================================
+   272→   272→// Helper: emit event safely
+   273→   273→// ============================================================
+   274→   274→
+   275→   275→function emit(onEvent: OrchestratorCallback | undefined, event: OrchestratorEvent): void {
+   276→   276→  try { onEvent?.(event); } catch { /* ignore */ }
+   277→   277→}
+   278→   278→
+   279→   279→// ============================================================
+   280→   280→// Helper: send agent communication message
+   281→   281→// Uses 8-agent display names (atlas, scout, forge, etc.) for
+   282→   282→// correct UI rendering in the comm log.
+   283→   283→// ============================================================
+   284→   284→
+   285→   285→function sendCommMsg(
+   286→   286→  pipelineState: PipelineState,
+   287→   287→  from: string,
+   288→   288→  to: string,
+   289→   289→  type: AgentCommMessage['type'],
+   290→   290→  content: string,
+   291→   291→  data?: Record<string, unknown>,
+   292→   292→  onEvent?: OrchestratorCallback,
+   293→   293→): void {
+   294→   294→  const msg: AgentCommMessage = {
+   295→   295→    id: `comm-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+   296→   296→    from, to, type, content, data, timestamp: Date.now(),
+   297→   297→  };
+   298→   298→  pipelineState.commLog.push(msg);
+   299→   299→  emit(onEvent, { type: 'agent_comm', data: msg });
+   300→   300→}
+   301→   301→
+   302→   302→// ============================================================
+   303→   303→// Helper: update agent state
+   304→   304→// Uses the 8-agent display name as the key in pipelineState.agents,
+   305→   305→// and sets the persona field from AGENT_8_MAP for backward compat.
+   306→   306→// ============================================================
+   307→   307→
+   308→   308→function updateAgentState(
+   309→   309→  pipelineState: PipelineState,
+   310→   310→  agentKey: string,  // 8-agent display name (atlas, scout, forge, etc.)
+   311→   311→  update: Partial<AgentState>,
+   312→   312→  onEvent?: OrchestratorCallback,
+   313→   313→): void {
+   314→   314→  // Ensure persona is set from the mapping if not already provided
+   315→   315→  if (!update.persona) {
+   316→   316→    update.persona = AGENT_8_MAP[agentKey] || 'navigator';
+   317→   317→  }
+   318→   318→  const existing = pipelineState.agents[agentKey];
+   319→   319→  if (existing) {
+   320→   320→    pipelineState.agents[agentKey] = { ...existing, ...update };
+   321→   321→  } else {
+   322→   322→    // Create the entry if it doesn't exist (safety net)
+   323→   323→    pipelineState.agents[agentKey] = {
+   324→   324→      persona: update.persona,
+   325→   325→      status: 'idle',
+   326→   326→      currentStep: '',
+   327→   327→      progress: 0,
+   328→   328→      startedAt: null,
+   329→   329→      completedAt: null,
+   330→   330→      thinkTimeMs: null,
+   331→   331→      ...update,
+   332→   332→    };
+   333→   333→  }
+   334→   334→  emit(onEvent, { type: 'agent_status', data: { agent: agentKey, state: pipelineState.agents[agentKey] } });
+   335→   335→}
+   336→   336→
+   337→   337→// ============================================================
+   338→   338→// Helper: build rich fallback response from structured data
+   339→   339→// without needing an LLM call. Covers all intent types.
+   340→   340→// ============================================================
+   341→   341→
+   342→   342→function buildRichFallbackResponse(params: {
+   343→   343→  intent: UserIntent;
+   344→   344→  prospect?: ProspectResult;
+   345→   345→  icp?: ICPResult;
+   346→   346→  market?: MarketResult;
+   347→   347→  score?: ScoreResult;
+   348→   348→  outreach?: OutreachResult;
+   349→   349→  userMessage: string;
+   350→   350→}): string {
+   351→   351→  const { intent, prospect, icp, market, score, outreach, userMessage } = params;
+   352→   352→
+   353→   353→  // Prospect-based responses
+   354→   354→  if (prospect) {
+   355→   355→    return buildFallbackResponse(prospect, intent);
+   356→   356→  }
+   357→   357→
+   358→   358→  // Market analysis fallback
+   359→   359→  if (market) {
+   360→   360→    const parts: string[] = ['## Market Analysis'];
+   361→   361→    if (market.summary) parts.push(market.summary);
+   362→   362→    if (market.keyFindings?.length) {
+   363→   363→      parts.push('\n**Key Findings:**');
+   364→   364→      market.keyFindings.slice(0, 5).forEach(f => parts.push(`- ${f}`));
+   365→   365→    }
+   366→   366→    if (market.competitors?.length) {
+   367→   367→      parts.push('\n**Competitors:**');
+   368→   368→      market.competitors.slice(0, 5).forEach(c => parts.push(`- **${c.name}**: ${c.description?.slice(0, 80) || 'No description'}`));
+   369→   369→    }
+   370→   370→    if (market.trends?.length) {
+   371→   371→      parts.push('\n**Trends:**');
+   372→   372→      market.trends.slice(0, 3).forEach(t => parts.push(`- ${t}`));
+   373→   373→    }
+   374→   374→    return parts.join('\n\n');
+   375→   375→  }
+   376→   376→
+   377→   377→  // Score fallback
+   378→   378→  if (score) {
+   379→   379→    const parts: string[] = ['## Lead Score'];
+   380→   380→    parts.push(`**Overall Score:** ${score.overallScore}/100 — **${score.tier.toUpperCase()}** tier`);
+   381→   381→    parts.push(`**Recommendation:** ${score.recommendation}`);
+   382→   382→    if (score.dimensions) {
+   383→   383→      const dims = Object.entries(score.dimensions) as [string, { score: number; reasoning: string }][];
+   384→   384→      parts.push('\n**Dimension Breakdown:**');
+   385→   385→      dims.forEach(([key, val]) => {
+   386→   386→        parts.push(`- **${key}**: ${val.score}/100 — ${val.reasoning?.slice(0, 60) || ''}`);
+   387→   387→      });
+   388→   388→    }
+   389→   389→    return parts.join('\n\n');
+   390→   390→  }
+   391→   391→
+   392→   392→  // Outreach fallback
+   393→   393→  if (outreach) {
+   394→   394→    const parts: string[] = ['## Outreach Message'];
+   395→   395→    if (outreach.subject) parts.push(`**Subject:** ${outreach.subject}`);
+   396→   396→    parts.push(`**Channel:** ${outreach.channel}`);
+   397→   397→    parts.push(`**Tone:** ${outreach.tone}`);
+   398→   398→    parts.push(`\n${outreach.body}`);
+   399→   399→    if (outreach.personalizationHooks?.length) {
+   400→   400→      parts.push('\n**Personalization Hooks:**');
+   401→   401→      outreach.personalizationHooks.forEach(h => parts.push(`- ${h}`));
+   402→   402→    }
+   403→   403→    return parts.join('\n\n');
+   404→   404→  }
+   405→   405→
+   406→   406→  // ICP fallback
+   407→   407→  if (icp) {
+   408→   408→    const parts: string[] = ['## Ideal Customer Profile'];
+   409→   409→    parts.push(`**${icp.name}**`);
+   410→   410→    if (icp.description) parts.push(icp.description);
+   411→   411→    if (icp.firmographic) {
+   412→   412→      parts.push(`\n**Firmographics:** Industries: ${icp.firmographic.industries?.join(', ') || 'N/A'} | Size: ${icp.firmographic.companySizes?.join(', ') || 'N/A'} | Revenue: ${icp.firmographic.revenueRange || 'N/A'}`);
+   413→   413→    }
+   414→   414→    return parts.join('\n\n');
+   415→   415→  }
+   416→   416→
+   417→   417→  // Generic fallback
+   418→   418→  return `I've processed your request about "${userMessage.slice(0, 50)}". The research pipeline has completed. Check the results below for details, and let me know if you'd like me to take further action.`;
+   419→   419→}
+   420→   420→
+   421→   421→// ============================================================
+   422→   422→// Inner Orchestrator Implementation
+   423→   423→// ============================================================
+   424→   424→
+   425→   425→async function processWithOrchestratorInner(
+   426→   426→  userMessage: string,
+   427→   427→  context: ConversationContext | undefined,
+   428→   428→  forceIntent: UserIntent | undefined,
+   429→   429→  pipelineState: PipelineState,
+   430→   430→  startTime: number,
+   431→   431→  onEvent?: OrchestratorCallback,
+   432→   432→  resumeFrom?: PipelineCheckpoint,
+   433→   433→): Promise<{
+   434→   434→  message: AgentMessage;
+   435→   435→  updatedContext: ConversationContext;
+   436→   436→  suggestedActions: SuggestedAction[];
+   437→   437→  pipelineState: PipelineState;
+   438→   438→}> {
+   439→   439→
+   440→   440→  let updatedContext: ConversationContext = context || {
+   441→   441→    recentProspects: [], activeICP: null, lastIntent: null, lastPersona: null, userPreferences: {},
+   442→   442→  };
+   443→   443→
+   444→   444→  // ═══════════════════════════════════════════════════
+   445→   445→  // RESUME PATH: If a checkpoint is provided, skip
+   446→   446→  // the thinking phase and resume from the failed agent.
+   447→   447→  // ═══════════════════════════════════════════════════
+   448→   448→  let classification: IntentClassification;
+   449→   449→  let thinking: AgentThinking;
+   450→   450→
+   451→   451→  if (resumeFrom && resumeFrom.classifiedIntent) {
+   452→   452→    // Skip thinking — intent is already known from checkpoint
+   453→   453→    const personas: Record<UserIntent, AgentPersona> = {
+   454→   454→      research_company: 'scout', research_person: 'hound', research_url: 'scout',
+   455→   455→      analyze_market: 'analyst', analyze_competitors: 'analyst', build_icp: 'architect',
+   456→   456→      score_lead: 'judge', compose_outreach: 'scribe', refine_search: 'scout',
+   457→   457→      add_to_pipeline: 'navigator', clarify: 'navigator', converse: 'navigator',
+   458→   458→    };
+   459→   459→    classification = {
+   460→   460→      intent: resumeFrom.classifiedIntent,
+   461→   461→      persona: personas[resumeFrom.classifiedIntent],
+   462→   462→      confidence: 1.0,
+   463→   463→      reasoning: 'Resumed from checkpoint — intent already classified',
+   464→   464→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   465→   465→      clarifyingQuestion: null,
+   466→   466→    };
+   467→   467→    thinking = intentToThinking(classification);
+   468→   468→
+   469→   469→    // Mark already-completed agents in pipeline state
+   470→   470→    for (const completedAgent of resumeFrom.completedAgents) {
+   471→   471→      updateAgentState(pipelineState, completedAgent, {
+   472→   472→        status: 'completed',
+   473→   473→        currentStep: `Completed before resume`,
+   474→   474→        progress: 100,
+   475→   475→        completedAt: Date.now(),
+   476→   476→      }, onEvent);
+   477→   477→    }
+   478→   478→
+   479→   479→    // Emit pipeline_resumed event
+   480→   480→    emit(onEvent, { type: 'pipeline_resumed', data: {
+   481→   481→      resumedFrom: resumeFrom.failedAgent || 'unknown',
+   482→   482→      completedAgents: resumeFrom.completedAgents,
+   483→   483→      failedAgent: resumeFrom.failedAgent,
+   484→   484→    }});
+   485→   485→
+   486→   486→    sendCommMsg(pipelineState, 'atlas', 'all', 'broadcast',
+   487→   487→      `Pipeline resumed from checkpoint. Skipping ${resumeFrom.completedAgents.length} completed agents. Resuming from ${resumeFrom.failedAgent || 'next agent'}...`,
+   488→   488→      { completedAgents: resumeFrom.completedAgents, failedAgent: resumeFrom.failedAgent },
+   489→   489→      onEvent);
+   490→   490→
+   491→   491→    console.log(`[Orchestrator] Resuming from checkpoint: completed=[${resumeFrom.completedAgents.join(',')}], failed=${resumeFrom.failedAgent}`);
+   492→   492→  } else {
+   493→   493→    // ═══════════════════════════════════════════════════
+   494→   494→    // PHASE 1: THINK — Atlas classifies intent
+   495→   495→    // ═══════════════════════════════════════════════════
+   496→   496→    pipelineState.phase = 'thinking';
+   497→   497→    pipelineState.thinkStartTime = Date.now();
+   498→   498→    emit(onEvent, { type: 'thinking_start', data: { timestamp: pipelineState.thinkStartTime } });
+   499→   499→    emit(onEvent, { type: 'pipeline_progress', data: { phase: 'thinking', overallProgress: 5 } });
+   500→   500→
+   501→   501→    // Update Atlas status (use 'atlas' as the 8-agent key)
+   502→   502→    updateAgentState(pipelineState, 'atlas', {
+   503→   503→      status: 'thinking',
+   504→   504→      currentStep: 'Classifying intent',
+   505→   505→      progress: 0,
+   506→   506→      startedAt: Date.now(),
+   507→   507→    }, onEvent);
+   508→   508→
+   509→   509→    sendCommMsg(pipelineState, 'user', 'atlas', 'request',
+   510→   510→      `Classify this query: "${userMessage.slice(0, 100)}"`, undefined, onEvent);
+   511→   511→
+   512→   512→    // Run intent classification
+   513→   513→    if (forceIntent) {
+   514→   514→      const personas: Record<UserIntent, AgentPersona> = {
+   515→   515→        research_company: 'scout', research_person: 'hound', research_url: 'scout',
+   516→   516→        analyze_market: 'analyst', analyze_competitors: 'analyst', build_icp: 'architect',
+   517→   517→        score_lead: 'judge', compose_outreach: 'scribe', refine_search: 'scout',
+   518→   518→        add_to_pipeline: 'navigator', clarify: 'navigator', converse: 'navigator',
+   519→   519→      };
+   520→   520→      classification = {
+   521→   521→        intent: forceIntent,
+   522→   522→        persona: personas[forceIntent],
+   523→   523→        confidence: 1.0,
+   524→   524→        reasoning: 'Intent was explicitly specified',
+   525→   525→        extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   526→   526→        clarifyingQuestion: null,
+   527→   527→      };
+   528→   528→    } else {
+   529→   529→      classification = await classifyIntent(userMessage, context);
+   530→   530→    }
+   531→   531→
+   532→   532→    thinking = intentToThinking(classification);
+   533→   533→
+   534→   534→    // End thinking phase
+   535→   535→    const thinkEndTime = Date.now();
+   536→   536→    pipelineState.totalThinkTimeMs = thinkEndTime - (pipelineState.thinkStartTime || startTime);
+   537→   537→
+   538→   538→    // Update Atlas status to completed
+   539→   539→    updateAgentState(pipelineState, 'atlas', {
+   540→   540→      status: 'completed',
+   541→   541→      currentStep: `Intent: ${classification.intent} (${Math.round(classification.confidence * 100)}% confidence)`,
+   542→   542→      progress: 100,
+   543→   543→      completedAt: Date.now(),
+   544→   544→      thinkTimeMs: pipelineState.totalThinkTimeMs,
+   545→   545→    }, onEvent);
+   546→   546→
+   547→   547→    sendCommMsg(pipelineState, 'atlas', 'all', 'broadcast',
+   548→   548→      `Query classified as **${classification.intent}** with ${Math.round(classification.confidence * 100)}% confidence. Activating pipeline...`,
+   549→   549→      { intent: classification.intent, confidence: classification.confidence, persona: classification.persona },
+   550→   550→      onEvent);
+   551→   551→
+   552→   552→    emit(onEvent, { type: 'thinking_end', data: { totalMs: pipelineState.totalThinkTimeMs, classification } });
+   553→   553→  }
+   554→   554→
+   555→   555→  // ═══════════════════════════════════════════════════
+   556→   556→  // FAST PATH: For converse/clarify intents, skip the full
+   557→   557→  // pipeline and respond directly with a single LLM call.
+   558→   558→  // This avoids 2-3 minutes of unnecessary pipeline execution.
+   559→   559→  // ═══════════════════════════════════════════════════
+   560→   560→  if (classification.intent === 'converse' || classification.intent === 'clarify') {
+   561→   561→    let responseContent = '';
+   562→   562→    if (classification.intent === 'clarify' && classification.clarifyingQuestion) {
+   563→   563→      responseContent = classification.clarifyingQuestion;
+   564→   564→    } else {
+   565→   565→      try {
+   566→   566→        const contextHint = buildContextHint(updatedContext);
+   567→   567→        responseContent = await generateConversationResponse(
+   568→   568→          'navigator', classification.intent, userMessage,
+   569→   569→          contextHint || 'General conversation', updatedContext,
+   570→   570→        );
+   571→   571→      } catch {
+   572→   572→        // LLM failed — use a hardcoded fallback
+   573→   573→        if (classification.intent === 'converse') {
+   574→   574→          responseContent = "I'm here to help with B2B lead generation! You can ask me to:\n\n• **Research a company** — e.g., \"Tell me about Stripe\"\n• **Find a person** — e.g., \"Look up Patrick Collison\"\n• **Analyze a market** — e.g., \"What's the SaaS market in Berlin?\"\n• **Build an ICP** — e.g., \"Help me define my ideal customer\"\n• **Score a lead** — e.g., \"Is this a good lead?\"\n• **Compose outreach** — e.g., \"Write an email to Acme Corp\"";
+   575→   575→        } else {
+   576→   576→          responseContent = "I'd love to help! Could you tell me more about what you're looking for? For example:\n• Research a specific company\n• Find information about a person\n• Analyze a market or industry\n• Build an Ideal Customer Profile\n• Compose an outreach message";
+   577→   577→        }
+   578→   578→      }
+   579→   579→    }
+   580→   580→
+   581→   581→    if (!responseContent) {
+   582→   582→      responseContent = classification.intent === 'converse'
+   583→   583→        ? "I'm here to help with B2B lead generation! Ask me to research companies, find people, analyze markets, build ICPs, score leads, or compose outreach."
+   584→   584→        : "I'd love to help! Could you be more specific about what you're looking for?";
+   585→   585→    }
+   586→   586→
+   587→   587→    pipelineState.phase = 'complete';
+   588→   588→    emit(onEvent, { type: 'pipeline_progress', data: { phase: 'complete', overallProgress: 100 } });
+   589→   589→
+   590→   590→    // Mark echo as completed since we skip it
+   591→   591→    updateAgentState(pipelineState, 'echo', {
+   592→   592→      status: 'completed',
+   593→   593→      currentStep: 'Skipped — fast path',
+   594→   594→      progress: 100,
+   595→   595→      completedAt: Date.now(),
+   596→   596→    }, onEvent);
+   597→   597→
+   598→   598→    updatedContext.lastIntent = classification.intent;
+   599→   599→    updatedContext.lastPersona = classification.persona;
+   600→   600→
+   601→   601→    const agentMessage: AgentMessage = {
+   602→   602→      id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+   603→   603→      role: 'assistant',
+   604→   604→      content: responseContent,
+   605→   605→      timestamp: new Date(),
+   606→   606→      persona: classification.persona,
+   607→   607→      thinking,
+   608→   608→      actions: [{ type: classification.intent, label: 'Direct Response', status: 'completed', message: 'Fast-path response' }],
+   609→   609→    };
+   610→   610→
+   611→   611→    const suggestedActions = generateSuggestedActions(classification.intent, undefined, updatedContext);
+   612→   612→
+   613→   613→    sendCommMsg(pipelineState, 'atlas', 'user', 'response',
+   614→   614→      `Fast path: ${classification.intent} handled directly.`, undefined, onEvent);
+   615→   615→
+   616→   616→    console.log(`[Orchestrator] Fast-path "${userMessage.slice(0, 50)}" → intent=${classification.intent}, took=${Date.now() - startTime}ms`);
+   617→   617→
+   618→   618→    return { message: agentMessage, updatedContext, suggestedActions, pipelineState };
+   619→   619→  }
+   620→   620→
+   621→   621→  // ═══════════════════════════════════════════════════
+   622→   622→  // PHASE 2: EXECUTE — Run the 8-agent pipeline
+   623→   623→  // ═══════════════════════════════════════════════════
+   624→   624→  pipelineState.phase = 'executing';
+   625→   625→  emit(onEvent, { type: 'pipeline_progress', data: { phase: 'executing', overallProgress: 15 } });
+   626→   626→
+   627→   627→  let actions: AgentAction[] = [];
+   628→   628→  let prospectData: ProspectResult | undefined;
+   629→   629→  let icpData: ICPResult | undefined;
+   630→   630→  let outreachData: OutreachResult | undefined;
+   631→   631→  let marketData: MarketResult | undefined;
+   632→   632→  let scoreData: ScoreResult | undefined;
+   633→   633→  let responseContent = '';
+   634→   634→
+   635→   635→  // Initialize partial data from checkpoint if resuming
+   636→   636→  if (resumeFrom) {
+   637→   637→    if (resumeFrom.partialProspectData) prospectData = resumeFrom.partialProspectData as unknown as ProspectResult;
+   638→   638→    if (resumeFrom.partialIcpData) icpData = resumeFrom.partialIcpData as unknown as ICPResult;
+   639→   639→    if (resumeFrom.partialScoreData) scoreData = resumeFrom.partialScoreData as unknown as ScoreResult;
+   640→   640→    if (resumeFrom.partialOutreachData) outreachData = resumeFrom.partialOutreachData as unknown as OutreachResult;
+   641→   641→    if (resumeFrom.partialMarketData) marketData = resumeFrom.partialMarketData as unknown as MarketResult;
+   642→   642→    // Also restore context from partial data
+   643→   643→    if (prospectData) {
+   644→   644→      updatedContext.recentProspects = [...updatedContext.recentProspects, prospectData];
+   645→   645→    }
+   646→   646→  }
+   647→   647→
+   648→   648→  // Create a progress callback that bridges to the orchestrator events
+   649→   649→  const bridgeProgress: ProgressCallback = (event: string, data: unknown) => {
+   650→   650→    if (event === 'step_start') {
+   651→   651→      emit(onEvent, { type: 'step_start', data: data as { stepIndex: number; label: string; agent: AgentPersona; message: string } });
+   652→   652→    } else if (event === 'step_progress') {
+   653→   653→      emit(onEvent, { type: 'step_progress', data: data as { stepIndex: number; message: string; partialData?: Record<string, unknown> } });
+   654→   654→    } else if (event === 'step_complete') {
+   655→   655→      emit(onEvent, { type: 'step_complete', data: data as { stepIndex: number; status: 'completed' | 'failed'; message: string; partialData?: Record<string, unknown> } });
+   656→   656→    } else if (event === 'insight') {
+   657→   657→      emit(onEvent, { type: 'insight', data: data as { insight: InsightItem } });
+   658→   658→    }
+   659→   659→  };
+   660→   660→
+   661→   661→  // Determine which pipeline phases to execute based on intent
+   662→   662→  const relevantPhases = PIPELINE_PHASES.filter(phase => {
+   663→   663→    if (!phase.intentRequired) return true; // Always run (atlas, echo)
+   664→   664→    return phase.intentRequired.includes(classification.intent);
+   665→   665→  });
+   666→   666→
+   667→   667→  let stepIdx = 0;
+   668→   668→  const totalPhases = relevantPhases.length;
+   669→   669→
+   670→   670→  // Execute each relevant phase
+   671→   671→  for (const phase of relevantPhases) {
+   672→   672→    const agentKey = phase.agent; // 8-agent display name (atlas, scout, forge, etc.)
+   673→   673→
+   674→   674→    // ═══ SKIP COMPLETED AGENTS ON RESUME ═══
+   675→   675→    // If resuming from a checkpoint, skip agents that already completed
+   676→   676→    if (resumeFrom && resumeFrom.completedAgents.includes(phase.agent)) {
+   677→   677→      updateAgentState(pipelineState, agentKey, {
+   678→   678→        status: 'completed',
+   679→   679→        currentStep: `${phase.action} (completed before)`,
+   680→   680→        progress: 100,
+   681→   681→        completedAt: Date.now(),
+   682→   682→      }, onEvent);
+   683→   683→      stepIdx++;
+   684→   684→      continue;
+   685→   685→    }
+   686→   686→
+   687→   687→    // ═══ REDUCED COOLDOWN ═══
+   688→   688→    // Cooldown between agent phases to respect rate limit (concurrency=1).
+   689→   689→    // Reduced from 2-3.5s to 0.5-1.5s for faster pipeline execution.
+   690→   690→    if (stepIdx > 0) {
+   691→   691→      const isSearchPhase = phase.agent === 'scout';
+   692→   692→      const cooldownMs = isSearchPhase
+   693→   693→        ? 500 + Math.random() * 500    // 0.5-1s for search phases
+   694→   694→        : 1000 + Math.random() * 500;  // 1-1.5s for LLM phases
+   695→   695→
+   696→   696→      updateAgentState(pipelineState, agentKey, {
+   697→   697→        status: 'waiting',
+   698→   698→        currentStep: `Cooldown (${Math.round(cooldownMs / 1000)}s)`,
+   699→   699→        progress: 0,
+   700→   700→        startedAt: Date.now(),
+   701→   701→      }, onEvent);
+   702→   702→
+   703→   703→      sendCommMsg(pipelineState, 'atlas', agentKey, 'status',
+   704→   704→        `Cooldown: ${Math.round(cooldownMs / 1000)}s before starting`,
+   705→   705→        { cooldownMs, reason: 'rate_limit_buffer' },
+   706→   706→        onEvent);
+   707→   707→
+   708→   708→      emit(onEvent, { type: 'cooldown', data: { agent: agentKey, cooldownMs, reason: 'rate_limit_buffer' } });
+   709→   709→      emit(onEvent, { type: 'pipeline_progress', data: { phase: 'executing', overallProgress: Math.round(15 + (stepIdx / totalPhases) * 70 - 2) } });
+   710→   710→
+   711→   711→      await new Promise(r => setTimeout(r, cooldownMs));
+   712→   712→    }
+   713→   713→
+   714→   714→    // Update agent state to working
+   715→   715→    updateAgentState(pipelineState, agentKey, {
+   716→   716→      status: 'working',
+   717→   717→      currentStep: phase.action,
+   718→   718→      progress: 0,
+   719→   719→      startedAt: Date.now(),
+   720→   720→    }, onEvent);
+   721→   721→
+   722→   722→    // Atlas tells the agent what to do
+   723→   723→    if (phase.agent !== 'atlas') {
+   724→   724→      sendCommMsg(pipelineState, 'atlas', agentKey, 'request',
+   725→   725→        `[${agentKey.toUpperCase()}] ${phase.action} for query: "${userMessage.slice(0, 80)}"`,
+   726→   726→        { intent: classification.intent, phase: agentKey },
+   727→   727→        onEvent);
+   728→   728→    }
+   729→   729→
+   730→   730→    // Progress calculation
+   731→   731→    const baseProgress = 15 + (stepIdx / totalPhases) * 70;
+   732→   732→    emit(onEvent, { type: 'pipeline_progress', data: { phase: 'executing', overallProgress: Math.round(baseProgress) } });
+   733→   733→
+   734→   734→    // Execute the actual work based on the agent
+   735→   735→    try {
+   736→   736→      switch (phase.agent) {
+   737→   737→        case 'atlas':
+   738→   738→          // Already done (intent classification)
+   739→   739→          sendCommMsg(pipelineState, 'atlas', 'all', 'broadcast',
+   740→   740→            `Pipeline plan: ${relevantPhases.map(p => p.agent).join(' → ')}`, undefined, onEvent);
+   741→   741→          break;
+   742→   742→
+   743→   743→        case 'scout':
+   744→   744→          // Scout: Company/Person/URL research
+   745→   745→          if (['research_company', 'research_url', 'refine_search'].includes(classification.intent)) {
+   746→   746→            const companyName = classification.extractedEntities.companyName || userMessage.trim();
+   747→   747→            sendCommMsg(pipelineState, 'atlas', 'scout', 'handoff',
+   748→   748→              `Research target: "${companyName}"`, { target: companyName }, onEvent);
+   749→   749→
+   750→   750→            // Emit an immediate data_update with pre-populated data so the UI
+   751→   751→            // can render user-supplied fields BEFORE the slow agent pipeline
+   752→   752→            // finishes. This fixes the "all fields say Discovering..." problem.
+   753→   753→            if (classification.prepopulatedProspect && Object.keys(classification.prepopulatedProspect).length > 0) {
+   754→   754→              emit(onEvent, { type: 'data_update', data: { prospect: classification.prepopulatedProspect } });
+   755→   755→            }
+   756→   756→
+   757→   757→            const result = await executeCompanyResearch(
+   758→   758→              companyName,
+   759→   759→              bridgeProgress,
+   760→   760→              classification.prepopulatedProspect,
+   761→   761→            );
+   762→   762→            actions = [...actions, ...result.steps];
+   763→   763→
+   764→   764→            if (result.prospect) {
+   765→   765→              prospectData = result.prospect;
+   766→   766→              updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
+   767→   767→
+   768→   768→              // Final data_update with the complete prospect data
+   769→   769→              emit(onEvent, { type: 'data_update', data: { prospect: prospectData as unknown as Record<string, unknown> } });
+   770→   770→
+   771→   771→              sendCommMsg(pipelineState, 'scout', 'atlas', 'response',
+   772→   772→                `Found data for "${result.prospect.companyName}" — ${result.prospect.dataCompleteness}% complete`,
+   773→   773→                { completeness: result.prospect.dataCompleteness, companyName: result.prospect.companyName },
+   774→   774→                onEvent);
+   775→   775→            } else {
+   776→   776→              sendCommMsg(pipelineState, 'scout', 'atlas', 'response',
+   777→   777→                'Limited data found. Continuing with partial results.', undefined, onEvent);
+   778→   778→            }
+   779→   779→          } else if (classification.intent === 'research_person') {
+   780→   780→            const personName = classification.extractedEntities.personName || userMessage.trim();
+   781→   781→            sendCommMsg(pipelineState, 'atlas', 'scout', 'handoff',
+   782→   782→              `Research person: "${personName}"`, { target: personName }, onEvent);
+   783→   783→
+   784→   784→            // Emit an immediate data_update with pre-populated data so the UI
+   785→   785→            // can render user-supplied fields BEFORE the slow agent pipeline
+   786→   786→            // finishes.
+   787→   787→            if (classification.prepopulatedProspect && Object.keys(classification.prepopulatedProspect).length > 0) {
+   788→   788→              emit(onEvent, { type: 'data_update', data: { prospect: classification.prepopulatedProspect } });
+   789→   789→            }
+   790→   790→
+   791→   791→            const result = await executePersonResearch(
+   792→   792→              personName,
+   793→   793→              bridgeProgress,
+   794→   794→              classification.prepopulatedProspect,
+   795→   795→            );
+   796→   796→            actions = [...actions, ...result.steps];
+   797→   797→            if (result.prospect) {
+   798→   798→              prospectData = result.prospect;
+   799→   799→              updatedContext.recentProspects = [...updatedContext.recentProspects.slice(-4), result.prospect];
+   800→   800→
+   801→   801→              // Final data_update with the complete prospect data
+   802→   802→              emit(onEvent, { type: 'data_update', data: { prospect: prospectData as unknown as Record<string, unknown> } });
+   803→   803→
+   804→   804→              sendCommMsg(pipelineState, 'scout', 'atlas', 'response',
+   805→   805→                `Found data for "${result.prospect.personName}" — ${result.prospect.dataCompleteness}% complete`,
+   806→   806→                { completeness: result.prospect.dataCompleteness, personName: result.prospect.personName },
+   807→   807→                onEvent);
+   808→   808→            }
+   809→   809→          }
+   810→   810→          break;
+   811→   811→
+   812→   812→        case 'forge':
+   813→   813→          // Forge: Data enrichment — deep crawl and gap fill
+   814→   814→          if (prospectData && prospectData.dataCompleteness < 80) {
+   815→   815→            sendCommMsg(pipelineState, 'scout', 'forge', 'handoff',
+   816→   816→              `Enriching data (currently ${prospectData.dataCompleteness}% complete)`,
+   817→   817→              { completeness: prospectData.dataCompleteness }, onEvent);
+   818→   818→
+   819→   819→            // Try additional enrichment searches
+   820→   820→            const enrichActions: AgentAction = {
+   821→   821→              type: 'research_company', label: 'Deep Enrichment', status: 'running',
+   822→   822→              message: `Enriching ${prospectData.companyName || 'prospect'} data...`,
+   823→   823→            };
+   824→   824→            actions.push(enrichActions);
+   825→   825→            const enrichIdx = actions.length - 1;
+   826→   826→
+   827→   827→            try {
+   828→   828→              // Try LinkedIn search for enrichment
+   829→   829→              if (prospectData.companyName) {
+   830→   830→                const liResult = await linkedInSearchCompanies(prospectData.companyName, 3);
+   831→   831→                if (liResult.success && liResult.data.length > 0) {
+   832→   832→                  const topResult = liResult.data[0];
+   833→   833→                  if (!prospectData.linkedinUrl && topResult.url) prospectData.linkedinUrl = topResult.url;
+   834→   834→                  if (!prospectData.description && topResult.headline) prospectData.description = topResult.headline;
+   835→   835→                }
+   836→   836→              }
+   837→   837→
+   838→   838→              // Try web search for missing data points
+   839→   839→              if (prospectData.companyName) {
+   840→   840→                const gapQueries: string[] = [];
+   841→   841→                if (!prospectData.ceoName) gapQueries.push(`"${prospectData.companyName}" CEO founder executive`);
+   842→   842→                if (!prospectData.revenueEstimate) gapQueries.push(`"${prospectData.companyName}" revenue funding valuation`);
+   843→   843→                if (!prospectData.employeeCount) gapQueries.push(`"${prospectData.companyName}" employees team size`);
+   844→   844→
+   845→   845→                if (gapQueries.length > 0) {
+   846→   846→                  const gapSearch = await exaSearch(gapQueries[0], 3);
+   847→   847→                  if (gapSearch.success && gapSearch.data.length > 0) {
+   848→   848→                    const allText = gapSearch.data.map(r => `${r.title} ${r.snippet}`).join(' ');
+   849→   849→
+   850→   850→                    // Simple regex extraction for common missing fields
+   851→   851→                    if (!prospectData.ceoName) {
+   852→   852→                      const ceoMatch = allText.match(/(?:CEO|Chief Executive|Founder)[:\s]+([A-Z][a-z]+ [A-Z][a-z]+)/);
+   853→   853→                      if (ceoMatch) prospectData.ceoName = ceoMatch[1];
+   854→   854→                    }
+   855→   855→                    if (!prospectData.revenueEstimate) {
+   856→   856→                      const revMatch = allText.match(/\$[\d.]+[BbMmKk]/);
+   857→   857→                      if (revMatch) prospectData.revenueEstimate = revMatch[0];
+   858→   858→                    }
+   859→   859→                    if (!prospectData.employeeCount) {
+   860→   860→                      const empMatch = allText.match(/(\d[\d,+]*)\s*(?:employees|team members|staff|people)/i);
+   861→   861→                      if (empMatch) prospectData.employeeCount = empMatch[1];
+   862→   862→                    }
+   863→   863→                  }
+   864→   864→                }
+   865→   865→              }
+   866→   866→
+   867→   867→              // Recalculate completeness
+   868→   868→              prospectData.dataCompleteness = calculateQuickCompleteness(prospectData);
+   869→   869→
+   870→   870→              actions[enrichIdx] = { ...enrichActions, status: 'completed', message: `Enrichment complete — ${prospectData.dataCompleteness}% data` };
+   871→   871→              sendCommMsg(pipelineState, 'forge', 'atlas', 'response',
+   872→   872→                `Enrichment brought data to ${prospectData.dataCompleteness}%`, undefined, onEvent);
+   873→   873→            } catch (e) {
+   874→   874→              actions[enrichIdx] = { ...enrichActions, status: 'completed', message: 'Enrichment partially completed' };
+   875→   875→            }
+   876→   876→
+   877→   877→            // ── Phase 1 Data Source Channels ──────────────────────────────
+   878→   878→            // Run OpenCorporates, yfinance, SEC EDGAR, News Worker, Geocoder,
+   879→   879→            // and PublicWWW in parallel to enrich the prospect with verified
+   880→   880→            // registry data, financial KPIs, news intent signals, and geo coords.
+   881→   881→            // PublicWWW is skipped here to respect its 60s rate limit — it's
+   882→   882→            // only called explicitly from the Scout phase for tech-stack discovery.
+   883→   883→            if (prospectData && (prospectData.companyName || prospectData.personName)) {
+   884→   884→              try {
+   885→   885→                const channelActions: AgentAction = {
+   886→   886→                  type: 'research_company',
+   887→   887→                  label: 'Data Source Channels',
+   888→   888→                  status: 'running',
+   889→   889→                  message: `Querying OpenCorporates, yfinance, SEC EDGAR, News, Geocoder...`,
+   890→   890→                };
+   891→   891→                actions.push(channelActions);
+   892→   892→                const chIdx = actions.length - 1;
+   893→   893→
+   894→   894→                const channelResult = await executeChannelEnrichment(prospectData, {
+   895→   895→                  onProgress: (label, message, status) => {
+   896→   896→                    if (status === 'running') {
+   897→   897→                      actions[chIdx] = { ...channelActions, status: 'running', message };
+   898→   898→                    } else if (status === 'completed') {
+   899→   899→                      actions[chIdx] = { ...channelActions, status: 'completed', message };
+   900→   900→                    }
+   901→   901→                  },
+   902→   902→                  skipPublicWww: true,  // 60s rate limit — call separately in Scout phase
+   903→   903→                });
+   904→   904→
+   905→   905→                // Replace prospectData with the enriched version
+   906→   906→                prospectData = channelResult.prospect;
+   907→   907→
+   908→   908→                const ocOk = channelResult.channelResults.openCorporates?.success ? '✓' : '✗';
+   909→   909→                const yfOk = channelResult.channelResults.yfinance?.success ? '✓' : '✗';
+   910→   910→                const edOk = channelResult.channelResults.edgar?.success ? '✓' : '✗';
+   911→   911→                const nwOk = channelResult.channelResults.news?.success ? '✓' : '✗';
+   912→   912→                const geOk = channelResult.channelResults.geocoder?.success ? '✓' : '✗';
+   913→   913→
+   914→   914→                actions[chIdx] = {
+   915→   915→                  ...channelActions,
+   916→   916→                  status: 'completed',
+   917→   917→                  message: `Channels: OC:${ocOk} YF:${yfOk} EDGAR:${edOk} News:${nwOk} Geo:${geOk} — ` +
+   918→   918→                           `${channelResult.personLeads.length} person leads, ` +
+   919→   919→                           `${Object.keys(channelResult.customKpis).length} KPIs`,
+   920→   920→                };
+   921→   921→
+   922→   922→                sendCommMsg(pipelineState, 'forge', 'atlas', 'response',
+   923→   923→                  `Channel enrichment: ${Object.keys(channelResult.customKpis).length} KPIs, ` +
+   924→   924→                  `${channelResult.personLeads.length} person leads`,
+   925→   925→                  { kpiCount: Object.keys(channelResult.customKpis).length,
+   926→   926→                    personLeadCount: channelResult.personLeads.length },
+   927→   927→                  onEvent);
+   928→   928→
+   929→   929→                // Recalculate completeness after channel enrichment
+   930→   930→                prospectData.dataCompleteness = calculateQuickCompleteness(prospectData);
+   931→   931→              } catch (e) {
+   932→   932→                // Non-fatal — the pipeline continues with whatever data we have
+   933→   933→                console.warn('[orchestrator] Channel enrichment failed:', e);
+   934→   934→              }
+   935→   935→            }
+   936→   936→          }
+   937→   937→          break;
+   938→   938→
+   939→   939→        case 'sage':
+   940→   940→          // Sage: Market/Competitive analysis
+   941→   941→          if (classification.intent === 'analyze_market') {
+   942→   942→            const result = await executeMarketAnalysis(userMessage);
+   943→   943→            actions = [...actions, ...result.steps];
+   944→   944→            if (result.market) {
+   945→   945→              marketData = result.market;
+   946→   946→              sendCommMsg(pipelineState, 'sage', 'atlas', 'response',
+   947→   947→                `Market analysis complete: ${result.market.keyFindings.length} findings, ${result.market.competitors.length} competitors`,
+   948→   948→                { findings: result.market.keyFindings.length, competitors: result.market.competitors.length },
+   949→   949→                onEvent);
+   950→   950→            }
+   951→   951→          } else if (classification.intent === 'analyze_competitors') {
+   952→   952→            const result = await executeCompetitiveAnalysis(userMessage);
+   953→   953→            actions = [...actions, ...result.steps];
+   954→   954→            if (result.market) {
+   955→   955→              marketData = result.market;
+   956→   956→              sendCommMsg(pipelineState, 'sage', 'atlas', 'response',
+   957→   957→                `Competitive analysis complete`,
+   958→   958→                undefined, onEvent);
+   959→   959→            }
+   960→   960→          }
+   961→   961→          break;
+   962→   962→
+   963→   963→        case 'judge':
+   964→   964→          // Judge: Lead scoring
+   965→   965→          {
+   966→   966→            const recentProspect = updatedContext.recentProspects[updatedContext.recentProspects.length - 1];
+   967→   967→            if (recentProspect) {
+   968→   968→              sendCommMsg(pipelineState, 'atlas', 'judge', 'request',
+   969→   969→                `Score ${recentProspect.companyName || recentProspect.personName} against ICP`,
+   970→   970→                { companyName: recentProspect.companyName }, onEvent);
+   971→   971→
+   972→   972→              // Refresh news intent signals right before scoring — this gives the
+   973→   973→              // Judge the freshest possible view of recent news/market activity.
+   974→   974→              try {
+   975→   975→                const targetName = recentProspect.companyName || recentProspect.personName || '';
+   976→   976→                if (targetName) {
+   977→   977→                  const newsRefresh = await refreshNewsIntent(targetName);
+   978→   978→                  if (newsRefresh.intent && newsRefresh.intent.success) {
+   979→   979→                    const kpiKeys = Object.keys(newsRefresh.kpis);
+   980→   980→                    if (kpiKeys.length > 0) {
+   981→   981→                      // Merge fresh news KPIs into prospect's customKpis
+   982→   982→                      const existingKpis = recentProspect.customKpis
+   983→   983→                        ? JSON.parse(recentProspect.customKpis)
+   984→   984→                        : {};
+   985→   985→                      const merged = { ...existingKpis, ...newsRefresh.kpis };
+   986→   986→                      recentProspect.customKpis = JSON.stringify(merged);
+   987→   987→
+   988→   988→                      sendCommMsg(pipelineState, 'judge', 'atlas', 'response',
+   989→   989→                        `Refreshed news intent: ${newsRefresh.intent.mentionCount30d} mentions, ` +
+   990→   990→                        `${kpiKeys.length} signals (sentiment: ${newsRefresh.intent.sentiment.overall})`,
+   991→   991→                        { mentions: newsRefresh.intent.mentionCount30d, sentiment: newsRefresh.intent.sentiment.overall },
+   992→   992→                        onEvent);
+   993→   993→                    }
+   994→   994→                  }
+   995→   995→                }
+   996→   996→              } catch (e) {
+   997→   997→                console.warn('[orchestrator] News refresh in Judge phase failed:', e);
+   998→   998→              }
+   999→   999→
+  1000→  1000→              const result = await executeLeadScoring(recentProspect, updatedContext.activeICP);
+  1001→  1001→              actions = [...actions, ...result.steps];
+  1002→  1002→              if (result.score) {
+  1003→  1003→                scoreData = result.score;
+  1004→  1004→                sendCommMsg(pipelineState, 'judge', 'atlas', 'response',
+  1005→  1005→                  `Lead score: ${result.score.overallScore}/100 (${result.score.tier})`,
+  1006→  1006→                  { score: result.score.overallScore, tier: result.score.tier },
+  1007→  1007→                  onEvent);
+  1008→  1008→              }
+  1009→  1009→            } else if (classification.intent === 'score_lead') {
+  1010→  1010→              responseContent = "I don't have a prospect to score yet. Please research a company or person first, then I can score them against your ICP.";
+  1011→  1011→            }
+  1012→  1012→          }
+  1013→  1013→          break;
+  1014→  1014→
+  1015→  1015→        case 'bard':
+  1016→  1016→          // Bard: Outreach composition
+  1017→  1017→          {
+  1018→  1018→            const recentProspect = updatedContext.recentProspects[updatedContext.recentProspects.length - 1];
+  1019→  1019→            if (recentProspect) {
+  1020→  1020→              const channel = userMessage.toLowerCase().includes('linkedin') ? 'linkedin' : 'email';
+  1021→  1021→              sendCommMsg(pipelineState, 'atlas', 'bard', 'request',
+  1022→  1022→                `Compose ${channel} outreach for ${recentProspect.companyName || recentProspect.personName}`,
+  1023→  1023→                { channel, target: recentProspect.companyName }, onEvent);
+  1024→  1024→
+  1025→  1025→              const result = await executeOutreachComposition(recentProspect, channel);
+  1026→  1026→              actions = [...actions, ...result.steps];
+  1027→  1027→              if (result.outreach) {
+  1028→  1028→                outreachData = result.outreach;
+  1029→  1029→                sendCommMsg(pipelineState, 'bard', 'atlas', 'response',
+  1030→  1030→                  `${channel} outreach composed with ${result.outreach.personalizationHooks?.length || 0} personalization hooks`,
+  1031→  1031→                  { channel, hooks: result.outreach.personalizationHooks?.length },
+  1032→  1032→                  onEvent);
+  1033→  1033→              }
+  1034→  1034→            } else if (classification.intent === 'compose_outreach') {
+  1035→  1035→              const target = userMessage.replace(/^(?:write|compose|draft|send|email|reach out|craft)\s*(?:an?\s*)?(?:email|message|outreach|connection)?\s*(?:to\s*)?/i, '').trim();
+  1036→  1036→              if (target.length > 2) {
+  1037→  1037→                responseContent = `I need to research "${target}" first to write a personalized message. Would you like me to research them?`;
+  1038→  1038→              } else {
+  1039→  1039→                responseContent = "I need a prospect to compose outreach for. Please research a company or person first.";
+  1040→  1040→              }
+  1041→  1041→            }
+  1042→  1042→          }
+  1043→  1043→          break;
+  1044→  1044→
+  1045→  1045→        case 'flow':
+  1046→  1046→          // Flow: Pipeline management — saves session context and manages pipeline state
+  1047→  1047→          if (classification.intent === 'build_icp') {
+  1048→  1048→            const result = await executeICPBuilding(userMessage, updatedContext.activeICP);
+  1049→  1049→            actions = [...actions, ...result.steps];
+  1050→  1050→            if (result.icp) {
+  1051→  1051→              icpData = result.icp;
+  1052→  1052→              updatedContext.activeICP = result.icp;
+  1053→  1053→              responseContent = result.response;
+  1054→  1054→            }
+  1055→  1055→          } else if (classification.intent === 'add_to_pipeline') {
+  1056→  1056→            const recentProspect = updatedContext.recentProspects[updatedContext.recentProspects.length - 1];
+  1057→  1057→            const name = recentProspect?.companyName || recentProspect?.personName || 'this prospect';
+  1058→  1058→            responseContent = `Click the "Add to Leads" button below to add ${name} to your lead pipeline.`;
+  1059→  1059→          } else {
+  1060→  1060→            // Flow manages pipeline context for all other intents
+  1061→  1061→            const prospectCount = updatedContext.recentProspects.length;
+  1062→  1062→            const hasICP = !!updatedContext.activeICP;
+  1063→  1063→            const hasScoredLeads = updatedContext.recentProspects.some(p => (p as unknown as Record<string, unknown>).leadScore !== undefined);
+  1064→  1064→            let flowMsg = `Pipeline context: ${prospectCount} prospect(s) discovered`;
+  1065→  1065→            if (hasICP) flowMsg += `, ICP active`;
+  1066→  1066→            if (hasScoredLeads) flowMsg += `, leads scored`;
+  1067→  1067→            flowMsg += '. ';
+  1068→  1068→            if (prospectCount > 0 && !hasICP) {
+  1069→  1069→              flowMsg += 'Suggest building an ICP to improve qualification.';
+  1070→  1070→            } else if (hasScoredLeads) {
+  1071→  1071→              flowMsg += 'Recommend composing outreach for scored leads.';
+  1072→  1072→            } else if (prospectCount > 0) {
+  1073→  1073→              flowMsg += 'Recommend scoring prospects against ICP.';
+  1074→  1074→            }
+  1075→  1075→            sendCommMsg(pipelineState, 'flow', 'atlas', 'response', flowMsg, undefined, onEvent);
+  1076→  1076→          }
+  1077→  1077→          break;
+  1078→  1078→
+  1079→  1079→        case 'echo':
+  1080→  1080→          // Echo: Insights and reporting — compiles final insights from all agents
+  1081→  1081→          {
+  1082→  1082→            const echoInsights: string[] = [];
+  1083→  1083→            if (prospectData) {
+  1084→  1084→              echoInsights.push(`Prospect research completed for ${prospectData.companyName || prospectData.personName || 'target'}`);
+  1085→  1085→              if (prospectData.employeeCount || prospectData.revenueEstimate) {
+  1086→  1086→                echoInsights.push(`Firmographics: ${[prospectData.employeeCount ? `${prospectData.employeeCount} employees` : '', prospectData.revenueEstimate ? `~${prospectData.revenueEstimate} revenue` : ''].filter(Boolean).join(', ')}`);
+  1087→  1087→              }
+  1088→  1088→            }
+  1089→  1089→            if (marketData) {
+  1090→  1090→              echoInsights.push(`Market analysis available with ${marketData.competitors?.length || 0} competitors identified`);
+  1091→  1091→            }
+  1092→  1092→            if (scoreData) {
+  1093→  1093→              echoInsights.push(`Lead scored: ${scoreData.overallScore}/100 (${scoreData.tier || 'unrated'} tier)`);
+  1094→  1094→            }
+  1095→  1095→            if (outreachData) {
+  1096→  1096→              echoInsights.push(`Outreach message composed`);
+  1097→  1097→            }
+  1098→  1098→            if (icpData) {
+  1099→  1099→              echoInsights.push(`ICP profile: ${icpData.name || 'Active ICP'}`);
+  1100→  1100→            } else if (updatedContext.activeICP) {
+  1101→  1101→              icpData = updatedContext.activeICP;
+  1102→  1102→              echoInsights.push(`Existing ICP included: ${updatedContext.activeICP.name || 'Active ICP'}`);
+  1103→  1103→            }
+  1104→  1104→
+  1105→  1105→            if (echoInsights.length > 0) {
+  1106→  1106→              const echoReport = echoInsights.join('. ') + '.';
+  1107→  1107→              sendCommMsg(pipelineState, 'echo', 'atlas', 'response', echoReport, undefined, onEvent);
+  1108→  1108→            } else {
+  1109→  1109→              sendCommMsg(pipelineState, 'echo', 'atlas', 'response', 'Pipeline completed. No structured data to report — try researching a specific company or person.', undefined, onEvent);
+  1110→  1110→            }
+  1111→  1111→          }
+  1112→  1112→          break;
+  1113→  1113→      }
+  1114→  1114→    } catch (phaseError) {
+  1115→  1115→      const msg = phaseError instanceof Error ? phaseError.message : 'Unknown error';
+  1116→  1116→      console.warn(`[Orchestrator] Phase ${phase.agent} failed: ${msg}`);
+  1117→  1117→
+  1118→  1118→      if (!phase.optional) {
+  1119→  1119→        // Non-optional phase failed — still continue with other phases
+  1120→  1120→      }
+  1121→  1121→      updateAgentState(pipelineState, agentKey, {
+  1122→  1122→        status: 'failed',
+  1123→  1123→        currentStep: phase.action,
+  1124→  1124→        completedAt: Date.now(),
+  1125→  1125→      }, onEvent);
+  1126→  1126→
+  1127→  1127→      sendCommMsg(pipelineState, agentKey, 'atlas', 'response',
+  1128→  1128→        `Phase failed: ${msg.slice(0, 100)}`, { error: msg.slice(0, 200) }, onEvent);
+  1129→  1129→    }
+  1130→  1130→
+  1131→  1131→    // Update agent state to completed
+  1132→  1132→    updateAgentState(pipelineState, agentKey, {
+  1133→  1133→      status: 'completed',
+  1134→  1134→      currentStep: phase.action,
+  1135→  1135→      progress: 100,
+  1136→  1136→      completedAt: Date.now(),
+  1137→  1137→    }, onEvent);
+  1138→  1138→
+  1139→  1139→    stepIdx++;
+  1140→  1140→  }
+  1141→  1141→
+  1142→  1142→  // ═══════════════════════════════════════════════════
+  1143→  1143→  // PHASE 3: SYNTHESIZE — Generate conversational response
+  1144→  1144→  // ═══════════════════════════════════════════════════
+  1145→  1145→  pipelineState.phase = 'synthesizing';
+  1146→  1146→  emit(onEvent, { type: 'pipeline_progress', data: { phase: 'synthesizing', overallProgress: 85 } });
+  1147→  1147→
+  1148→  1148→  // Reduced cooldown before synthesis (0.5-1s instead of 1.5-2.5s)
+  1149→  1149→  const synthCooldownMs = 500 + Math.random() * 500;
+  1150→  1150→  updateAgentState(pipelineState, 'atlas', {
+  1151→  1151→    status: 'waiting',
+  1152→  1152→    currentStep: `Cooldown before synthesis (${Math.round(synthCooldownMs / 1000)}s)`,
+  1153→  1153→    progress: 0,
+  1154→  1154→    startedAt: Date.now(),
+  1155→  1155→  }, onEvent);
+  1156→  1156→
+  1157→  1157→  emit(onEvent, { type: 'cooldown', data: { agent: 'atlas', cooldownMs: synthCooldownMs, reason: 'rate_limit_buffer' } });
+  1158→  1158→
+  1159→  1159→  await new Promise(r => setTimeout(r, synthCooldownMs));
+  1160→  1160→
+  1161→  1161→  updateAgentState(pipelineState, 'atlas', {
+  1162→  1162→    status: 'working',
+  1163→  1163→    currentStep: 'Synthesizing response',
+  1164→  1164→    progress: 50,
+  1165→  1165→    startedAt: Date.now(),
+  1166→  1166→  }, onEvent);
+  1167→  1167→
+  1168→  1168→  sendCommMsg(pipelineState, 'atlas', 'echo', 'request',
+  1169→  1169→    'Synthesize all agent outputs into a coherent response', undefined, onEvent);
+  1170→  1170→
+  1171→  1171→  // Generate conversational response with robust fallback chain
+  1172→  1172→  if (!responseContent) {
+  1173→  1173→    if (prospectData) {
+  1174→  1174→      const actionSummary = buildResearchSummary(prospectData);
+  1175→  1175→      try {
+  1176→  1176→        responseContent = await generateConversationResponse(
+  1177→  1177→          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+  1178→  1178→        );
+  1179→  1179→      } catch { /* LLM unavailable — will use fallback */ }
+  1180→  1180→      if (!responseContent) {
+  1181→  1181→        responseContent = buildFallbackResponse(prospectData, classification.intent);
+  1182→  1182→      }
+  1183→  1183→    } else if (marketData) {
+  1184→  1184→      const actionSummary = JSON.stringify({
+  1185→  1185→        summary: marketData.summary,
+  1186→  1186→        findings: marketData.keyFindings,
+  1187→  1187→        competitors: marketData.competitors.map(c => c.name),
+  1188→  1188→        trends: marketData.trends,
+  1189→  1189→      });
+  1190→  1190→      try {
+  1191→  1191→        responseContent = await generateConversationResponse(
+  1192→  1192→          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+  1193→  1193→        );
+  1194→  1194→      } catch { /* LLM unavailable — will use fallback */ }
+  1195→  1195→      if (!responseContent) {
+  1196→  1196→        responseContent = buildRichFallbackResponse({ intent: classification.intent, market: marketData, userMessage });
+  1197→  1197→      }
+  1198→  1198→    } else if (scoreData) {
+  1199→  1199→      const actionSummary = JSON.stringify(scoreData);
+  1200→  1200→      try {
+  1201→  1201→        responseContent = await generateConversationResponse(
+  1202→  1202→          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+  1203→  1203→        );
+  1204→  1204→      } catch { /* LLM unavailable — will use fallback */ }
+  1205→  1205→      if (!responseContent) {
+  1206→  1206→        responseContent = buildRichFallbackResponse({ intent: classification.intent, score: scoreData, userMessage });
+  1207→  1207→      }
+  1208→  1208→    } else if (outreachData) {
+  1209→  1209→      const actionSummary = JSON.stringify(outreachData);
+  1210→  1210→      try {
+  1211→  1211→        responseContent = await generateConversationResponse(
+  1212→  1212→          classification.persona, classification.intent, userMessage, actionSummary, updatedContext,
+  1213→  1213→        );
+  1214→  1214→      } catch { /* LLM unavailable — will use fallback */ }
+  1215→  1215→      if (!responseContent) {
+  1216→  1216→        responseContent = buildRichFallbackResponse({ intent: classification.intent, outreach: outreachData, userMessage });
+  1217→  1217→      }
+  1218→  1218→    } else if (icpData) {
+  1219→  1219→      responseContent = buildRichFallbackResponse({ intent: classification.intent, icp: icpData, userMessage });
+  1220→  1220→    }
+  1221→  1221→    // Note: 'clarify' intent is handled in the fast path above, before the full pipeline
+  1222→  1222→  }
+  1223→  1223→
+  1224→  1224→  // Fallback using structured data (no LLM needed)
+  1225→  1225→  if (!responseContent && (prospectData || icpData || marketData || scoreData || outreachData)) {
+  1226→  1226→    responseContent = generateStructuredFallback({
+  1227→  1227→      persona: classification.persona,
+  1228→  1228→      intent: classification.intent,
+  1229→  1229→      userMessage,
+  1230→  1230→      actionSummary: prospectData ? buildResearchSummary(prospectData) :
+  1231→  1231→                     icpData ? JSON.stringify(icpData) :
+  1232→  1232→                     marketData ? JSON.stringify(marketData) :
+  1233→  1233→                     scoreData ? JSON.stringify(scoreData) :
+  1234→  1234→                     outreachData ? JSON.stringify(outreachData) : '{}',
+  1235→  1235→      context: buildContextHint(updatedContext),
+  1236→  1236→    });
+  1237→  1237→  }
+  1238→  1238→
+  1239→  1239→  // Final fallback
+  1240→  1240→  if (!responseContent) {
+  1241→  1241→    responseContent = "I've processed your request. Check the research results below for details, and let me know if you'd like me to take any further action like scoring this lead or composing outreach.";
+  1242→  1242→  }
+  1243→  1243→
+  1244→  1244→  // ═══════════════════════════════════════════════════
+  1245→  1245→  // PHASE 4: COMPLETE — Generate insights & finalize
+  1246→  1246→  // ═══════════════════════════════════════════════════
+  1247→  1247→  pipelineState.phase = 'complete';
+  1248→  1248→  emit(onEvent, { type: 'pipeline_progress', data: { phase: 'complete', overallProgress: 100 } });
+  1249→  1249→
+  1250→  1250→  // Generate insights
+  1251→  1251→  const insights = generateInsights(classification.intent, prospectData, icpData, scoreData, marketData, outreachData, updatedContext);
+  1252→  1252→  if (onEvent && insights.length > 0) {
+  1253→  1253→    for (const insight of insights) {
+  1254→  1254→      emit(onEvent, { type: 'insight', data: { insight } });
+  1255→  1255→    }
+  1256→  1256→  }
+  1257→  1257→
+  1258→  1258→  // Generate navigation suggestions
+  1259→  1259→  const navigation = generateNavigationSuggestions(classification.intent, prospectData, icpData, scoreData, outreachData, marketData);
+  1260→  1260→
+  1261→  1261→  // Update context
+  1262→  1262→  updatedContext.lastIntent = classification.intent;
+  1263→  1263→  updatedContext.lastPersona = classification.persona;
+  1264→  1264→
+  1265→  1265→  // Build the agent message
+  1266→  1266→  const agentMessage: AgentMessage = {
+  1267→  1267→    id: `agent-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+  1268→  1268→    role: 'assistant',
+  1269→  1269→    content: responseContent,
+  1270→  1270→    timestamp: new Date(),
+  1271→  1271→    persona: classification.persona,
+  1272→  1272→    thinking,
+  1273→  1273→    actions,
+  1274→  1274→    prospectData,
+  1275→  1275→    icpData,
+  1276→  1276→    outreachData,
+  1277→  1277→    marketData,
+  1278→  1278→    scoreData,
+  1279→  1279→    insights: insights.length > 0 ? insights : undefined,
+  1280→  1280→    navigation: navigation.length > 0 ? navigation : undefined,
+  1281→  1281→  };
+  1282→  1282→
+  1283→  1283→  // Generate suggested actions
+  1284→  1284→  const suggestedActions = generateSuggestedActions(classification.intent, prospectData, updatedContext);
+  1285→  1285→
+  1286→  1286→  // Final comm message
+  1287→  1287→  sendCommMsg(pipelineState, 'atlas', 'user', 'response',
+  1288→  1288→    `Pipeline complete. ${actions.length} steps executed, ${actions.filter(a => a.status === 'completed').length} succeeded.`,
+  1289→  1289→    { steps: actions.length, completed: actions.filter(a => a.status === 'completed').length },
+  1290→  1290→    onEvent);
+  1291→  1291→
+  1292→  1292→  console.log(`[Orchestrator] Processed "${userMessage.slice(0, 50)}" → intent=${classification.intent}, took=${Date.now() - startTime}ms`);
+  1293→  1293→
+  1294→  1294→  return {
+  1295→  1295→    message: agentMessage,
+  1296→  1296→    updatedContext,
+  1297→  1297→    suggestedActions,
+  1298→  1298→    pipelineState,
+  1299→  1299→  };
+  1300→  1300→}
+  1301→  1301→
+  1302→  1302→// ============================================================
+  1303→  1303→// Helper Functions
+  1304→  1304→// ============================================================
+  1305→  1305→
+  1306→  1306→function calculateQuickCompleteness(prospect: ProspectResult): number {
+  1307→  1307→  const fields: Array<{ key: keyof ProspectResult; weight: number }> = [
+  1308→  1308→    { key: 'companyName', weight: 10 },
+  1309→  1309→    { key: 'website', weight: 8 },
+  1310→  1310→    { key: 'industry', weight: 8 },
+  1311→  1311→    { key: 'description', weight: 6 },
+  1312→  1312→    { key: 'ceoName', weight: 7 },
+  1313→  1313→    { key: 'employeeCount', weight: 6 },
+  1314→  1314→    { key: 'revenueEstimate', weight: 6 },
+  1315→  1315→    { key: 'generalEmail', weight: 6 },
+  1316→  1316→    { key: 'phoneMain', weight: 5 },
+  1317→  1317→    { key: 'linkedinUrl', weight: 5 },
+  1318→  1318→    { key: 'city', weight: 4 },
+  1319→  1319→    { key: 'country', weight: 4 },
+  1320→  1320→    { key: 'foundingYear', weight: 3 },
+  1321→  1321→    { key: 'twitterHandle', weight: 3 },
+  1322→  1322→    { key: 'fundingInfo', weight: 4 },
+  1323→  1323→    { key: 'techStack', weight: 5 },
+  1324→  1324→    { key: 'recentNews', weight: 5 },
+  1325→  1325→    { key: 'productsServices', weight: 5 },
+  1326→  1326→  ];
+  1327→  1327→
+  1328→  1328→  let total = 0;
+  1329→  1329→  let maxTotal = 0;
+  1330→  1330→  for (const { key, weight } of fields) {
+  1331→  1331→    maxTotal += weight;
+  1332→  1332→    const val = prospect[key];
+  1333→  1333→    if (val !== null && val !== undefined && val !== '' && !(Array.isArray(val) && val.length === 0)) {
+  1334→  1334→      total += weight;
+  1335→  1335→    }
+  1336→  1336→  }
+  1337→  1337→  return Math.round((total / maxTotal) * 100);
+  1338→  1338→}
+  1339→  1339→
+  1340→  1340→function buildResearchSummary(prospect: ProspectResult): string {
+  1341→  1341→  return JSON.stringify({
+  1342→  1342→    company: prospect.companyName,
+  1343→  1343→    person: prospect.personName,
+  1344→  1344→    industry: prospect.industry,
+  1345→  1345→    employees: prospect.employeeCount,
+  1346→  1346→    revenue: prospect.revenueEstimate,
+  1347→  1347→    ceo: prospect.ceoName,
+  1348→  1348→    keyContact: prospect.keyContactName,
+  1349→  1349→    email: prospect.keyContactEmail || prospect.generalEmail,
+  1350→  1350→    linkedin: prospect.linkedinUrl,
+  1351→  1351→    website: prospect.website,
+  1352→  1352→    techStack: prospect.techStack?.slice(0, 5),
+  1353→  1353→    recentNews: prospect.recentNews?.slice(0, 2),
+  1354→  1354→    completeness: prospect.dataCompleteness,
+  1355→  1355→  });
+  1356→  1356→}
+  1357→  1357→
+  1358→  1358→function buildFallbackResponse(prospect: ProspectResult, intent: UserIntent): string {
+  1359→  1359→  const parts: string[] = [];
+  1360→  1360→  if (prospect.companyName) parts.push(`**${prospect.companyName}**`);
+  1361→  1361→  if (prospect.description) parts.push(prospect.description);
+  1362→  1362→  if (prospect.industry) parts.push(`**Industry:** ${prospect.industry}`);
+  1363→  1363→  if (prospect.employeeCount) parts.push(`**Employees:** ${prospect.employeeCount}`);
+  1364→  1364→  if (prospect.revenueEstimate) parts.push(`**Revenue:** ${prospect.revenueEstimate}`);
+  1365→  1365→  if (prospect.ceoName) parts.push(`**CEO:** ${prospect.ceoName}`);
+  1366→  1366→  if (prospect.city || prospect.country) parts.push(`**Location:** ${[prospect.city, prospect.country].filter(Boolean).join(', ')}`);
+  1367→  1367→  if (prospect.website) parts.push(`**Website:** ${prospect.website}`);
+  1368→  1368→  if (prospect.generalEmail) parts.push(`**Email:** ${prospect.generalEmail}`);
+  1369→  1369→  if (prospect.linkedinUrl) parts.push(`**LinkedIn:** available`);
+  1370→  1370→  if (prospect.techStack?.length) parts.push(`**Tech Stack:** ${prospect.techStack.join(', ')}`);
+  1371→  1371→  if (prospect.recentNews?.length) parts.push(`**Recent News:**\n${prospect.recentNews.slice(0, 3).map(n => `- ${n}`).join('\n')}`);
+  1372→  1372→  if (prospect.detectedDomain && prospect.detectedDomain !== 'general') {
+  1373→  1373→    parts.push(`\n**Domain:** ${prospect.domainLabel || prospect.detectedDomain} — 4-Phase Pipeline Active`);
+  1374→  1374→  }
+  1375→  1375→  parts.push(`\n*Data completeness: ${prospect.dataCompleteness}%*`);
+  1376→  1376→  if (prospect.dataCompleteness >= 60) {
+  1377→  1377→    parts.push('Would you like me to score this lead, compose outreach, or find similar companies?');
+  1378→  1378→  }
+  1379→  1379→  return parts.join('\n\n');
+  1380→  1380→}
+  1381→  1381→
+  1382→  1382→function buildContextHint(context: ConversationContext): string {
+  1383→  1383→  const parts: string[] = [];
+  1384→  1384→  if (context.recentProspects.length > 0) {
+  1385→  1385→    parts.push(`Recently discussed: ${context.recentProspects.map(p => p.companyName || p.personName).filter(Boolean).join(', ')}`);
+  1386→  1386→  }
+  1387→  1387→  if (context.activeICP) parts.push(`Active ICP: ${context.activeICP.name}`);
+  1388→  1388→  return parts.join('; ');
+  1389→  1389→}
+  1390→  1390→
+  1391→  1391→function generateInsights(
+  1392→  1392→  intent: UserIntent,
+  1393→  1393→  prospect?: ProspectResult,
+  1394→  1394→  icp?: ICPResult,
+  1395→  1395→  score?: ScoreResult,
+  1396→  1396→  market?: MarketResult,
+  1397→  1397→  outreach?: OutreachResult,
+  1398→  1398→  context?: ConversationContext,
+  1399→  1399→): InsightItem[] {
+  1400→  1400→  const insights: InsightItem[] = [];
+  1401→  1401→  let id = 0;
+  1402→  1402→
+  1403→  1403→  if (prospect?.fundingInfo && /raised|funding|series/i.test(prospect.fundingInfo)) {
+  1404→  1404→    insights.push({
+  1405→  1405→      id: `insight-${id++}`, type: 'opportunity', icon: 'TrendingUp',
+  1406→  1406→      title: 'Funding Activity', description: `${prospect.companyName} recently raised funding: ${prospect.fundingInfo}. This often signals readiness for new tools and partnerships.`,
+  1407→  1407→      confidence: 0.8, relatedDimension: 'behavioral',
+  1408→  1408→    });
+  1409→  1409→  }
+  1410→  1410→
+  1411→  1411→  if (prospect?.techStack && prospect.techStack.length > 0) {
+  1412→  1412→    insights.push({
+  1413→  1413→      id: `insight-${id++}`, type: 'alignment', icon: 'Zap',
+  1414→  1414→      title: 'Tech Adoption Signal', description: `Active use of ${prospect.techStack.slice(0, 3).join(', ')} indicates technology adoption readiness and potential integration points.`,
+  1415→  1415→      confidence: 0.7, relatedDimension: 'technographic',
+  1416→  1416→    });
+  1417→  1417→  }
+  1418→  1418→
+  1419→  1419→  if (prospect?.recentNews?.some(n => /hiring|expanding|growth/i.test(n))) {
+  1420→  1420→    insights.push({
+  1421→  1421→      id: `insight-${id++}`, type: 'opportunity', icon: 'Users',
+  1422→  1422→      title: 'Growth Activity', description: `Recent news indicates expansion at ${prospect.companyName}. Growing companies typically have higher budgets and urgency for solutions.`,
+  1423→  1423→      confidence: 0.75, relatedDimension: 'behavioral',
+  1424→  1424→    });
+  1425→  1425→  }
+  1426→  1426→
+  1427→  1427→  if (score && score.overallScore >= 70) {
+  1428→  1428→    insights.push({
+  1429→  1429→      id: `insight-${id++}`, type: 'action', icon: 'Target',
+  1430→  1430→      title: 'Strong Lead Match', description: `Score of ${score.overallScore}/100 (${score.tier} tier) indicates strong ICP alignment. Prioritize outreach.`,
+  1431→  1431→      confidence: 0.85, relatedDimension: 'economic',
+  1432→  1432→    });
+  1433→  1433→  }
+  1434→  1434→
+  1435→  1435→  if (prospect?.dataCompleteness && prospect.dataCompleteness < 40) {
+  1436→  1436→    insights.push({
+  1437→  1437→      id: `insight-${id++}`, type: 'gap', icon: 'AlertCircle',
+  1438→  1438→      title: 'Data Gap', description: `Only ${prospect.dataCompleteness}% data completeness. Consider providing a website URL for deeper research.`,
+  1439→  1439→      confidence: 0.9, relatedDimension: 'firmographic',
+  1440→  1440→    });
+  1441→  1441→  }
+  1442→  1442→
+  1443→  1443→  return insights;
+  1444→  1444→}
+  1445→  1445→
+  1446→  1446→function generateNavigationSuggestions(
+  1447→  1447→  intent: UserIntent,
+  1448→  1448→  prospect?: ProspectResult,
+  1449→  1449→  icp?: ICPResult,
+  1450→  1450→  score?: ScoreResult,
+  1451→  1451→  outreach?: OutreachResult,
+  1452→  1452→  market?: MarketResult,
+  1453→  1453→): NavigationSuggestion[] {
+  1454→  1454→  const suggestions: NavigationSuggestion[] = [];
+  1455→  1455→
+  1456→  1456→  if (prospect && intent !== 'compose_outreach') {
+  1457→  1457→    suggestions.push({
+  1458→  1458→      targetView: 'leads', label: 'View in Leads', icon: 'Plus',
+  1459→  1459→      reason: 'Add this prospect to your lead pipeline',
+  1460→  1460→    });
+  1461→  1461→  }
+  1462→  1462→
+  1463→  1463→  if (icp) {
+  1464→  1464→    suggestions.push({
+  1465→  1465→      targetView: 'icp', label: 'View ICP Builder', icon: 'Target',
+  1466→  1466→      reason: 'Review and refine the ICP profile',
+  1467→  1467→    });
+  1468→  1468→  }
+  1469→  1469→
+  1470→  1470→  return suggestions;
+  1471→  1471→}
+  1472→  1472→
+  1473→  1473→function generateSuggestedActions(
+  1474→  1474→  intent: UserIntent,
+  1475→  1475→  prospect?: ProspectResult,
+  1476→  1476→  context?: ConversationContext,
+  1477→  1477→): SuggestedAction[] {
+  1478→  1478→  const actions: SuggestedAction[] = [];
+  1479→  1479→  const hasICP = !!context?.activeICP;
+  1480→  1480→  const prospectName = prospect?.companyName || prospect?.personName;
+  1481→  1481→
+  1482→  1482→  switch (intent) {
+  1483→  1483→    case 'research_company':
+  1484→  1484→    case 'research_person':
+  1485→  1485→    case 'research_url':
+  1486→  1486→      if (prospect) {
+  1487→  1487→        if (hasICP) {
+  1488→  1488→          actions.push({ label: 'Score Against ICP', prompt: `Score ${prospectName} against my ICP`, icon: 'Star' });
+  1489→  1489→        } else {
+  1490→  1490→          actions.push({ label: 'Build an ICP', prompt: 'Help me build an Ideal Customer Profile', icon: 'Target' });
+  1491→  1491→        }
+  1492→  1492→        actions.push({ label: 'Compose Outreach', prompt: `Write an email to ${prospectName}`, icon: 'Mail' });
+  1493→  1493→        actions.push({ label: 'Add to Leads', prompt: 'Add this prospect to my leads', icon: 'Plus' });
+  1494→  1494→        if (prospect.industry) {
+  1495→  1495→          actions.push({ label: 'Find Similar', prompt: `Find similar companies in ${prospect.industry}`, icon: 'Search' });
+  1496→  1496→        }
+  1497→  1497→      }
+  1498→  1498→      break;
+  1499→  1499→
+  1500→  1500→    case 'analyze_market':
+  1501→  1501→    case 'analyze_competitors':
+  1502→  1502→      actions.push({ label: 'Research Top Company', prompt: 'Research the top company from this analysis', icon: 'Building2' });
+  1503→  1503→      if (!hasICP) actions.push({ label: 'Build an ICP', prompt: 'Build an ICP for this market', icon: 'Target' });
+  1504→  1504→      break;
+  1505→  1505→
+  1506→  1506→    case 'score_lead':
+  1507→  1507→      if (prospect) {
+  1508→  1508→        actions.push({ label: 'Compose Outreach', prompt: `Write an email to ${prospectName}`, icon: 'Mail' });
+  1509→  1509→        actions.push({ label: 'Add to Leads', prompt: 'Add this prospect to my leads', icon: 'Plus' });
+  1510→  1510→      }
+  1511→  1511→      break;
+  1512→  1512→
+  1513→  1513→    case 'compose_outreach':
+  1514→  1514→      if (prospect) {
+  1515→  1515→        actions.push({ label: 'Add to Leads', prompt: 'Add this prospect to my leads', icon: 'Plus' });
+  1516→  1516→        actions.push({ label: 'Find Similar', prompt: 'Find similar companies', icon: 'Search' });
+  1517→  1517→      }
+  1518→  1518→      break;
+  1519→  1519→
+  1520→  1520→    default:
+  1521→  1521→      actions.push({ label: 'Research a Company', prompt: 'I want to research a company', icon: 'Building2' });
+  1522→  1522→      if (!hasICP) actions.push({ label: 'Build an ICP', prompt: 'Help me build an Ideal Customer Profile', icon: 'Target' });
+  1523→  1523→      break;
+  1524→  1524→  }
+  1525→  1525→
+  1526→  1526→  return actions.slice(0, 4);
+  1527→  1527→}
+  1528→  1528→

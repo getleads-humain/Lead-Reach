@@ -1,0 +1,647 @@
+    38→/**
+    39→ * Classify the user's message intent using the LLM.
+    40→ * Falls back to rule-based classification if LLM fails.
+    41→ *
+    42→ * PRE-FILTER: For research queries, we run the deterministic query-parser
+    43→ * FIRST. If it returns strong signals (≥2 structured fields OR an explicit
+    44→ * person/company keyword), we use its classification directly and skip the
+    45→ * LLM call entirely. This:
+    46→ *   1. Eliminates the "Find a person: Kavya Shah [...]" misclassification
+    47→ *      where the LLM saw all the brackets and guessed "company".
+    48→ *   2. Captures all user-supplied data (email, LinkedIn, location, etc.)
+    49→ *      and propagates it through the pipeline so it shows up in the UI.
+    50→ *   3. Cuts latency on rich queries by skipping the LLM round-trip.
+    51→ */
+    52→export async function classifyIntent(
+    53→  userMessage: string,
+    54→  context?: ConversationContext,
+    55→): Promise<IntentClassification> {
+    56→  // ═══════════════════════════════════════════════════════════
+    57→  // PRE-FILTER: Deterministic parse of structured user queries.
+    58→  // This catches rich queries like "Find a person: Kavya Shah [..]"
+    59→  // that the LLM tends to misclassify as "company search" because of
+    60→  // the dense bracketed text.
+    61→  // ═══════════════════════════════════════════════════════════
+    62→  const parsed = parseQuery(userMessage);
+    63→
+    64→  // If the parser found ≥2 structured signals AND has a confident intent,
+    65→  // trust the parser over the LLM. The parser is deterministic and won't
+    66→  // be fooled by bracketed text or long queries.
+    67→  const PARSER_CONFIDENCE_THRESHOLD = 0.78;
+    68→  const PARSER_MIN_SIGNALS = 2;
+    69→
+    70→  if (
+    71→    parsed.confidence >= PARSER_CONFIDENCE_THRESHOLD &&
+    72→    parsed.signalsProvided >= PARSER_MIN_SIGNALS &&
+    73→    (parsed.guessedIntent === 'research_person' ||
+    74→     parsed.guessedIntent === 'research_company' ||
+    75→     parsed.guessedIntent === 'research_url')
+    76→  ) {
+    77→    const personaForIntent: Record<string, AgentPersona> = {
+    78→      research_person: 'hound',
+    79→      research_company: 'scout',
+    80→      research_url: 'scout',
+    81→    };
+    82→
+    83→    const location = [parsed.city, parsed.stateProvince, parsed.country]
+    84→      .filter(Boolean)
+    85→      .join(', ') || null;
+    86→
+    87→    return {
+    88→      intent: parsed.guessedIntent,
+    89→      persona: personaForIntent[parsed.guessedIntent],
+    90→      confidence: parsed.confidence,
+    91→      reasoning: `Pre-classified by query parser: ${parsed.reasoning} (${parsed.signalsProvided} structured fields extracted)`,
+    92→      extractedEntities: {
+    93→        companyName: parsed.companyName,
+    94→        personName: parsed.personName,
+    95→        url: parsed.url,
+    96→        industry: parsed.industry,
+    97→        location,
+    98→      },
+    99→      clarifyingQuestion: null,
+   100→      prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown>,
+   101→      signalsProvided: parsed.signalsProvided,
+   102→    };
+   103→  }
+   104→
+   105→  // ═══════════════════════════════════════════════════════════
+   106→  // LLM CLASSIFICATION (for short / ambiguous queries)
+   107→  // ═══════════════════════════════════════════════════════════
+   108→  try {
+   109→    const result = await callLLMForJSON<IntentClassification>(
+   110→      getIntentClassificationPrompt(userMessage, context),
+   111→      `User message to classify: "${userMessage}"`,
+   112→      { retriesPerModel: 1 }, // Fast classification — don't waste time on retries
+   113→    );
+   114→
+   115→    if (result && result.intent && result.persona) {
+   116→      // Validate the intent is a valid value
+   117→      const validIntents: UserIntent[] = [
+   118→        'research_company', 'research_person', 'research_url',
+   119→        'analyze_market', 'analyze_competitors', 'build_icp',
+   120→        'score_lead', 'compose_outreach', 'refine_search',
+   121→        'add_to_pipeline', 'clarify', 'converse',
+   122→      ];
+   123→      if (validIntents.includes(result.intent)) {
+   124→        // Even if the LLM classified, attach the parser's pre-populated data
+   125→        // and override extracted entities if the parser found more.
+   126→        const location = [parsed.city, parsed.stateProvince, parsed.country]
+   127→          .filter(Boolean)
+   128→          .join(', ') || null;
+   129→        return {
+   130→          ...result,
+   131→          extractedEntities: {
+   132→            companyName: result.extractedEntities?.companyName || parsed.companyName,
+   133→            personName: result.extractedEntities?.personName || parsed.personName,
+   134→            url: result.extractedEntities?.url || parsed.url,
+   135→            industry: result.extractedEntities?.industry || parsed.industry,
+   136→            location: result.extractedEntities?.location || location,
+   137→          },
+   138→          prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown> | undefined,
+   139→          signalsProvided: parsed.signalsProvided,
+   140→        };
+   141→      }
+   142→    }
+   143→  } catch (error) {
+   144→    console.warn('[IntentClassifier] LLM classification failed, falling back to rules:', error);
+   145→  }
+   146→
+   147→  // ═══════════════════════════════════════════════════════════
+   148→  // FALLBACK: Rule-based classification
+   149→  // ═══════════════════════════════════════════════════════════
+   150→  const ruleBased = ruleBasedClassification(userMessage, context);
+   151→
+   152→  // Even in rule-based fallback, attach the parser's pre-populated data
+   153→  // so user-supplied info still flows through.
+   154→  const location = [parsed.city, parsed.stateProvince, parsed.country]
+   155→    .filter(Boolean)
+   156→    .join(', ') || null;
+   157→  return {
+   158→    ...ruleBased,
+   159→    extractedEntities: {
+   160→      ...ruleBased.extractedEntities,
+   161→      // Prefer parser-extracted values if rule-based didn't find them
+   162→      personName: ruleBased.extractedEntities.personName || parsed.personName,
+   163→      companyName: ruleBased.extractedEntities.companyName || parsed.companyName,
+   164→      url: ruleBased.extractedEntities.url || parsed.url,
+   165→      industry: ruleBased.extractedEntities.industry || parsed.industry,
+   166→      location: ruleBased.extractedEntities.location || location,
+   167→    },
+   168→    prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown> | undefined,
+   169→    signalsProvided: parsed.signalsProvided,
+   170→  };
+   171→}
+   172→
+   173→/**
+   174→ * Rule-based intent classification as a fallback when LLM is unavailable.
+   175→ * Enhanced with multi-intent detection, context awareness, and smarter patterns.
+   176→ *
+   177→ * SECURITY: Input is truncated to MAX_INPUT_LENGTH before regex processing
+   178→ * to prevent polynomial-time ReDoS on uncontrolled user input (CodeQL fix).
+   179→ * All regex patterns are designed to be linear-time by avoiding:
+   180→ * - Nested quantifiers like (a+)+ or (a*)*
+   181→ * - Overlapping alternations like (a|a)b
+   182→ * - Unbounded backreference patterns
+   183→ */
+   184→const MAX_INPUT_LENGTH = 500;
+   185→
+   186→function ruleBasedClassification(
+   187→  userMessage: string,
+   188→  context?: ConversationContext,
+   189→): IntentClassification {
+   190→  // Truncate input to prevent ReDoS on polynomial regex patterns
+   191→  const safeMsg = userMessage.length > MAX_INPUT_LENGTH 
+   192→    ? userMessage.slice(0, MAX_INPUT_LENGTH) 
+   193→    : userMessage;
+   194→  const msg = safeMsg.trim().toLowerCase();
+   195→  const originalMsg = safeMsg.trim();
+   196→
+   197→  // ============================================================
+   198→  // Multi-intent detection: queries that imply chaining actions
+   199→  // ============================================================
+   200→
+   201→  // "Research X and write them" / "Tell me about X and email them"
+   202→  // Use {1,80} instead of .+? to prevent polynomial backtracking (CodeQL fix)
+   203→  // Limit to 80 chars which is more than enough for a company/person name
+   204→  const researchAndOutreach = msg.match(/(?:research|tell me about|look up|find info on|analyze)\s+([\w\s]{1,80}?)(?:\s+and\s+(?:write|email|compose|reach out|send|draft))/i);
+   205→  if (researchAndOutreach) {
+   206→    const entity = researchAndOutreach[1].trim();
+   207→    return {
+   208→      intent: 'research_company',
+   209→      persona: 'scout',
+   210→      confidence: 0.9,
+   211→      reasoning: 'User wants to research and then compose outreach',
+   212→      extractedEntities: extractEntities(originalMsg),
+   213→      clarifyingQuestion: null,
+   214→      secondaryIntent: 'compose_outreach',
+   215→    };
+   216→  }
+   217→
+   218→  // "Research X and score it" / "Tell me about X, is it a good lead?"
+   219→  const researchAndScore = msg.match(/(?:research|tell me about|look up|find info on)\s+([\w\s]{1,80}?)(?:\s+and\s+(?:score|evaluate|qualify|rate))/i);
+   220→  if (researchAndScore) {
+   221→    return {
+   222→      intent: 'research_company',
+   223→      persona: 'scout',
+   224→      confidence: 0.9,
+   225→      reasoning: 'User wants to research and then score the lead',
+   226→      extractedEntities: extractEntities(originalMsg),
+   227→      clarifyingQuestion: null,
+   228→      secondaryIntent: 'score_lead',
+   229→    };
+   230→  }
+   231→
+   232→  // "Is X a good lead?" (implies research + score)
+   233→  if (/is\s+.+\s+a good lead/i.test(msg) || /should (?:we|I) target/i.test(msg)) {
+   234→    const companyName = originalMsg.replace(/^is\s+/i, '').replace(/\s+a good lead.*$/i, '').trim();
+   235→    return {
+   236→      intent: 'research_company',
+   237→      persona: 'scout',
+   238→      confidence: 0.85,
+   239→      reasoning: 'User asking if something is a good lead implies research + scoring',
+   240→      extractedEntities: { ...extractEntities(originalMsg), companyName },
+   241→      clarifyingQuestion: null,
+   242→      secondaryIntent: 'score_lead',
+   243→    };
+   244→  }
+   245→
+   246→  // ============================================================
+   247→  // Context-aware follow-up detection
+   248→  // ============================================================
+   249→
+   250→  const hasRecentProspects = context?.recentProspects && context.recentProspects.length > 0;
+   251→
+   252→  // "Score it" / "Score this" / "Evaluate" — refers to recent prospect
+   253→  if (hasRecentProspects && /^(?:score|evaluate|qualify|rate|assess)\s*(?:it|this|them|that)?$/i.test(msg)) {
+   254→    return {
+   255→      intent: 'score_lead',
+   256→      persona: 'judge',
+   257→      confidence: 0.95,
+   258→      reasoning: 'User wants to score the most recently discussed prospect',
+   259→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   260→      clarifyingQuestion: null,
+   261→    };
+   262→  }
+   263→
+   264→  // "Write to them" / "Compose outreach" / "Email them" — refers to recent prospect
+   265→  if (hasRecentProspects && /^(?:write|compose|email|reach out|send|draft)\s*(?:to\s+)?(?:it|this|them|that|him|her)?$/i.test(msg)) {
+   266→    return {
+   267→      intent: 'compose_outreach',
+   268→      persona: 'scribe',
+   269→      confidence: 0.95,
+   270→      reasoning: 'User wants to compose outreach for the most recently discussed prospect',
+   271→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   272→      clarifyingQuestion: null,
+   273→    };
+   274→  }
+   275→
+   276→  // "Add to leads" / "Convert" / "Save this" — pipeline action
+   277→  if (hasRecentProspects && /^(?:add|convert|save)\s*(?:it|this|them|that)?$/i.test(msg)) {
+   278→    return {
+   279→      intent: 'add_to_pipeline',
+   280→      persona: 'navigator',
+   281→      confidence: 0.95,
+   282→      reasoning: 'User wants to add the most recently discussed prospect to leads',
+   283→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   284→      clarifyingQuestion: null,
+   285→    };
+   286→  }
+   287→
+   288→  // "Find more" / "Similar" / "Others like this" — refine search
+   289→  if (hasRecentProspects && /^(?:more|similar|find more|find similar|others like this|show me more|any others)$/i.test(msg)) {
+   290→    return {
+   291→      intent: 'refine_search',
+   292→      persona: 'scout',
+   293→      confidence: 0.95,
+   294→      reasoning: 'User wants to find prospects similar to the recently discussed one',
+   295→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   296→      clarifyingQuestion: null,
+   297→    };
+   298→  }
+   299→
+   300→  // ============================================================
+   301→  // Single-intent classification
+   302→  // ============================================================
+   303→
+   304→  // URL detection
+   305→  const urlPattern = /^https?:\/\/[^\s]+/i;
+   306→  if (urlPattern.test(originalMsg)) {
+   307→    return {
+   308→      intent: 'research_url',
+   309→      persona: 'scout',
+   310→      confidence: 0.95,
+   311→      reasoning: 'Message starts with a URL',
+   312→      extractedEntities: { companyName: null, personName: null, url: originalMsg, industry: null, location: null },
+   313→      clarifyingQuestion: null,
+   314→    };
+   315→  }
+   316→
+   317→  // Add to pipeline keywords
+   318→  const addKeywords = ['add to lead', 'add to pipeline', 'convert to lead', 'save this lead', 'add this prospect', 'add to my leads'];
+   319→  if (addKeywords.some(k => msg.includes(k))) {
+   320→    return {
+   321→      intent: 'add_to_pipeline',
+   322→      persona: 'navigator',
+   323→      confidence: 0.9,
+   324→      reasoning: 'User wants to add a prospect to leads',
+   325→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   326→      clarifyingQuestion: null,
+   327→    };
+   328→  }
+   329→
+   330→  // ICP building keywords
+   331→  const icpKeywords = ['build icp', 'ideal customer', 'target profile', 'define my icp', 'create icp', 'icp for', 'customer profile', 'target customer', 'buyer persona', 'who should i target', 'who is my ideal'];
+   332→  if (icpKeywords.some(k => msg.includes(k))) {
+   333→    return {
+   334→      intent: 'build_icp',
+   335→      persona: 'architect',
+   336→      confidence: 0.9,
+   337→      reasoning: 'User wants to build or define an ICP',
+   338→      extractedEntities: extractEntities(originalMsg),
+   339→      clarifyingQuestion: null,
+   340→    };
+   341→  }
+   342→
+   343→  // Scoring keywords — enhanced with more patterns
+   344→  const scoreKeywords = ['score this', 'score it', 'qualify this', 'qualify it', 'is this a good lead', 'rate this', 'how good is', 'evaluate this', 'evaluate it', 'should i pursue', 'worth pursuing', 'how likely', 'is this worth', 'assess this lead'];
+   345→  if (scoreKeywords.some(k => msg.includes(k))) {
+   346→    // If there are recent prospects, score against those
+   347→    if (hasRecentProspects) {
+   348→      return {
+   349→        intent: 'score_lead',
+   350→        persona: 'judge',
+   351→        confidence: 0.9,
+   352→        reasoning: 'User wants to score/qualify a lead',
+   353→        extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   354→        clarifyingQuestion: null,
+   355→      };
+   356→    }
+   357→    // No recent prospects — need to research first
+   358→    const entity = originalMsg.replace(/^(?:is|score|qualify|rate|evaluate|how good is|assess)\s+/i, '').replace(/\s*(?:a good lead|worth pursuing|this lead|it|this)$/i, '').trim();
+   359→    if (entity.length > 2) {
+   360→      return {
+   361→        intent: 'research_company',
+   362→        persona: 'scout',
+   363→        confidence: 0.85,
+   364→        reasoning: 'User wants to score a lead, but no recent prospect — need to research first',
+   365→        extractedEntities: { companyName: entity, personName: null, url: null, industry: null, location: null },
+   366→        clarifyingQuestion: null,
+   367→        secondaryIntent: 'score_lead',
+   368→      };
+   369→    }
+   370→    return {
+   371→      intent: 'score_lead',
+   372→      persona: 'judge',
+   373→      confidence: 0.7,
+   374→      reasoning: 'User wants to score a lead',
+   375→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   376→      clarifyingQuestion: 'I can score a lead for you, but I need to know which company or person to evaluate. Could you provide a name?',
+   377→    };
+   378→  }
+   379→
+   380→  // Outreach keywords — enhanced patterns
+   381→  const outreachKeywords = ['write an email', 'compose outreach', 'draft message', 'linkedin message', 'cold email', 'write to', 'reach out to', 'compose', 'send a message', 'write them', 'email them', 'draft an email', 'compose email', 'write a message', 'craft a message', 'craft an email'];
+   382→  if (outreachKeywords.some(k => msg.includes(k))) {
+   383→    // Check if there are recent prospects to write to
+   384→    if (hasRecentProspects) {
+   385→      return {
+   386→        intent: 'compose_outreach',
+   387→        persona: 'scribe',
+   388→        confidence: 0.9,
+   389→        reasoning: 'User wants to compose outreach',
+   390→        extractedEntities: extractEntities(originalMsg),
+   391→        clarifyingQuestion: null,
+   392→      };
+   393→    }
+   394→    // Extract who they want to write to
+   395→    const target = originalMsg.replace(/^(?:write|compose|draft|reach out|send|email|craft)\s*(?:an?\s*)?(?:email|message|outreach|connection)?\s*(?:to\s*)?/i, '').trim();
+   396→    if (target.length > 2) {
+   397→      return {
+   398→        intent: 'research_company',
+   399→        persona: 'scout',
+   400→        confidence: 0.85,
+   401→        reasoning: 'User wants to compose outreach but need to research the target first',
+   402→        extractedEntities: { companyName: target, personName: null, url: null, industry: null, location: null },
+   403→        clarifyingQuestion: null,
+   404→        secondaryIntent: 'compose_outreach',
+   405→      };
+   406→    }
+   407→    return {
+   408→      intent: 'compose_outreach',
+   409→      persona: 'scribe',
+   410→      confidence: 0.9,
+   411→      reasoning: 'User wants to compose outreach',
+   412→      extractedEntities: extractEntities(originalMsg),
+   413→      clarifyingQuestion: null,
+   414→    };
+   415→  }
+   416→
+   417→  // Market analysis keywords
+   418→  const marketKeywords = ['market analysis', 'market size', 'industry trend', 'competitive landscape', 'market research', 'trends in', 'landscape of', 'market overview', 'industry overview', 'industry analysis', 'tam', 'sam', 'som', 'total addressable'];
+   419→  if (marketKeywords.some(k => msg.includes(k))) {
+   420→    return {
+   421→      intent: 'analyze_market',
+   422→      persona: 'analyst',
+   423→      confidence: 0.85,
+   424→      reasoning: 'User wants market/industry analysis',
+   425→      extractedEntities: extractEntities(originalMsg),
+   426→      clarifyingQuestion: null,
+   427→    };
+   428→  }
+   429→
+   430→  // Competitor analysis keywords
+   431→  const competitorKeywords = ['competitor', 'competition', 'alternative to', 'compare', 'versus', ' vs ', 'similar to', 'competitors of', 'who competes with', 'who are the competitors'];
+   432→  if (competitorKeywords.some(k => msg.includes(k))) {
+   433→    return {
+   434→      intent: 'analyze_competitors',
+   435→      persona: 'analyst',
+   436→      confidence: 0.85,
+   437→      reasoning: 'User wants competitive analysis',
+   438→      extractedEntities: extractEntities(originalMsg),
+   439→      clarifyingQuestion: null,
+   440→    };
+   441→  }
+   442→
+   443→  // Refine search keywords
+   444→  const refineKeywords = ['more like this', 'similar companies', 'find more', 'other companies like', 'show me similar', 'find similar', 'more like that', 'anything similar'];
+   445→  if (refineKeywords.some(k => msg.includes(k))) {
+   446→    return {
+   447→      intent: 'refine_search',
+   448→      persona: 'scout',
+   449→      confidence: 0.85,
+   450→      reasoning: 'User wants to find similar prospects',
+   451→      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   452→      clarifyingQuestion: null,
+   453→    };
+   454→  }
+   455→
+   456→  // Person name detection (2-4 capitalized words, no numbers)
+   457→  // Must be at least 2 words to avoid matching single-word company names like "Stripe", "Notion", etc.
+   458→  const personPattern = /^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,3}$/;
+   459→  // Also check if the message looks like a person name but with a "research/find" prefix
+   460→  // e.g., "Research Patrick Collison" → person, but "Research Stripe" → company
+   461→  const personWithPrefix = msg.match(/^(?:research|find|look up|tell me about)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
+   462→  
+   463→  if (personWithPrefix && personWithPrefix[1]) {
+   464→    // Multi-word name after a research prefix — likely a person
+   465→    const name = personWithPrefix[1];
+   466→    const wordCount = name.split(/\s+/).length;
+   467→    if (wordCount >= 2) {
+   468→      return {
+   469→        intent: 'research_person',
+   470→        persona: 'hound',
+   471→        confidence: 0.8,
+   472→        reasoning: 'Multi-word name after research prefix suggests person search',
+   473→        extractedEntities: { companyName: null, personName: name, url: null, industry: null, location: null },
+   474→        clarifyingQuestion: null,
+   475→      };
+   476→    }
+   477→  } else if (personPattern.test(originalMsg)) {
+   478→    return {
+   479→      intent: 'research_person',
+   480→      persona: 'hound',
+   481→      confidence: 0.8,
+   482→      reasoning: 'Message matches a person name pattern (multi-word)',
+   483→      extractedEntities: { companyName: null, personName: originalMsg, url: null, industry: null, location: null },
+   484→      clarifyingQuestion: null,
+   485→    };
+   486→  }
+   487→
+   488→  // Company research detection
+   489→  const companyKeywords = ['company', 'corp', 'inc', 'ltd', 'gmbh', 'sa', 'llc', 'find', 'search', 'research', 'look up', 'tell me about', 'info on', 'discover', 'about', 'what is', 'who is'];
+   490→  if (companyKeywords.some(k => msg.includes(k)) || originalMsg.length > 3) {
+   491→    // Check for follow-up patterns with context
+   492→    if (hasRecentProspects) {
+   493→      const followUpPatterns = ['what about', 'and', 'also', 'another', 'next', 'more'];
+   494→      if (followUpPatterns.some(p => msg.startsWith(p))) {
+   495→        return {
+   496→          intent: 'refine_search',
+   497→          persona: 'scout',
+   498→          confidence: 0.7,
+   499→          reasoning: 'Follow-up query after previous research',
+   500→          extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   501→          clarifyingQuestion: null,
+   502→        };
+   503→      }
+   504→    }
+   505→
+   506→    // Extract company name from the message
+   507→    const companyName = extractCompanyName(originalMsg);
+   508→
+   509→    return {
+   510→      intent: 'research_company',
+   511→      persona: 'scout',
+   512→      confidence: 0.75,
+   513→      reasoning: 'Message appears to be a company search query',
+   514→      extractedEntities: { companyName, personName: null, url: null, industry: null, location: null },
+   515→      clarifyingQuestion: null,
+   516→    };
+   517→  }
+   518→
+   519→  // Vague or unclear
+   520→  return {
+   521→    intent: 'clarify',
+   522→    persona: 'navigator',
+   523→    confidence: 0.5,
+   524→    reasoning: 'Could not determine clear intent from the message',
+   525→    extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+   526→    clarifyingQuestion: "I'd love to help! Could you tell me more specifically what you're looking for? For example:\n• Research a specific company\n• Find information about a person\n• Analyze a market or industry\n• Build an Ideal Customer Profile\n• Compose an outreach message",
+   527→  };
+   528→}
+   529→
+   530→/**
+   531→ * Extract entities from a user message using simple patterns.
+   532→ * Input is truncated to prevent ReDoS.
+   533→ */
+   534→function extractEntities(message: string): IntentClassification['extractedEntities'] {
+   535→  // Truncate to prevent ReDoS on uncontrolled input
+   536→  const safeMessage = message.length > MAX_INPUT_LENGTH ? message.slice(0, MAX_INPUT_LENGTH) : message;
+   537→  const entities: IntentClassification['extractedEntities'] = {
+   538→    companyName: null,
+   539→    personName: null,
+   540→    url: null,
+   541→    industry: null,
+   542→    location: null,
+   543→  };
+   544→
+   545→  // URL extraction
+   546→  const urlMatch = safeMessage.match(/https?:\/\/[^\s]+/i);
+   547→  if (urlMatch) entities.url = urlMatch[0];
+   548→
+   549→  // Industry extraction
+   550→  const industryPatterns = [
+   551→    /(?:in the|in|for the)\s+(\w+(?:\s+\w+)?)\s+(?:industry|market|sector|space)/i,
+   552→    /(\w+(?:\s+\w+)?)\s+(?:industry|market|sector|space)/i,
+   553→  ];
+   554→  for (const pattern of industryPatterns) {
+   555→    const match = safeMessage.match(pattern);
+   556→    if (match) { entities.industry = match[1].trim(); break; }
+   557→  }
+   558→
+   559→  // Location extraction
+   560→  const locationPatterns = [
+   561→    /(?:in|from|near|at)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)/,
+   562→  ];
+   563→  for (const pattern of locationPatterns) {
+   564→    const match = safeMessage.match(pattern);
+   565→    if (match) { entities.location = match[1].trim(); break; }
+   566→  }
+   567→
+   568→  return entities;
+   569→}
+   570→
+   571→/**
+   572→ * Extract a company name from a user message by stripping common prefixes.
+   573→ * Input is truncated to prevent ReDoS.
+   574→ */
+   575→function extractCompanyName(message: string): string {
+   576→  // Truncate to prevent ReDoS on polynomial regex
+   577→  const safeMessage = message.length > MAX_INPUT_LENGTH ? message.slice(0, MAX_INPUT_LENGTH) : message;
+   578→  let cleaned = safeMessage
+   579→    .replace(/^(?:tell me about|research|look up|find info on|find|search for|info on|about|what is|who is|discover|analyze)\s+/i, '')
+   580→    .replace(/\s*please\s*$/i, '')
+   581→    .trim();
+   582→
+   583→  // If the result is too long, it's probably not just a company name
+   584→  if (cleaned.split(/\s+/).length > 6) {
+   585→    cleaned = safeMessage.trim(); // Use the truncated original
+   586→  }
+   587→
+   588→  return cleaned;
+   589→}
+   590→
+   591→/**
+   592→ * Convert a classified intent into an AgentThinking object for UI display.
+   593→ */
+   594→export function intentToThinking(classification: IntentClassification): AgentThinking {
+   595→  const planMap: Record<UserIntent, string[]> = {
+   596→    research_company: [
+   597→      'Searching the web for company information',
+   598→      'Checking LinkedIn for company profile',
+   599→      'Researching key contacts and decision makers',
+   600→      'Finding recent news and activity',
+   601→      'Compiling comprehensive company profile',
+   602→    ],
+   603→    research_person: [
+   604→      'Searching the web for professional information',
+   605→      'Checking LinkedIn for profile data',
+   606→      'Researching associated company',
+   607→      'Checking Twitter/X for social presence',
+   608→      'Compiling comprehensive person profile',
+   609→    ],
+   610→    research_url: [
+   611→      'Reading and analyzing the webpage',
+   612→      'Extracting business intelligence with AI',
+   613→      'Deep researching the identified company',
+   614→      'Compiling comprehensive profile from URL',
+   615→    ],
+   616→    analyze_market: [
+   617→      'Searching for market and industry data',
+   618→      'Analyzing competitive landscape',
+   619→      'Identifying key trends and opportunities',
+   620→      'Compiling market analysis report',
+   621→    ],
+   622→    analyze_competitors: [
+   623→      'Identifying main competitors',
+   624→      'Researching each competitor in depth',
+   625→      'Analyzing strengths and weaknesses',
+   626→      'Compiling competitive comparison',
+   627→    ],
+   628→    build_icp: [
+   629→      'Understanding your business and target market',
+   630→      'Defining firmographic criteria',
+   631→      'Identifying technographic requirements',
+   632→      'Assessing behavioral and economic factors',
+   633→      'Finalizing ICP with recommendations',
+   634→    ],
+   635→    score_lead: [
+   636→      'Evaluating firmographic fit',
+   637→      'Checking technographic alignment',
+   638→      'Assessing behavioral signals',
+   639→      'Analyzing economic viability',
+   640→      'Calculating overall lead score',
+   641→    ],
+   642→    compose_outreach: [
+   643→      'Researching the target company and contact',
+   644→      'Identifying personalization hooks',
+   645→      'Crafting personalized message',
+   646→      'Optimizing call-to-action',
+   647→    ],
+   648→    refine_search: [
+   649→      'Analyzing previous research results',
+   650→      'Identifying similar companies/contacts',
+   651→      'Searching for matching prospects',
+   652→      'Compiling refined results',
+   653→    ],
+   654→    add_to_pipeline: [
+   655→      'Validating prospect data',
+   656→      'Creating lead record in database',
+   657→      'Updating campaign metrics',
+   658→    ],
+   659→    clarify: [
+   660→      'Analyzing your request',
+   661→      'Preparing clarifying questions',
+   662→    ],
+   663→    converse: [
+   664→      'Processing your message',
+   665→      'Generating helpful response',
+   666→    ],
+   667→  };
+   668→
+   669→  // If there's a secondary intent, add it to the plan
+   670→  const plan = [...(planMap[classification.intent] || ['Processing your request'])];
+   671→  if (classification.secondaryIntent) {
+   672→    plan.push(`Then: ${planMap[classification.secondaryIntent]?.[0] || 'Executing follow-up action'}`);
+   673→  }
+   674→
+   675→  return {
+   676→    persona: classification.persona,
+   677→    intent: classification.intent,
+   678→    reasoning: classification.reasoning,
+   679→    plan,
+   680→    clarifyingQuestion: classification.clarifyingQuestion || undefined,
+   681→    confidence: classification.confidence,
+   682→  };
+   683→}
+   684→
