@@ -36,34 +36,37 @@ export interface IntentClassification {
 }
 
 /**
- * Classify the user's message intent using the LLM.
- * Falls back to rule-based classification if LLM fails.
+ * Classify the user's message intent.
  *
- * PRE-FILTER: For research queries, we run the deterministic query-parser
- * FIRST. If it returns strong signals (≥2 structured fields OR an explicit
- * person/company keyword), we use its classification directly and skip the
- * LLM call entirely. This:
- *   1. Eliminates the "Find a person: Kavya Shah [...]" misclassification
- *      where the LLM saw all the brackets and guessed "company".
- *   2. Captures all user-supplied data (email, LinkedIn, location, etc.)
- *      and propagates it through the pipeline so it shows up in the UI.
- *   3. Cuts latency on rich queries by skipping the LLM round-trip.
+ * STRATEGY (rate-limit-resilient, deterministic-first):
+ * ----------------------------------------------------
+ *  1. PARSE: Run the deterministic query-parser. If it returns
+ *     strong structured signals (>=2 fields), use its classification
+ *     directly and SKIP the LLM call entirely.
+ *
+ *  2. RULE-BASED PRE-CLASSIFY: Run the rule-based classifier. If it
+ *     returns confidence >= 0.80, USE IT - the LLM almost never
+ *     improves on a confident rule-based result for simple queries
+ *     like "Research Stripe", "Find Patrick Collison", "Build an ICP".
+ *     This eliminates the #1 cause of pipeline stalls: when Z.AI is
+ *     rate-limited, the LLM call hangs 60s waiting for cooldown.
+ *
+ *  3. LLM (TIME-BOXED): If rule-based returned confidence < 0.80,
+ *     consult the LLM with a STRICT 15-second timeout. If the LLM
+ *     does not respond in 15s (typically because Z.AI is in
+ *     rate-limit cooldown), fall back to the rule-based result
+ *     immediately - do NOT block the pipeline for 60s+.
+ *
+ * This three-tier strategy ensures intent classification NEVER takes
+ * more than ~16 seconds, even when Z.AI is completely unreachable.
  */
 export async function classifyIntent(
   userMessage: string,
   context?: ConversationContext,
 ): Promise<IntentClassification> {
-  // ═══════════════════════════════════════════════════════════
-  // PRE-FILTER: Deterministic parse of structured user queries.
-  // This catches rich queries like "Find a person: Kavya Shah [..]"
-  // that the LLM tends to misclassify as "company search" because of
-  // the dense bracketed text.
-  // ═══════════════════════════════════════════════════════════
+  // --- Tier 1: Deterministic parse for rich/structured queries ---
   const parsed = parseQuery(userMessage);
 
-  // If the parser found ≥2 structured signals AND has a confident intent,
-  // trust the parser over the LLM. The parser is deterministic and won't
-  // be fooled by bracketed text or long queries.
   const PARSER_CONFIDENCE_THRESHOLD = 0.78;
   const PARSER_MIN_SIGNALS = 2;
 
@@ -102,18 +105,82 @@ export async function classifyIntent(
     };
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // LLM CLASSIFICATION (for short / ambiguous queries)
-  // ═══════════════════════════════════════════════════════════
+  // --- Tier 2: Rule-based pre-classification (no LLM call) ---
+  // The rule-based classifier handles ALL of these cases confidently:
+  //   - "Research Stripe"            -> research_company (0.75)
+  //   - "Find Patrick Collison"      -> research_person  (0.80)
+  //   - "Build an ICP for SaaS"      -> build_icp        (0.90)
+  //   - "Write an email to Stripe"   -> research_company (0.85, secondary: compose_outreach)
+  //   - "Is Stripe a good lead?"     -> research_company (0.85, secondary: score_lead)
+  //   - "Score this"                 -> score_lead       (0.95)
+  //   - "Analyze the SaaS market"    -> analyze_market   (0.85)
+  //
+  // When rule-based confidence is >= 0.80, skip the LLM entirely -
+  // it almost never improves on a confident rule-based result, and
+  // calling it wastes a rate-limit slot AND adds 3-15s of latency.
+  const ruleBased = ruleBasedClassification(userMessage, context);
+
+  const RULE_BASED_CONFIDENT_THRESHOLD = 0.80;
+  const useRuleBasedDirectly =
+    ruleBased.confidence >= RULE_BASED_CONFIDENT_THRESHOLD ||
+    ruleBased.intent === 'clarify' ||        // Clarifications don't need LLM
+    ruleBased.intent === 'converse' ||       // Pure conversation doesn't need LLM
+    ruleBased.intent === 'add_to_pipeline';  // Pure pipeline action doesn't need LLM
+
+  // Merge parser fields into rule-based result for downstream use
+  const location = [parsed.city, parsed.stateProvince, parsed.country]
+    .filter(Boolean)
+    .join(', ') || null;
+  const mergedRuleBased: IntentClassification = {
+    ...ruleBased,
+    extractedEntities: {
+      ...ruleBased.extractedEntities,
+      personName: ruleBased.extractedEntities.personName || parsed.personName,
+      companyName: ruleBased.extractedEntities.companyName || parsed.companyName,
+      url: ruleBased.extractedEntities.url || parsed.url,
+      industry: ruleBased.extractedEntities.industry || parsed.industry,
+      location: ruleBased.extractedEntities.location || location,
+    },
+    prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown> | undefined,
+    signalsProvided: parsed.signalsProvided,
+  };
+
+  if (useRuleBasedDirectly) {
+    if (ruleBased.confidence >= RULE_BASED_CONFIDENT_THRESHOLD) {
+      console.log(`[IntentClassifier] Rule-based confident (${Math.round(ruleBased.confidence * 100)}%) - skipping LLM: intent=${ruleBased.intent}`);
+    }
+    return mergedRuleBased;
+  }
+
+  // --- Tier 3: LLM classification (time-boxed to 15 seconds) ---
+  // Only consult the LLM when rule-based confidence is < 0.80 - i.e.,
+  // genuinely ambiguous queries. Use a hard 15s timeout so we never
+  // block the pipeline when Z.AI is rate-limited.
+  const LLM_TIMEOUT_MS = 15_000;
+
   try {
-    const result = await callLLMForJSON<IntentClassification>(
+    const llmPromise = callLLMForJSON<IntentClassification>(
       getIntentClassificationPrompt(userMessage, context),
       `User message to classify: "${userMessage}"`,
-      { retriesPerModel: 1 }, // Fast classification — don't waste time on retries
+      {
+        retriesPerModel: 1,
+        // Quick thinking budget - intent classification doesn't need deep reasoning
+        thinkingBudget: 'quick',
+        maxTokens: 1024,
+      },
     );
 
+    // Race against timeout - if LLM doesn't respond in time, fall back to rule-based.
+    const timeoutPromise = new Promise<null>((resolve) => {
+      setTimeout(() => {
+        console.warn(`[IntentClassifier] LLM classification timed out after ${LLM_TIMEOUT_MS}ms - using rule-based fallback (intent=${ruleBased.intent})`);
+        resolve(null);
+      }, LLM_TIMEOUT_MS);
+    });
+
+    const result = await Promise.race([llmPromise, timeoutPromise]);
+
     if (result && result.intent && result.persona) {
-      // Validate the intent is a valid value
       const validIntents: UserIntent[] = [
         'research_company', 'research_person', 'research_url',
         'analyze_market', 'analyze_competitors', 'build_icp',
@@ -121,11 +188,6 @@ export async function classifyIntent(
         'add_to_pipeline', 'clarify', 'converse',
       ];
       if (validIntents.includes(result.intent)) {
-        // Even if the LLM classified, attach the parser's pre-populated data
-        // and override extracted entities if the parser found more.
-        const location = [parsed.city, parsed.stateProvince, parsed.country]
-          .filter(Boolean)
-          .join(', ') || null;
         return {
           ...result,
           extractedEntities: {
@@ -144,30 +206,8 @@ export async function classifyIntent(
     console.warn('[IntentClassifier] LLM classification failed, falling back to rules:', error);
   }
 
-  // ═══════════════════════════════════════════════════════════
-  // FALLBACK: Rule-based classification
-  // ═══════════════════════════════════════════════════════════
-  const ruleBased = ruleBasedClassification(userMessage, context);
-
-  // Even in rule-based fallback, attach the parser's pre-populated data
-  // so user-supplied info still flows through.
-  const location = [parsed.city, parsed.stateProvince, parsed.country]
-    .filter(Boolean)
-    .join(', ') || null;
-  return {
-    ...ruleBased,
-    extractedEntities: {
-      ...ruleBased.extractedEntities,
-      // Prefer parser-extracted values if rule-based didn't find them
-      personName: ruleBased.extractedEntities.personName || parsed.personName,
-      companyName: ruleBased.extractedEntities.companyName || parsed.companyName,
-      url: ruleBased.extractedEntities.url || parsed.url,
-      industry: ruleBased.extractedEntities.industry || parsed.industry,
-      location: ruleBased.extractedEntities.location || location,
-    },
-    prepopulatedProspect: parsed.prepopulatedProspect as Record<string, unknown> | undefined,
-    signalsProvided: parsed.signalsProvided,
-  };
+  // Fall back to rule-based result (already merged with parser data above)
+  return mergedRuleBased;
 }
 
 /**
@@ -453,39 +493,101 @@ function ruleBasedClassification(
     };
   }
 
+  // ─── Conversation / help / greetings ───────────────────────────
+  // Catch common conversational queries ("what can you do?", "help",
+  // "hi", "hello", "thanks") BEFORE the catch-all company fallback
+  // (which matches anything longer than 3 chars).
+  const converseKeywords = [
+    'what can you do', 'what do you do', 'how do you work', 'help me',
+    'help', 'hi', 'hello', 'hey', 'greetings', 'thanks', 'thank you',
+    'who are you', 'what are you', 'introduce yourself', 'capabilities',
+    'features', 'what is leadreach', 'about you',
+  ];
+  if (converseKeywords.some(k => msg === k || msg.startsWith(k + ' ') || msg.startsWith(k + '?') || msg.startsWith(k + '!') || msg.startsWith(k + '.'))) {
+    return {
+      intent: 'converse',
+      persona: 'navigator',
+      confidence: 0.9,
+      reasoning: 'User is asking a conversational/help question',
+      extractedEntities: { companyName: null, personName: null, url: null, industry: null, location: null },
+      clarifyingQuestion: null,
+    };
+  }
+
+  // --- Prefix-stripping for "research/find/tell me about X" queries ---
+  // Before we try to match the message against a person-name pattern, strip
+  // any leading "research", "find", "look up", "tell me about", "info on",
+  // "discover", "about", "what is", "who is" prefix. This prevents queries
+  // like "Research Stripe" or "Tell me about Notion" from being misread as
+  // a person name (where "Research" looks like a first name).
+  //
+  // The remaining text is then classified by length:
+  //   - 1 word        -> company (e.g., "Stripe", "Notion")
+  //   - 2 words       -> ambiguous - could be "Patrick Collison" (person) OR
+  //                     "Apple Inc" (company). Use a heuristic: if the second
+  //                     word is a known company suffix (Inc, Corp, Ltd, GmbH,
+  //                     LLC, SA), it is a company. Otherwise, person.
+  //   - 3-4 words     -> person (full names are typically 2-4 words)
+  //   - 5+ words      -> company (long names like "Bank of America")
+  const RESEARCH_PREFIX_RE = /^(?:research|find|look up|tell me about|info on|discover|about|what is|who is|search for|search)\s+(.+)$/i;
+  const prefixMatch = originalMsg.match(RESEARCH_PREFIX_RE);
+  const strippedMsg = prefixMatch ? prefixMatch[1].trim() : originalMsg;
+
+  // Company suffixes - if the LAST word matches one of these, it is a company.
+  const COMPANY_SUFFIX_RE = /\b(?:inc|corp|corporation|ltd|limited|gmbh|sa|llc|co|company|ag|plc|pty|pvt|bv|nv|oy|ab|as|sarl)\.?(?:\s|$)/i;
+  const hasCompanySuffix = COMPANY_SUFFIX_RE.test(strippedMsg);
+
+  // Word count of the stripped message
+  const strippedWordCount = strippedMsg.split(/\s+/).filter(Boolean).length;
+
   // Person name detection (2-4 capitalized words, no numbers)
   // Must be at least 2 words to avoid matching single-word company names like "Stripe", "Notion", etc.
   const personPattern = /^[A-Z][a-z]+(\s+[A-Z][a-z]+){1,3}$/;
-  // Also check if the message looks like a person name but with a "research/find" prefix
-  // e.g., "Research Patrick Collison" → person, but "Research Stripe" → company
-  const personWithPrefix = msg.match(/^(?:research|find|look up|tell me about)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
-  
-  if (personWithPrefix && personWithPrefix[1]) {
-    // Multi-word name after a research prefix — likely a person
+  // Use originalMsg (case preserved) for the prefix regex - the lowercase `msg`
+  // version was broken because [A-Z] never matches lowercase letters.
+  //
+  // We use explicit character classes [Rr]esearch etc. instead of the `i`
+  // flag because the `i` flag would also make the captured name group
+  // case-insensitive, which would let "find patrick collison" match (and
+  // capture "patrick collison" with lowercase letters, which isn't a
+  // properly-formatted person name).
+  //
+  // The captured name group still requires proper case (Capitalized first
+  // letter), so "Find patrick collison" will NOT match (lowercase name),
+  // but "Find Patrick Collison" WILL match.
+  const personWithPrefix = originalMsg.match(/^(?:[Rr]esearch|[Ff]ind|[Ll]ook up|[Tt]ell me about)\s+([A-Z][a-z]+(?:\s+[A-Z][a-z]+)+)$/);
+
+  if (personWithPrefix && personWithPrefix[1] && !hasCompanySuffix) {
+    // Multi-word name after a research prefix - likely a person
     const name = personWithPrefix[1];
     const wordCount = name.split(/\s+/).length;
     if (wordCount >= 2) {
       return {
         intent: 'research_person',
         persona: 'hound',
-        confidence: 0.8,
+        confidence: 0.85,
         reasoning: 'Multi-word name after research prefix suggests person search',
         extractedEntities: { companyName: null, personName: name, url: null, industry: null, location: null },
         clarifyingQuestion: null,
       };
     }
-  } else if (personPattern.test(originalMsg)) {
+  } else if (!prefixMatch && personPattern.test(originalMsg) && !hasCompanySuffix && strippedWordCount >= 2 && strippedWordCount <= 4) {
+    // Only treat as person name if there was NO research prefix.
+    // (Without this guard, "Research Stripe" would be misread as a person
+    // named "Research Stripe".)
     return {
       intent: 'research_person',
       persona: 'hound',
-      confidence: 0.8,
-      reasoning: 'Message matches a person name pattern (multi-word)',
+      confidence: 0.80,
+      reasoning: 'Message matches a person name pattern (multi-word, no research prefix)',
       extractedEntities: { companyName: null, personName: originalMsg, url: null, industry: null, location: null },
       clarifyingQuestion: null,
     };
   }
 
-  // Company research detection
+  // Company research detection - handles "Research Stripe", "Find Notion",
+  // "Tell me about Apple Inc", etc.
+  // If we got here via a research prefix, the stripped text is the company name.
   const companyKeywords = ['company', 'corp', 'inc', 'ltd', 'gmbh', 'sa', 'llc', 'find', 'search', 'research', 'look up', 'tell me about', 'info on', 'discover', 'about', 'what is', 'who is'];
   if (companyKeywords.some(k => msg.includes(k)) || originalMsg.length > 3) {
     // Check for follow-up patterns with context
@@ -503,14 +605,18 @@ function ruleBasedClassification(
       }
     }
 
-    // Extract company name from the message
-    const companyName = extractCompanyName(originalMsg);
+    // Extract company name from the message.
+    // If there was a research prefix, prefer the stripped text as the company name
+    // (so "Research Stripe" → companyName="Stripe", not "Research Stripe").
+    const companyName = prefixMatch ? strippedMsg : extractCompanyName(originalMsg);
 
     return {
       intent: 'research_company',
       persona: 'scout',
-      confidence: 0.75,
-      reasoning: 'Message appears to be a company search query',
+      confidence: 0.80,
+      reasoning: prefixMatch
+        ? `Company research query (prefix "${prefixMatch[0].split(/\s+/)[0]}" stripped → "${companyName}")`
+        : 'Message appears to be a company search query',
       extractedEntities: { companyName, personName: null, url: null, industry: null, location: null },
       clarifyingQuestion: null,
     };

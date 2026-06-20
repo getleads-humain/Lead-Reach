@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server';
 import { checkLLMHealth } from '@/lib/llm';
 import { isZhipuConfigured } from '@/lib/zhipu-jwt';
 import { directSearchHealth } from '@/lib/direct-search';
-import { testIPv4Connectivity } from '@/lib/network-helpers';
+import { testIPv4Connectivity, isInRateLimitCooldown, getRateLimitCooldownRemaining } from '@/lib/network-helpers';
 
 /**
  * GET /api/prospect-discovery/health
@@ -15,17 +15,28 @@ import { testIPv4Connectivity } from '@/lib/network-helpers';
  * 1. LLM (Z.AI glm-4.7-flash) — primary model
  * 2. Search (Direct DuckDuckGo) — primary path (no Jina dependency)
  * 3. IPv4 connectivity — confirms fetchIPv4 is working
+ * 4. Rate-limit cooldown state — shows how long until Z.AI resets
+ *
+ * IMPORTANT: This endpoint probes Z.AI with a real LLM call. The probe
+ * itself consumes one rate-limit slot, so the frontend should NOT call
+ * this more than once every 2 minutes (and never while the pipeline
+ * is executing — see the useEffect comment in prospect-discovery-view.tsx).
  */
 export async function GET() {
   const checks: {
     llm: { ok: boolean; model: string; latencyMs: number; error?: string };
     search: { ok: boolean; method: string; latencyMs?: number; error?: string };
     ipv4: { ok: boolean; latencyMs: number; target?: string; error?: string };
+    rateLimit: { inCooldown: boolean; cooldownRemainingMs: number };
     overall: 'healthy' | 'degraded' | 'down';
   } = {
     llm: { ok: false, model: 'unknown', latencyMs: 0 },
     search: { ok: false, method: 'none' },
     ipv4: { ok: false, latencyMs: 0 },
+    rateLimit: {
+      inCooldown: isInRateLimitCooldown('api.z.ai'),
+      cooldownRemainingMs: getRateLimitCooldownRemaining('api.z.ai'),
+    },
     overall: 'down',
   };
 
@@ -34,19 +45,30 @@ export async function GET() {
   // A 429 response means the API is ALIVE and reachable — the user just
   // hit the rate limit on the health probe. We treat 429 as "degraded"
   // (LLM is up but momentarily rate-limited), NOT "down".
-  try {
-    if (!isZhipuConfigured()) {
-      checks.llm = {
-        ok: false,
-        model: 'glm-4.7-flash',
-        latencyMs: 0,
-        error: 'API key not configured (ZHIPU_AI_API_KEY env var missing)',
-      };
-    } else {
+  //
+  // SKIP THE PROBE IF Z.AI IS ALREADY IN COOLDOWN:
+  // Calling the LLM during a known cooldown would just waste time and
+  // extend the cooldown. Instead, return "ok: true, degraded" with the
+  // remaining cooldown time.
+  if (isInRateLimitCooldown('api.z.ai')) {
+    const remainingMs = getRateLimitCooldownRemaining('api.z.ai');
+    checks.llm = {
+      ok: true,  // LLM is reachable, just in cooldown
+      model: 'glm-4.7-flash',
+      latencyMs: 0,
+      error: `In rate-limit cooldown — ${Math.round(remainingMs / 1000)}s remaining. Pipeline uses retry/backoff, will succeed.`,
+    };
+  } else if (!isZhipuConfigured()) {
+    checks.llm = {
+      ok: false,
+      model: 'glm-4.7-flash',
+      latencyMs: 0,
+      error: 'API key not configured (ZHIPU_AI_API_KEY env var missing)',
+    };
+  } else {
+    try {
       const llmHealth = await checkLLMHealth();
       // Detect 429 / rate-limit errors and treat them as "degraded" rather than "down".
-      // The actual pipeline uses retry-with-backoff and cooldown-aware LLM-skip,
-      // so 429 on a health probe does NOT mean the pipeline will fail.
       const errStr = (llmHealth.error || '').toLowerCase();
       const isRateLimited =
         errStr.includes('429') ||
@@ -69,20 +91,17 @@ export async function GET() {
       } else {
         checks.llm = llmHealth;
       }
+    } catch (error) {
+      checks.llm = {
+        ok: false,
+        model: 'glm-4.7-flash',
+        latencyMs: 0,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      };
     }
-  } catch (error) {
-    checks.llm = {
-      ok: false,
-      model: 'glm-4.7-flash',
-      latencyMs: 0,
-      error: error instanceof Error ? error.message : 'Unknown error',
-    };
   }
 
   // ── Check 2: Direct DuckDuckGo search (no Jina) ─────────────
-  // Jina Reader returns HTTP 401 from this server's IP ("bad IP reputation"),
-  // so we use direct DuckDuckGo HTML fetch instead. This is the primary
-  // search path used by exaSearch, linkedInSearchPeople, etc.
   try {
     const searchHealth = await directSearchHealth();
     checks.search = {
@@ -100,7 +119,6 @@ export async function GET() {
   }
 
   // ── Check 3: IPv4 connectivity ───────────────────────────────
-  // Verifies that fetchIPv4 is working (bypasses broken IPv6).
   try {
     const conn = await testIPv4Connectivity('https://html.duckduckgo.com/');
     checks.ipv4 = {
@@ -118,10 +136,10 @@ export async function GET() {
   }
 
   // ── Overall status ───────────────────────────────────────────
-  // healthy: LLM + search both work
-  // degraded: one works, one doesn't
-  // down: neither works
-  if (checks.llm.ok && checks.search.ok) {
+  // healthy:  LLM + search both work, NOT in rate-limit cooldown
+  // degraded: LLM works but in cooldown OR one of LLM/search is slow
+  // down:     neither LLM nor search works
+  if (checks.llm.ok && checks.search.ok && !checks.rateLimit.inCooldown) {
     checks.overall = 'healthy';
   } else if (checks.llm.ok || checks.search.ok) {
     checks.overall = 'degraded';

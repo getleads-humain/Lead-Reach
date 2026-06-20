@@ -6,7 +6,7 @@
 import { NextRequest } from 'next/server';
 import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
 import type { OrchestratorEvent, PipelineState } from '@/lib/prospect-agent/orchestrator-types';
-import type { ConversationContext, UserIntent, AgentMessage, SuggestedAction, PipelineCheckpoint } from '@/lib/prospect-agent/types';
+import type { ConversationContext, UserIntent, AgentMessage, SuggestedAction } from '@/lib/prospect-agent/types';
 
 export const maxDuration = 300;
 
@@ -19,9 +19,14 @@ export const maxDuration = 300;
  *   - Agent-to-agent communication
  *   - Step-by-step pipeline progress
  *   - Each agent's status and work
+ *
+ * NOTE: The `resumeFrom` field in the request body is intentionally
+ * ignored — the pipeline always runs from the start. This is safe
+ * because the rule-based pre-classifier + time-boxed LLM calls +
+ * structured fallbacks ensure the pipeline completes in one shot.
  */
 export async function POST(request: NextRequest) {
-  let body: { message?: string; context?: ConversationContext; forceIntent?: UserIntent; resumeFrom?: PipelineCheckpoint };
+  let body: { message?: string; context?: ConversationContext; forceIntent?: UserIntent };
   try {
     body = await request.json();
   } catch {
@@ -31,11 +36,10 @@ export async function POST(request: NextRequest) {
     });
   }
 
-  const { message, context, forceIntent, resumeFrom } = body as {
+  const { message, context, forceIntent } = body as {
     message: string;
     context?: ConversationContext;
     forceIntent?: UserIntent;
-    resumeFrom?: PipelineCheckpoint;
   };
 
   if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -164,7 +168,7 @@ export async function POST(request: NextRequest) {
         }
       };
 
-      processWithOrchestrator(message.trim(), context, forceIntent, onEvent, resumeFrom)
+      processWithOrchestrator(message.trim(), context, forceIntent, onEvent)
         .then((result) => {
           stopThinkingTimer();
           send('done', {

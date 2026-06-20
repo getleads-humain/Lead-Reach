@@ -358,7 +358,6 @@ export async function checkLLMHealth(): Promise<{
       temperature: 0,
       thinking_budget: 'quick',
     });
-
     // With thinking:enabled, content should have the clean answer
     const rawContent = completion?.choices?.[0]?.message?.content || '';
     const reasoningContent = completion?.choices?.[0]?.message?.reasoning_content || '';
@@ -488,6 +487,12 @@ export interface LLMCallOptions {
   useFallback?: boolean;
   /** Thinking budget: 'quick' (512), 'standard' (2048), or 'deep' (4096), default 'standard' */
   thinkingBudget?: ThinkingBudget;
+  /**
+   * If true, attempt the call even when Z.AI's host is in rate-limit cooldown.
+   * Use this for health probes and other critical paths where waiting is
+   * preferable to skipping. Default: false (return null immediately if in cooldown).
+   */
+  forceCallDespiteCooldown?: boolean;
 }
 
 /**
@@ -513,6 +518,25 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
 
   if (!isZhipuConfigured()) {
     console.error('[callLLM] Zhipu AI API key not configured — check ZHIPU_AI_API_KEY env var');
+    return null;
+  }
+
+  // ─── HOST-LEVEL COOLDOWN FAST-FAIL ─────────────────────────────
+  // If Z.AI's host (api.z.ai) is in rate-limit cooldown, return null
+  // IMMEDIATELY instead of waiting for the cooldown to expire. This
+  // prevents the pipeline from stalling for 30-60s per LLM call when
+  // Z.AI is rate-limited.
+  //
+  // The pipeline's downstream code (orchestrator, actions) has
+  // structured fallbacks that produce useful responses without an LLM,
+  // so a null return here is graceful degradation, NOT a failure.
+  //
+  // EXCEPTION: If `forceCallDespiteCooldown` is set, we still attempt
+  // the call. Use this for health probes and other critical paths
+  // where waiting is preferable to skipping.
+  if (isInRateLimitCooldown('api.z.ai') && !options.forceCallDespiteCooldown) {
+    const remainingMs = getRateLimitCooldownRemaining('api.z.ai');
+    console.warn(`[callLLM] Z.AI host in cooldown (${Math.round(remainingMs / 1000)}s remaining) — returning null for graceful degradation`);
     return null;
   }
 
@@ -595,10 +619,21 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         // Z.AI often drops TLS connections when the per-IP rate limit is hit
         // (instead of returning a proper 429 response). We treat these the
         // same as 429s — back off and wait for the limit to reset.
+        //
+        // PROGRESSIVE COOLDOWN (was: fixed 60s):
+        //   attempt 0 (first 429): 30s cooldown
+        //   attempt 1 (second 429): 45s cooldown
+        //   attempt 2 (third 429): 60s cooldown
+        // This gives the user a faster retry on transient rate limits
+        // while still backing off aggressively on persistent ones.
+        // Total worst-case wait for 3 attempts: 135s (was 180s).
+        const progressiveCooldown = (isRateErr || isConnErr)
+          ? 30_000 + attempt * 15_000
+          : 0;
+
         if (isRateErr || isConnErr) {
           record429(currentModel);
-          // Mark Z.AI host as rate-limited for 60s so concurrent calls back off
-          markHostRateLimited('api.z.ai', 60_000);
+          markHostRateLimited('api.z.ai', progressiveCooldown);
         }
 
         // Quota exhaustion — don't retry this model
@@ -616,14 +651,14 @@ export async function callLLM(options: LLMCallOptions): Promise<string | null> {
         }
 
         if (attempt < retriesPerModel) {
-          // Backoff strategy — significantly increased for rate limit compliance
-          // Z.AI's glm-4.7-flash tier limit is roughly 1 req/min, so we need
-          // to wait long enough on 429s and connection errors before retrying.
+          // Backoff strategy — progressive for rate limits, exponential for others.
+          // Z.AI's glm-4.7-flash tier limit is roughly 1 req/min, but most 429s
+          // clear in ~30s — so we use a shorter cooldown for the first attempt.
           let backoffMs: number;
           if (isRateErr || isConnErr) {
-            // Wait for the host cooldown to expire (60s default) plus jitter
+            // Wait for the host cooldown to expire (progressive 30/45/60s) plus jitter
             const cooldownRemaining = getRateLimitCooldownRemaining('api.z.ai');
-            backoffMs = Math.max(60_000, cooldownRemaining) + Math.random() * 5000;
+            backoffMs = Math.max(progressiveCooldown, cooldownRemaining) + Math.random() * 3000;
           } else if (isGatewayErr) {
             backoffMs = exponentialBackoff(attempt, 3000, 30_000);
           } else {

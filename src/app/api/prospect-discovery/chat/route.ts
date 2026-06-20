@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
-import type { ConversationContext, UserIntent, PipelineCheckpoint } from '@/lib/prospect-agent/types';
+import type { ConversationContext, UserIntent } from '@/lib/prospect-agent/types';
 
 // Set max duration for this API route to 5 minutes (production)
 export const maxDuration = 300;
@@ -15,18 +15,20 @@ const PIPELINE_TIMEOUT_MS = 240_000; // 4 minutes (increased from 3min for relia
  * POST /api/prospect-discovery/chat
  *
  * The main agent chat endpoint. Uses the 8-agent orchestrator pipeline.
+ *
+ * NOTE: The `resumeFrom` field in the request body is intentionally
+ * ignored — the pipeline always runs from the start.
  */
 export async function POST(request: NextRequest) {
   let requestMessage = '';
   let requestContext: ConversationContext | undefined;
   try {
     const body = await request.json();
-    const { message, conversationHistory, context, forceIntent, resumeFrom } = body as {
+    const { message, conversationHistory, context, forceIntent } = body as {
       message: string;
       conversationHistory?: Array<{ role: string; content: string }>;
       context?: ConversationContext;
       forceIntent?: UserIntent;
-      resumeFrom?: PipelineCheckpoint;
     };
 
     if (!message || typeof message !== 'string' || message.trim().length === 0) {
@@ -41,10 +43,10 @@ export async function POST(request: NextRequest) {
 
     // Process the message through the 8-agent orchestrator pipeline with timeout
     const result = await Promise.race([
-      processWithOrchestrator(message.trim(), context, forceIntent, undefined, resumeFrom),
+      processWithOrchestrator(message.trim(), context, forceIntent),
       new Promise<null>((resolve) =>
         setTimeout(() => {
-          console.warn('[AgentChat] Pipeline timed out after 3min — returning partial response');
+          console.warn('[AgentChat] Pipeline timed out after 4min — returning partial response');
           resolve(null);
         }, PIPELINE_TIMEOUT_MS)
       ),

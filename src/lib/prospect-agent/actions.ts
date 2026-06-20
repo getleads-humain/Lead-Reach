@@ -2221,8 +2221,28 @@ export async function generateConversationResponse(
   actionResults: string,
   context?: ConversationContext,
 ): Promise<string> {
+  // ─── STRICT TIMEOUT ───────────────────────────────────────────
+  // The synthesis LLM call is the LAST step of the pipeline. If Z.AI is
+  // rate-limited, this call can stall for 30s + 45s + 60s = 135s while
+  // callLLM exhausts its retries. We race against a 20s hard timeout
+  // so the user gets a response (from the structured fallback) within
+  // ~20s instead of waiting 2+ minutes.
+  //
+  // The structured fallback already produces a useful, data-rich response
+  // (see buildFallbackResponse below), so a timeout here is not a quality
+  // regression — it just means we use the deterministic response instead
+  // of waiting for the LLM to write prose.
+  const SYNTHESIS_TIMEOUT_MS = 20_000;
+
+  const structured = (): string => {
+    const s = generateStructuredFallback({
+      persona, intent, userMessage, actionSummary: actionResults,
+    });
+    return (s && s.trim().length > 0) ? s : buildFallbackResponse(intent, actionResults);
+  };
+
   try {
-    const response = await callLLM({
+    const llmPromise = callLLM({
       systemPrompt: getConversationResponsePrompt(
         persona as 'scout' | 'hound' | 'analyst' | 'architect' | 'judge' | 'scribe' | 'navigator',
         intent,
@@ -2231,31 +2251,28 @@ export async function generateConversationResponse(
         context,
       ),
       userMessage: 'Generate your conversational response based on the action results above.',
-      retriesPerModel: 2, // Increased from 1 to 2 for better resilience
+      // Only 1 retry per model (was 2) — the timeout will catch the rest.
+      retriesPerModel: 1,
+      // Standard thinking budget — synthesis doesn't need deep reasoning
+      thinkingBudget: 'standard',
     });
+
+    const timeoutPromise = new Promise<string | null>((resolve) => {
+      setTimeout(() => {
+        console.warn(`[generateConversationResponse] LLM synthesis timed out after ${SYNTHESIS_TIMEOUT_MS}ms — using structured fallback`);
+        resolve(null);
+      }, SYNTHESIS_TIMEOUT_MS);
+    });
+
+    const response = await Promise.race([llmPromise, timeoutPromise]);
+
     if (response && response.trim().length > 0) return response;
 
-    // LLM returned null/empty — try structured fallback first, then simple fallback
-    const structured = generateStructuredFallback({
-      persona,
-      intent,
-      userMessage,
-      actionSummary: actionResults,
-    });
-    if (structured && structured.trim().length > 0) return structured;
-
-    return buildFallbackResponse(intent, actionResults);
+    // LLM returned null/empty OR timed out — use structured fallback
+    return structured();
   } catch {
-    // LLM call threw — try structured fallback, then simple fallback
-    const structured = generateStructuredFallback({
-      persona,
-      intent,
-      userMessage,
-      actionSummary: actionResults,
-    });
-    if (structured && structured.trim().length > 0) return structured;
-
-    return buildFallbackResponse(intent, actionResults);
+    // LLM call threw — use structured fallback
+    return structured();
   }
 }
 

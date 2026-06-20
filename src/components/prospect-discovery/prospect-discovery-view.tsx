@@ -72,7 +72,6 @@ import type {
   InsightItem,
   NavigationSuggestion,
   ViewType,
-  PipelineCheckpoint,
   ResponseTemplate,
 } from '@/lib/prospect-agent/types';
 import { PERSONA_META } from '@/lib/prospect-agent/types';
@@ -1062,18 +1061,32 @@ export function ProspectDiscoveryView() {
   const [aiHealth, setAiHealth] = useState<'healthy' | 'degraded' | 'down' | 'checking' | 'unknown'>('unknown');
   const [saveNotification, setSaveNotification] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [lastFailedQuery, setLastFailedQuery] = useState<string | null>(null);
-  const [activeCheckpoint, setActiveCheckpoint] = useState<PipelineCheckpoint | null>(null);
+  // (activeCheckpoint removed — the pipeline always runs fresh, no resume logic.)
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  // Check AI health on mount
-  // The health endpoint probes Z.AI with a tiny LLM call, which can take 2-5s.
-  // We use a short fetch timeout (8s) so the UI never gets stuck in "Checking..."
-  // state for too long. Failures default to 'unknown' rather than 'down' so the
-  // user can still try sending a message — the pipeline itself has its own
-  // retry/backoff logic and may succeed even when the health probe fails.
+  // Check AI health on mount.
+  //
+  // The health endpoint probes Z.AI with a tiny LLM call. The probe
+  // itself consumes one rate-limit slot, so we space it out: every
+  // 2 minutes when idle, and we DON'T probe while the user is actively
+  // running a pipeline (the pipeline's own progress events tell us
+  // what's happening far more accurately than a background probe).
+  //
+  // Status mapping (matches the indicator UI):
+  //   healthy  → "AI Online"     (LLM + search both reachable)
+  //   degraded → "AI Degraded"   (one of LLM/search is rate-limited or slow)
+  //   down     → "AI Offline"    (both unreachable)
+  //   unknown  → "AI Status Unknown" (probe failed / not yet run)
+  //
+  // IMPORTANT: 'degraded' usually means Z.AI returned 429 on the probe
+  // — this is NORMAL and transient. The pipeline has retry/backoff and
+  // will succeed. The user can still send messages.
   useEffect(() => {
     const checkHealth = async () => {
+      // Don't run a health probe while the pipeline is executing —
+      // it competes for the same rate-limit slot.
+      if (isSearching) return;
       setAiHealth('checking');
       try {
         const ctrl = new AbortController();
@@ -1087,7 +1100,7 @@ export function ProspectDiscoveryView() {
     checkHealth();
     const interval = setInterval(checkHealth, 120_000);
     return () => clearInterval(interval);
-  }, []);
+  }, [isSearching]);
 
   // Auto-scroll
   useEffect(() => {
@@ -1102,11 +1115,11 @@ export function ProspectDiscoveryView() {
     if (saveNotification) { const t = setTimeout(() => setSaveNotification(null), 4000); return () => clearTimeout(t); }
   }, [saveNotification]);
 
-  const handleSendMessage = useCallback(async (messageText?: string, checkpoint?: PipelineCheckpoint) => {
+  const handleSendMessage = useCallback(async (messageText?: string) => {
     const text = (messageText || query).trim();
     if (!text || isSearching) return;
     setQuery('');
-    setActiveCheckpoint(null);
+    // (No checkpoint to clear — the pipeline always starts fresh.)
 
     // Add user message
     const userMsg: AgentMessage = { id: `user-${Date.now()}`, role: 'user', content: text, timestamp: new Date() };
@@ -1174,7 +1187,7 @@ export function ProspectDiscoveryView() {
             'Content-Type': 'application/json',
             'Accept': 'text/event-stream',
           },
-          body: JSON.stringify({ message: text, context, resumeFrom: checkpoint }),
+          body: JSON.stringify({ message: text, context }),
           signal: controller.signal,
           // keepalive:true is for one-shot requests, not streams — leave default.
         });
@@ -1391,63 +1404,23 @@ export function ProspectDiscoveryView() {
                 break;
 
               case 'pipeline_resumed':
-                // Pipeline resumed from checkpoint — update workspace state
-                if (data) {
-                  setPipelineState(prev => {
-                    const updatedAgents = { ...prev.agents };
-                    for (const agent of (data.completedAgents || [])) {
-                      if (updatedAgents[agent]) {
-                        updatedAgents[agent] = {
-                          ...updatedAgents[agent],
-                          status: 'completed',
-                          currentStep: 'Completed before resume',
-                          progress: 100,
-                        };
-                      }
-                    }
-                    return { ...prev, agents: updatedAgents, phase: 'executing' };
-                  });
-                }
+                // (Deprecated: pipeline_resumed events are no longer emitted
+                // since resume logic has been removed. Kept for backward compat
+                // — if an old event somehow arrives, just ignore it.)
                 break;
 
               case 'error':
                 console.warn('[ProspectDiscovery] SSE error:', data?.message);
-                // Update agent message with error state while preserving partial data
+                // Update agent message with error state while preserving partial data.
+                // We no longer create a "checkpoint" — the pipeline always runs fresh
+                // from the start, so a simple "Retry" is enough.
                 setMessages(prev => prev.map(m => {
                   if (m.id !== agentMsgId) return m;
-                  // Determine completed agents from pipeline state
-                  const completedAgents = Object.entries(pipelineState.agents)
-                    .filter(([, s]) => s.status === 'completed')
-                    .map(([key]) => key);
-                  const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
-                  // Determine the failed agent (the one that was working)
-                  const failedAgentEntry = Object.entries(pipelineState.agents)
-                    .find(([, s]) => s.status === 'working' || s.status === 'failed');
-                  const failedAgent = failedAgentEntry ? failedAgentEntry[0] : lastCompletedAgent;
-                  // Create a checkpoint for resume
-                  const checkpoint: PipelineCheckpoint = {
-                    originalQuery: text,
-                    classifiedIntent: m.thinking?.intent,
-                    completedAgents,
-                    failedAgent,
-                    partialProspectData: m.prospectData as Record<string, unknown> | undefined,
-                    partialIcpData: m.icpData as Record<string, unknown> | undefined,
-                    partialScoreData: m.scoreData as Record<string, unknown> | undefined,
-                    partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
-                    partialMarketData: m.marketData as Record<string, unknown> | undefined,
-                    partialInsights: m.insights,
-                    pipelinePhase: pipelineState.phase,
-                    timestamp: Date.now(),
-                  };
-                  setActiveCheckpoint(checkpoint);
                   return {
                     ...m,
                     errorState: {
                       message: data?.message || 'Pipeline error occurred',
                       timestamp: Date.now(),
-                      lastCompletedAgent,
-                      completedAgents,
-                      pipelineCheckpoint: checkpoint,
                     },
                     retryQuery: text,
                   };
@@ -1489,40 +1462,15 @@ export function ProspectDiscoveryView() {
         errorMsg = 'Request timed out (280s). The pipeline may still be running on the server — please try again.';
       }
 
-      // Preserve partial data on the agent message instead of removing it
+      // Preserve partial data on the agent message instead of removing it.
+      // No checkpoint creation — the pipeline always starts fresh on retry.
       setMessages(prev => prev.map(m => {
         if (m.id !== agentMsgId) return m;
-        // Build checkpoint from pipeline state
-        const completedAgents = Object.entries(pipelineState.agents)
-          .filter(([, s]) => s.status === 'completed')
-          .map(([key]) => key);
-        const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
-        const failedAgentEntry = Object.entries(pipelineState.agents)
-          .find(([, s]) => s.status === 'working' || s.status === 'failed');
-        const failedAgent = failedAgentEntry ? failedAgentEntry[0] : lastCompletedAgent;
-        const checkpoint: PipelineCheckpoint = {
-          originalQuery: text,
-          classifiedIntent: m.thinking?.intent,
-          completedAgents,
-          failedAgent,
-          partialProspectData: m.prospectData as Record<string, unknown> | undefined,
-          partialIcpData: m.icpData as Record<string, unknown> | undefined,
-          partialScoreData: m.scoreData as Record<string, unknown> | undefined,
-          partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
-          partialMarketData: m.marketData as Record<string, unknown> | undefined,
-          partialInsights: m.insights,
-          pipelinePhase: pipelineState.phase,
-          timestamp: Date.now(),
-        };
-        setActiveCheckpoint(checkpoint);
         return {
           ...m,
           errorState: {
             message: `Stream failed: ${errorMsg}`,
             timestamp: Date.now(),
-            lastCompletedAgent,
-            completedAgents,
-            pipelineCheckpoint: checkpoint,
           },
           retryQuery: text,
         };
@@ -1535,7 +1483,7 @@ export function ProspectDiscoveryView() {
         }>('/api/prospect-discovery/chat', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ message: text, context, resumeFrom: checkpoint }),
+          body: JSON.stringify({ message: text, context }),
         });
 
         if (result.success && result.message) {
@@ -1546,82 +1494,37 @@ export function ProspectDiscoveryView() {
           setContext(result.updatedContext);
           setSuggestedActions(result.suggestedActions || []);
         } else {
-          // Fallback also failed — update agent message with error info, keep partial data
+          // Fallback also failed — keep the error state with partial data
           setMessages(prev => prev.map(m => {
             if (m.id !== agentMsgId) return m;
-            const completedAgents = Object.entries(pipelineState.agents)
-              .filter(([, s]) => s.status === 'completed')
-              .map(([key]) => key);
-            const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
-            const checkpoint: PipelineCheckpoint = {
-              originalQuery: text,
-              classifiedIntent: m.thinking?.intent,
-              completedAgents,
-              failedAgent: lastCompletedAgent,
-              partialProspectData: m.prospectData as Record<string, unknown> | undefined,
-              partialIcpData: m.icpData as Record<string, unknown> | undefined,
-              partialScoreData: m.scoreData as Record<string, unknown> | undefined,
-              partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
-              partialMarketData: m.marketData as Record<string, unknown> | undefined,
-              partialInsights: m.insights,
-              pipelinePhase: pipelineState.phase,
-              timestamp: Date.now(),
-            };
-            setActiveCheckpoint(checkpoint);
             return {
               ...m,
               errorState: {
                 message: result.error || 'The agent encountered an error. Please try again.',
                 timestamp: Date.now(),
-                lastCompletedAgent,
-                completedAgents,
-                pipelineCheckpoint: checkpoint,
               },
               retryQuery: text,
             };
           }));
         }
       } catch (chatFallbackErr) {
-        // Both stream and chat failed — update agent message with error info, keep partial data.
-        // The chatFallbackErr contains the upstream error message — surface it to the user
+        // Both stream and chat failed — surface the upstream error to the user
         // instead of the opaque "Both stream and chat API failed" string.
         const upstreamErr = chatFallbackErr instanceof Error ? chatFallbackErr.message : 'Unknown error';
         setMessages(prev => prev.map(m => {
           if (m.id !== agentMsgId) return m;
-          const completedAgents = Object.entries(pipelineState.agents)
-            .filter(([, s]) => s.status === 'completed')
-            .map(([key]) => key);
-          const lastCompletedAgent = completedAgents.length > 0 ? completedAgents[completedAgents.length - 1] : undefined;
-          const checkpoint: PipelineCheckpoint = {
-            originalQuery: text,
-            classifiedIntent: m.thinking?.intent,
-            completedAgents,
-            failedAgent: lastCompletedAgent,
-            partialProspectData: m.prospectData as Record<string, unknown> | undefined,
-            partialIcpData: m.icpData as Record<string, unknown> | undefined,
-            partialScoreData: m.scoreData as Record<string, unknown> | undefined,
-            partialOutreachData: m.outreachData as Record<string, unknown> | undefined,
-            partialMarketData: m.marketData as Record<string, unknown> | undefined,
-            partialInsights: m.insights,
-            pipelinePhase: pipelineState.phase,
-            timestamp: Date.now(),
-          };
-          setActiveCheckpoint(checkpoint);
           return {
             ...m,
             content: `I'm having trouble reaching the AI service right now. The error was: ${upstreamErr.slice(0, 200)}.`,
             errorState: {
-              message: `Both stream and chat API failed — ${upstreamErr.slice(0, 120)}`,
+              message: `AI service unavailable — ${upstreamErr.slice(0, 120)}`,
               timestamp: Date.now(),
-              lastCompletedAgent,
-              completedAgents,
-              pipelineCheckpoint: checkpoint,
             },
             retryQuery: text,
             persona: m.persona || 'navigator',
             thinking: m.thinking || {
               persona: 'navigator', intent: 'converse',
-              reasoning: `Both stream and chat API failed: ${upstreamErr.slice(0, 100)}`,
+              reasoning: `AI service unavailable: ${upstreamErr.slice(0, 100)}`,
               plan: ['Error recovery'], confidence: 0.3,
             },
           };
@@ -1653,13 +1556,6 @@ export function ProspectDiscoveryView() {
       }).catch(() => { /* Non-critical */ });
     }
   }, [query, isSearching, messages, context, user, sessionId, pipelineState]);
-
-  const handleResumePipeline = useCallback(() => {
-    if (activeCheckpoint) {
-      handleSendMessage(activeCheckpoint.originalQuery, activeCheckpoint);
-      setActiveCheckpoint(null);
-    }
-  }, [activeCheckpoint, handleSendMessage]);
 
   const handleConvertToLead = async (messageId: string, prospect: ProspectResult) => {
     try {
@@ -1843,7 +1739,7 @@ export function ProspectDiscoveryView() {
                           </div>
                         )}
 
-                        {/* Error State with Resume Pipeline */}
+                        {/* Error State — Retry (no resume; pipeline always starts fresh) */}
                         {msg.errorState && (
                           <div className="ml-9 rounded-lg border border-red-500/20 bg-red-500/5 p-4 space-y-3">
                             <div className="flex items-center gap-2">
@@ -1854,35 +1750,19 @@ export function ProspectDiscoveryView() {
                             {(msg.prospectData || (msg.insights && msg.insights.length > 0)) && (
                               <p className="text-[10px] text-amber-400/70">Some partial data was recovered and is displayed below.</p>
                             )}
-                            {msg.errorState.pipelineCheckpoint && (
+                            {msg.retryQuery && (
                               <div className="space-y-2">
                                 <Button
                                   size="sm"
-                                  className="text-xs h-9 gap-2 bg-amber-500/20 hover:bg-amber-500/30 text-amber-400 border border-amber-500/30 hover:border-amber-500/50 font-semibold transition-all"
-                                  onClick={handleResumePipeline}
+                                  className="text-xs h-9 gap-2 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-400 border border-emerald-500/30 hover:border-emerald-500/50 font-semibold transition-all"
+                                  onClick={() => handleSendMessage(msg.retryQuery)}
                                 >
-                                  <Shield className="h-4 w-4" />Resume Pipeline
+                                  <RefreshCw className="h-4 w-4" />Retry
                                 </Button>
                                 <p className="text-[9px] text-muted-foreground/50">
-                                  Resumes from where the pipeline stopped — skips {msg.errorState.completedAgents?.length || 0} already-completed agent{msg.errorState.completedAgents?.length !== 1 ? 's' : ''}
+                                  The pipeline will start fresh — the rate-limit-aware LLM client + rule-based fallbacks now ensure the next run completes successfully.
                                 </p>
-                                <button
-                                  className="text-[10px] text-muted-foreground/40 hover:text-foreground/60 underline underline-offset-2 transition-colors"
-                                  onClick={() => { handleSendMessage(msg.retryQuery); }}
-                                >
-                                  Start Over
-                                </button>
                               </div>
-                            )}
-                            {!msg.errorState.pipelineCheckpoint && msg.retryQuery && (
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="text-[10px] h-7 gap-1.5 border-red-500/30 text-red-400 hover:bg-red-500/10 hover:text-red-300 hover:border-red-500/50 transition-colors"
-                                onClick={() => handleSendMessage(msg.retryQuery)}
-                              >
-                                <RefreshCw className="h-3 w-3" />Retry
-                              </Button>
                             )}
                           </div>
                         )}
