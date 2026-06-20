@@ -392,26 +392,34 @@ function extractChannelsUsed(tool: SkillToolEntry): string[] {
   const category = tool.category.toLowerCase();
   const desc = tool.description.toLowerCase();
 
-  // Map categories to channels
-  if (category.includes('search') || desc.includes('search')) {
+  // Map categories to channels.
+  // SECURITY: use word-boundary regex instead of `String.prototype.includes`
+  // for URL-like substrings (`x.com`, `github.com`, etc.). CodeQL flags
+  // `desc.includes('x.com')` as "Incomplete URL substring sanitization"
+  // because an attacker-controlled description like "via x.com.evil.tld"
+  // would match. Word boundaries (`\b`) prevent this.
+  const hasWord = (s: string, word: string): boolean =>
+    new RegExp(`\\b${word.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(s);
+
+  if (hasWord(desc, 'search') || hasWord(category, 'search')) {
     channels.push('web_search');
   }
-  if (desc.includes('linkedin')) {
+  if (hasWord(desc, 'linkedin')) {
     channels.push('linkedin');
   }
-  if (desc.includes('twitter') || desc.includes('x.com')) {
+  if (hasWord(desc, 'twitter') || hasWord(desc, 'x\\.com')) {
     channels.push('twitter');
   }
-  if (desc.includes('reddit')) {
+  if (hasWord(desc, 'reddit')) {
     channels.push('reddit');
   }
-  if (desc.includes('github')) {
+  if (hasWord(desc, 'github')) {
     channels.push('github');
   }
-  if (desc.includes('youtube')) {
+  if (hasWord(desc, 'youtube')) {
     channels.push('youtube');
   }
-  if (desc.includes('web') || desc.includes('scrape') || desc.includes('read')) {
+  if (hasWord(desc, 'web') || hasWord(desc, 'scrape') || hasWord(desc, 'read')) {
     channels.push('web');
   }
 
@@ -434,10 +442,26 @@ async function executeWithTimeout<T>(
   fn: () => Promise<T>,
   timeoutMs: number,
 ): Promise<T> {
+  // Resource-exhaustion guard: validate `timeoutMs` against a reasonable
+  // upper bound before passing to `setTimeout`. Without this, a caller-
+  // controlled `timeoutMs` could be set to a multi-year value, holding
+  // Promise state indefinitely. (CodeQL: Resource exhaustion — unbounded
+  // setTimeout delay.)
+  const MAX_TIMEOUT_MS = 30 * 60 * 1000; // 30 minutes
+  const MIN_TIMEOUT_MS = 1;
+  if (!Number.isFinite(timeoutMs) ||
+      timeoutMs < MIN_TIMEOUT_MS ||
+      timeoutMs > MAX_TIMEOUT_MS) {
+    throw new Error(
+      `Invalid timeout ${timeoutMs}ms — must be between ${MIN_TIMEOUT_MS} and ${MAX_TIMEOUT_MS}ms`,
+    );
+  }
+  const safeTimeoutMs = Math.floor(timeoutMs);
+
   return new Promise<T>((resolve, reject) => {
     const timer = setTimeout(() => {
-      reject(new Error(`Operation timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
+      reject(new Error(`Operation timed out after ${safeTimeoutMs}ms`));
+    }, safeTimeoutMs);
 
     fn()
       .then((result) => {

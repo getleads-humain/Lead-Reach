@@ -22,6 +22,7 @@ import {
 } from '@/lib/vellum-core';
 import type { AgentMessage, VellumAgentPersona } from '@/lib/vellum-core';
 import { loadContextMemory, saveNode, generateNodeId } from '@/lib/vellum-core/memory';
+import { randomUUID } from 'node:crypto';
 
 // 5-minute timeout
 export const maxDuration = 300;
@@ -77,7 +78,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const sessionId = `pipeline-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const sessionId = `pipeline-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
     // Load context memories
     let memoryContext = '';

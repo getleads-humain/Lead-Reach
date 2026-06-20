@@ -54,15 +54,41 @@ async function mcpHttpRequest(
   body?: Record<string, unknown>,
   headers?: Record<string, string>
 ): Promise<Record<string, unknown>> {
-  // SSRF guard — refuse internal/disallowed URLs before fetching.
-  await assertSafeUrl(url);
+  // SSRF guard — parse URL with `new URL()` and validate scheme + hostname.
+  // CodeQL recognizes `new URL()` + protocol/hostname check as a sanitizer
+  // barrier; using the re-serialized `safeUrl` (not the original `url`) for
+  // the fetch call ensures the taint flow is cut.
+  let safeUrl: string;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      throw new Error(`Disallowed URL scheme: ${parsed.protocol}`);
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
+        host.endsWith('.local') || host.endsWith('.internal') ||
+        host.endsWith('.localhost') || host.endsWith('.intranet') ||
+        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
+        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
+        host.startsWith('fe8') || host.startsWith('fe9') ||
+        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
+      throw new Error(`Internal/private host blocked: ${host}`);
+    }
+    safeUrl = parsed.toString();
+  } catch (err) {
+    throw new Error(`Refused URL for SSRF safety: ${err instanceof Error ? err.message : err}`);
+  }
+
+  // Defense-in-depth: full DNS-rebinding check via url-guard.
+  await assertSafeUrl(safeUrl);
 
   const fetchHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(headers ?? {}),
   };
 
-  const response = await fetch(url, {
+  const response = await fetch(safeUrl, {
     method,
     headers: fetchHeaders,
     body: body ? JSON.stringify(body) : undefined,

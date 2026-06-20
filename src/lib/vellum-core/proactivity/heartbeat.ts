@@ -58,7 +58,24 @@ class HeartbeatManager {
     // Stop existing heartbeat if running
     this.stopHeartbeat();
 
-    this.config = config;
+    // Resource-exhaustion guard: validate `intervalMs` against a reasonable
+    // bound before passing to `setInterval`. Without this, a caller-controlled
+    // `intervalMs` could be set to 1ms (DoS) or to a multi-year value
+    // (effectively disabling cleanup). (CodeQL: Resource exhaustion —
+    // unbounded setInterval delay.)
+    const MIN_INTERVAL_MS = 30 * 1000;       // 30 seconds
+    const MAX_INTERVAL_MS = 24 * 60 * 60 * 1000; // 24 hours
+    if (!Number.isFinite(config.intervalMs) ||
+        config.intervalMs < MIN_INTERVAL_MS ||
+        config.intervalMs > MAX_INTERVAL_MS) {
+      throw new Error(
+        `Invalid heartbeat intervalMs ${config.intervalMs} — must be between ` +
+        `${MIN_INTERVAL_MS}ms and ${MAX_INTERVAL_MS}ms`,
+      );
+    }
+    const safeIntervalMs = Math.floor(config.intervalMs);
+
+    this.config = { ...config, intervalMs: safeIntervalMs };
     this.scopeId = scopeId;
     this.isRunning = true;
     this.state = {
@@ -68,13 +85,13 @@ class HeartbeatManager {
       lastHeartbeatAt: 0,
     };
 
-    console.log(`[Heartbeat] Starting heartbeat for scope="${scopeId}" (interval=${config.intervalMs}ms)`);
+    console.log(`[Heartbeat] Starting heartbeat for scope="${scopeId}" (interval=${safeIntervalMs}ms)`);
 
     this.intervalHandle = setInterval(() => {
       this.tick().catch(err => {
         console.error('[Heartbeat] Tick error:', err);
       });
-    }, config.intervalMs);
+    }, safeIntervalMs);
 
     // Run first tick after a short delay
     setTimeout(() => {

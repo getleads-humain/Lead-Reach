@@ -331,3 +331,45 @@ Stage Summary:
 - New files: src/lib/url-guard.ts, mini-services/{gmaps-service,browser-service}/url-guard.ts, mini-services/{gmaps-scraper/app,scraper-service/app,scraper-service/app/services}/url_guard.py, scripts/test-url-guard.ts
 - Build: green (npm run build)
 - Tests: url-guard sanity test 23/23 passing
+
+---
+Task ID: codeql-fixes-v2
+Agent: main (claude)
+Task: Fix all 25 CodeQL code scanning alerts reported on GitHub for the project (alerts #43-#46, #96, #125, #137-#149, #164-#169). The previous commit `c0dd1c5` added custom `assertSafeUrl` / `assertSafeBrowserUrl` guards, but CodeQL did not recognize custom validator functions as sanitizers — so all 14 SSRF alerts (and the URL substring sanitization alert at google-maps-scraper.ts:367) remained open. Additionally, 5 insecure-randomness, 2 useless-regex-escape, 2 resource-exhaustion, and 1 URL substring sanitization alert needed fixing.
+
+Work Log:
+- Read all 13 affected files to understand the current state and confirm the previous guards were present but unrecognized by CodeQL
+- Verified the existing `url-guard.ts` / `url_guard.py` libraries (comprehensive SSRF protection with DNS-rebinding check) — kept them as defense-in-depth
+- Applied inline `new URL()` + protocol/hostname validation pattern (CodeQL-recognized sanitizer barrier) at every SSRF call site, using the re-serialized `parsed.toString()` URL for the actual fetch/goto call to cut taint flow:
+  - src/lib/vellum-core/mcp/mcp-client.ts (#145) — fetch() now uses safeUrl
+  - src/lib/google-maps-scraper.ts (#140) — page.goto() now uses safeUrl
+  - mini-services/gmaps-service/index.ts (#138 /place, #139 /extract-email) — page.goto() now uses safeUrl/safePlaceUrl
+  - src/lib/proxy-rotator.ts (#96) — curlArgs now uses safeUrl
+  - mini-services/browser-service/index.ts (#43 /screenshot, #44 /render, #45 /extract, #46 /crawl) — all 4 page.goto() calls now use safeUrl; /crawl pre-validates the entire batch into a `safeUrls[]` array
+  - mini-services/scraper-service/app/services/scrapy_service.py (#166, #167) — added `_validate_url_inline()` using `urllib.parse.urlparse()` + scheme/hostname check + `urlunparse()` re-serialization; called inline before every `session.get()`, including redirect hops
+  - mini-services/gmaps-scraper/app/email_extractor.py (#164, #165, #125) — same `_validate_url_inline()` pattern; called before every `client.get()` including redirect hops and contact-page crawls
+- Fixed 5 insecure-randomness alerts by replacing `Math.random().toString(36).slice(2, 8)` with cryptographically secure alternatives:
+  - src/app/api/vellum/chat/route.ts (#149, #146, #148) — `randomUUID().slice(0, 8)` from `node:crypto`
+  - src/app/api/vellum/pipeline/route.ts (#147) — same fix
+  - src/components/prospect-discovery/prospect-discovery-view.tsx (#141) — client-side `crypto.randomUUID()` with `crypto.getRandomValues()` fallback for older browsers
+- Fixed 2 useless-regex-escape alerts in src/lib/prospect-agent/query-parser.ts:
+  - #168 (line 397): `"[A-Z][a-zA-Z'\-]{1,40}"` → `"[A-Z][a-zA-Z'-]{1,40}"` (dash moved to end of class, unescaped)
+  - #169 (line 450): `"[A-Z][a-zA-Z0-9\-]{1,40}"` → `"[A-Z][a-zA-Z0-9-]{1,40}"` (same fix)
+- Fixed 2 resource-exhaustion alerts by validating bounds before setTimeout/setInterval:
+  - #144 src/lib/vellum-core/skills/executor.ts:440 — executeWithTimeout now validates `1 ≤ timeoutMs ≤ 30 min` before passing to setTimeout
+  - #143 src/lib/vellum-core/proactivity/heartbeat.ts:77 — startHeartbeat now validates `30 sec ≤ intervalMs ≤ 24 hours` before passing to setInterval
+- Fixed 2 incomplete-URL-substring-sanitization alerts:
+  - #137 src/lib/google-maps-scraper.ts:367 — replaced `url.includes('maps.googleapis.com/maps/api/staticmap')` with `new URL(request.url()).hostname === 'maps.googleapis.com'` (or `.endsWith('.googleusercontent.com')` etc.) — strict hostname check defeats substring-bypass attacks
+  - #142 src/lib/vellum-core/skills/executor.ts:402 — replaced `desc.includes('twitter') || desc.includes('x.com')` with word-boundary regex `/\btwitter\b/.test(desc) || /\bx\.com\b/.test(desc)` via a `hasWord()` helper
+- Added smoke test `scripts/test-ssrf-guard.py` covering 21 cases per validator (public URLs accepted; private IPs, internal hostnames, dangerous schemes, userinfo tricks all rejected) — all 42 assertions pass for both Python validators
+- Verified TypeScript compilation: my changes introduce zero new errors (pre-existing errors in browser-service/index.ts:393/395, pipeline/route.ts SSEEventType, and google-maps-scraper.ts puppeteer module resolution are unrelated to this commit)
+- Verified Python syntax: both modified Python files compile cleanly via `python3 -m py_compile`
+
+Stage Summary:
+- All 25 CodeQL alerts addressed in 13 files
+- SSRF strategy: inline `new URL()` (TS) / `urlparse()` (Python) + protocol/hostname validation + re-serialization — this is the CodeQL-recognized sanitizer barrier pattern. The existing comprehensive `url-guard` library is retained as defense-in-depth for DNS-rebinding checks.
+- Insecure randomness strategy: replaced `Math.random()` with `crypto.randomUUID()` (server) or `crypto.randomUUID()` + `crypto.getRandomValues()` fallback (client)
+- Resource exhaustion strategy: explicit upper/lower bound validation before setTimeout/setInterval
+- URL substring sanitization strategy: replaced `String.includes()` with strict hostname equality (`new URL().hostname ===`) or word-boundary regex (`/\b…\b/`)
+- Smoke test confirms SSRF guards work correctly at runtime (42/42 pass)
+- Ready to commit and push; GitHub CodeQL re-scan should clear all 25 alerts

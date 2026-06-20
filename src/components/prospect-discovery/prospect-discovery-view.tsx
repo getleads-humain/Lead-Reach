@@ -1538,7 +1538,7 @@ export function ProspectDiscoveryView() {
 
     // Save session data for logged-in users (non-blocking, fire-and-forget)
     if (user) {
-      const currentSessionId = sessionId || `session-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+      const currentSessionId = sessionId || `session-${Date.now()}-${(typeof crypto !== 'undefined' && crypto.randomUUID) ? crypto.randomUUID().slice(0, 8) : Array.from(crypto.getRandomValues(new Uint8Array(4))).map(b => b.toString(16).padStart(2, '0')).join('')}`;
       if (!sessionId) setSessionId(currentSessionId);
 
       // Save user message (fire-and-forget)

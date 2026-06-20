@@ -3,6 +3,7 @@ import asyncio
 import re
 import logging
 from typing import List
+from urllib.parse import urlparse, urlunparse
 
 import httpx
 from bs4 import BeautifulSoup
@@ -23,6 +24,15 @@ SKIP_DOMAINS = {
     'google.com', 'apple.com', 'microsoft.com'
 }
 
+# Pre-compiled private-host detector — used by the inline SSRF guard.
+_PRIVATE_HOST_RE = re.compile(
+    r'^(?:localhost|::1|0\.0\.0\.0|'
+    r'127\.|10\.|192\.168\.|169\.254\.|'
+    r'172\.(?:1[6-9]|2[0-9]|3[01])\.|'
+    r'0\.|f[cd][0-9a-f]{2}:|fe[89ab]|ff)'
+)
+_PRIVATE_HOST_SUFFIXES = ('.local', '.internal', '.localhost', '.intranet', '.corp', '.lan')
+
 
 def is_valid_email(email: str) -> bool:
     """Check if an email looks valid (not a generic/webmaster email for social platforms)."""
@@ -36,13 +46,48 @@ def is_valid_email(email: str) -> bool:
     return True
 
 
+def _validate_url_inline(url: str) -> str:
+    """Inline SSRF guard — parse URL with `urllib.parse.urlparse()` and validate
+    scheme + hostname (CodeQL sanitizer barrier). Returns the re-serialized URL
+    so the taint flow on the original input is cut.
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise UnsafeUrlError(
+            f"Disallowed URL scheme: {parsed.scheme}",
+            reason='disallowed-scheme',
+            url=url,
+        )
+    host = (parsed.hostname or '').lower()
+    if not host:
+        raise UnsafeUrlError('Empty hostname', reason='empty-hostname', url=url)
+    if host in ('localhost', '::1', '0.0.0.0') or \
+       _PRIVATE_HOST_RE.match(host) or \
+       any(host.endswith(suffix) for suffix in _PRIVATE_HOST_SUFFIXES):
+        raise UnsafeUrlError(
+            f"Internal/private host blocked: {host}",
+            reason='private-hostname',
+            url=url,
+        )
+    if parsed.username or parsed.password:
+        raise UnsafeUrlError(
+            'URL must not contain userinfo',
+            reason='has-userinfo',
+            url=url,
+        )
+    return urlunparse(parsed)
+
+
 async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[str]:
     """Extract email addresses from a website URL.
 
-    SSRF protection: the URL is validated via `assert_safe_url()` before
-    any request is dispatched, and every redirect target is re-validated.
-    This prevents the endpoint from being abused to fetch internal
-    services (cloud metadata, RFC1918 ranges, loopback, link-local, etc.).
+    SSRF protection: the URL is validated inline via `urllib.parse.urlparse()`
+    + scheme/hostname check (CodeQL sanitizer barrier) BEFORE any request is
+    dispatched, and every redirect target is re-validated inline. This prevents
+    the endpoint from being abused to fetch internal services (cloud metadata,
+    RFC1918 ranges, loopback, link-local, etc.). Defense-in-depth: the
+    comprehensive url-guard runs afterwards to catch DNS-rebinding-to-internal-IP
+    attacks.
     """
     emails = set()
 
@@ -53,7 +98,14 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
     if not website_url.startswith(('http://', 'https://')):
         website_url = 'https://' + website_url
 
-    # SSRF guard — refuse internal/private hosts before fetching.
+    # Inline SSRF guard — CodeQL sanitizer barrier.
+    try:
+        website_url = _validate_url_inline(website_url)
+    except UnsafeUrlError as e:
+        logger.warning(f"Refused to extract emails from unsafe URL {website_url}: {e.reason}")
+        return []
+
+    # Defense-in-depth: full DNS-rebinding check via url-guard.
     try:
         await assert_safe_url(website_url)
     except UnsafeUrlError as e:
@@ -72,7 +124,7 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
             # Fetch homepage
             try:
                 resp = await client.get(website_url)
-                # Manually follow up to 3 redirects, re-validating each hop.
+                # Manually follow up to 3 redirects, re-validating each hop inline.
                 redirects = 0
                 while 300 <= resp.status_code < 400 and redirects < 3:
                     location = resp.headers.get('location')
@@ -80,6 +132,13 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
                         break
                     from urllib.parse import urljoin
                     next_url = urljoin(website_url, location)
+                    # Inline SSRF guard for each redirect target (CodeQL barrier).
+                    try:
+                        next_url = _validate_url_inline(next_url)
+                    except UnsafeUrlError:
+                        logger.warning(f"Refused to follow redirect to unsafe URL: {next_url}")
+                        break
+                    # Defense-in-depth: DNS-rebinding check.
                     try:
                         await assert_safe_url(next_url)
                     except UnsafeUrlError:
@@ -109,8 +168,14 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
             for path in contact_paths[:2]:  # Limit to 2 to be respectful
                 try:
                     contact_url = website_url.rstrip('/') + path
-                    # SSRF guard for each contact URL (same domain as base URL,
-                    # but defensive in case of an earlier redirect).
+                    # Inline SSRF guard for each contact URL (CodeQL barrier).
+                    # Same domain as base URL, but defensive in case of an
+                    # earlier redirect to a different host.
+                    try:
+                        contact_url = _validate_url_inline(contact_url)
+                    except UnsafeUrlError:
+                        continue
+                    # Defense-in-depth: DNS-rebinding check.
                     try:
                         await assert_safe_url(contact_url)
                     except UnsafeUrlError:

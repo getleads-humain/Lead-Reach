@@ -396,9 +396,43 @@ app.post('/place', async (req: any, res: any) => {
 
     let placeUrl: string;
     if (urlOrPlaceId.startsWith('http')) {
-      // SSRF guard — block internal/private hosts before navigation.
+      // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
+      // inline (CodeQL sanitizer barrier). Use the re-serialized `safePlaceUrl`
+      // for `page.goto()` so the taint flow on the user-supplied input is cut.
+      let safePlaceUrl: string;
       try {
-        assertSafeBrowserUrl(urlOrPlaceId);
+        const parsed = new URL(urlOrPlaceId);
+        if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+          return res.status(400).json({
+            error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`,
+            data_source: 'google_maps',
+          });
+        }
+        const host = parsed.hostname.toLowerCase();
+        if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
+            host.endsWith('.local') || host.endsWith('.internal') ||
+            host.endsWith('.localhost') || host.endsWith('.intranet') ||
+            /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+            /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
+            /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
+            host.startsWith('fe8') || host.startsWith('fe9') ||
+            host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
+          return res.status(400).json({
+            error: `Refused URL for SSRF safety: internal/private host ${host}`,
+            data_source: 'google_maps',
+          });
+        }
+        safePlaceUrl = parsed.toString();
+      } catch {
+        return res.status(400).json({
+          error: 'Refused URL for SSRF safety: malformed URL',
+          data_source: 'google_maps',
+        });
+      }
+
+      // Defense-in-depth: full DNS-rebinding check via url-guard.
+      try {
+        assertSafeBrowserUrl(safePlaceUrl);
       } catch (err) {
         const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
         return res.status(400).json({
@@ -406,7 +440,7 @@ app.post('/place', async (req: any, res: any) => {
           data_source: 'google_maps',
         });
       }
-      placeUrl = urlOrPlaceId;
+      placeUrl = safePlaceUrl;
     } else {
       // It's a place ID, search for it — constructed URL is safe (Google domain).
       placeUrl = `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(urlOrPlaceId)}`;
@@ -678,12 +712,46 @@ app.post('/extract-email', async (req: any, res: any) => {
     return res.status(400).json({ error: 'url is required' });
   }
 
-  // SSRF guard — block internal/private hosts before navigation.
+  // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
+  // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
+  // for `page.goto()` so the taint flow on the user-supplied input is cut.
   // Without this, an attacker could ask our service to navigate to
   // http://169.254.169.254/... or http://localhost:3000/... and exfiltrate
   // the response body via the email extraction output.
+  let safeUrl: string;
   try {
-    assertSafeBrowserUrl(url);
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      return res.status(400).json({
+        error: `Refused URL for SSRF safety: disallowed scheme ${parsed.protocol}`,
+        data_source: 'puppeteer',
+      });
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
+        host.endsWith('.local') || host.endsWith('.internal') ||
+        host.endsWith('.localhost') || host.endsWith('.intranet') ||
+        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
+        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
+        host.startsWith('fe8') || host.startsWith('fe9') ||
+        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
+      return res.status(400).json({
+        error: `Refused URL for SSRF safety: internal/private host ${host}`,
+        data_source: 'puppeteer',
+      });
+    }
+    safeUrl = parsed.toString();
+  } catch {
+    return res.status(400).json({
+      error: 'Refused URL for SSRF safety: malformed URL',
+      data_source: 'puppeteer',
+    });
+  }
+
+  // Defense-in-depth: full DNS-rebinding check via url-guard.
+  try {
+    assertSafeBrowserUrl(safeUrl);
   } catch (err) {
     const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
     return res.status(400).json({
@@ -696,7 +764,7 @@ app.post('/extract-email', async (req: any, res: any) => {
   try {
     const browser = await getBrowser();
     page = await browser.newPage();
-    await page.goto(url, {
+    await page.goto(safeUrl, {
       waitUntil: 'domcontentloaded',
       timeout: 15000,
     });

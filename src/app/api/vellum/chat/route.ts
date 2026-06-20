@@ -20,6 +20,7 @@ import type { AgentMessage } from '@/lib/vellum-core';
 import { loadContextMemory } from '@/lib/vellum-core/memory';
 import { pluginManager } from '@/lib/vellum-core/plugins';
 import { searchSkills } from '@/lib/vellum-core/skills';
+import { randomUUID } from 'node:crypto';
 
 // 5-minute timeout for long-running agent tasks
 export const maxDuration = 300;
@@ -94,7 +95,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const conversationId = sessionId || `vellum-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const conversationId = sessionId || `vellum-${Date.now()}-${randomUUID().slice(0, 8)}`;
 
     // Run plugin hooks (pre-model-call)
     try {

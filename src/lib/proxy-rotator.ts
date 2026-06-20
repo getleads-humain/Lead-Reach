@@ -493,14 +493,37 @@ class ProxyRotator {
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
-    // SSRF guard — full DNS-resolving check before any curl invocation.
-    // Refuses internal/private IPs, cloud metadata, link-local, loopback,
-    // IPv6 ULA, and DNS-rebinding-to-internal-IP attacks.
+    // SSRF guard — parse URL with `new URL()` and validate scheme + hostname
+    // inline (CodeQL sanitizer barrier). The re-serialized `safeUrl` is used
+    // for the curl invocation so the taint flow on the original `url` is cut.
+    let safeUrl: string;
     try {
-      await assertSafeUrl(url);
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+        throw new Error(`Disallowed URL scheme: ${parsed.protocol}`);
+      }
+      const host = parsed.hostname.toLowerCase();
+      if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
+          host.endsWith('.local') || host.endsWith('.internal') ||
+          host.endsWith('.localhost') || host.endsWith('.intranet') ||
+          /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+          /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
+          /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
+          host.startsWith('fe8') || host.startsWith('fe9') ||
+          host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
+        throw new Error(`Internal/private host blocked: ${host}`);
+      }
+      safeUrl = parsed.toString();
+    } catch (err) {
+      throw new Error(`Blocked fetch URL (SSRF): ${err instanceof Error ? err.message : err}`);
+    }
+
+    // Defense-in-depth: full DNS-rebinding check via url-guard.
+    try {
+      await assertSafeUrl(safeUrl);
     } catch (err) {
       if (err instanceof UnsafeUrlError) {
-        throw new Error(`Blocked fetch URL (${err.reason}): ${url.slice(0, 100)}`);
+        throw new Error(`Blocked fetch URL (${err.reason}): ${safeUrl.slice(0, 100)}`);
       }
       throw err;
     }
@@ -526,7 +549,7 @@ class ProxyRotator {
       '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       '-L',
       '--max-redirs', '5',
-      url, // Passed as separate argument — no shell escaping needed
+      safeUrl, // Re-validated, re-serialized URL — passed as separate argument
     ];
 
     const { stdout, stderr } = await execFileAsync('curl', curlArgs, {

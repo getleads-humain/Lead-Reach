@@ -1,10 +1,58 @@
 """General web scraping service using BeautifulSoup and Scrapy utilities."""
 import logging
+import re
 from typing import Dict, Any, Optional
+from urllib.parse import urlparse, urlunparse
 
 from .url_guard import assert_safe_url_sync, UnsafeUrlError
 
 logger = logging.getLogger(__name__)
+
+
+# Pre-compiled private-host detector — used by the inline SSRF guard.
+_PRIVATE_HOST_RE = re.compile(
+    r'^(?:localhost|::1|0\.0\.0\.0|'
+    r'127\.|10\.|192\.168\.|169\.254\.|'
+    r'172\.(?:1[6-9]|2[0-9]|3[01])\.|'
+    r'0\.|f[cd][0-9a-f]{2}:|fe[89ab]|ff)'
+)
+_PRIVATE_HOST_SUFFIXES = ('.local', '.internal', '.localhost', '.intranet', '.corp', '.lan')
+
+
+def _validate_url_inline(url: str) -> str:
+    """Inline SSRF guard — parse URL with `urllib.parse.urlparse()` and validate
+    scheme + hostname (CodeQL sanitizer barrier). Returns the re-serialized URL
+    so the taint flow on the original input is cut.
+
+    Mirrors the pattern CodeQL recognizes in JS (`new URL()` + protocol/hostname
+    check + re-serialize via `urlunparse()`).
+    """
+    parsed = urlparse(url)
+    if parsed.scheme not in ('http', 'https'):
+        raise UnsafeUrlError(
+            f"Disallowed URL scheme: {parsed.scheme}",
+            reason='disallowed-scheme',
+            url=url,
+        )
+    host = (parsed.hostname or '').lower()
+    if not host:
+        raise UnsafeUrlError('Empty hostname', reason='empty-hostname', url=url)
+    if host in ('localhost', '::1', '0.0.0.0') or \
+       _PRIVATE_HOST_RE.match(host) or \
+       any(host.endswith(suffix) for suffix in _PRIVATE_HOST_SUFFIXES):
+        raise UnsafeUrlError(
+            f"Internal/private host blocked: {host}",
+            reason='private-hostname',
+            url=url,
+        )
+    # Reject userinfo (user:pass@) — common SSRF trick
+    if parsed.username or parsed.password:
+        raise UnsafeUrlError(
+            'URL must not contain userinfo',
+            reason='has-userinfo',
+            url=url,
+        )
+    return urlunparse(parsed)
 
 
 def scrape_url(
@@ -15,12 +63,25 @@ def scrape_url(
 ) -> Dict[str, Any]:
     """Scrape a URL and extract content using BeautifulSoup.
 
-    SSRF protection: the URL is validated via `assert_safe_url_sync()`
-    before any request is dispatched. This prevents the endpoint from
-    being abused to fetch internal services (cloud metadata at
-    169.254.169.254, RFC1918 ranges, loopback, link-local, etc.).
+    SSRF protection: the URL is validated inline via `urllib.parse.urlparse()`
+    + scheme/hostname check (CodeQL sanitizer barrier) BEFORE any request is
+    dispatched. This prevents the endpoint from being abused to fetch internal
+    services (cloud metadata at 169.254.169.254, RFC1918 ranges, loopback,
+    link-local, etc.). Defense-in-depth: the comprehensive url-guard runs
+    afterwards to catch DNS-rebinding-to-internal-IP attacks.
     """
-    # SSRF guard — refuse internal/private hosts before fetching.
+    # Inline SSRF guard — CodeQL sanitizer barrier.
+    try:
+        url = _validate_url_inline(url)
+    except UnsafeUrlError as e:
+        logger.warning(f"Refused to scrape unsafe URL {url}: {e.reason}")
+        return {
+            "url": url,
+            "error": f"Refused URL for SSRF safety: {e.reason}",
+            "data_source": "scrapy",
+        }
+
+    # Defense-in-depth: full DNS-rebinding check via url-guard.
     try:
         assert_safe_url_sync(url)
     except UnsafeUrlError as e:
@@ -45,7 +106,7 @@ def scrape_url(
         session.max_redirects = 5
         resp = session.get(url, headers=headers, timeout=timeout / 1000, allow_redirects=False)
 
-        # Manually follow redirects, re-validating each Location header.
+        # Manually follow redirects, re-validating each Location header inline.
         redirects = 0
         while 300 <= resp.status_code < 400 and redirects < 5:
             location = resp.headers.get("location")
@@ -53,6 +114,17 @@ def scrape_url(
                 break
             from urllib.parse import urljoin
             next_url = urljoin(url, location)
+            # Inline SSRF guard for each redirect target (CodeQL barrier).
+            try:
+                next_url = _validate_url_inline(next_url)
+            except UnsafeUrlError:
+                logger.warning(f"Refused to follow redirect to unsafe URL: {next_url}")
+                return {
+                    "url": url,
+                    "error": f"Refused redirect target for SSRF safety",
+                    "data_source": "scrapy",
+                }
+            # Defense-in-depth: DNS-rebinding check.
             try:
                 assert_safe_url_sync(next_url)
             except UnsafeUrlError:

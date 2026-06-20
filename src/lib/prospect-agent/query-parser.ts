@@ -394,7 +394,7 @@ function extractPersonName(text: string): string | null {
   // Old pattern: `[A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3}`
   //   — nested quantifier (inner `+` × outer `{1,3}`) → O(n^4).
   // New pattern: bounded inner `{1,40}` × outer `{1,3}` → O(n) on bounded input.
-  const NAME_PART = "[A-Z][a-zA-Z'\-]{1,40}";
+  const NAME_PART = "[A-Z][a-zA-Z'-]{1,40}";
   const NAME_FULL = `${NAME_PART}(?:\\s+${NAME_PART}){1,3}`;
 
   // Pattern 1: "Find a person: NAME [", "Find person NAME (", etc.
@@ -447,7 +447,7 @@ function extractPersonName(text: string): string | null {
 function extractCompanyName(text: string, bracketBlocks: string[]): string | null {
   // SECURITY: Bounded quantifiers prevent polynomial backtracking
   // (CodeQL: polynomial regex on uncontrolled data).
-  const CO_PART = "[A-Z][a-zA-Z0-9\-]{1,40}";
+  const CO_PART = "[A-Z][a-zA-Z0-9-]{1,40}";
   const CO_FULL = `${CO_PART}(?:\\s+${CO_PART}){0,3}`;
 
   // Pattern 1: "Founder @ X" / "CEO of X" / "works at X"

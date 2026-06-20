@@ -364,8 +364,18 @@ async function createStealthPage(browser: Browser, language: string = DEFAULT_LA
     // Block images (except thumbnails we might need)
     if (resourceType === 'image') {
       // Allow Google Maps static API images for thumbnails
-      if (url.includes('maps.googleapis.com/maps/api/staticmap') || url.includes('lh3.googleusercontent.com')) {
-        request.continue();
+      // SECURITY: use `new URL().hostname` check instead of `url.includes(...)`
+      // (CodeQL: substring check is bypassable — e.g. `evil.com/?u=maps.googleapis.com`).
+      try {
+        const reqHost = new URL(request.url()).hostname.toLowerCase();
+        if (reqHost === 'maps.googleapis.com' || reqHost === 'lh3.googleusercontent.com' ||
+            reqHost.endsWith('.googleusercontent.com') || reqHost.endsWith('.googleapis.com')) {
+          request.continue();
+          return;
+        }
+      } catch {
+        // Malformed URL in request — abort to be safe
+        request.abort();
         return;
       }
       request.abort();
@@ -1617,19 +1627,49 @@ export async function scrapePlacePage(
   // before navigating the browser there. This prevents the scraper from
   // being abused to fetch internal services (cloud metadata, RFC1918
   // ranges, loopback, link-local, etc.).
-  const { assertSafeBrowserUrl } = await import('@/lib/url-guard');
+  //
+  // SECURITY: inline `new URL()` + protocol/hostname check (CodeQL
+  // sanitizer barrier). The re-serialized `safeUrl` is used for
+  // `page.goto()` so the taint flow on the original `url` is cut.
+  let safeUrl: string;
   try {
-    assertSafeBrowserUrl(url);
+    const parsed = new URL(url);
+    if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+      console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: disallowed scheme ${parsed.protocol}`);
+      return null;
+    }
+    const host = parsed.hostname.toLowerCase();
+    if (host === 'localhost' || host === '::1' || host === '0.0.0.0' ||
+        host.endsWith('.local') || host.endsWith('.internal') ||
+        host.endsWith('.localhost') || host.endsWith('.intranet') ||
+        /^127\./.test(host) || /^10\./.test(host) || /^192\.168\./.test(host) ||
+        /^169\.254\./.test(host) || /^172\.(1[6-9]|2[0-9]|3[01])\./.test(host) ||
+        /^0\./.test(host) || /^f[cd][0-9a-f]{2}:/.test(host) ||
+        host.startsWith('fe8') || host.startsWith('fe9') ||
+        host.startsWith('fea') || host.startsWith('feb') || host.startsWith('ff')) {
+      console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: internal/private host ${host}`);
+      return null;
+    }
+    safeUrl = parsed.toString();
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+
+  // Defense-in-depth: full DNS-rebinding check via url-guard.
+  try {
+    const { assertSafeBrowserUrl } = await import('@/lib/url-guard');
+    assertSafeBrowserUrl(safeUrl);
   } catch (err) {
     console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: ${err instanceof Error ? err.message : err}`);
     return null;
   }
 
   try {
-    console.log(`${LOG_PREFIX} Scraping place page: ${url.slice(0, 80)}...`);
+    console.log(`${LOG_PREFIX} Scraping place page: ${safeUrl.slice(0, 80)}...`);
 
     // Navigate to the place page
-    await page.goto(url, {
+    await page.goto(safeUrl, {
       waitUntil: 'networkidle2',
       timeout: PAGE_NAVIGATION_TIMEOUT,
     });
