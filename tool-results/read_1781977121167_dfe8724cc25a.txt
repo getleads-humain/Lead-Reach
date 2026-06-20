@@ -1,0 +1,816 @@
+     1→     1→// ============================================================
+     2→     2→// Prospect Discovery — Rich Query Parser
+     3→     3→// ============================================================
+     4→     4→//
+     5→     5→// PURPOSE
+     6→     6→// =======
+     7→     7→// Users often paste rich, structured queries such as:
+     8→     8→//
+     9→     9→//   Find a person: Kavya Shah [Business Systems & AI-Focused
+    10→    10→//   Software Developer | Enterprise Applications | Founder @
+    11→    11→//   Credora | Healthcare & FinTech Systems] - [Kavya's profile:
+    12→    12→//   linkedin.com/in/kavya-works; Address: Toronto, Ontario;
+    13→    13→//   Email: shahkavya.works@gmail.com; Birthday: November 29]
+    14→    14→//
+    15→    15→// The legacy intent classifier (intents.ts) only handled short
+    16→    16→// queries like "Research Stripe" or "Find Patrick Collison" —
+    17→    17→// any query longer than a couple of words fell through to the
+    18→    18→// generic "company search" branch, throwing away ALL the
+    19→    19→// structured data the user took the trouble to type.
+    20→    20→//
+    21→    21→// This module fixes that by:
+    22→    22→//
+    23→    23→// 1. Extracting structured entities from ANY user query:
+    24→    24→//    - Person name (multi-word capitalized)
+    25→    25→//    - Company name (after "Founder @", "CEO of", etc.)
+    26→    26→//    - Email addresses
+    27→    27→//    - LinkedIn profile URLs (/in/...) and company URLs (/company/...)
+    28→    28→//    - Other social URLs (Twitter/X, GitHub, personal sites)
+    29→    29→//    - Location (City, State / City, Country)
+    30→    30→//    - Job titles and role hints
+    31→    31→//    - Industry keywords
+    32→    32→//    - Birthday / founded year
+    33→    33→//
+    34→    34→// 2. Deciding person-vs-company with strong, deterministic rules
+    35→    35→//    that don't depend on the LLM classifier being in a good mood.
+    36→    36→//
+    37→    37→// 3. Producing a pre-populated ProspectResult that the downstream
+    38→    38→//    agents can MERGE INTO instead of starting from scratch —
+    39→    39→//    so even if every external search fails, the user STILL sees
+    40→    40→//    all the data they provided rendered in the workspace.
+    41→    41→//
+    42→    42→// This module is PURE (no I/O, no LLM calls) so it can be unit
+    43→    43→// tested and run synchronously inside the classifier.
+    44→    44→// ============================================================
+    45→    45→
+    46→    46→import type { ProspectResult } from './types';
+    47→    47→
+    48→    48→// ============================================================
+    49→    49→// Types
+    50→    50→// ============================================================
+    51→    51→
+    52→    52→export interface ParsedQuery {
+    53→    53→  /** Original user message, untouched */
+    54→    54→  raw: string;
+    55→    55→
+    56→    56→  /** Best guess at the primary intent based on signals */
+    57→    57→  guessedIntent: 'research_person' | 'research_company' | 'research_url' | 'unknown';
+    58→    58→
+    59→    59→  /** Confidence 0..1 in the guessed intent */
+    60→    60→  confidence: number;
+    61→    61→
+    62→    62→  /** Reasoning string for UI display */
+    63→    63→  reasoning: string;
+    64→    64→
+    65→    65→  /** Extracted person name (e.g., "Kavya Shah") */
+    66→    66→  personName: string | null;
+    67→    67→
+    68→    68→  /** Extracted company name (e.g., "Credora") */
+    69→    69→  companyName: string | null;
+    70→    70→
+    71→    71→  /** First URL found in the query, if any */
+    72→    72→  url: string | null;
+    73→    73→
+    74→    74→  /** LinkedIn /in/ profile URL */
+    75→    75→  linkedinPersonUrl: string | null;
+    76→    76→
+    77→    77→  /** LinkedIn /company/ URL */
+    78→    78→  linkedinCompanyUrl: string | null;
+    79→    79→
+    80→    80→  /** Email address */
+    81→    81→  email: string | null;
+    82→    82→
+    83→    83→  /** Phone number (E.164 or common formats) */
+    84→    84→  phone: string | null;
+    85→    85→
+    86→    86→  /** City */
+    87→    87→  city: string | null;
+    88→    88→
+    89→    89→  /** State / Province */
+    90→    90→  stateProvince: string | null;
+    91→    91→
+    92→    92→  /** Country */
+    93→    93→  country: string | null;
+    94→    94→
+    95→    95→  /** Job title (e.g., "Software Developer", "Founder", "CEO") */
+    96→    96→  title: string | null;
+    97→    97→
+    98→    98→  /** Industry / focus area keywords (e.g., "Healthcare", "FinTech") */
+    99→    99→  industry: string | null;
+   100→   100→
+   101→   101→  /** Birthday in free-text form (e.g., "November 29") */
+   102→   102→  birthday: string | null;
+   103→   103→
+   104→   104→  /** Founded year (4-digit) */
+   105→   105→  foundingYear: string | null;
+   106→   106→
+   107→   107→  /** Other URLs found (GitHub, Twitter, personal sites) */
+   108→   108→  otherUrls: string[];
+   109→   109→
+   110→   110→  /** Bracketed text blocks (the [...] sections) — useful for bio */
+   111→   111→  bracketBlocks: string[];
+   112→   112→
+   113→   113→  /** Pre-populated prospect data — null fields mean "not provided" */
+   114→   114→  prepopulatedProspect: Partial<ProspectResult>;
+   115→   115→
+   116→   116→  /** Number of structured fields the user supplied */
+   117→   117→  signalsProvided: number;
+   118→   118→}
+   119→   119→
+   120→   120→// ============================================================
+   121→   121→// Helpers
+   122→   122→// ============================================================
+   123→   123→
+   124→   124→/** Strip surrounding whitespace and trailing punctuation. */
+   125→   125→function clean(s: string | null | undefined): string | null {
+   126→   126→  if (!s) return null;
+   127→   127→  const v = s.trim().replace(/[.,;:)\]}>]+$/g, '').replace(/^[([<{]+/g, '').trim();
+   128→   128→  return v.length === 0 ? null : v;
+   129→   129→}
+   130→   130→
+   131→   131→/** Normalize a URL: ensure it has a scheme. */
+   132→   132→function normalizeUrl(u: string): string {
+   133→   133→  if (!u) return u;
+   134→   134→  if (/^https?:\/\//i.test(u)) return u;
+   135→   135→  if (/^\/\//.test(u)) return `https:${u}`;
+   136→   136→  // linkedin.com/... etc.
+   137→   137→  if (/^(linkedin\.com|github\.com|twitter\.com|x\.com|instagram\.com|facebook\.com)/i.test(u)) {
+   138→   138→    return `https://www.${u}`;
+   139→   139→  }
+   140→   140→  return u;
+   141→   141→}
+   142→   142→
+   143→   143→// ============================================================
+   144→   144→// Field Extractors
+   145→   145→// ============================================================
+   146→   146→
+   147→   147→const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
+   148→   148→const LINKEDIN_IN_RE = /https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[a-zA-Z0-9_\-%]+\/?/gi;
+   149→   149→const LINKEDIN_CO_RE = /https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/[a-zA-Z0-9_\-%]+\/?/gi;
+   150→   150→const BARE_LINKEDIN_IN_RE = /\blinkedin\.com\/in\/[a-zA-Z0-9_\-%]+\/?/gi;
+   151→   151→const BARE_LINKEDIN_CO_RE = /\blinkedin\.com\/company\/[a-zA-Z0-9_\-%]+\/?/gi;
+   152→   152→const GENERAL_URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
+   153→   153→const PHONE_RE = /(?:\+?\d{1,3}[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3,4}[\s.\-]?\d{3,4}/g;
+   154→   154→const YEAR_RE = /\b(19[5-9]\d|20[0-3]\d)\b/g; // 1950-2039
+   155→   155→
+   156→   156→/** Extract first email from text. */
+   157→   157→function extractEmail(text: string): string | null {
+   158→   158→  const m = text.match(EMAIL_RE);
+   159→   159→  return m && m.length > 0 ? m[0] : null;
+   160→   160→}
+   161→   161→
+   162→   162→/** Extract LinkedIn /in/ profile URL (full or bare). */
+   163→   163→function extractLinkedinPerson(text: string): string | null {
+   164→   164→  const m1 = text.match(LINKEDIN_IN_RE);
+   165→   165→  if (m1 && m1.length > 0) return normalizeUrl(m1[0]);
+   166→   166→  const m2 = text.match(BARE_LINKEDIN_IN_RE);
+   167→   167→  if (m2 && m2.length > 0) return normalizeUrl(m2[0]);
+   168→   168→  return null;
+   169→   169→}
+   170→   170→
+   171→   171→/** Extract LinkedIn /company/ URL. */
+   172→   172→function extractLinkedinCompany(text: string): string | null {
+   173→   173→  const m1 = text.match(LINKEDIN_CO_RE);
+   174→   174→  if (m1 && m1.length > 0) return normalizeUrl(m1[0]);
+   175→   175→  const m2 = text.match(BARE_LINKEDIN_CO_RE);
+   176→   176→  if (m2 && m2.length > 0) return normalizeUrl(m2[0]);
+   177→   177→  return null;
+   178→   178→}
+   179→   179→
+   180→   180→/** Extract all URLs, return first non-LinkedIn one (or first overall). */
+   181→   181→function extractUrls(text: string): { first: string | null; others: string[] } {
+   182→   182→  const all = text.match(GENERAL_URL_RE) || [];
+   183→   183→  const seen = new Set<string>();
+   184→   184→  const out: string[] = [];
+   185→   185→  for (const u of all) {
+   186→   186→    if (seen.has(u)) continue;
+   187→   187→    seen.add(u);
+   188→   188→    out.push(u);
+   189→   189→  }
+   190→   190→  if (out.length === 0) return { first: null, others: [] };
+   191→   191→  return { first: out[0], others: out.slice(1) };
+   192→   192→}
+   193→   193→
+   194→   194→/** Extract phone number — but exclude things that look like dates or years. */
+   195→   195→function extractPhone(text: string): string | null {
+   196→   196→  // First, mask out anything that looks like a birthday (e.g., "November 29")
+   197→   197→  // and year-only numbers (e.g., 2024)
+   198→   198→  const cleaned = text
+   199→   199→    .replace(/\b(?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}\b/gi, ' ')
+   200→   200→    .replace(/\b(?:19|20)\d{2}\b/g, ' ');
+   201→   201→
+   202→   202→  const m = cleaned.match(PHONE_RE);
+   203→   203→  if (!m || m.length === 0) return null;
+   204→   204→  // Filter to numbers with at least 7 digits
+   205→   205→  for (const cand of m) {
+   206→   206→    const digits = cand.replace(/\D/g, '');
+   207→   207→    if (digits.length >= 7) return cand.trim();
+   208→   208→  }
+   209→   209→  return null;
+   210→   210→}
+   211→   211→
+   212→   212→/**
+   213→   213→ * Extract location from common patterns like:
+   214→   214→ *   "Address: Toronto, Ontario"
+   215→   215→ *   "Location: San Francisco, CA"
+   216→   216→ *   "based in London, UK"
+   217→   217→ *   "from Berlin, Germany"
+   218→   218→ */
+   219→   219→function extractLocation(text: string): { city: string | null; stateProvince: string | null; country: string | null } {
+   220→   220→  const patterns: RegExp[] = [
+   221→   221→    /(?:address|location|based\s+in|from|lives?\s+in|headquartered\s+in|hq\s+in)\s*[:\-]?\s*([A-Z][a-zA-Z.\s]+(?:,\s*[A-Z][a-zA-Z.\s]+){0,2})/i,
+   222→   222→  ];
+   223→   223→
+   224→   224→  let raw: string | null = null;
+   225→   225→  for (const p of patterns) {
+   226→   226→    const m = text.match(p);
+   227→   227→    if (m && m[1]) {
+   228→   228→      raw = m[1].trim().replace(/\s+/g, ' ');
+   229→   229→      // Cut at end-of-statement punctuation or brackets
+   230→   230→      raw = raw.split(/[.;\]\)\|\n]/)[0].trim();
+   231→   231→      if (raw.length >= 2) break;
+   232→   232→      raw = null;
+   233→   233→    }
+   234→   234→  }
+   235→   235→
+   236→   236→  if (!raw) {
+   237→   237→    // Fallback: look for "City, State" or "City, Country" patterns near the end
+   238→   238→    const m = text.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?),\s*([A-Z][a-zA-Z]{2,}(?:\s+[A-Z][a-zA-Z]+)?)\b/g);
+   239→   239→    if (m && m.length > 0) {
+   240→   240→      raw = m[m.length - 1]; // take the last one (more likely to be address)
+   241→   241→    }
+   242→   242→  }
+   243→   243→
+   244→   244→  if (!raw) return { city: null, stateProvince: null, country: null };
+   245→   245→
+   246→   246→  const parts = raw.split(/,\s*/).map(s => s.trim()).filter(Boolean);
+   247→   247→  if (parts.length === 0) return { city: null, stateProvince: null, country: null };
+   248→   248→
+   249→   249→  // Common country / province mapping
+   250→   250→  // Note: 2-letter codes like "CA" can be ambiguous (California state OR Canada country).
+   251→   251→  // We use 2-letter codes as US state abbreviations ONLY when paired with a known US city.
+   252→   252→  // Otherwise we treat 2-letter codes as state/province abbreviations (more common in
+   253→   253→  // user queries like "San Francisco, CA" or "Toronto, ON").
+   254→   254→  const US_STATE_ABBREVIATIONS = new Set([
+   255→   255→    'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS',
+   256→   256→    'KY','LA','ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY',
+   257→   257→    'NC','ND','OH','OK','OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV',
+   258→   258→    'WI','WY','DC','PR',
+   259→   259→  ]);
+   260→   260→  const PROVINCES = new Set([
+   261→   261→    'ON', 'QC', 'BC', 'AB', 'MB', 'SK', 'NS', 'NB', 'NL', 'PE', 'NT', 'YT', 'NU',
+   262→   262→    'Ontario', 'Quebec', 'British Columbia', 'Alberta', 'Manitoba', 'Saskatchewan',
+   263→   263→    'Nova Scotia', 'New Brunswick', 'California', 'New York', 'Texas', 'Florida',
+   264→   264→    'Illinois', 'Washington', 'Massachusetts', 'Pennsylvania', 'Ohio', 'Georgia',
+   265→   265→    'North Carolina', 'Michigan', 'New Jersey', 'Virginia', 'Oregon', 'Colorado',
+   266→   266→    'Arizona', 'Nevada', 'Utah', 'Minnesota', 'Wisconsin', 'Missouri', 'Maryland',
+   267→   267→  ]);
+   268→   268→  // Countries spelled out (avoid 2-letter codes here to prevent ambiguity)
+   269→   269→  const COUNTRIES = new Set([
+   270→   270→    'USA', 'United States', 'UK', 'United Kingdom', 'Canada',
+   271→   271→    'Germany', 'France', 'Spain', 'Italy', 'Netherlands', 'Sweden', 'Norway',
+   272→   272→    'Denmark', 'Finland', 'Poland', 'Portugal', 'Greece', 'Ireland',
+   273→   273→    'Australia', 'New Zealand', 'India', 'Singapore', 'Japan', 'China',
+   274→   274→    'South Korea', 'Korea', 'Brazil', 'Argentina', 'Mexico', 'Chile',
+   275→   275→    'Colombia', 'South Africa', 'UAE', 'Israel', 'Saudi Arabia', 'Egypt',
+   276→   276→    'Nigeria', 'Kenya', 'Morocco', 'Turkey', 'Russia', 'Ukraine',
+   277→   277→  ]);
+   278→   278→
+   279→   279→  let city: string | null = null;
+   280→   280→  let stateProvince: string | null = null;
+   281→   281→  let country: string | null = null;
+   282→   282→
+   283→   283→  if (parts.length === 1) {
+   284→   284→    const p = parts[0];
+   285→   285→    if (COUNTRIES.has(p)) country = p;
+   286→   286→    else if (PROVINCES.has(p)) stateProvince = p;
+   287→   287→    else city = p;
+   288→   288→  } else if (parts.length === 2) {
+   289→   289→    city = parts[0];
+   290→   290→    const second = parts[1];
+   291→   291→    // For 2-letter codes, prefer state interpretation (e.g., "Toronto, ON" = Ontario,
+   292→   292→    // "San Francisco, CA" = California). Users who mean country write "USA", "Canada",
+   293→   293→    // "UK" etc. spelled out.
+   294→   294→    if (second.length === 2 && US_STATE_ABBREVIATIONS.has(second.toUpperCase())) {
+   295→   295→      stateProvince = second.toUpperCase();
+   296→   296→    } else if (PROVINCES.has(second)) {
+   297→   297→      stateProvince = second;
+   298→   298→    } else if (COUNTRIES.has(second)) {
+   299→   299→      country = second;
+   300→   300→    } else {
+   301→   301→      // Unknown — best guess: treat as state/province
+   302→   302→      stateProvince = second;
+   303→   303→    }
+   304→   304→  } else {
+   305→   305→    // 3+ parts — assume City, State, Country
+   306→   306→    city = parts[0];
+   307→   307→    stateProvince = parts[1];
+   308→   308→    country = parts.slice(2).join(', ');
+   309→   309→  }
+   310→   310→
+   311→   311→  return { city, stateProvince, country };
+   312→   312→}
+   313→   313→
+   314→   314→/**
+   315→   315→ * Extract job title from common patterns:
+   316→   316→ *   "Kavya Shah [Business Systems & AI-Focused Software Developer | ...]"
+   317→   317→ *   "Title: Senior Engineer"
+   318→   318→ *   "CEO of Acme"
+   319→   319→ *   "Founder @ Credora"
+   320→   320→ */
+   321→   321→function extractTitle(text: string, bracketBlocks: string[]): string | null {
+   322→   322→  // Pattern 1: "Title: ..."
+   323→   323→  const titleMatch = text.match(/\btitle\s*[:\-]\s*([A-Z][a-zA-Z\s&\/\-]+?)(?:[;\]\|,\n]|\sat\s|\s@\s|$)/i);
+   324→   324→  if (titleMatch && titleMatch[1] && titleMatch[1].length >= 3) {
+   325→   325→    return clean(titleMatch[1]);
+   326→   326→  }
+   327→   327→
+   328→   328→  // Pattern 2: "Founder @ Company", "CEO at Company", "Engineer at Company"
+   329→   329→  const atMatch = text.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+){0,4})\s+(?:@|at)\s+([A-Z][a-zA-Z0-9]+)/);
+   330→   330→  if (atMatch && atMatch[1]) {
+   331→   331→    const role = clean(atMatch[1]);
+   332→   332→    if (role && /Founder|CEO|CTO|COO|CFO|President|Director|Manager|Engineer|Developer|Designer|Architect|Consultant|Analyst|Specialist|Lead|Head|VP|Chief/i.test(role)) {
+   333→   333→      return role;
+   334→   334→    }
+   335→   335→  }
+   336→   336→
+   337→   337→  // Pattern 3: First bracket block often contains the title pipeline-style
+   338→   338→  // "Business Systems & AI-Focused Software Developer | Enterprise Applications | Founder @ Credora"
+   339→   339→  if (bracketBlocks.length > 0) {
+   340→   340→    const block = bracketBlocks[0];
+   341→   341→    // Take the first |-separated segment that looks like a title
+   342→   342→    const segments = block.split('|').map(s => s.trim()).filter(Boolean);
+   343→   343→    for (const seg of segments) {
+   344→   344→      // Strip leading "Founder @ X" → use "Founder"
+   345→   345→      const founderMatch = seg.match(/^(Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner|Investor|Advisor|Board Member)\s*(@|at)\s*(.+)$/i);
+   346→   346→      if (founderMatch) {
+   347→   347→        return founderMatch[1];
+   348→   348→      }
+   349→   349→      // If segment looks like a title (contains "Developer", "Engineer", etc.)
+   350→   350→      if (/\b(Developer|Engineer|Designer|Architect|Analyst|Consultant|Specialist|Manager|Director|Lead|Head|President|Founder|CEO|CTO|COO|CFO|VP|Chief|Owner|Operator|Strategist|Scientist|Researcher)\b/i.test(seg)) {
+   351→   351→        // Truncate at "Founder @" / "CEO of" boundaries
+   352→   352→        const cutAt = seg.search(/\s+(?:@|at|of|-\s)\s+/i);
+   353→   353→        const title = cutAt > 0 ? seg.slice(0, cutAt).trim() : seg;
+   354→   354→        if (title.length >= 3 && title.length <= 80) return clean(title);
+   355→   355→      }
+   356→   356→    }
+   357→   357→  }
+   358→   358→
+   359→   359→  return null;
+   360→   360→}
+   361→   361→
+   362→   362→/**
+   363→   363→ * Extract a person name from rich queries. Looks for patterns like:
+   364→   364→ *   - "Find a person: Kavya Shah ["
+   365→   365→ *   - "Research Patrick Collison"
+   366→   366→ *   - "Look up Elon Musk"
+   367→   367→ *   - "Find info on John Smith"
+   368→   368→ *   - "tell me about Sarah Chen"
+   369→   369→ *
+   370→   370→ * Returns the FIRST plausible person name found.
+   371→   371→ */
+   372→   372→function extractPersonName(text: string): string | null {
+   373→   373→  // Pattern 1: "Find a person: NAME [", "Find person NAME (", etc.
+   374→   374→  const findPersonMatch = text.match(/(?:find|search\s+for|look\s+up|tell\s+me\s+about|research|info\s+on)\s+(?:a\s+)?person\s*[:\-]?\s*([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})/i);
+   375→   375→  if (findPersonMatch && findPersonMatch[1]) {
+   376→   376→    const name = clean(findPersonMatch[1]);
+   377→   377→    if (name) return name;
+   378→   378→  }
+   379→   379→
+   380→   380→  // Pattern 2: NAME's profile / NAME's bio / NAME is a
+   381→   381→  const profileMatch = text.match(/([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})'s\s+(?:profile|bio|background|website|email)/);
+   382→   382→  if (profileMatch && profileMatch[1]) {
+   383→   383→    const name = clean(profileMatch[1]);
+   384→   384→    if (name) return name;
+   385→   385→  }
+   386→   386→
+   387→   387→  // Pattern 3: "Kavya Shah [Business Systems..."  — name immediately before [
+   388→   388→  const bracketNameMatch = text.match(/([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})\s*\[/);
+   389→   389→  if (bracketNameMatch && bracketNameMatch[1]) {
+   390→   390→    const name = clean(bracketNameMatch[1]);
+   391→   391→    if (name) return name;
+   392→   392→  }
+   393→   393→
+   394→   394→  // Pattern 4: "Research Patrick Collison" / "Find John Smith"
+   395→   395→  const researchNameMatch = text.match(/(?:research|find|look\s+up|tell\s+me\s+about|info\s+on|discover)\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})(?:\s*[\.\,\;\:\(\[\n]|$)/);
+   396→   396→  if (researchNameMatch && researchNameMatch[1]) {
+   397→   397→    const name = clean(researchNameMatch[1]);
+   398→   398→    if (name) return name;
+   399→   399→  }
+   400→   400→
+   401→   401→  return null;
+   402→   402→}
+   403→   403→
+   404→   404→/**
+   405→   405→ * Extract company name from patterns like:
+   406→   406→ *   "Founder @ Credora"
+   407→   407→ *   "CEO of Stripe"
+   408→   408→ *   "works at Google"
+   409→   409→ *   "Company: Acme"
+   410→   410→ */
+   411→   411→function extractCompanyName(text: string, bracketBlocks: string[]): string | null {
+   412→   412→  // Pattern 1: "Founder @ X" / "CEO of X" / "works at X"
+   413→   413→  const atMatch = text.match(/(?:Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner|Investor|Advisor|Employee|Engineer|Developer|Designer|Architect|Consultant|Analyst|Specialist|Lead|Head|VP|Chief|Owner|Operator|Strategist|Scientist|Researcher|Director|Manager)\s+(?:@|at|of|@|with)\s+([A-Z][a-zA-Z0-9\-]+(?:\s+[A-Z][a-zA-Z0-9\-]+){0,3})/);
+   414→   414→  if (atMatch && atMatch[1]) {
+   415→   415→    const name = clean(atMatch[1]);
+   416→   416→    if (name) return name;
+   417→   417→  }
+   418→   418→
+   419→   419→  // Pattern 2: "Company: NAME"
+   420→   420→  const coMatch = text.match(/\bcompany\s*[:\-]\s*([A-Z][a-zA-Z0-9\-\s&\.]+?)(?:[;\]\|\n,\n]|\s+is\s+|\s+was\s+|$)/i);
+   421→   421→  if (coMatch && coMatch[1]) {
+   422→   422→    const name = clean(coMatch[1]);
+   423→   423→    if (name) return name;
+   424→   424→  }
+   425→   425→
+   426→   426→  // Pattern 3: Search bracket blocks for "Founder @ X" segments
+   427→   427→  for (const block of bracketBlocks) {
+   428→   428→    const segMatch = block.match(/(?:Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner)\s*(?:@|at|of)\s*([A-Z][a-zA-Z0-9\-]+(?:\s+[A-Z][a-zA-Z0-9\-]+){0,3})/);
+   429→   429→    if (segMatch && segMatch[1]) {
+   430→   430→      const name = clean(segMatch[1]);
+   431→   431→      if (name) return name;
+   432→   432→    }
+   433→   433→  }
+   434→   434→
+   435→   435→  return null;
+   436→   436→}
+   437→   437→
+   438→   438→/** Extract industry / focus area keywords. */
+   439→   439→function extractIndustry(text: string, bracketBlocks: string[]): string | null {
+   440→   440→  const INDUSTRY_KEYWORDS = [
+   441→   441→    'Healthcare', 'Health Care', 'FinTech', 'Financial Services', 'Finance',
+   442→   442→    'Banking', 'Insurance', 'Payments', 'SaaS', 'Software', 'Technology',
+   443→   443→    'AI', 'Artificial Intelligence', 'Machine Learning', 'ML', 'Data',
+   444→   444→    'Enterprise', 'B2B', 'B2C', 'E-commerce', 'Ecommerce', 'Retail',
+   445→   445→    'Manufacturing', 'Logistics', 'Supply Chain', 'Real Estate', 'Construction',
+   446→   446→    'Energy', 'Utilities', 'Telecom', 'Media', 'Entertainment', 'Gaming',
+   447→   447→    'Education', 'EdTech', 'Government', 'Defense', 'Aerospace', 'Automotive',
+   448→   448→    'Pharmaceutical', 'Pharma', 'Biotech', 'BioTech', 'Life Sciences',
+   449→   449→    'Agriculture', 'Food', 'Beverage', 'Hospitality', 'Travel', 'Tourism',
+   450→   450→    'Legal', 'Compliance', 'Cybersecurity', 'Security', 'Cloud', 'DevOps',
+   451→   451→    'Web3', 'Blockchain', 'Crypto', 'Climate', 'Sustainability', 'Green Tech',
+   452→   452→  ];
+   453→   453→  const allText = `${text} ${bracketBlocks.join(' ')}`;
+   454→   454→  const found: string[] = [];
+   455→   455→  for (const kw of INDUSTRY_KEYWORDS) {
+   456→   456→    const re = new RegExp(`\\b${kw.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+   457→   457→    if (re.test(allText)) {
+   458→   458→      found.push(kw);
+   459→   459→    }
+   460→   460→  }
+   461→   461→  if (found.length === 0) return null;
+   462→   462→  // Dedupe (case-insensitive)
+   463→   463→  const seen = new Set<string>();
+   464→   464→  const unique: string[] = [];
+   465→   465→  for (const f of found) {
+   466→   466→    const key = f.toLowerCase();
+   467→   467→    if (!seen.has(key)) {
+   468→   468→      seen.add(key);
+   469→   469→      unique.push(f);
+   470→   470→    }
+   471→   471→  }
+   472→   472→  return unique.slice(0, 3).join(', ');
+   473→   473→}
+   474→   474→
+   475→   475→/** Extract birthday (month + day) from text. */
+   476→   476→function extractBirthday(text: string): string | null {
+   477→   477→  const m = text.match(/\b(?:Birthday|DOB|Date of Birth|Born)\s*[:\-]?\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
+   478→   478→  if (m && m[1]) return clean(m[1]);
+   479→   479→  return null;
+   480→   480→}
+   481→   481→
+   482→   482→/** Extract founding year. */
+   483→   483→function extractFoundingYear(text: string): string | null {
+   484→   484→  const m = text.match(/\b(?:founded|established|incorporated|started|launched|since)\s+(?:in\s+)?(19[5-9]\d|20[0-3]\d)\b/i);
+   485→   485→  if (m && m[1]) return m[1];
+   486→   486→  // Bare year if it appears next to "founded"
+   487→   487→  return null;
+   488→   488→}
+   489→   489→
+   490→   490→/** Extract bracketed text blocks: [...], (...), {...}. */
+   491→   491→function extractBracketBlocks(text: string): string[] {
+   492→   492→  const blocks: string[] = [];
+   493→   493→  // Square brackets
+   494→   494→  const squareMatches = text.match(/\[([^\[\]]{3,500})\]/g);
+   495→   495→  if (squareMatches) {
+   496→   496→    for (const m of squareMatches) {
+   497→   497→      blocks.push(m.replace(/^\[|\]$/g, '').trim());
+   498→   498→    }
+   499→   499→  }
+   500→   500→  // Parentheses (only if they contain enough text to be informational)
+   501→   501→  const parenMatches = text.match(/\(([^()]{20,500})\)/g);
+   502→   502→  if (parenMatches) {
+   503→   503→    for (const m of parenMatches) {
+   504→   504→      blocks.push(m.replace(/^\(|\)$/g, '').trim());
+   505→   505→    }
+   506→   506→  }
+   507→   507→  return blocks;
+   508→   508→}
+   509→   509→
+   510→   510→// ============================================================
+   511→   511→// Intent Decision Logic
+   512→   512→// ============================================================
+   513→   513→
+   514→   514→/**
+   515→   515→ * Decide whether this is a person-search, company-search, or URL-based query.
+   516→   516→ * Uses strong signals (keywords, LinkedIn URL type, email type, presence of
+   517→   517→ * title/role keywords) rather than relying on the LLM classifier alone.
+   518→   518→ */
+   519→   519→function decideIntent(params: {
+   520→   520→  text: string;
+   521→   521→  personName: string | null;
+   522→   522→  companyName: string | null;
+   523→   523→  linkedinPersonUrl: string | null;
+   524→   524→  linkedinCompanyUrl: string | null;
+   525→   525→  email: string | null;
+   526→   526→  url: string | null;
+   527→   527→  title: string | null;
+   528→   528→}): { intent: 'research_person' | 'research_company' | 'research_url'; confidence: number; reasoning: string } {
+   529→   529→  const { text, personName, companyName, linkedinPersonUrl, linkedinCompanyUrl, email, url, title } = params;
+   530→   530→  const lower = text.toLowerCase();
+   531→   531→
+   532→   532→  // Strong URL signal: query starts with a URL
+   533→   533→  if (url && text.trim().startsWith('http')) {
+   534→   534→    return { intent: 'research_url', confidence: 0.95, reasoning: 'Query starts with a URL' };
+   535→   535→  }
+   536→   536→
+   537→   537→  // Strong LinkedIn signal
+   538→   538→  if (linkedinPersonUrl && !linkedinCompanyUrl) {
+   539→   539→    return { intent: 'research_person', confidence: 0.95, reasoning: 'Query contains a LinkedIn /in/ profile URL' };
+   540→   540→  }
+   541→   541→  if (linkedinCompanyUrl && !linkedinPersonUrl) {
+   542→   542→    return { intent: 'research_company', confidence: 0.95, reasoning: 'Query contains a LinkedIn /company/ URL' };
+   543→   543→  }
+   544→   544→
+   545→   545→  // Strong keyword signals
+   546→   546→  const personKeywords = [
+   547→   547→    'find a person', 'find person', 'find this person', 'find the person',
+   548→   548→    'research person', 'look up person', 'person search', 'who is this person',
+   549→   549→    "person's profile", 'person profile', 'contact this person',
+   550→   550→  ];
+   551→   551→  const companyKeywords = [
+   552→   552→    'find a company', 'find company', 'research company', 'look up company',
+   553→   553→    'company search', 'tell me about this company',
+   554→   554→  ];
+   555→   555→
+   556→   556→  for (const kw of personKeywords) {
+   557→   557→    if (lower.includes(kw)) {
+   558→   558→      return { intent: 'research_person', confidence: 0.92, reasoning: `Query contains person-search keyword: "${kw}"` };
+   559→   559→    }
+   560→   560→  }
+   561→   561→  for (const kw of companyKeywords) {
+   562→   562→    if (lower.includes(kw)) {
+   563→   563→      return { intent: 'research_company', confidence: 0.92, reasoning: `Query contains company-search keyword: "${kw}"` };
+   564→   564→    }
+   565→   565→  }
+   566→   566→
+   567→   567→  // Title + company combo → person (someone's role at a company)
+   568→   568→  if (personName && title) {
+   569→   569→    return { intent: 'research_person', confidence: 0.9, reasoning: 'Person name + job title detected' };
+   570→   570→  }
+   571→   571→
+   572→   572→  // Person name + LinkedIn /in/ URL → person
+   573→   573→  if (personName && linkedinPersonUrl) {
+   574→   574→    return { intent: 'research_person', confidence: 0.92, reasoning: 'Person name + LinkedIn profile URL detected' };
+   575→   575→  }
+   576→   576→
+   577→   577→  // Person name + email
+   578→   578→  if (personName && email) {
+   579→   579→    return { intent: 'research_person', confidence: 0.85, reasoning: 'Person name + email detected' };
+   580→   580→  }
+   581→   581→
+   582→   582→  // Founder / CEO / CTO + company name → person (someone is a founder of a company)
+   583→   583→  if (companyName && /\b(?:founder|co-?founder|ceo|cto|coo|cfo|president|partner|investor|advisor)\b/i.test(text)) {
+   584→   584→    // If a person name is ALSO detected, it's about the person
+   585→   585→    if (personName) {
+   586→   586→      return { intent: 'research_person', confidence: 0.88, reasoning: 'Person name + role + company detected' };
+   587→   587→    }
+   588→   588→    // Otherwise, "Founder @ Credora" alone might still be a person query
+   589→   589→    return { intent: 'research_person', confidence: 0.75, reasoning: 'Role + company detected, likely person search' };
+   590→   590→  }
+   591→   591→
+   592→   592→  // Just a person name
+   593→   593→  if (personName && !companyName) {
+   594→   594→    return { intent: 'research_person', confidence: 0.8, reasoning: 'Person name detected, no company signal' };
+   595→   595→  }
+   596→   596→
+   597→   597→  // Just a company name
+   598→   598→  if (companyName && !personName) {
+   599→   599→    return { intent: 'research_company', confidence: 0.8, reasoning: 'Company name detected, no person signal' };
+   600→   600→  }
+   601→   601→
+   602→   602→  // Both detected — lean person (the company is the employer)
+   603→   603→  if (personName && companyName) {
+   604→   604→    return { intent: 'research_person', confidence: 0.78, reasoning: 'Both person and company detected — defaulting to person search' };
+   605→   605→  }
+   606→   606→
+   607→   607→  // Nothing detected — fall back to company
+   608→   608→  return { intent: 'research_company', confidence: 0.4, reasoning: 'No strong signals — defaulting to company search' };
+   609→   609→}
+   610→   610→
+   611→   611→// ============================================================
+   612→   612→// Main Entry Point
+   613→   613→// ============================================================
+   614→   614→
+   615→   615→/**
+   616→   616→ * Parse a user query into a structured ParsedQuery object.
+   617→   617→ * This is the single entry point for the rich query parser.
+   618→   618→ */
+   619→   619→export function parseQuery(userMessage: string): ParsedQuery {
+   620→   620→  const text = userMessage.trim();
+   621→   621→
+   622→   622→  // ─── Extract bracketed blocks first (we use them throughout) ───
+   623→   623→  const bracketBlocks = extractBracketBlocks(text);
+   624→   624→
+   625→   625→  // ─── Extract atomic entities ───
+   626→   626→  const email = extractEmail(text);
+   627→   627→  const linkedinPersonUrl = extractLinkedinPerson(text);
+   628→   628→  const linkedinCompanyUrl = extractLinkedinCompany(text);
+   629→   629→  const { first: firstUrl, others: otherUrls } = extractUrls(text);
+   630→   630→  const phone = extractPhone(text);
+   631→   631→  const { city, stateProvince, country } = extractLocation(text);
+   632→   632→  const personName = extractPersonName(text);
+   633→   633→  const companyName = extractCompanyName(text, bracketBlocks);
+   634→   634→  const title = extractTitle(text, bracketBlocks);
+   635→   635→  const industry = extractIndustry(text, bracketBlocks);
+   636→   636→  const birthday = extractBirthday(text);
+   637→   637→  const foundingYear = extractFoundingYear(text);
+   638→   638→
+   639→   639→  // The "url" field is the first non-LinkedIn URL, or LinkedIn URL, or null
+   640→   640→  const url = firstUrl || linkedinPersonUrl || linkedinCompanyUrl;
+   641→   641→
+   642→   642→  // ─── Decide intent ───
+   643→   643→  const intentDecision = decideIntent({
+   644→   644→    text,
+   645→   645→    personName,
+   646→   646→    companyName,
+   647→   647→    linkedinPersonUrl,
+   648→   648→    linkedinCompanyUrl,
+   649→   649→    email,
+   650→   650→    url: firstUrl,
+   651→   651→    title,
+   652→   652→  });
+   653→   653→
+   654→   654→  // ─── Build pre-populated prospect ───
+   655→   655→  // Only include fields the user actually provided. The downstream
+   656→   656→  // agent functions will MERGE these into the empty prospect they
+   657→   657→  // create, and only fill in the gaps via external research.
+   658→   658→  const prepop: Partial<ProspectResult> = {};
+   659→   659→  let signalsProvided = 0;
+   660→   660→
+   661→   661→  if (personName) { prepop.personName = personName; signalsProvided++; }
+   662→   662→  if (companyName) {
+   663→   663→    prepop.companyName = companyName;
+   664→   664→    prepop.personCompany = companyName;
+   665→   665→    signalsProvided++;
+   666→   666→  }
+   667→   667→  if (title) { prepop.personTitle = title; signalsProvided++; }
+   668→   668→  if (email) { prepop.personEmail = email; prepop.generalEmail = email; signalsProvided++; }
+   669→   669→  if (phone) { prepop.personPhone = phone; prepop.phoneMain = phone; signalsProvided++; }
+   670→   670→  if (linkedinPersonUrl) { prepop.personLinkedin = linkedinPersonUrl; signalsProvided++; }
+   671→   671→  if (linkedinCompanyUrl) { prepop.linkedinUrl = linkedinCompanyUrl; signalsProvided++; }
+   672→   672→  if (city) { prepop.city = city; signalsProvided++; }
+   673→   673→  if (stateProvince) { prepop.stateProvince = stateProvince; signalsProvided++; }
+   674→   674→  if (country) { prepop.country = country; signalsProvided++; }
+   675→   675→  if (industry) { prepop.industry = industry; signalsProvided++; }
+   676→   676→  if (foundingYear) { prepop.foundingYear = foundingYear; signalsProvided++; }
+   677→   677→
+   678→   678→  // Combine bio hints from bracket blocks
+   679→   679→  if (bracketBlocks.length > 0) {
+   680→   680→    // Find the bracket block that contains the most bio-like content
+   681→   681→    const bioBlock = bracketBlocks.find(b =>
+   682→   682→      /\b(software|engineer|developer|designer|founder|ceo|cto|specialist|analyst|architect|consultant|manager|director|scientist|researcher|strategist)\b/i.test(b)
+   683→   683→    ) || bracketBlocks[0];
+   684→   684→    // Trim to first 300 chars
+   685→   685→    const bio = bioBlock.length > 300 ? bioBlock.slice(0, 300) + '...' : bioBlock;
+   686→   686→    prepop.personBio = bio;
+   687→   687→    signalsProvided++;
+   688→   688→
+   689→   689→    // Also use bracket blocks to derive description for company
+   690→   690→    if (!prepop.description && intentDecision.intent === 'research_company') {
+   691→   691→      prepop.description = bio;
+   692→   692→      signalsProvided++;
+   693→   693→    }
+   694→   694→  }
+   695→   695→
+   696→   696→  // Industry detection already provided industry field; also derive tech stack hints
+   697→   697→  const techStack: string[] = [];
+   698→   698→  const techText = `${text} ${bracketBlocks.join(' ')}`.toLowerCase();
+   699→   699→  const techMap: Record<string, string> = {
+   700→   700→    'react': 'React', 'next.js': 'Next.js', 'nextjs': 'Next.js',
+   701→   701→    'vue': 'Vue.js', 'angular': 'Angular', 'svelte': 'Svelte',
+   702→   702→    'node.js': 'Node.js', 'nodejs': 'Node.js', 'python': 'Python',
+   703→   703→    'django': 'Django', 'flask': 'Flask', 'fastapi': 'FastAPI',
+   704→   704→    'ruby': 'Ruby', 'rails': 'Rails', 'go': 'Go', 'golang': 'Go',
+   705→   705→    'java': 'Java', 'spring': 'Spring', 'kotlin': 'Kotlin', 'swift': 'Swift',
+   706→   706→    'typescript': 'TypeScript', 'javascript': 'JavaScript',
+   707→   707→    'aws': 'AWS', 'gcp': 'GCP', 'azure': 'Azure',
+   708→   708→    'docker': 'Docker', 'kubernetes': 'Kubernetes', 'k8s': 'Kubernetes',
+   709→   709→    'postgres': 'PostgreSQL', 'postgresql': 'PostgreSQL', 'mysql': 'MySQL',
+   710→   710→    'mongodb': 'MongoDB', 'redis': 'Redis', 'supabase': 'Supabase',
+   711→   711→    'firebase': 'Firebase', 'vercel': 'Vercel', 'netlify': 'Netlify',
+   712→   712→    'stripe': 'Stripe', 'twilio': 'Twilio', 'segment': 'Segment',
+   713→   713→    'salesforce': 'Salesforce', 'hubspot': 'HubSpot',
+   714→   714→    'sap': 'SAP', 'oracle': 'Oracle', 'workday': 'Workday',
+   715→   715→    'servicenow': 'ServiceNow', 'snowflake': 'Snowflake',
+   716→   716→  };
+   717→   717→  for (const [pattern, label] of Object.entries(techMap)) {
+   718→   718→    const re = new RegExp(`\\b${pattern.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i');
+   719→   719→    if (re.test(techText) && !techStack.includes(label)) {
+   720→   720→      techStack.push(label);
+   721→   721→    }
+   722→   722→  }
+   723→   723→  if (techStack.length > 0) {
+   724→   724→    prepop.techStack = techStack;
+   725→   725→    signalsProvided++;
+   726→   726→  }
+   727→   727→
+   728→   728→  // Products / services hints — look for nouns in bracket blocks
+   729→   729→  const productsServices: string[] = [];
+   730→   730→  for (const block of bracketBlocks) {
+   731→   731→    // Look for "X & Y" or "X and Y" patterns
+   732→   732→    const matches = block.match(/\b([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s*(?:&|and|,)\s*([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)?)\s+(Systems|Services|Solutions|Platform|Applications|Apps|Software|Infrastructure|Cloud)\b/g);
+   733→   733→    if (matches) {
+   734→   734→      for (const m of matches) {
+   735→   735→        const cleaned = clean(m);
+   736→   736→        if (cleaned && !productsServices.includes(cleaned)) {
+   737→   737→          productsServices.push(cleaned);
+   738→   738→        }
+   739→   739→      }
+   740→   740→    }
+   741→   741→  }
+   742→   742→  if (productsServices.length > 0) {
+   743→   743→    prepop.productsServices = productsServices;
+   744→   744→  }
+   745→   745→
+   746→   746→  // Sources — track that user supplied this data
+   747→   747→  if (signalsProvided > 0) {
+   748→   748→    prepop.sources = ['user-supplied'];
+   749→   749→  }
+   750→   750→
+   751→   751→  return {
+   752→   752→    raw: text,
+   753→   753→    guessedIntent: intentDecision.intent,
+   754→   754→    confidence: intentDecision.confidence,
+   755→   755→    reasoning: intentDecision.reasoning,
+   756→   756→    personName,
+   757→   757→    companyName,
+   758→   758→    url,
+   759→   759→    linkedinPersonUrl,
+   760→   760→    linkedinCompanyUrl,
+   761→   761→    email,
+   762→   762→    phone,
+   763→   763→    city,
+   764→   764→    stateProvince,
+   765→   765→    country,
+   766→   766→    title,
+   767→   767→    industry,
+   768→   768→    birthday,
+   769→   769→    foundingYear,
+   770→   770→    otherUrls,
+   771→   771→    bracketBlocks,
+   772→   772→    prepopulatedProspect: prepop,
+   773→   773→    signalsProvided,
+   774→   774→  };
+   775→   775→}
+   776→   776→
+   777→   777→// ============================================================
+   778→   778→// Pre-population Helper
+   779→   779→// ============================================================
+   780→   780→
+   781→   781→/**
+   782→   782→ * Merge pre-populated fields from a ParsedQuery into an existing
+   783→   783→ * (typically empty) ProspectResult. Existing values are preserved
+   784→   784→ * (pre-populated fields only fill EMPTY slots).
+   785→   785→ */
+   786→   786→export function mergeParsedIntoProspect(
+   787→   787→  prospect: ProspectResult,
+   788→   788→  parsed: ParsedQuery,
+   789→   789→): void {
+   790→   790→  const prepop = parsed.prepopulatedProspect;
+   791→   791→  const arrayKeys = new Set(['techStack', 'productsServices', 'recentNews', 'partners', 'boardMembers', 'sources']);
+   792→   792→
+   793→   793→  for (const [key, value] of Object.entries(prepop)) {
+   794→   794→    if (value === null || value === undefined) continue;
+   795→   795→
+   796→   796→    if (arrayKeys.has(key)) {
+   797→   797→      const arr = value as unknown[];
+   798→   798→      if (Array.isArray(arr) && arr.length > 0) {
+   799→   799→        const existing = (prospect as unknown as Record<string, unknown[]>)[key];
+   800→   800→        if (!existing || existing.length === 0) {
+   801→   801→          (prospect as unknown as Record<string, unknown[]>)[key] = arr;
+   802→   802→        } else {
+   803→   803→          // Merge unique
+   804→   804→          const merged = [...new Set([...existing, ...arr])];
+   805→   805→          (prospect as unknown as Record<string, unknown[]>)[key] = merged;
+   806→   806→        }
+   807→   807→      }
+   808→   808→    } else {
+   809→   809→      const existing = (prospect as unknown as Record<string, unknown>)[key];
+   810→   810→      if (existing === null || existing === undefined || existing === '') {
+   811→   811→        (prospect as unknown as Record<string, unknown>)[key] = value;
+   812→   812→      }
+   813→   813→    }
+   814→   814→  }
+   815→   815→}
+   816→   816→
