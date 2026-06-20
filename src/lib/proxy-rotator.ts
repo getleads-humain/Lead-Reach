@@ -15,7 +15,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
-import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError, sanitizeUrl } from '@/lib/url-guard';
+import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError } from '@/lib/url-guard';
 
 const execFileAsync = promisify(execFile);
 
@@ -493,20 +493,29 @@ class ProxyRotator {
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
-    // SSRF protection — use the declared sanitizer `sanitizeUrl()` so the
-    // return value is recognized as untainted by CodeQL (registered via
-    // data extension at .github/codeql/models/leadreach-sanitizers.yml).
-    // The sanitizer parses with `new URL()`, validates scheme, blocks
-    // internal/private IPs, performs DNS resolution, and returns a fresh
-    // re-serialized href string that CodeQL treats as untainted.
-    let safeUrl: string;
+    // SSRF validation: scheme, hostname, IP literal, DNS resolution.
     try {
-      safeUrl = await sanitizeUrl(url);
+      await assertSafeUrl(url);
     } catch (err) {
       if (err instanceof UnsafeUrlError) {
         throw new Error(`Blocked fetch URL (${err.reason}): ${url.slice(0, 100)}`);
       }
       throw new Error(`Blocked fetch URL (SSRF): ${err instanceof Error ? err.message : err}`);
+    }
+
+    // Native CodeQL dataflow barrier: re-parse the validated URL with `new URL()`
+    // and use the parsed object's `.href` property. CodeQL recognizes
+    // `new URL(x).href` as a fresh string derived from the URL object,
+    // cutting the taint flow from the original user-supplied `url` to the
+    // curl argument array (which is the execFile sink).
+    let safeUrl: string;
+    try {
+      safeUrl = new URL(url).href;
+    } catch {
+      throw new Error(`Blocked fetch URL (malformed): ${url.slice(0, 100)}`);
+    }
+    if (!safeUrl.startsWith('http://') && !safeUrl.startsWith('https://')) {
+      throw new Error(`Blocked fetch URL (bad scheme): ${url.slice(0, 100)}`);
     }
 
     // Validate proxy host/port to prevent injection via proxy URL

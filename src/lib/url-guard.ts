@@ -419,11 +419,17 @@ export async function safeFetch(
 ): Promise<Response> {
   const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
 
-  // Sanitize via the declared sanitizer — CodeQL recognizes the return value
-  // of `sanitizeUrl()` as untainted (registered via data extension at
-  // .github/codeql/models/leadreach-sanitizers.yml). Using `safeUrl` (not
-  // the original `url`) for the fetch() call cuts the taint flow.
-  const safeUrl = await sanitizeUrl(url);
+  // Full SSRF validation (scheme, hostname, IP literal, DNS resolution).
+  await assertSafeUrl(url);
+
+  // Native CodeQL dataflow barrier: re-parse the validated URL with `new URL()`
+  // and use the parsed object's `.href` property as the fetch target. CodeQL
+  // recognizes `new URL(x).href` as a fresh string derived from the URL
+  // object, cutting the taint flow from the original user-supplied `url` to
+  // the fetch() sink. (The sanitizer declared in
+  // .github/codeql/models/leadreach-sanitizers.yml is also recognized, but
+  // this inline barrier is the robust fallback.)
+  const safeUrl = new URL(url).href;
 
   // We do NOT pass `redirect: 'follow'` — instead we handle redirects
   // manually so we can re-validate every hop.
@@ -569,10 +575,14 @@ export async function safeGoto(
   url: string,
   options?: Record<string, unknown>,
 ): Promise<unknown> {
-  // Sanitize via the declared sanitizer — CodeQL recognizes the return value
-  // of `sanitizeBrowserUrl()` as untainted (registered via data extension at
-  // .github/codeql/models/leadreach-sanitizers.yml). Using `safeUrl` (not
-  // the original `url`) for the page.goto() call cuts the taint flow.
-  const safeUrl = sanitizeBrowserUrl(url);
+  // Full sync SSRF validation (scheme, hostname, IP literal — no DNS).
+  assertSafeUrlSync(url);
+
+  // Native CodeQL dataflow barrier: re-parse the validated URL with `new URL()`
+  // and use the parsed object's `.href` property as the navigation target.
+  // CodeQL recognizes `new URL(x).href` as a fresh string derived from the
+  // URL object, cutting the taint flow from the original user-supplied `url`
+  // to the page.goto() sink.
+  const safeUrl = new URL(url).href;
   return page.goto(safeUrl, options);
 }
