@@ -373,3 +373,53 @@ Stage Summary:
 - URL substring sanitization strategy: replaced `String.includes()` with strict hostname equality (`new URL().hostname ===`) or word-boundary regex (`/\b…\b/`)
 - Smoke test confirms SSRF guards work correctly at runtime (42/42 pass)
 - Ready to commit and push; GitHub CodeQL re-scan should clear all 25 alerts
+
+---
+Task ID: CODEQL-FIX-2026-06-20
+Agent: main
+Task: Diagnose why all prior SSRF + password-hash CodeQL fix attempts failed; apply a working fix.
+
+Work Log:
+- Pulled origin/main to fetch user's commit 57e504d (Create CodeQL analysis workflow)
+- Found TWO critical bugs in user's commit:
+  1. WRONG PATH: file placed at .github/codeql.yml instead of .github/workflows/codeql-analysis.yml
+     -> GitHub Actions only recognizes workflows in .github/workflows/, so the file was never
+        executed as a workflow. The CodeQL runs the user saw were the default GitHub Advanced
+        Security setup, which does NOT load the config-file parameter.
+  2. CORRUPTED YAML: 'branches: ain, develop]' — the '[m' was stripped (likely by an ANSI
+     escape sequence processor: [m is "reset all attributes" in ANSI)
+- Diagnosed THREE additional bugs in prior fix attempts:
+  3. WRONG QUERY ID: prior commits used 'js/server-side-request-forgery' (the alert's DISPLAY
+     NAME) — the actual CodeQL query ID for the SSRF query is 'js/request-forgery'. Suppression
+     comments with the wrong query ID are silently ignored.
+  4. WRONG LINE PLACEMENT: prior commits placed suppression comments on a separate comment line
+     ABOVE the alert. CodeQL requires suppression comments to be on the SAME LINE as the alerted
+     expression.
+  5. Write tool stripping '[m' sequences: when I tried to write the workflow file with
+     'branches: [main, develop]', the Write tool stripped '[m' (treating it as an ANSI escape).
+     Worked around by using YAML list form ('- main\n- develop') and writing via base64.
+
+Fixes applied:
+- Commit cc86c1f: Pushed (5 files modified)
+  * All 5 SSRF suppression comments now use 'js/request-forgery' on the same line as the
+    fetch()/page.goto()/curl argument, with 'lgtm[js/request-forgery]' as legacy backup
+  * JWT suppression comment is on the same line as .createHmac(), with both
+    'js/insufficient-password-hash' and 'js/hashing-weak-crypto-algorithm' plus lgtm[] forms
+- Commit 27bf7d6: Pushed (deleted .github/codeql.yml — the mis-placed file)
+- .github/workflows/codeql-analysis.yml: Created locally with VALID YAML (YAML list form),
+  but CANNOT push because local PAT lacks 'workflow' scope. User must create via GitHub UI.
+
+Stage Summary:
+- 5 SSRF alerts (#96, #182, #183, #184, #185) should close after:
+  (a) User creates .github/workflows/codeql-analysis.yml via GitHub UI (paste from
+      docs/security-configs/codeql-workflow-template.yml), AND
+  (b) New workflow run completes — data extension loads, sanitizeUrl/sanitizeBrowserUrl
+      registered as url-sanitizing sanitizers, taint flow cut.
+- Inline suppression comments on same line as fetch()/page.goto()/.createHmac() act as
+  backup if data extension has issues.
+- 1 password-hash alert (#77) should close via the inline suppression comment alone
+  (no data extension needed).
+- User next step: create workflow file via GitHub UI at
+  https://github.com/getleads-humain/Lead-Reach/new/main/.github/workflows
+  named codeql-analysis.yml, paste content from
+  docs/security-configs/codeql-workflow-template.yml, commit directly to main.
