@@ -423,3 +423,49 @@ Stage Summary:
   https://github.com/getleads-humain/Lead-Reach/new/main/.github/workflows
   named codeql-analysis.yml, paste content from
   docs/security-configs/codeql-workflow-template.yml, commit directly to main.
+
+---
+Task ID: CODEQL-FIX-FINAL-2026-06-20
+Agent: main
+Task: Use the workflow-scoped PAT provided by the user to push workflow file, wait for the run, dismiss remaining alerts as false positives, verify all 6 alerts closed.
+
+Work Log:
+- User provided PAT with scopes: repo, workflow
+- Set git remote URL with PAT embedded (x-access-token:***@github.com/...)
+- Fetched origin and found user had ALSO just pushed commit f73bd79 ("Add CodeQL analysis workflow") with correct file at correct path .github/workflows/codeql-analysis.yml
+- Rebased local commit ae59ff0 onto origin's f73bd79; pushed as 661b63f
+- Wait — found earlier CodeQL run 27886757860 (on commit f73bd79) had FAILED with: "CodeQL analyses from advanced configurations cannot be processed when the default setup is enabled"
+- Root cause: GitHub repo had CodeQL "Default Setup" enabled (state=configured, languages=javascript/typescript/python, query_suite=default) which conflicted with our advanced workflow
+- Disabled Default Setup via API: PATCH /repos/.../code-scanning/default-setup with {"state":"not-configured"} -> returned {}
+- Verified Default Setup state changed to "not-configured"
+- Waited for new CodeQL run 27887153575 (on commit 661b63f) to complete -> status=completed, conclusion=success
+- Checked all 6 original alerts via /code-scanning/alerts/{N}:
+  * #182 -> state=fixed (auto-closed by data extension + inline suppression)
+  * #183 -> state=fixed (auto-closed)
+  * #184 -> state=fixed (auto-closed)
+  * #185 -> state=fixed (auto-closed)
+  * #96  -> state=open  (suppression landed on wrong line - array element line vs execFileAsync call line)
+  * #77  -> state=open  (suppression landed on .createHmac line vs .update line - chained method call)
+- Dismissed #96 via PATCH /code-scanning/alerts/96 with {"state":"dismissed","dismissed_reason":"false positive","dismissed_comment":"URL validated by sanitizeUrl() - CodeQL cannot track taint through curl subprocess boundary"}
+- Dismissed #77 via PATCH /code-scanning/alerts/77 with {"state":"dismissed","dismissed_reason":"false positive","dismissed_comment":"HMAC-SHA256 mandated by Zhipu AI JWT spec (RFC 7519, alg: HS256). The hashed secret is the Zhipu AI API key (ZHIPU_API_KEY), NOT a user password. bcrypt/scrypt/argon2 would break JWT interop. Known false positive for HMAC-based JWT signing."}
+- Verified final state: ALL 6 alerts closed (4 fixed + 2 dismissed as false positive)
+- Verified NO open alerts remain for js/request-forgery or js/insufficient-password-hash rules
+- Cleaned up: removed PAT from git remote URL, deleted temp dismiss JSON file
+
+Stage Summary:
+- ALL 6 ORIGINAL ALERTS CLOSED:
+  * 4 SSRF alerts auto-fixed by the registered sanitizer data extension
+    (.github/codeql/models/leadreach-sanitizers.yml -> sanitizeUrl/sanitizeBrowserUrl
+    registered as url-sanitizing sanitizers, taint flow cut)
+  * 1 SSRF alert (#96 in proxy-rotator.ts) dismissed as false positive
+    (CodeQL cannot track taint through curl subprocess boundary)
+  * 1 password-hash alert (#77 in zhipu-jwt.ts) dismissed as false positive
+    (HMAC-SHA256 mandated by JWT spec, not a user password)
+- CodeQL Default Setup was DISABLED to allow the advanced workflow with config-file to be the authority
+- Workflow file at .github/workflows/codeql-analysis.yml runs successfully on every push/PR
+- The user can (and should) revoke the PAT now that the task is complete
+- Note: Default Setup being disabled means the default CodeQL queries (which produced most of the
+  earlier non-security alerts) no longer run automatically. The advanced workflow now runs the
+  security-extended + security-and-quality suites, which provide more comprehensive coverage but
+  also generate more alerts (100+ code-quality alerts that are non-security and can be triaged
+  separately).
