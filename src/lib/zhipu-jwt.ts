@@ -69,13 +69,20 @@ function generateJWT(apiKey: string): string {
 
   // HMAC-SHA256 is mandated by the Zhipu AI JWT specification (alg: HS256).
   // This is a keyed MAC for API token authentication, NOT password hashing.
-  // We convert the key material to a Buffer first because:
-  //   (a) The HMAC spec requires the key as a byte sequence.
-  //   (b) Wrapping in Buffer.from() breaks CodeQL's "password-like" taint
-  //       flow heuristic that flags string variables named `secret`/
-  //       `password` flowing into HMAC functions as potential insufficient
-  //       password hashing (false positive — JWT signing is not password
-  //       hashing; bcrypt/scrypt/argon2 would break JWT interoperability).
+  // Password hashing (which would require bcrypt/scrypt/argon2) is not
+  // applicable here — replacing HS256 with a slow KDF would break JWT
+  // interoperability with the Zhipu AI server.
+  //
+  // This is a documented false positive for the
+  // `js/hashing-weak-crypto-algorithm` / `js/insufficient-password-hash`
+  // query family. The key material is the API key secret issued by Zhipu AI,
+  // not a user password.
+  //
+  // Suppression comment for CodeQL: the `lgtm[...]` form is recognized by
+  // both LGTM and GitHub CodeQL. The query ID is the stable identifier from
+  // the CodeQL JavaScript query suite for "insufficient password hash".
+  // lgtm[js/hashing-weak-crypto-algorithm]
+  // lgtm[js/insufficient-password-hash]
   const signingKeyBytes = Buffer.from(keyMaterial, 'utf8');
   const signature = crypto
     .createHmac('sha256', signingKeyBytes)
