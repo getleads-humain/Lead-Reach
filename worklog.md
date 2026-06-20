@@ -274,3 +274,60 @@ Stage Summary:
   6. Model constraint → only glm-4.7-flash + glm-4.6v-flash used everywhere
 - Pipeline completion time: 3-76s depending on query complexity (was 126s+ stuck)
 - All changes type-check and build successfully
+
+---
+Task ID: codeql-fixes
+Agent: main
+Task: Fix all 25 CodeQL code scanning alerts (12 SSRF Critical, 5 HTML filter High, 8 polynomial regex High) reported by GitHub CodeQL on the main branch.
+
+Work Log:
+- Created shared SSRF protection module `src/lib/url-guard.ts` (Next.js alias `@/lib/url-guard`) with:
+  - Scheme allowlist (http/https only)
+  - Private/reserved IP detection (RFC1918, loopback, link-local, ULA IPv6, multicast, metadata services)
+  - DNS resolution to prevent DNS-rebinding attacks
+  - Local interface detection (refuse calls to own host IPs)
+  - Userinfo rejection (`user:pass@host` is blocked)
+  - Bounded URL length, port validation, blocked hostname suffixes (.local, .internal, .localhost, .localdomain, .corp, .home, .lan, .test, .example, .invalid)
+- Created mirror copies for standalone mini-services:
+  - `mini-services/gmaps-service/url-guard.ts`
+  - `mini-services/browser-service/url-guard.ts`
+- Created Python equivalent: `mini-services/gmaps-scraper/app/url_guard.py` + copies in `mini-services/scraper-service/app/url_guard.py` and `mini-services/scraper-service/app/services/url_guard.py`
+- Fixed SSRF alerts:
+  - #145 mcp-client.ts: mcpHttpRequest now calls assertSafeUrl before fetch, follows redirects manually so each hop is re-validated
+  - #140 google-maps-scraper.ts: scrapePlacePage calls assertSafeBrowserUrl before page.goto; extractEmailsFromWebsite also guarded
+  - #96 proxy-rotator.ts: isValidFetchUrl now uses checkUrlSafetySync; fetchViaProxy calls async assertSafeUrl for full DNS resolution; curl args gain --proto +http,https and --max-redirs 5
+  - #138 gmaps-service /place endpoint: urlOrPlaceId validated via assertSafeBrowserUrl when it starts with http
+  - #139 gmaps-service /extract-email endpoint: url validated via assertSafeBrowserUrl
+  - #43 browser-service /screenshot endpoint: url validated via assertSafeBrowserUrl
+  - #44 browser-service /render endpoint: url validated via assertSafeBrowserUrl
+  - #45 browser-service /extract endpoint: url validated via assertSafeBrowserUrl
+  - #46 browser-service /crawl endpoint: every URL in the batch validated up-front, fail-fast on any unsafe entry
+  - #124, #125 email_extractor.py: assert_safe_url called before httpx.get; redirects followed manually (one hop at a time) so each Location is re-validated; contact-page crawl also guarded
+  - #1 scrapy_service.py: assert_safe_url_sync called before requests.get; redirects followed manually so each Location is re-validated
+- Fixed HTML filter / escaping alerts in direct-search.ts:
+  - #162 Double unescaping: rewrote decodeHtmlEntities to use single-pass regex with callback (no more sequential &amp; → & then &lt; → < causing &amp;lt; to become <)
+  - #159/#160/#161 Incomplete multi-character sanitization: replaced regex-based <script>/<style>/<noscript>/<svg>/<comment> stripping with `stripHtmlBlock` / `stripHtmlComments` using indexOf string search — fail-closed on missing closing tag, capped at 1000 removals per call to bound runtime on adversarial input
+  - #163 Bad HTML filtering regexp: same fix as above
+- Fixed polynomial regex (ReDoS) alerts in query-parser.ts:
+  - #151 clean(): replaced unbounded `]+` with bounded `]{1,50}`
+  - #152 EMAIL_RE: bounded local-part and domain to {1,100}, TLD to {2,24}; added 10k-char input slice cap in extractEmail
+  - #153 extractLocation: bounded inner `[A-Za-z.]{1,60}` × outer `{0,2}` instead of `[a-zA-Z.\s]+ × {0,2}` (nested quantifier)
+  - #154 extractPersonName pattern 1: bounded name parts to {1,40}, outer to {1,3}
+  - #155 extractPersonName pattern 2: same
+  - #156 extractPersonName pattern 3: same
+  - #157 extractCompanyName pattern 2: bounded lazy quantifier {1,80}? instead of +?
+  - #158 extractBirthday: split into explicit alternation with bounded quantifiers instead of nested optional groups
+  - Added 10k-char input cap in parseQuery so every regex call is bounded
+  - Bounded all LinkedIn and URL regexes to {1,128} / {1,2048} respectively
+- Created sanity test `scripts/test-url-guard.ts` — 23/23 pass (covers schemes, private IPs, metadata, localhost, userinfo, malformed inputs)
+- Verified Next.js production build succeeds (npm run build)
+- Verified Python files parse cleanly (ast.parse)
+
+Stage Summary:
+- All 25 CodeQL alerts addressed:
+  - 12 Critical SSRF alerts: fixed via shared url-guard module (TS + Python)
+  - 5 High HTML filter/escaping alerts: fixed via single-pass entity decoder + indexOf-based block stripper
+  - 8 High polynomial regex alerts: fixed via bounded quantifiers + input length caps
+- New files: src/lib/url-guard.ts, mini-services/{gmaps-service,browser-service}/url-guard.ts, mini-services/{gmaps-scraper/app,scraper-service/app,scraper-service/app/services}/url_guard.py, scripts/test-url-guard.ts
+- Build: green (npm run build)
+- Tests: url-guard sanity test 23/23 passing

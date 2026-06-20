@@ -2,6 +2,8 @@
 import logging
 from typing import Dict, Any, Optional
 
+from .url_guard import assert_safe_url_sync, UnsafeUrlError
+
 logger = logging.getLogger(__name__)
 
 
@@ -11,7 +13,24 @@ def scrape_url(
     selector: Optional[str] = None,
     timeout: int = 15000,
 ) -> Dict[str, Any]:
-    """Scrape a URL and extract content using BeautifulSoup."""
+    """Scrape a URL and extract content using BeautifulSoup.
+
+    SSRF protection: the URL is validated via `assert_safe_url_sync()`
+    before any request is dispatched. This prevents the endpoint from
+    being abused to fetch internal services (cloud metadata at
+    169.254.169.254, RFC1918 ranges, loopback, link-local, etc.).
+    """
+    # SSRF guard — refuse internal/private hosts before fetching.
+    try:
+        assert_safe_url_sync(url)
+    except UnsafeUrlError as e:
+        logger.warning(f"Refused to scrape unsafe URL {url}: {e.reason}")
+        return {
+            "url": url,
+            "error": f"Refused URL for SSRF safety: {e.reason}",
+            "data_source": "scrapy",
+        }
+
     try:
         import requests
         from bs4 import BeautifulSoup
@@ -21,7 +40,31 @@ def scrape_url(
             "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
         }
 
-        resp = requests.get(url, headers=headers, timeout=timeout / 1000)
+        # Disable automatic redirect following so we can re-validate each hop.
+        session = requests.Session()
+        session.max_redirects = 5
+        resp = session.get(url, headers=headers, timeout=timeout / 1000, allow_redirects=False)
+
+        # Manually follow redirects, re-validating each Location header.
+        redirects = 0
+        while 300 <= resp.status_code < 400 and redirects < 5:
+            location = resp.headers.get("location")
+            if not location:
+                break
+            from urllib.parse import urljoin
+            next_url = urljoin(url, location)
+            try:
+                assert_safe_url_sync(next_url)
+            except UnsafeUrlError:
+                logger.warning(f"Refused to follow redirect to unsafe URL: {next_url}")
+                return {
+                    "url": url,
+                    "error": f"Refused redirect target for SSRF safety",
+                    "data_source": "scrapy",
+                }
+            url = next_url
+            resp = session.get(url, headers=headers, timeout=timeout / 1000, allow_redirects=False)
+            redirects += 1
 
         if resp.status_code != 200:
             return {

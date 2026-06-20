@@ -15,6 +15,7 @@
  */
 import express from 'express';
 import cors from 'cors';
+import { assertSafeBrowserUrl, UnsafeUrlError } from './url-guard';
 
 const app = express();
 const PORT = 5340;
@@ -395,9 +396,19 @@ app.post('/place', async (req: any, res: any) => {
 
     let placeUrl: string;
     if (urlOrPlaceId.startsWith('http')) {
+      // SSRF guard — block internal/private hosts before navigation.
+      try {
+        assertSafeBrowserUrl(urlOrPlaceId);
+      } catch (err) {
+        const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+        return res.status(400).json({
+          error: `Refused URL for SSRF safety: ${reason}`,
+          data_source: 'google_maps',
+        });
+      }
       placeUrl = urlOrPlaceId;
     } else {
-      // It's a place ID, search for it
+      // It's a place ID, search for it — constructed URL is safe (Google domain).
       placeUrl = `https://www.google.com/maps/place/?q=place_id:${encodeURIComponent(urlOrPlaceId)}`;
     }
 
@@ -665,6 +676,20 @@ app.post('/extract-email', async (req: any, res: any) => {
   const { url } = req.body;
   if (!url) {
     return res.status(400).json({ error: 'url is required' });
+  }
+
+  // SSRF guard — block internal/private hosts before navigation.
+  // Without this, an attacker could ask our service to navigate to
+  // http://169.254.169.254/... or http://localhost:3000/... and exfiltrate
+  // the response body via the email extraction output.
+  try {
+    assertSafeBrowserUrl(url);
+  } catch (err) {
+    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+    return res.status(400).json({
+      error: `Refused URL for SSRF safety: ${reason}`,
+      data_source: 'puppeteer',
+    });
   }
 
   let page: any = null;

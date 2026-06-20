@@ -124,7 +124,11 @@ export interface ParsedQuery {
 /** Strip surrounding whitespace and trailing punctuation. */
 function clean(s: string | null | undefined): string | null {
   if (!s) return null;
-  const v = s.trim().replace(/[.,;:)\]}>]+$/g, '').replace(/^[([<{]+/g, '').trim();
+  // SECURITY: Bounded quantifiers (`{1,50}`) prevent polynomial-time
+  // backtracking on adversarial inputs (CodeQL: polynomial regex on
+  // uncontrolled data). 50 chars of trailing punctuation is more than
+  // enough for any real-world query.
+  const v = s.trim().replace(/[.,;:)\]}>]{1,50}$/g, '').replace(/^[([<{]{1,50}/g, '').trim();
   return v.length === 0 ? null : v;
 }
 
@@ -144,42 +148,52 @@ function normalizeUrl(u: string): string {
 // Field Extractors
 // ============================================================
 
-const EMAIL_RE = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
-const LINKEDIN_IN_RE = /https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[a-zA-Z0-9_\-%]+\/?/gi;
-const LINKEDIN_CO_RE = /https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/[a-zA-Z0-9_\-%]+\/?/gi;
-const BARE_LINKEDIN_IN_RE = /\blinkedin\.com\/in\/[a-zA-Z0-9_\-%]+\/?/gi;
-const BARE_LINKEDIN_CO_RE = /\blinkedin\.com\/company\/[a-zA-Z0-9_\-%]+\/?/gi;
-const GENERAL_URL_RE = /https?:\/\/[^\s<>"')\]]+/gi;
+// Email regex pattern — bounded quantifiers (CodeQL: polynomial regex on
+// uncontrolled data). 64 chars local-part + 255 chars domain is the RFC 5321
+// maximum; we cap at 100/100 to keep the regex linear on adversarial input.
+const EMAIL_RE = /[a-zA-Z0-9._%+\-]{1,100}@[a-zA-Z0-9.\-]{1,100}\.[a-zA-Z]{2,24}/g;
+const LINKEDIN_IN_RE = /https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/in\/[a-zA-Z0-9_\-%]{1,128}\/?/gi;
+const LINKEDIN_CO_RE = /https?:\/\/(?:[a-z]{2,3}\.)?linkedin\.com\/company\/[a-zA-Z0-9_\-%]{1,128}\/?/gi;
+const BARE_LINKEDIN_IN_RE = /\blinkedin\.com\/in\/[a-zA-Z0-9_\-%]{1,128}\/?/gi;
+const BARE_LINKEDIN_CO_RE = /\blinkedin\.com\/company\/[a-zA-Z0-9_\-%]{1,128}\/?/gi;
+// URL regex — bounded to 2048 chars per RFC 7230 § 3.1.1 (URI max length).
+const GENERAL_URL_RE = /https?:\/\/[^\s<>"')\]]{1,2048}/gi;
 const PHONE_RE = /(?:\+?\d{1,3}[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3,4}[\s.\-]?\d{3,4}/g;
 const YEAR_RE = /\b(19[5-9]\d|20[0-3]\d)\b/g; // 1950-2039
 
 /** Extract first email from text. */
 function extractEmail(text: string): string | null {
-  const m = text.match(EMAIL_RE);
+  // SECURITY: Cap the input slice we scan to 10k chars — keeps regex
+  // linear on adversarial inputs (CodeQL: polynomial regex on uncontrolled data).
+  const slice = text.length > 10000 ? text.slice(0, 10000) : text;
+  const m = slice.match(EMAIL_RE);
   return m && m.length > 0 ? m[0] : null;
 }
 
 /** Extract LinkedIn /in/ profile URL (full or bare). */
 function extractLinkedinPerson(text: string): string | null {
-  const m1 = text.match(LINKEDIN_IN_RE);
+  const slice = text.length > 10000 ? text.slice(0, 10000) : text;
+  const m1 = slice.match(LINKEDIN_IN_RE);
   if (m1 && m1.length > 0) return normalizeUrl(m1[0]);
-  const m2 = text.match(BARE_LINKEDIN_IN_RE);
+  const m2 = slice.match(BARE_LINKEDIN_IN_RE);
   if (m2 && m2.length > 0) return normalizeUrl(m2[0]);
   return null;
 }
 
 /** Extract LinkedIn /company/ URL. */
 function extractLinkedinCompany(text: string): string | null {
-  const m1 = text.match(LINKEDIN_CO_RE);
+  const slice = text.length > 10000 ? text.slice(0, 10000) : text;
+  const m1 = slice.match(LINKEDIN_CO_RE);
   if (m1 && m1.length > 0) return normalizeUrl(m1[0]);
-  const m2 = text.match(BARE_LINKEDIN_CO_RE);
+  const m2 = slice.match(BARE_LINKEDIN_CO_RE);
   if (m2 && m2.length > 0) return normalizeUrl(m2[0]);
   return null;
 }
 
 /** Extract all URLs, return first non-LinkedIn one (or first overall). */
 function extractUrls(text: string): { first: string | null; others: string[] } {
-  const all = text.match(GENERAL_URL_RE) || [];
+  const slice = text.length > 10000 ? text.slice(0, 10000) : text;
+  const all = slice.match(GENERAL_URL_RE) || [];
   const seen = new Set<string>();
   const out: string[] = [];
   for (const u of all) {
@@ -217,8 +231,13 @@ function extractPhone(text: string): string | null {
  *   "from Berlin, Germany"
  */
 function extractLocation(text: string): { city: string | null; stateProvince: string | null; country: string | null } {
+  // SECURITY: Bounded quantifiers prevent polynomial backtracking
+  // (CodeQL: polynomial regex on uncontrolled data).
+  // Old pattern: `[A-Z][a-zA-Z.\s]+(?:,\s*[A-Z][a-zA-Z.\s]+){0,2}`
+  //   — nested quantifier (inner `+` × outer `{0,2}`) → O(n^3).
+  // New pattern: bounded single quantifier with explicit alternation.
   const patterns: RegExp[] = [
-    /(?:address|location|based\s+in|from|lives?\s+in|headquartered\s+in|hq\s+in)\s*[:\-]?\s*([A-Z][a-zA-Z.\s]+(?:,\s*[A-Z][a-zA-Z.\s]+){0,2})/i,
+    /(?:address|location|based\s+in|from|lives?\s+in|headquartered\s+in|hq\s+in)\s*[:\-]?\s*([A-Z][A-Za-z.]{1,60}(?:,\s*[A-Z][A-Za-z.]{1,60}){0,2})/i,
   ];
 
   let raw: string | null = null;
@@ -370,29 +389,46 @@ function extractTitle(text: string, bracketBlocks: string[]): string | null {
  * Returns the FIRST plausible person name found.
  */
 function extractPersonName(text: string): string | null {
+  // SECURITY: Bounded quantifiers prevent polynomial backtracking
+  // (CodeQL: polynomial regex on uncontrolled data).
+  // Old pattern: `[A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3}`
+  //   — nested quantifier (inner `+` × outer `{1,3}`) → O(n^4).
+  // New pattern: bounded inner `{1,40}` × outer `{1,3}` → O(n) on bounded input.
+  const NAME_PART = "[A-Z][a-zA-Z'\-]{1,40}";
+  const NAME_FULL = `${NAME_PART}(?:\\s+${NAME_PART}){1,3}`;
+
   // Pattern 1: "Find a person: NAME [", "Find person NAME (", etc.
-  const findPersonMatch = text.match(/(?:find|search\s+for|look\s+up|tell\s+me\s+about|research|info\s+on)\s+(?:a\s+)?person\s*[:\-]?\s*([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})/i);
+  const findPersonRe = new RegExp(
+    `(?:find|search\\s+for|look\\s+up|tell\\s+me\\s+about|research|info\\s+on)\\s+(?:a\\s+)?person\\s*[:\\-]?\\s*(${NAME_FULL})`,
+    'i',
+  );
+  const findPersonMatch = text.match(findPersonRe);
   if (findPersonMatch && findPersonMatch[1]) {
     const name = clean(findPersonMatch[1]);
     if (name) return name;
   }
 
   // Pattern 2: NAME's profile / NAME's bio / NAME is a
-  const profileMatch = text.match(/([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})'s\s+(?:profile|bio|background|website|email)/);
+  const profileRe = new RegExp(`(${NAME_FULL})'s\\s+(?:profile|bio|background|website|email)`);
+  const profileMatch = text.match(profileRe);
   if (profileMatch && profileMatch[1]) {
     const name = clean(profileMatch[1]);
     if (name) return name;
   }
 
   // Pattern 3: "Kavya Shah [Business Systems..."  — name immediately before [
-  const bracketNameMatch = text.match(/([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})\s*\[/);
+  const bracketNameRe = new RegExp(`(${NAME_FULL})\\s*\\[`);
+  const bracketNameMatch = text.match(bracketNameRe);
   if (bracketNameMatch && bracketNameMatch[1]) {
     const name = clean(bracketNameMatch[1]);
     if (name) return name;
   }
 
   // Pattern 4: "Research Patrick Collison" / "Find John Smith"
-  const researchNameMatch = text.match(/(?:research|find|look\s+up|tell\s+me\s+about|info\s+on|discover)\s+([A-Z][a-zA-Z'\-]+(?:\s+[A-Z][a-zA-Z'\-]+){1,3})(?:\s*[\.\,\;\:\(\[\n]|$)/);
+  const researchNameRe = new RegExp(
+    `(?:research|find|look\\s+up|tell\\s+me\\s+about|info\\s+on|discover)\\s+(${NAME_FULL})(?:\\s*[\\.\\,\\;\\:\\(\\[\\n]|$)`,
+  );
+  const researchNameMatch = text.match(researchNameRe);
   if (researchNameMatch && researchNameMatch[1]) {
     const name = clean(researchNameMatch[1]);
     if (name) return name;
@@ -409,23 +445,34 @@ function extractPersonName(text: string): string | null {
  *   "Company: Acme"
  */
 function extractCompanyName(text: string, bracketBlocks: string[]): string | null {
+  // SECURITY: Bounded quantifiers prevent polynomial backtracking
+  // (CodeQL: polynomial regex on uncontrolled data).
+  const CO_PART = "[A-Z][a-zA-Z0-9\-]{1,40}";
+  const CO_FULL = `${CO_PART}(?:\\s+${CO_PART}){0,3}`;
+
   // Pattern 1: "Founder @ X" / "CEO of X" / "works at X"
-  const atMatch = text.match(/(?:Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner|Investor|Advisor|Employee|Engineer|Developer|Designer|Architect|Consultant|Analyst|Specialist|Lead|Head|VP|Chief|Owner|Operator|Strategist|Scientist|Researcher|Director|Manager)\s+(?:@|at|of|@|with)\s+([A-Z][a-zA-Z0-9\-]+(?:\s+[A-Z][a-zA-Z0-9\-]+){0,3})/);
+  const atRe = new RegExp(
+    `(?:Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner|Investor|Advisor|Employee|Engineer|Developer|Designer|Architect|Consultant|Analyst|Specialist|Lead|Head|VP|Chief|Owner|Operator|Strategist|Scientist|Researcher|Director|Manager)\\s+(?:@|at|of|@|with)\\s+(${CO_FULL})`,
+  );
+  const atMatch = text.match(atRe);
   if (atMatch && atMatch[1]) {
     const name = clean(atMatch[1]);
     if (name) return name;
   }
 
-  // Pattern 2: "Company: NAME"
-  const coMatch = text.match(/\bcompany\s*[:\-]\s*([A-Z][a-zA-Z0-9\-\s&\.]+?)(?:[;\]\|\n,\n]|\s+is\s+|\s+was\s+|$)/i);
+  // Pattern 2: "Company: NAME" — bounded lazy quantifier `{1,80}?` instead of `+?`
+  const coMatch = text.match(/\bcompany\s*[:\-]\s*([A-Z][a-zA-Z0-9\-\s&.]{1,80}?)(?:[;\]\|\n,\n]|\s+is\s+|\s+was\s+|$)/i);
   if (coMatch && coMatch[1]) {
     const name = clean(coMatch[1]);
     if (name) return name;
   }
 
   // Pattern 3: Search bracket blocks for "Founder @ X" segments
+  const segRe = new RegExp(
+    `(?:Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner)\\s*(?:@|at|of)\\s*(${CO_FULL})`,
+  );
   for (const block of bracketBlocks) {
-    const segMatch = block.match(/(?:Founder|Co-?founder|CEO|CTO|COO|CFO|President|Partner)\s*(?:@|at|of)\s*([A-Z][a-zA-Z0-9\-]+(?:\s+[A-Z][a-zA-Z0-9\-]+){0,3})/);
+    const segMatch = block.match(segRe);
     if (segMatch && segMatch[1]) {
       const name = clean(segMatch[1]);
       if (name) return name;
@@ -474,8 +521,28 @@ function extractIndustry(text: string, bracketBlocks: string[]): string | null {
 
 /** Extract birthday (month + day) from text. */
 function extractBirthday(text: string): string | null {
-  const m = text.match(/\b(?:Birthday|DOB|Date of Birth|Born)\s*[:\-]?\s*((?:January|February|March|April|May|June|July|August|September|October|November|December)\s+\d{1,2}(?:st|nd|rd|th)?(?:,?\s*\d{4})?|\d{1,2}\/\d{1,2}(?:\/\d{2,4})?)/i);
-  if (m && m[1]) return clean(m[1]);
+  // SECURITY: Bounded quantifiers prevent polynomial backtracking
+  // (CodeQL: polynomial regex on uncontrolled data). The alternation with
+  // nested optional groups `(?:st|nd|rd|th)?(?:,?\s*\d{4})?` was flagged
+  // because the `?` quantifiers stack with the surrounding `\d{1,2}`.
+  // We use bounded `{1,2}` and explicit alternation to keep the regex linear.
+  const m = text.match(
+    /\b(?:Birthday|DOB|Date of Birth|Born)\s*[:\-]?\s*(January|February|March|April|May|June|July|August|September|October|November|December)\s+(\d{1,2})(?:st|nd|rd|th)?(?:,?\s*(\d{4}))?|\b(?:Birthday|DOB|Date of Birth|Born)\s*[:\-]?\s*(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?/i,
+  );
+  if (m) {
+    // Month-name form
+    if (m[1]) {
+      const parts = [m[1], m[2]];
+      if (m[3]) parts.push(m[3]);
+      return clean(parts.join(' '));
+    }
+    // Numeric form
+    if (m[4] && m[5]) {
+      const parts = [m[4], m[5]];
+      if (m[6]) parts.push(m[6]);
+      return clean(parts.join('/'));
+    }
+  }
   return null;
 }
 
@@ -619,22 +686,29 @@ function decideIntent(params: {
 export function parseQuery(userMessage: string): ParsedQuery {
   const text = userMessage.trim();
 
+  // SECURITY: Cap input length to 10k chars. Real user queries are rarely
+  // longer than ~2k chars; capping at 10k keeps every regex in this module
+  // linear-time on adversarial inputs (CodeQL: polynomial regex on
+  // uncontrolled data). Without this cap, an attacker could submit a
+  // 100MB query string to DoS the parser.
+  const CAPPED_TEXT = text.length > 10000 ? text.slice(0, 10000) : text;
+
   // ─── Extract bracketed blocks first (we use them throughout) ───
-  const bracketBlocks = extractBracketBlocks(text);
+  const bracketBlocks = extractBracketBlocks(CAPPED_TEXT);
 
   // ─── Extract atomic entities ───
-  const email = extractEmail(text);
-  const linkedinPersonUrl = extractLinkedinPerson(text);
-  const linkedinCompanyUrl = extractLinkedinCompany(text);
-  const { first: firstUrl, others: otherUrls } = extractUrls(text);
-  const phone = extractPhone(text);
-  const { city, stateProvince, country } = extractLocation(text);
-  const personName = extractPersonName(text);
-  const companyName = extractCompanyName(text, bracketBlocks);
-  const title = extractTitle(text, bracketBlocks);
-  const industry = extractIndustry(text, bracketBlocks);
-  const birthday = extractBirthday(text);
-  const foundingYear = extractFoundingYear(text);
+  const email = extractEmail(CAPPED_TEXT);
+  const linkedinPersonUrl = extractLinkedinPerson(CAPPED_TEXT);
+  const linkedinCompanyUrl = extractLinkedinCompany(CAPPED_TEXT);
+  const { first: firstUrl, others: otherUrls } = extractUrls(CAPPED_TEXT);
+  const phone = extractPhone(CAPPED_TEXT);
+  const { city, stateProvince, country } = extractLocation(CAPPED_TEXT);
+  const personName = extractPersonName(CAPPED_TEXT);
+  const companyName = extractCompanyName(CAPPED_TEXT, bracketBlocks);
+  const title = extractTitle(CAPPED_TEXT, bracketBlocks);
+  const industry = extractIndustry(CAPPED_TEXT, bracketBlocks);
+  const birthday = extractBirthday(CAPPED_TEXT);
+  const foundingYear = extractFoundingYear(CAPPED_TEXT);
 
   // The "url" field is the first non-LinkedIn URL, or LinkedIn URL, or null
   const url = firstUrl || linkedinPersonUrl || linkedinCompanyUrl;

@@ -35,12 +35,18 @@ import {
   type McpTransport,
   createNamespacedToolName,
 } from './types';
+import { assertSafeUrl } from '@/lib/url-guard';
 
 // ── HTTP Client for MCP ─────────────────────────────────────────
 
 /**
  * Make an HTTP request to an MCP server.
  * Handles SSE and streamable-http transports.
+ *
+ * SSRF protection: every outbound URL is validated via `assertSafeUrl`
+ * before the request is dispatched — this prevents the MCP client from
+ * being abused to reach internal services (cloud metadata, RFC1918
+ * ranges, loopback, link-local, etc.).
  */
 async function mcpHttpRequest(
   url: string,
@@ -48,6 +54,9 @@ async function mcpHttpRequest(
   body?: Record<string, unknown>,
   headers?: Record<string, string>
 ): Promise<Record<string, unknown>> {
+  // SSRF guard — refuse internal/disallowed URLs before fetching.
+  await assertSafeUrl(url);
+
   const fetchHeaders: Record<string, string> = {
     'Content-Type': 'application/json',
     ...(headers ?? {}),
@@ -58,7 +67,17 @@ async function mcpHttpRequest(
     headers: fetchHeaders,
     body: body ? JSON.stringify(body) : undefined,
     signal: AbortSignal.timeout(30000), // 30s timeout
+    redirect: 'manual', // re-validate every redirect hop
   });
+
+  // Manually follow redirects so each hop is SSRF-checked.
+  if (response.status >= 300 && response.status < 400) {
+    const location = response.headers.get('location');
+    if (location) {
+      const next = new URL(location, url).toString();
+      return mcpHttpRequest(next, method, body, headers);
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => 'Unknown error');

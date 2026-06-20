@@ -15,6 +15,7 @@
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { assertSafeUrl, checkUrlSafetySync, UnsafeUrlError } from '@/lib/url-guard';
 
 const execFileAsync = promisify(execFile);
 
@@ -463,29 +464,19 @@ class ProxyRotator {
   /**
    * Validates a URL to prevent SSRF and command injection.
    * Only allows http/https URLs with valid hostname and port.
+   *
+   * Uses the shared `@/lib/url-guard` module so all internal ranges,
+   * metadata endpoints, link-local, loopback, and IPv6 ULA ranges are
+   * blocked, AND the hostname is DNS-resolved so DNS-rebinding attacks
+   * that resolve to private IPs are also refused.
+   *
+   * Returns true synchronously (no DNS) for fast rejection of obvious
+   * attacks. For the full DNS-based check, call `assertSafeUrl()` directly
+   * (which is what `fetchViaProxy()` does before any curl invocation).
    */
   private isValidFetchUrl(url: string): boolean {
-    try {
-      const parsed = new URL(url);
-      if (!['http:', 'https:'].includes(parsed.protocol)) return false;
-      if (!parsed.hostname || parsed.hostname.length === 0) return false;
-      // Block internal/private network addresses (SSRF prevention)
-      const blockedPatterns = [
-        /^localhost$/i,
-        /^127\./,
-        /^10\./,
-        /^172\.(1[6-9]|2[0-9]|3[01])\./,
-        /^192\.168\./,
-        /^0\./,
-        /^::1$/,
-        /^fd/i,
-        /^fe80:/i,
-        /^169\.254\./,
-      ];
-      return !blockedPatterns.some(p => p.test(parsed.hostname));
-    } catch {
-      return false;
-    }
+    const report = checkUrlSafetySync(url);
+    return report.safe;
   }
 
   /**
@@ -502,9 +493,16 @@ class ProxyRotator {
     proxy: ProxyEntry,
     timeout: number = 15000,
   ): Promise<FetchViaProxyResult> {
-    // Validate URL before passing to any command (CodeQL: uncontrolled command line)
-    if (!this.isValidFetchUrl(url)) {
-      throw new Error(`Blocked fetch URL (invalid or internal network): ${url.slice(0, 100)}`);
+    // SSRF guard — full DNS-resolving check before any curl invocation.
+    // Refuses internal/private IPs, cloud metadata, link-local, loopback,
+    // IPv6 ULA, and DNS-rebinding-to-internal-IP attacks.
+    try {
+      await assertSafeUrl(url);
+    } catch (err) {
+      if (err instanceof UnsafeUrlError) {
+        throw new Error(`Blocked fetch URL (${err.reason}): ${url.slice(0, 100)}`);
+      }
+      throw err;
     }
 
     // Validate proxy host/port to prevent injection via proxy URL
@@ -517,13 +515,17 @@ class ProxyRotator {
 
     // Use execFile with argument array to prevent shell injection
     // (no shell interpolation — arguments passed directly to curl binary)
+    // Also pass --proto-default https to prevent scheme smuggling, and
+    // restrict to http/https schemes only.
     const curlArgs = [
       '-s', '-o', '-',
       '-w', '\n__HTTP_CODE__%{http_code}',
       '--proxy', proxyUrl,
       '--max-time', String(timeoutSec),
+      '--proto', '+http,https', // Only allow http/https schemes
       '-H', 'User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
       '-L',
+      '--max-redirs', '5',
       url, // Passed as separate argument — no shell escaping needed
     ];
 

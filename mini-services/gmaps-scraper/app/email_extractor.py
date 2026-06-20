@@ -7,6 +7,8 @@ from typing import List
 import httpx
 from bs4 import BeautifulSoup
 
+from .url_guard import assert_safe_url, UnsafeUrlError
+
 logger = logging.getLogger("gmaps-scraper.email")
 
 # Email regex pattern
@@ -35,7 +37,13 @@ def is_valid_email(email: str) -> bool:
 
 
 async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[str]:
-    """Extract email addresses from a website URL."""
+    """Extract email addresses from a website URL.
+
+    SSRF protection: the URL is validated via `assert_safe_url()` before
+    any request is dispatched, and every redirect target is re-validated.
+    This prevents the endpoint from being abused to fetch internal
+    services (cloud metadata, RFC1918 ranges, loopback, link-local, etc.).
+    """
     emails = set()
 
     if not website_url:
@@ -45,9 +53,16 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
     if not website_url.startswith(('http://', 'https://')):
         website_url = 'https://' + website_url
 
+    # SSRF guard — refuse internal/private hosts before fetching.
+    try:
+        await assert_safe_url(website_url)
+    except UnsafeUrlError as e:
+        logger.warning(f"Refused to extract emails from unsafe URL {website_url}: {e.reason}")
+        return []
+
     try:
         async with httpx.AsyncClient(
-            follow_redirects=True,
+            follow_redirects=False,  # we follow redirects manually so each hop is SSRF-checked
             timeout=timeout,
             headers={
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36',
@@ -57,6 +72,23 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
             # Fetch homepage
             try:
                 resp = await client.get(website_url)
+                # Manually follow up to 3 redirects, re-validating each hop.
+                redirects = 0
+                while 300 <= resp.status_code < 400 and redirects < 3:
+                    location = resp.headers.get('location')
+                    if not location:
+                        break
+                    from urllib.parse import urljoin
+                    next_url = urljoin(website_url, location)
+                    try:
+                        await assert_safe_url(next_url)
+                    except UnsafeUrlError:
+                        logger.warning(f"Refused to follow redirect to unsafe URL: {next_url}")
+                        break
+                    website_url = next_url
+                    resp = await client.get(website_url)
+                    redirects += 1
+
                 if resp.status_code == 200:
                     # Extract from HTML content
                     _extract_emails_from_html(resp.text, emails)
@@ -77,10 +109,16 @@ async def extract_emails_from_url(website_url: str, timeout: int = 15) -> List[s
             for path in contact_paths[:2]:  # Limit to 2 to be respectful
                 try:
                     contact_url = website_url.rstrip('/') + path
+                    # SSRF guard for each contact URL (same domain as base URL,
+                    # but defensive in case of an earlier redirect).
+                    try:
+                        await assert_safe_url(contact_url)
+                    except UnsafeUrlError:
+                        continue
                     resp = await client.get(contact_url)
                     if resp.status_code == 200:
                         _extract_emails_from_html(resp.text, emails)
-                except:
+                except Exception:
                     continue
                 await asyncio.sleep(0.5)  # Be respectful
 

@@ -1405,6 +1405,16 @@ async function extractReviewsViaRPC(
 export async function extractEmailsFromWebsite(page: Page, url: string): Promise<string[]> {
   if (!url) return [];
 
+  // SSRF guard — block non-http(s) schemes and internal/private hosts
+  // before navigating the browser to the website URL.
+  const { assertSafeBrowserUrl } = await import('@/lib/url-guard');
+  try {
+    assertSafeBrowserUrl(url);
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Refused to extract emails from unsafe URL: ${err instanceof Error ? err.message : err}`);
+    return [];
+  }
+
   const emails = new Set<string>();
   const emailRegex = /[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}/g;
 
@@ -1413,6 +1423,14 @@ export async function extractEmailsFromWebsite(page: Page, url: string): Promise
     let normalizedUrl = url;
     if (!normalizedUrl.startsWith('http')) {
       normalizedUrl = `https://${normalizedUrl}`;
+    }
+
+    // Re-validate after normalization (https:// prefix may have changed the URL).
+    try {
+      assertSafeBrowserUrl(normalizedUrl);
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} Refused to extract emails from unsafe URL: ${err instanceof Error ? err.message : err}`);
+      return [];
     }
 
     // Navigate to the website
@@ -1594,6 +1612,18 @@ export async function scrapePlacePage(
 ): Promise<GoogleMapsEntry | null> {
   const extractReviews = options?.extractReviews ?? false;
   const maxReviews = options?.maxReviews ?? DEFAULT_MAX_REVIEWS;
+
+  // SSRF guard — block non-http(s) schemes and internal/private hosts
+  // before navigating the browser there. This prevents the scraper from
+  // being abused to fetch internal services (cloud metadata, RFC1918
+  // ranges, loopback, link-local, etc.).
+  const { assertSafeBrowserUrl } = await import('@/lib/url-guard');
+  try {
+    assertSafeBrowserUrl(url);
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} Refused to scrape unsafe URL: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
 
   try {
     console.log(`${LOG_PREFIX} Scraping place page: ${url.slice(0, 80)}...`);

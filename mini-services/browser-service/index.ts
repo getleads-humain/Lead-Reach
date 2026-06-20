@@ -5,6 +5,7 @@
  */
 import express from 'express';
 import cors from 'cors';
+import { assertSafeBrowserUrl, UnsafeUrlError } from './url-guard';
 
 const app = express();
 const PORT = 5330;
@@ -48,6 +49,17 @@ app.post('/screenshot', async (req: any, res: any) => {
   const { url, fullPage = true, selector } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
 
+  // SSRF guard — block internal/private hosts before navigation.
+  try {
+    assertSafeBrowserUrl(url);
+  } catch (err) {
+    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+    return res.status(400).json({
+      error: `Refused URL for SSRF safety: ${reason}`,
+      data_source: 'puppeteer',
+    });
+  }
+
   let page: any = null;
   try {
     const browser = await getBrowser();
@@ -77,6 +89,17 @@ app.post('/screenshot', async (req: any, res: any) => {
 app.post('/render', async (req: any, res: any) => {
   const { url, waitSelector, timeout = 10000 } = req.body;
   if (!url) return res.status(400).json({ error: 'url is required' });
+
+  // SSRF guard — block internal/private hosts before navigation.
+  try {
+    assertSafeBrowserUrl(url);
+  } catch (err) {
+    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+    return res.status(400).json({
+      error: `Refused URL for SSRF safety: ${reason}`,
+      data_source: 'puppeteer',
+    });
+  }
 
   let page: any = null;
   try {
@@ -193,6 +216,17 @@ app.post('/extract', async (req: any, res: any) => {
   const { url, selectors, waitMs = 2000 } = req.body;
   if (!url || !selectors) return res.status(400).json({ error: 'url and selectors are required' });
 
+  // SSRF guard — block internal/private hosts before navigation.
+  try {
+    assertSafeBrowserUrl(url);
+  } catch (err) {
+    const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+    return res.status(400).json({
+      error: `Refused URL for SSRF safety: ${reason}`,
+      data_source: 'puppeteer',
+    });
+  }
+
   let page: any = null;
   try {
     const browser = await getBrowser();
@@ -221,6 +255,22 @@ app.post('/extract', async (req: any, res: any) => {
 app.post('/crawl', async (req: any, res: any) => {
   const { urls, extractText = true, extractLinks = true } = req.body;
   if (!urls || !Array.isArray(urls)) return res.status(400).json({ error: 'urls array is required' });
+
+  // SSRF guard — pre-validate every URL before navigation. We refuse
+  // the entire batch if ANY URL is unsafe (rather than silently dropping
+  // individual entries) so callers know they need to filter their input.
+  for (const targetUrl of urls.slice(0, 10)) {
+    if (typeof targetUrl !== 'string') continue;
+    try {
+      assertSafeBrowserUrl(targetUrl);
+    } catch (err) {
+      const reason = err instanceof UnsafeUrlError ? err.reason : 'unknown';
+      return res.status(400).json({
+        error: `Refused URL "${targetUrl.slice(0, 80)}" for SSRF safety: ${reason}`,
+        data_source: 'puppeteer',
+      });
+    }
+  }
 
   let page: any = null;
   try {

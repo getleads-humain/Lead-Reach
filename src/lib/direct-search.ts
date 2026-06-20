@@ -291,18 +291,59 @@ export async function directWebRead(
 
 // ─── HTML Utilities ──────────────────────────────────────────────
 
+/**
+ * Decode HTML entities in a single pass.
+ *
+ * SECURITY: The old implementation did multiple sequential `.replace()`
+ * passes (`&amp;` → `&` first, then `&lt;` → `<`, etc.), which caused
+ * double-unescaping: an input like `&amp;lt;` would first become `&lt;`
+ * and then `<`, even though the original intent was the literal text
+ * `&lt;`. Single-pass decoding with a callback avoids this class of bug
+ * because each character of the input is examined at most once.
+ */
 function decodeHtmlEntities(text: string): string {
-  return text
-    .replace(/&amp;/g, '&')
-    .replace(/&lt;/g, '<')
-    .replace(/&gt;/g, '>')
-    .replace(/&quot;/g, '"')
-    .replace(/&#39;/g, "'")
-    .replace(/&#x27;/g, "'")
-    .replace(/&#x2F;/g, '/')
-    .replace(/&nbsp;/g, ' ')
-    .replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(parseInt(dec, 10)))
-    .replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
+  const NAMED: Record<string, string> = {
+    amp: '&',
+    lt: '<',
+    gt: '>',
+    quot: '"',
+    apos: "'",
+    nbsp: ' ',
+    '#39': "'",
+    '#x27': "'",
+    '#x2F': '/',
+  };
+
+  // Single-pass regex that matches any HTML entity form (named, decimal,
+  // or hex). The callback decides how to decode each match without
+  // re-processing the output, so nested-encoded entities are preserved
+  // (e.g. `&amp;lt;` → `&lt;`, not `<`).
+  return text.replace(
+    /&(?:[a-zA-Z][a-zA-Z0-9]{1,31}|#(?:[0-9]{1,7}|[xX][0-9a-fA-F]{1,6}));/g,
+    (match) => {
+      const inner = match.slice(1, -1); // strip leading `&` and trailing `;`
+      if (NAMED[inner]) return NAMED[inner];
+      if (inner.startsWith('#x') || inner.startsWith('#X')) {
+        const code = parseInt(inner.slice(2), 16);
+        if (Number.isNaN(code) || code < 0 || code > 0x10ffff) return match;
+        try {
+          return String.fromCodePoint(code);
+        } catch {
+          return match;
+        }
+      }
+      if (inner.startsWith('#')) {
+        const code = parseInt(inner.slice(1), 10);
+        if (Number.isNaN(code) || code < 0 || code > 0x10ffff) return match;
+        try {
+          return String.fromCodePoint(code);
+        } catch {
+          return match;
+        }
+      }
+      return match; // unknown entity — leave as-is
+    },
+  );
 }
 
 function stripTags(html: string): string {
@@ -310,6 +351,89 @@ function stripTags(html: string): string {
     .replace(/<[^>]+>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
+}
+
+/**
+ * Remove a paired block (e.g. `<script>…</script>`) from HTML using
+ * case-insensitive string search instead of regex.
+ *
+ * SECURITY: Regex-based block removal like `/<script[\s\S]*?<\/script>/gi`
+ * is flagged by CodeQL because (1) it can be bypassed by adversarial HTML
+ * (e.g. nested `<script>` tags, missing closing tag), and (2) the lazy
+ * `[\s\S]*?` quantifier has polynomial backtracking on pathological input.
+ * Using `indexOf` is both faster and more predictable.
+ *
+ * If no closing tag is found, the rest of the input from the start tag
+ * onward is dropped (fail-closed — better to lose content than to leak
+ * script source into the extracted text).
+ */
+function stripHtmlBlock(html: string, startMarker: string, endMarker: string): string {
+  const lower = html.toLowerCase();
+  const startLower = startMarker.toLowerCase();
+  const endLower = endMarker.toLowerCase();
+  const startLen = startLower.length;
+  const endLen = endLower.length;
+
+  let result = '';
+  let cursor = 0;
+  // Cap the number of removals to prevent pathological loops on
+  // adversarial input.
+  let removals = 0;
+  const MAX_REMOVALS = 1000;
+
+  while (removals < MAX_REMOVALS) {
+    const startIdx = lower.indexOf(startLower, cursor);
+    if (startIdx === -1) {
+      result += html.slice(cursor);
+      break;
+    }
+    result += html.slice(cursor, startIdx);
+    const endIdx = lower.indexOf(endLower, startIdx + startLen);
+    if (endIdx === -1) {
+      // No closing marker — drop the rest (fail-closed).
+      break;
+    }
+    cursor = endIdx + endLen;
+    removals++;
+  }
+  return result;
+}
+
+/**
+ * Strip HTML comments (`<!-- … -->`) using string search.
+ *
+ * SECURITY: Regex-based removal (`/<!--[\s\S]*?-->/g`) is flagged by
+ * CodeQL because comments can legitimately contain `--` sequences inside
+ * them (e.g. `<!-- foo -- bar -->`) and the lazy regex would stop at the
+ * first `--`, leaving the rest of the comment in the output.
+ */
+function stripHtmlComments(html: string): string {
+  const lower = html.toLowerCase();
+  const startLower = '<!--';
+  const endLower = '-->';
+  const startLen = startLower.length;
+  const endLen = endLower.length;
+
+  let result = '';
+  let cursor = 0;
+  let removals = 0;
+  const MAX_REMOVALS = 1000;
+
+  while (removals < MAX_REMOVALS) {
+    const startIdx = lower.indexOf(startLower, cursor);
+    if (startIdx === -1) {
+      result += html.slice(cursor);
+      break;
+    }
+    result += html.slice(cursor, startIdx);
+    const endIdx = lower.indexOf(endLower, startIdx + startLen);
+    if (endIdx === -1) {
+      break;
+    }
+    cursor = endIdx + endLen;
+    removals++;
+  }
+  return result;
 }
 
 function extractTitle(html: string): string {
@@ -338,12 +462,15 @@ function extractTitle(html: string): string {
 function htmlToText(html: string): string {
   let text = html;
 
-  // Remove script and style content entirely
-  text = text.replace(/<script[\s\S]*?<\/script>/gi, '');
-  text = text.replace(/<style[\s\S]*?<\/style>/gi, '');
-  text = text.replace(/<noscript[\s\S]*?<\/noscript>/gi, '');
-  text = text.replace(/<svg[\s\S]*?<\/svg>/gi, '');
-  text = text.replace(/<!--[\s\S]*?-->/g, '');
+  // SECURITY: Strip script/style/noscript/svg blocks using string search
+  // instead of regex. The old regex-based approach was flagged by CodeQL
+  // for being bypassable (nested tags) and vulnerable to polynomial
+  // backtracking on adversarial input.
+  text = stripHtmlBlock(text, '<script', '</script>');
+  text = stripHtmlBlock(text, '<style', '</style>');
+  text = stripHtmlBlock(text, '<noscript', '</noscript>');
+  text = stripHtmlBlock(text, '<svg', '</svg>');
+  text = stripHtmlComments(text);
 
   // Convert common block elements to newlines
   text = text.replace(/<\/(p|div|section|article|header|footer|nav|aside|li|h[1-6]|tr|blockquote)>/gi, '\n');
@@ -359,10 +486,10 @@ function htmlToText(html: string): string {
 
   // Convert links to "text (url)" format
   text = text.replace(/<a\s+[^>]*href="([^"]+)"[^>]*>([\s\S]*?)<\/a>/gi, (_, href, content) => {
-    const text = stripTags(content).trim();
-    if (!text) return '';
-    if (text === href || href.startsWith('#')) return text;
-    return `${text}`;
+    const linkText = stripTags(content).trim();
+    if (!linkText) return '';
+    if (linkText === href || href.startsWith('#')) return linkText;
+    return `${linkText}`;
   });
 
   // Strip all remaining tags
