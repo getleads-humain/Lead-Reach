@@ -739,3 +739,53 @@ Stage Summary:
 - Every paragraph contains 3-5+ sentences; every section contains 150-200+ words of body content (exceeds content depth standards)
 - Real company names referenced throughout (DHL/FedEx/UPS/Maersk/XPO/C.H. Robinson/Kuehne+Nagel/DB Schenker for logistics; PowerSchool/Instructure/Canvas/Blackboard/Coursera/Udemy/Chegg/Byju/Duolingo/Guild for education; ExxonMobil/Chevron/Shell/BP/NextEra/Duke/Southern Co/Iberdrola/Ørsted/Enel for energy)
 - Real data sources and platforms cited (FreightWaves/JOC/S&P Global/Project44/FourKites/Descartes/Loadsmart/FMCSA SAFER for logistics; EdWeek/Chronicle of Higher Ed/Inside Higher Ed/NCES/Department of Ed for education; S&P Global Platts/Wood Mackenzie/BNEF/Rystad/EIA/IEA for energy)
+
+---
+Task ID: KB-MAIN-5
+Agent: main (Super Z)
+Task: Implement 5 user-requested next steps (push, more docs, gap report, semantic embeddings, admin UI)
+
+Work Log:
+- Launched 4 parallel doc-authoring agents:
+  * KB-IND-A: Logistics, Education, Energy industry docs (20,942 words)
+  * KB-IND-B: Legal, Media, Hospitality industry docs (15,864 words)
+  * KB-REG-A: UK, India, China region docs (16,032 words)
+  * KB-REG-B: LATAM, MENA, ANZ region docs (20,156 words)
+  * Total: 12 new docs, ~73K words added (KB now 44 docs / 136K words)
+- Built Echo knowledge gap report system:
+  * src/lib/knowledge/analytics.ts — retrieval analytics tracker (fire-and-forget, JSONL on disk)
+  * src/lib/knowledge/gap-report.ts — full gap report generator with markdown output
+  * scripts/knowledge/run-gap-report.ts — CLI runner
+  * /api/knowledge/gap-report + /api/knowledge/analytics endpoints
+- Built semantic embeddings upgrade:
+  * src/lib/knowledge/embeddings.ts — Z.AI embedding-3 client with disk cache
+  * src/lib/knowledge/semantic.ts — hybrid retrieval (40% TF-IDF + 40% embeddings + 10% tags + 10% priority)
+  * Falls back to TF-IDF when API unavailable or embeddings not pre-warmed
+  * /api/knowledge/semantic endpoint (status, prewarm, clear)
+  * /api/knowledge?action=search now uses semantic by default
+- Built /knowledge admin UI page:
+  * src/app/knowledge/page.tsx — 6-tab admin dashboard (Overview, Browse, Search, Gap Report, Analytics, Settings)
+  * Browse all 44 docs with category/agent/search filters, click to view full content
+  * Test hybrid search with score breakdown
+  * View/regenerate gap reports with recommendations
+  * Analytics dashboard with top queries, low-relevance, zero-result
+  * Cache management (reload, prewarm, clear)
+  * Sidebar link added
+- Updated knowledge/README.md (new stats, integration points 5-8 documented)
+- Updated .gitignore (excludes .knowledge-analytics/ and .knowledge-cache/)
+- Updated existing /api/knowledge route to use semantic retrieval by default
+- Updated src/lib/knowledge/integration.ts (imports semantic retriever)
+- Verified TypeScript compiles cleanly (no errors in any new file)
+- Verified gap report runs end-to-end (44 docs indexed, 0 missing coverage)
+- Committed: 5f20e63 feat(knowledge): add semantic retrieval, gap report, admin UI + 12 new docs
+
+Stage Summary:
+- 12 new knowledge docs authored (6 industries + 6 regions, ~73K words)
+- 4 new TS modules: analytics.ts, gap-report.ts, embeddings.ts, semantic.ts
+- 3 new API routes: /api/knowledge/{gap-report,analytics,semantic}
+- 1 new CLI script: scripts/knowledge/run-gap-report.ts
+- 1 new admin UI page: /knowledge (1,484 lines, 6 tabs)
+- KB grew: 30 → 44 docs, 60K → 136K words, 107K → 240K tokens
+- Hybrid retrieval now active by default (TF-IDF + Z.AI embedding-3)
+- Echo gap report loop closed (was documented, now implemented)
+- Push to GitHub PENDING (no PAT in env — needs user to provide or run push themselves)
