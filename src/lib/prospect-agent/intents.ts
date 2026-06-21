@@ -6,6 +6,7 @@ import { callLLMForJSON } from '@/lib/llm';
 import type { AgentPersona, UserIntent, ConversationContext, AgentThinking } from './types';
 import { getIntentClassificationPrompt } from './prompts';
 import { parseQuery } from './query-parser';
+import { retrieveContextForAgent, isKnowledgeAvailable } from '@/lib/knowledge/integration';
 
 /**
  * Result of intent classification.
@@ -159,8 +160,40 @@ export async function classifyIntent(
   const LLM_TIMEOUT_MS = 15_000;
 
   try {
+    // Build the base intent classification prompt
+    let systemPrompt = getIntentClassificationPrompt(userMessage, context);
+
+    // Inject knowledge base context if available (RAG layer)
+    // This gives the LLM access to industry/region/domain expertise
+    // without requiring it all to be in training data.
+    if (isKnowledgeAvailable()) {
+      try {
+        const knowledgeResult = retrieveContextForAgent({
+          agent: 'atlas',
+          userQuery: userMessage,
+          intent_types: ['research_company', 'research_person', 'build_icp', 'score_lead', 'compose_outreach'],
+          topK: 2,  // Keep small for intent classification — fast path
+          maxTokens: 1500,
+        });
+        if (knowledgeResult.retrieved && knowledgeResult.promptSection) {
+          // Insert knowledge after the system prompt's intro, before classification rules
+          const insertionMarker = 'CLASSIFICATION RULES:';
+          const idx = systemPrompt.indexOf(insertionMarker);
+          if (idx > 0) {
+            systemPrompt =
+              systemPrompt.slice(0, idx) +
+              knowledgeResult.promptSection + '\n\n' +
+              systemPrompt.slice(idx);
+          }
+        }
+      } catch (err) {
+        // Knowledge retrieval is best-effort — never block intent classification
+        console.warn('[IntentClassifier] Knowledge retrieval failed (continuing without):', err);
+      }
+    }
+
     const llmPromise = callLLMForJSON<IntentClassification>(
-      getIntentClassificationPrompt(userMessage, context),
+      systemPrompt,
       `User message to classify: "${userMessage}"`,
       {
         retriesPerModel: 1,

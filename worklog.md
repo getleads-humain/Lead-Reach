@@ -589,3 +589,71 @@ Stage Summary:
 - KPIs/data shared through the platform via the existing Lead schema (industry, location, employeeCount, leadScore, leadTier, etc.)
 - Legacy 4-stage pipeline-worker.ts is no longer auto-triggered (can still be invoked manually via /api/campaigns/[id]/run-pipeline if needed)
 - LLM enrichment quality varies (sometimes hallucinates data for directory/list sites like volza.com) — this is an LLM quality issue, not a pipeline structural issue
+
+---
+Task ID: KB-1
+Agent: main
+Task: Build comprehensive knowledge base to fully train the LLM with industry-graded highest quality standards, stored within the codebase, accessible by all LLM features.
+
+Work Log:
+- Surveyed existing codebase: agents/, src/lib/prospect-agent/, src/lib/agents/, src/lib/vellum-core/
+- Designed knowledge base architecture: /knowledge directory with 9 categories (domain, industries, regions, agents, tools, playbooks, templates, datasets, compliance)
+- Built knowledge loader at src/lib/knowledge/loader.ts (~700 LOC):
+  - YAML frontmatter parser (custom, dependency-free, supports inline + multi-line arrays)
+  - TF-IDF indexer with smoothed IDF
+  - Cosine similarity retrieval
+  - Tag/category/agent/industry/region/intent filters
+  - Token-budget-aware truncation (smart — keeps looking for smaller docs that fit)
+  - Process-lifetime cache with clearKnowledgeCache()
+  - All functions non-throwing (graceful degradation)
+- Built knowledge integration layer at src/lib/knowledge/integration.ts:
+  - retrieveContextForAgent() — per-agent retrieval
+  - augmentSystemPrompt() — inject knowledge into existing prompts
+  - getKnowledgeContextForPipeline() — pre-compute per-agent slices for full pipeline
+  - isKnowledgeAvailable(), getKnowledgeSummary()
+- Authored 30 knowledge documents across 9 categories:
+  - 6 domain expertise files (B2B lead gen theory, ICP methodology, qualification frameworks, outreach methodology, data enrichment, trigger events)
+  - 7 industry vertical guides (SaaS, agriculture, manufacturing, financial services, healthcare, e-commerce, real estate)
+  - 3 regional guides (Vietnam, United States, European Union)
+  - 8 agent training manuals (Atlas, Scout, Forge, Sage, Judge, Bard, Flow, Echo)
+  - 1 tool catalog (15+ data sources documented)
+  - 2 playbooks (find suppliers in country, research specific company)
+  - 1 templates/schemas file (prompt templates, JSON output schemas, few-shot examples)
+  - 1 datasets file (few-shot examples for training)
+  - 1 compliance file (GDPR, CAN-SPAM, CCPA, TCPA, HIPAA, GLBA, FERPA, ePrivacy)
+- Total: 60K+ words, 107K+ tokens of curated expertise
+- Created knowledge base README.md with complete documentation
+- Created CONTRIBUTING.md with authoring standards, templates, review checklist
+- Integrated knowledge retrieval into prospect-agent pipeline:
+  - src/lib/prospect-agent/intents.ts: Intent classification now retrieves 2 relevant docs (topK=2, maxTokens=1500) and injects before CLASSIFICATION RULES
+  - src/lib/prospect-agent/prompts.ts: Added getMasterSystemPromptWithKnowledge() function
+- Created API endpoint at /api/knowledge with 5 actions (stats, search, list, document, reload)
+- Wrote 2 test scripts:
+  - scripts/knowledge/test-loader.ts (smoke test)
+  - scripts/knowledge/test-integration.ts (integration test)
+- Verified all tests pass:
+  - 30 documents indexed
+  - Average retrieval latency: 7ms (warm cache)
+  - Knowledge correctly retrieved for "dragonfruit suppliers in Vietnam" (returns agriculture + Vietnam + playbook docs)
+  - Knowledge correctly retrieved for "research Stripe" (returns financial services doc)
+  - Graceful fallback when no knowledge matches
+
+Stage Summary:
+- LeadReach LLM agents now have RAG (Retrieval-Augmented Generation) layer
+- Knowledge base is fully accessible to all LLM features via:
+  - Direct import: `import { retrieveContextForAgent } from '@/lib/knowledge/integration'`
+  - REST API: `GET /api/knowledge?action=search&q=<query>`
+  - Existing pipeline: intent classification automatically uses knowledge
+- 30 high-quality knowledge documents covering:
+  - B2B lead generation theory and methodology
+  - 7 major industries with buyer personas, signals, vocabulary
+  - 3 major regions with cultural, regulatory, and channel guidance
+  - All 8 agents with operational training manuals
+  - 15+ data sources cataloged
+  - 2 end-to-end playbooks
+  - Complete prompt templates and output schemas
+  - Few-shot examples for training
+  - Global compliance reference (GDPR, CAN-SPAM, CCPA, TCPA, HIPAA, GLBA, FERPA)
+- Knowledge base is self-documenting: README + CONTRIBUTING guide + tests
+- Performance: 7ms average retrieval, 5MB memory footprint, zero external dependencies
+- Architecture: TF-IDF + cosine similarity + tag matching + priority weighting (no embedding model needed)

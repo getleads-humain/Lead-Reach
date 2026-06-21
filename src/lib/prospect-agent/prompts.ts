@@ -3,6 +3,7 @@
 // ============================================================
 
 import type { AgentPersona, UserIntent, ConversationContext } from './types';
+import { retrieveContextForAgent, isKnowledgeAvailable, getKnowledgeSummary } from '@/lib/knowledge/integration';
 
 /**
  * The master system prompt that governs the agent's behavior.
@@ -83,6 +84,96 @@ INSTITUTIONAL-GRADE OUTPUT STANDARDS:
 - Financial figures MUST be internally consistent (e.g., TVPI >= DPI, fund size >= LP commitments, dry powder <= fund size).
 - Legal entity formats MUST match the jurisdiction (Delaware LLC for US, LLP for UK, GmbH & Co. KG for Germany, etc.).
 - Contact matrices MUST map to specific deal stages with real names, titles, emails, and preferred channels.`;
+}
+
+/**
+ * Knowledge-augmented version of the master system prompt.
+ *
+ * Pulls relevant knowledge from the LeadReach knowledge base
+ * (industry files, region files, domain expertise, agent training
+ * manuals) and injects it into the system prompt.
+ *
+ * This is the RAG (Retrieval-Augmented Generation) layer that
+ * gives the agent access to institutional knowledge without
+ * requiring it all to be in the LLM's training data.
+ *
+ * Falls back to the original master prompt if:
+ *   - The knowledge base is empty
+ *   - Retrieval fails for any reason
+ *   - No relevant knowledge is found
+ *
+ * @param userQuery - The user's current query (used for relevance matching)
+ * @param context - Optional industry/region/intent signals to refine retrieval
+ */
+export function getMasterSystemPromptWithKnowledge(
+  userQuery: string,
+  context: {
+    industries?: string[];
+    regions?: string[];
+    intent_types?: string[];
+    tags?: string[];
+  } = {}
+): { prompt: string; knowledgeUsed: boolean; knowledgeStats: string } {
+  const basePrompt = getMasterSystemPrompt();
+
+  if (!isKnowledgeAvailable()) {
+    return {
+      prompt: basePrompt,
+      knowledgeUsed: false,
+      knowledgeStats: 'Knowledge base not available',
+    };
+  }
+
+  try {
+    const result = retrieveContextForAgent({
+      agent: 'atlas',  // The prospect-discovery agent is the Atlas-equivalent
+      userQuery,
+      industries: context.industries,
+      regions: context.regions,
+      intent_types: context.intent_types,
+      tags: context.tags,
+      topK: 4,
+      maxTokens: 3000,
+    });
+
+    if (!result.retrieved || !result.promptSection) {
+      return {
+        prompt: basePrompt,
+        knowledgeUsed: false,
+        knowledgeStats: `Knowledge base available but no relevant docs found (${result.stats.retrieval_duration_ms}ms)`,
+      };
+    }
+
+    // Insert knowledge section after the agent identity, before capabilities
+    const insertionMarker = 'YOUR CAPABILITIES:';
+    const insertionIdx = basePrompt.indexOf(insertionMarker);
+    if (insertionIdx === -1) {
+      // Fallback: prepend
+      return {
+        prompt: result.promptSection + '\n\n' + basePrompt,
+        knowledgeUsed: true,
+        knowledgeStats: `Retrieved ${result.stats.retrieved_count} docs, ${result.stats.total_tokens} tokens, ${result.stats.retrieval_duration_ms}ms`,
+      };
+    }
+
+    const augmentedPrompt =
+      basePrompt.slice(0, insertionIdx) +
+      result.promptSection + '\n\n' +
+      basePrompt.slice(insertionIdx);
+
+    return {
+      prompt: augmentedPrompt,
+      knowledgeUsed: true,
+      knowledgeStats: `Retrieved ${result.stats.retrieved_count} docs, ${result.stats.total_tokens} tokens, ${result.stats.retrieval_duration_ms}ms`,
+    };
+  } catch (err) {
+    console.warn('[prompts] Knowledge retrieval failed, using base prompt:', err);
+    return {
+      prompt: basePrompt,
+      knowledgeUsed: false,
+      knowledgeStats: `Knowledge retrieval failed: ${err instanceof Error ? err.message : 'unknown'}`,
+    };
+  }
 }
 
 /**
