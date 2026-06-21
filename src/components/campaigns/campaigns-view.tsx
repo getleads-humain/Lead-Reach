@@ -310,7 +310,9 @@ export function CampaignsView() {
           targetIndustry: formIndustry,
           targetLocation: formLocation,
           targetCompanySize: formSize,
-          autoRun: true,
+          // autoRun defaults to false on the API — we trigger the new
+          // 8-agent SSE pipeline from the CampaignDetailView instead.
+          autoRun: false,
         }),
       });
 
@@ -319,10 +321,11 @@ export function CampaignsView() {
       setCreateOpen(false);
       resetForm();
 
-      // Start polling for pipeline status
-      if (newCampaign.pipeline?.started) {
-        pollPipelineStatus(newCampaign.id);
-      }
+      // Navigate the user directly to the new campaign's detail page
+      // so they can immediately click "Run Discovery Pipeline" and watch
+      // the 8-agent pipeline execute in real-time.
+      setSelectedCampaignId(newCampaign.id);
+      setActiveView('campaign-detail');
     } catch (error) {
       console.error('Error creating campaign:', error);
     } finally {
@@ -495,7 +498,11 @@ export function CampaignsView() {
             return (
               <Card
                 key={campaign.id}
-                className="card-premium border-border/30 relative overflow-hidden group"
+                className="card-premium border-border/30 relative overflow-hidden group cursor-pointer hover:border-cyan-500/40 hover:shadow-lg hover:shadow-cyan-500/5 transition-all"
+                onClick={() => {
+                  setSelectedCampaignId(campaign.id);
+                  setActiveView('campaign-detail');
+                }}
               >
                 <div
                   className="absolute top-0 left-0 right-0 h-0.5"

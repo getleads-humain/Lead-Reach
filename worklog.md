@@ -520,3 +520,72 @@ Stage Summary:
 - LESSON LEARNED: When fixing CodeQL alerts, never use 'security-and-quality' query suite —
   it generates hundreds of code-quality alerts that the user doesn't want. Use only the
   default suite or 'security-extended' for true security findings.
+
+---
+Task ID: CAMPAIGNS-DETAIL-2026-06-21
+Agent: main
+Task: User reported that "New Campaign" only creates an empty card. Make campaign cards clickable to a dedicated detail page that runs the real 8-agent pipeline, displays results, and flows leads through the platform.
+
+Work Log:
+- Explored codebase via Explore subagent — found TWO separate pipelines existed:
+  * Campaigns used legacy 4-stage worker (pipeline-worker.ts, detached bun process, hardcoded fallbacks)
+  * Prospect Discovery used the 8-agent orchestrator (Atlas->Scout->Forge->Sage->Judge->Bard->Flow->Echo) — the reliable path fixed in Session 1
+  * They were NOT wired together
+
+- Implementation:
+  1. Added 'campaign-detail' to ViewType union in src/lib/types.ts
+  2. Registered CampaignDetailView in src/app/app/page.tsx render switch
+  3. Created new SSE endpoint at src/app/api/campaigns/[id]/stream/route.ts:
+     * Builds discovery query from campaign fields (name + description + industry + location + size)
+     * Phase 1 DISCOVERY: Calls directDuckDuckGoSearch to find 10 candidates, saves each as a basic Lead (stage='new')
+     * Phase 2 ENRICHMENT: For top N candidates (default 3), calls processWithOrchestrator to enrich with full company details
+     * Streams all events via SSE (stream_open, pipeline_progress, step_start/progress/complete, lead_created, enrichment_start, lead_enriched, agent_status, agent_comm, thinking_start/tick/end, cooldown, error, done)
+     * Auto-updates Lead rows with enriched data (industry, location, employees, contact info, CEO, LinkedIn, etc.)
+     * Auto-increments campaign.leadsFound + leadsQualified counters (with dedup — only counts new leads)
+  4. Created new src/components/campaigns/campaign-detail-view.tsx (~950 lines):
+     * Reads selectedCampaignId from Zustand store
+     * Fetches campaign + leads via GET /api/campaigns/[id]/with-leads
+     * Shows campaign header (name, description, industry, location, status, created date)
+     * Shows 4 stats cards (Discovered, Enriched, Avg Score, Hot Leads)
+     * "Run Discovery Pipeline" button triggers SSE connection to /api/campaigns/[id]/stream
+     * Live 8-agent pipeline visualization during execution:
+       - Progress bar with phase + overall %
+       - 8-agent grid showing status of Atlas/Scout/Forge/Sage/Judge/Bard/Flow/Echo
+       - Live event log (scrolling, last 30 events)
+       - Live lead cards appearing as they're discovered
+     * Lead cards show: company name, website (clickable), industry, location, employees, CEO, contact, email, phone, completeness bar, stage, tier
+     * Click any lead -> navigates to Leads view with that lead selected
+     * "View All in Leads" button -> navigates to Leads view filtered to this campaign
+     * Cancel button to abort pipeline mid-stream
+  5. Modified src/components/campaigns/campaigns-view.tsx:
+     * Made campaign cards clickable (onClick navigates to campaign-detail view)
+     * Changed handleCreate to set autoRun=false (no longer auto-spawns legacy worker)
+     * Changed handleCreate to auto-navigate user to the new campaign's detail page
+  6. Modified src/app/api/campaigns/route.ts:
+     * Changed default autoRun from true to false (legacy 4-stage worker no longer auto-runs)
+  7. Added 'campaign-detail' to VIEW_LABELS Record in ai-assistant-view.tsx + ai-assistant-widget.tsx
+
+- Testing:
+  * TypeScript: zero errors in new files (2 pre-existing errors in unrelated files)
+  * Build: succeeded (npm run build completed cleanly)
+  * End-to-end test with "DragonFruit Suppliers in Vietnam" campaign:
+    - SSE stream connected immediately (stream_open event)
+    - Discovery phase found 10 real companies (Song Nam ITD, Hoang Hau Dragon Fruit, V.A.F Vietnam Agriculture, VKOILL GROUP, Hoang Phat Fruit, Dragon Hub, etc.)
+    - All 10 saved as Leads in DB with real company names + websites
+    - Enrichment phase ran 8-agent orchestrator on top 2 candidates
+    - Both leads enriched with industry/location/LinkedIn/contact data
+    - Pipeline completed with done event: { discovered: 10, enriched: 2, failed: 0, skipped: 8 }
+    - Campaign status auto-updated to 'completed'
+    - leadsFound counter correctly shows 10 (not inflated by dedup hits)
+    - leadsQualified counter correctly shows 2
+
+Stage Summary:
+- Campaign cards are now CLICKABLE -> navigate to dedicated CampaignDetailView
+- New campaigns auto-navigate to detail page on creation
+- Detail page runs the REAL 8-agent pipeline (Atlas->Scout->Forge->Sage->Judge->Bard->Flow->Echo) — same one that powers Prospect Discovery
+- Discovery finds ~10 real companies via DuckDuckGo, saves each as a Lead
+- Enrichment phase runs the orchestrator on top 3 candidates, fills in industry/employees/contact/CEO/etc.
+- All leads flow into the existing Leads view (clickable from detail page)
+- KPIs/data shared through the platform via the existing Lead schema (industry, location, employeeCount, leadScore, leadTier, etc.)
+- Legacy 4-stage pipeline-worker.ts is no longer auto-triggered (can still be invoked manually via /api/campaigns/[id]/run-pipeline if needed)
+- LLM enrichment quality varies (sometimes hallucinates data for directory/list sites like volza.com) — this is an LLM quality issue, not a pipeline structural issue

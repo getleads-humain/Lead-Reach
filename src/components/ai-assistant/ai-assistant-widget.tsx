@@ -67,6 +67,7 @@ import { cn } from '@/lib/utils';
 const VIEW_LABELS: Record<ViewType, string> = {
   dashboard: 'Dashboard',
   campaigns: 'Campaigns',
+  'campaign-detail': 'Campaign',
   leads: 'Leads',
   agents: 'Agents',
   outreach: 'Outreach',

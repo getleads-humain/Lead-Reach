@@ -180,7 +180,7 @@ export async function POST(request: NextRequest) {
       targetLocation,
       targetCompanySize,
       targetCriteria,
-      autoRun = true,
+      autoRun = false,
       query: customQuery,
     } = body;
 
@@ -231,8 +231,8 @@ export async function POST(request: NextRequest) {
           started: autoRun,
           status: autoRun ? 'running' : 'not_started',
           message: autoRun
-            ? 'Pipeline started in the background. Poll /api/campaigns/[id]/pipeline-status for progress.'
-            : 'Pipeline not started. POST to /api/campaigns/[id]/run-pipeline to start.',
+            ? 'Legacy pipeline started in the background. Poll /api/campaigns/[id]/pipeline-status for progress.'
+            : 'Campaign created. Open the campaign and click "Run Discovery Pipeline" to start the 8-agent pipeline via /api/campaigns/[id]/stream.',
         },
       },
       { status: 201 },

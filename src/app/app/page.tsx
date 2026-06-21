@@ -14,6 +14,7 @@ import { useAuth } from '@/components/auth/auth-provider';
 import { AppShell } from '@/components/layout/app-shell';
 import { DashboardView } from '@/components/dashboard/dashboard-view';
 import { CampaignsView } from '@/components/campaigns/campaigns-view';
+import { CampaignDetailView } from '@/components/campaigns/campaign-detail-view';
 import { LeadsView } from '@/components/leads/leads-view';
 import { AgentsView } from '@/components/agents/agents-view';
 import { OutreachView } from '@/components/outreach/outreach-view';
@@ -137,6 +138,8 @@ export default function AppPage() {
         return <DashboardView />;
       case 'campaigns':
         return <CampaignsView />;
+      case 'campaign-detail':
+        return <CampaignDetailView />;
       case 'leads':
         return <LeadsView />;
       case 'agents':
