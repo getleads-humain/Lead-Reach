@@ -4,14 +4,17 @@
 
 ## What This Is
 
-The `/knowledge` directory contains **30+ structured knowledge documents** authored by LeadReach Knowledge Engineering. Each document is a Markdown file with YAML frontmatter, indexed by the LeadReach knowledge loader, and retrieved at runtime by the 8 agents (Atlas, Scout, Forge, Sage, Judge, Bard, Flow, Echo) based on the user's query, detected industry, region, and intent.
+The `/knowledge` directory contains **44 structured knowledge documents** authored by LeadReach Knowledge Engineering. Each document is a Markdown file with YAML frontmatter, indexed by the LeadReach knowledge loader, and retrieved at runtime by the 8 agents (Atlas, Scout, Forge, Sage, Judge, Bard, Flow, Echo) based on the user's query, detected industry, region, and intent.
 
 **Stats**:
-- 30 documents
-- 60K+ words / 107K+ tokens of curated expertise
+- 44 documents (as of June 2026)
+- 136K+ words / 240K+ tokens of curated expertise
 - 9 categories: domain, industries, regions, agents, tools, playbooks, templates, datasets, compliance
+- 13 industry playbooks (SaaS, ecommerce, manufacturing, agriculture, real estate, financial services, healthcare, logistics, education, energy, legal, media, hospitality)
+- 9 regional guides (US, UK, EU, Vietnam, India, China, LATAM, MENA, ANZ)
 - Average retrieval latency: **7ms** (cached in-memory after first load)
-- Indexed via TF-IDF with cosine similarity + tag/category matching
+- Hybrid retrieval: TF-IDF (40%) + semantic embeddings via Z.AI embedding-3 (40%) + tag overlap (10%) + priority (10%)
+- Automatic gap detection via the Echo agent's monthly gap report (see `_reports/`)
 
 ## Directory Structure
 
@@ -24,18 +27,32 @@ knowledge/
 │   ├── outreach-methodology-cold-email-sequences.md
 │   ├── data-enrichment-methodology.md
 │   └── trigger-events-detection-timing.md
-├── industries/                # Industry-specific prospecting guides
+├── industries/                # Industry-specific prospecting guides (13 docs)
 │   ├── saas.md
-│   ├── agriculture-food-trade.md
+│   ├── ecommerce-retail.md
 │   ├── manufacturing.md
+│   ├── agriculture-food-trade.md
+│   ├── real-estate-construction.md
 │   ├── financial-services.md
 │   ├── healthcare-life-sciences.md
-│   ├── ecommerce-retail.md
-│   └── real-estate-construction.md
-├── regions/                   # Regional B2B prospecting guides
-│   ├── vietnam.md
+│   ├── logistics-supply-chain.md
+│   ├── education.md
+│   ├── energy-utilities.md
+│   ├── legal-services.md
+│   ├── media-entertainment.md
+│   └── hospitality-travel.md
+├── regions/                   # Regional B2B prospecting guides (9 docs)
 │   ├── united-states.md
-│   └── european-union.md
+│   ├── united-kingdom.md
+│   ├── european-union.md
+│   ├── vietnam.md
+│   ├── india.md
+│   ├── china.md
+│   ├── latin-america.md
+│   ├── middle-east-north-africa.md
+│   └── australia-nz.md
+├── _reports/                  # Auto-generated gap reports (Echo agent monthly loop)
+│   └── gap-report-YYYY-MM.md
 ├── agents/                    # Per-agent training manuals
 │   ├── atlas.md               # Strategic Orchestrator
 │   ├── scout.md               # Discovery & Prospecting
@@ -172,10 +189,34 @@ The `getKnowledgeContextForPipeline()` function pre-computes knowledge context f
 ### 4. API Endpoint (`/api/knowledge`)
 REST API for inspecting the knowledge base:
 - `GET /api/knowledge?action=stats` — knowledge base statistics
-- `GET /api/knowledge?action=search&q=<query>` — search the knowledge base
+- `GET /api/knowledge?action=search&q=<query>&semantic=true` — hybrid search (TF-IDF + embeddings by default; pass `semantic=false` for TF-IDF only)
 - `GET /api/knowledge?action=list&category=<cat>` — list documents
 - `GET /api/knowledge?action=document&slug=<slug>` — get a specific document
 - `POST /api/knowledge { action: "reload" }` — re-index (admin)
+
+### 5. Semantic Embeddings (`src/lib/knowledge/embeddings.ts`)
+On first request, the loader embeds every document via Z.AI's `embedding-3` model (2048-dim vectors) and caches them on disk at `.knowledge-cache/embeddings.json`. Subsequent retrievals use a hybrid score: 40% TF-IDF + 40% embeddings cosine similarity + 10% tag overlap + 10% priority. Pre-warm via `POST /api/knowledge/semantic { action: "prewarm" }` or the `/knowledge` admin UI.
+
+### 6. Retrieval Analytics (`src/lib/knowledge/analytics.ts`)
+Every retrieval call is logged to `.knowledge-analytics/retrievals-YYYY-MM.jsonl` (fire-and-forget, batched every 50 entries). The Echo agent aggregates these monthly to produce the Knowledge Base Gap Report.
+
+### 7. Echo Gap Report (`src/lib/knowledge/gap-report.ts`)
+Monthly report identifying: outdated docs (>6mo), missing industries/regions, top low-relevance queries, top zero-result queries, top-retrieved docs, and concrete recommendations. Generated automatically by `getLatestGapReport()` or manually via:
+```bash
+npx tsx scripts/knowledge/run-gap-report.ts --print
+```
+Also available at `GET /api/knowledge/gap-report` and `POST /api/knowledge/gap-report` to force regeneration.
+
+### 8. Admin UI (`/knowledge` page)
+A full admin dashboard for browsing, searching, and managing the knowledge base. Tabs:
+- **Overview** — stats, semantic status, recently updated docs
+- **Browse** — filterable grid of all 44 docs, click any to view full content
+- **Search** — test hybrid retrieval with score breakdown (TF-IDF vs semantic vs priority)
+- **Gap Report** — view/regenerate the Echo agent's monthly gap report
+- **Analytics** — top queries, low-relevance, zero-result, top-retrieved docs
+- **Settings** — reload cache, prewarm embeddings, clear embeddings cache
+
+Accessible from the sidebar (Knowledge Base Admin link) or directly at `/knowledge`.
 
 ## Authoring Guidelines
 

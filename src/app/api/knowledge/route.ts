@@ -28,6 +28,7 @@ import {
   formatRetrievedKnowledge,
   type KnowledgeCategory,
 } from '@/lib/knowledge/loader';
+import { retrieveKnowledgeSemantic } from '@/lib/knowledge/semantic';
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
@@ -55,6 +56,7 @@ export async function GET(req: NextRequest) {
         const topK = parseInt(searchParams.get('topK') || '5', 10);
         const maxTokens = parseInt(searchParams.get('maxTokens') || '4000', 10);
         const minScore = parseFloat(searchParams.get('minScore') || '0.05');
+        const semantic = searchParams.get('semantic') !== 'false'; // default true
 
         if (!q) {
           return NextResponse.json(
@@ -63,20 +65,32 @@ export async function GET(req: NextRequest) {
           );
         }
 
-        const results = retrieveKnowledge({
-          query: q,
-          agent,
-          category: category || undefined,
-          topK,
-          maxTokens,
-          minScore,
-        });
+        // Use semantic retrieval by default (falls back to TF-IDF if unavailable)
+        const results = semantic
+          ? await retrieveKnowledgeSemantic({
+              query: q,
+              agent,
+              category: category || undefined,
+              topK,
+              maxTokens,
+              minScore,
+              semantic: true,
+            })
+          : retrieveKnowledge({
+              query: q,
+              agent,
+              category: category || undefined,
+              topK,
+              maxTokens,
+              minScore,
+            });
 
         return NextResponse.json({
           ok: true,
           query: q,
           agent,
           category,
+          semantic,
           results: results.map((r) => ({
             title: r.document.title,
             slug: r.document.slug,
@@ -87,8 +101,11 @@ export async function GET(req: NextRequest) {
             priority: r.document.priority,
             path: r.document.relativePath,
             preview: r.document.body.slice(0, 300) + (r.document.body.length > 300 ? '...' : ''),
+            // Semantic-only fields (undefined if TF-IDF only)
+            semanticScore: (r as any).semanticScore,
+            tfidfScore: (r as any).tfidfScore,
           })),
-          formatted: formatRetrievedKnowledge(results, { includeMetadata: true, includeBody: true }),
+          formatted: formatRetrievedKnowledge(results as any, { includeMetadata: true, includeBody: true }),
         });
       }
 

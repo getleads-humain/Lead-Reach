@@ -113,3 +113,7 @@ python-workers/*/__pycache__/
 server.pid
 .zscripts/dev.pid
 .zscripts/mini-service-*.log
+
+# Knowledge base runtime artifacts
+.knowledge-analytics/
+.knowledge-cache/

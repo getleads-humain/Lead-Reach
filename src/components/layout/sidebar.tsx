@@ -267,6 +267,20 @@ export function Sidebar() {
         </div>
       )}
 
+      {/* Knowledge Base Admin — internal tool */}
+      {!sidebarCollapsed && (
+        <div className="px-2 pb-1">
+          <Link
+            href="/knowledge"
+            target="_blank"
+            className="flex items-center gap-2.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors text-sidebar-foreground/40 hover:text-sidebar-foreground/70 hover:bg-sidebar-accent/40 border border-dashed border-sidebar-border/40"
+          >
+            <Database className="h-3.5 w-3.5" />
+            <span className="truncate">Knowledge Base Admin</span>
+          </Link>
+        </div>
+      )}
+
       {/* Collapse Toggle */}
       <div className="border-t border-sidebar-border p-2">
         <Button

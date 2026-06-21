@@ -657,3 +657,85 @@ Stage Summary:
 - Knowledge base is self-documenting: README + CONTRIBUTING guide + tests
 - Performance: 7ms average retrieval, 5MB memory footprint, zero external dependencies
 - Architecture: TF-IDF + cosine similarity + tag matching + priority weighting (no embedding model needed)
+
+
+---
+Task ID: KB-REG-A
+Agent: general-purpose
+Task: Author UK, India, China region knowledge docs
+
+Work Log:
+- Read united-states.md and README.md to understand format
+- Created knowledge/regions/united-kingdom.md (~4894 words)
+- Created knowledge/regions/india.md (~5374 words)
+- Created knowledge/regions/china.md (~5764 words)
+
+Stage Summary:
+- 3 new region docs in knowledge/regions/
+- Total ~16032 words added to knowledge base
+
+---
+Task ID: KB-IND-B
+Agent: general-purpose
+Task: Author Legal, Media, Hospitality industry knowledge docs
+
+Work Log:
+- Read saas.md and README.md to understand format
+- Created knowledge/industries/legal-services.md (~5,012 words)
+- Created knowledge/industries/media-entertainment.md (~5,064 words)
+- Created knowledge/industries/hospitality-travel.md (~5,788 words)
+- Verified smoke test (scripts/knowledge/test-loader.ts) passes: 42 documents indexed, 120.4K words / 212.8K tokens, 9 categories
+- Verified retrieval relevance via manual queries:
+  - "law firm prospecting BigLaw partner lateral" → legal-services.md (41.6% relevance)
+  - "streaming subscribers Netflix Disney gaming" → media-entertainment.md (40.0% relevance)
+  - "hotel RevPAR restaurant franchisee" → hospitality-travel.md (40.2% relevance)
+- All three docs comfortably exceed 0.05 default minScore threshold
+
+Stage Summary:
+- 3 new industry docs in knowledge/industries/
+- Total ~15,864 words added to knowledge base (matching/exceeding saas.md depth standard)
+- Each doc follows the LeadReach industry guide template: Industry Overview, Sub-Segments (with buyer profile/sales cycle/budget source), Top Players, Trigger Signals (table with signal → meaning → outreach angle), Buyer Personas (6 per doc), Outreach Angles (with specific subject lines and hooks), Qualification Criteria (BANT/MEDDIC), Common Pitfalls (10 per doc), Industry Vocabulary, Data Sources for enrichment, Playbook Summary
+- Knowledge base grows from 39 → 42 documents; 60K → ~76K words
+
+
+---
+Task ID: KB-REG-B
+Agent: general-purpose
+Task: Author LATAM, MENA, ANZ region knowledge docs
+
+Work Log:
+- Read united-states.md and README.md to understand format
+- Created knowledge/regions/latin-america.md (~5,391 words)
+- Created knowledge/regions/middle-east-north-africa.md (~7,403 words)
+- Created knowledge/regions/australia-nz.md (~7,362 words)
+
+Stage Summary:
+- 3 new region docs in knowledge/regions/
+- Total ~20,156 words added to knowledge base
+- Each doc follows the LeadReach region template (matching/exceeding united-states.md depth): Market Overview, Regulatory & Compliance, Business Registries, Regional Hubs (table with city → country → industries → anchor companies), Dominant Industries, Data Sources & Tools, Cultural Norms for B2B, Outreach Patterns (channels, scripts, do's and don'ts), Common Pitfalls, Quick Reference Table (per-country comparison), LeadReach Pipeline for [Region] Prospecting (8-agent routing)
+- Country-specific compliance cited: Brazil LGPD/ANPD, Mexico LFPDPPP/INAI, Argentina PDPA/AAIP, Colombia Ley 1581/SIC, Chile Law 19.628; Saudi PDPL/SDAIA, UAE Federal Decree-Law 45/2021 + DIFC + ADGM, Israel Privacy Protection Law 5741-1981/PPA (EU adequacy), Egypt Law 151/2020, Qatar PDPL Law 13/2016; Australia Privacy Act 1988 + APPs/OAIC + Spam Act 2003/ACMA, NZ Privacy Act 2020/OPC + Unsolicited Electronic Messages Act 2007/DIA
+- Real company references throughout (Brazil: Itaú/Bradesco/Nubank/Vale/Embraer/Petrobras; Mexico: América Móvil/Cemex/FEMSA/Grupo Bimbo; Argentina: MercadoLibre/Globant/YPF; Colombia: Ecopetrol/Bancolombia/Rappi; Chile: Codelco/SQM/Arauco; UAE: Emirates/DP World/Emaar/ADNOC/Mubadala/G42; Saudi: Aramco/SABIC/STC/Al Rajhi/PIF; Israel: Check Point/Mobileye/Wix/Fiverr/Monday/Wiz; Egypt: Orascom/CIB/EFG Hermes; Qatar: QatarEnergy/Qatar Airways/QNB; Australia: CBA/Westpac/ANZ/NAB/BHP/Rio Tinto/Fortescue/CSL/Cochlear/Atlassian/Canva; NZ: Fonterra/Air NZ/Xero/Vista/Weta/Trade Me)
+- Real registry URLs cited (ReceitaWS, SAT, AFIP, RUES, SII, DED Dubai, DMCC, DIFC, ADGM, MOC Saudi, GAFI, Israel Registrar of Companies, MOCI Qatar, ABN Lookup, ASIC Connect, NZBN Lookup, Companies Office NZ)
+- Quick Reference Tables compare all 5 LATAM countries (or 5 MENA countries, or AU vs NZ) side-by-side across language, currency, tax ID, registry, privacy law, regulator, GDPR adequacy, time zone, business hub, dominant industry, English fluency, sales cycle
+- LeadReach pipeline sections specify per-agent (Atlas/Sage/Scout/Forge/Judge/Bard/Flow/Echo) routing for each region
+
+---
+Task ID: KB-IND-A
+Agent: general-purpose
+Task: Author Logistics, Education, Energy industry knowledge docs
+
+Work Log:
+- Read saas.md (2,071 words), README.md, and CONTRIBUTING.md to understand format, depth, and structure expectations for industry guides
+- Reviewed existing industry files (manufacturing.md) to match style of multi-paragraph sub-segment/buyer persona/trigger signal structure
+- Created knowledge/industries/logistics-supply-chain.md (~5,535 words) covering 10 sub-segments (3PL/4PL/freight forwarding/last-mile/cold chain/warehousing/port operations/intermodal/parcel/private fleets), 5 firmographic tiers, technographic stack detection (TMS/WMS/OMS/ERP/YMS), 7 buyer personas (VP Supply Chain/COO/Director of Logistics/Director of Procurement/VP Engineering/Director of Warehouse Ops/Head of Sustainability), trigger events table (15+ signals with outreach angles), industry vocabulary (40+ terms: OR/OTIF/TEU/LTL/FTL/ELD/HOS/CSA/VGM/CBP/HTS/GLEC), 8 common mistakes, 9 data source categories (FreightWaves/JOC/S&P Global/Project44/FourKites/DAT/FMCSA SAFER/AAPA), 5 outreach hook templates, BANT/MEDDIC qualification, 8 common pitfalls
+- Created knowledge/industries/education.md (~6,893 words) covering 8 sub-segments (K-12 public/private/charter, higher ed, vocational/workforce, corporate L&D, test prep, language, professional cert), 8 firmographic tiers, K-12/higher ed/corporate L&D tech stack detection, 11 buyer personas (Superintendent/District CIO/Director of Curriculum/Director of Federal Programs/Director of SPED/Provost/Dean/VP Enrollment/Higher Ed CIO/CLO/Head of Talent Dev), trigger events table (18 signals with outreach angles), education vocabulary (40+ terms: ESSA/Title I-IV/IDEA/IEP/MTSS/ESSA evidence tiers/FERPA/COPPA/E-rate/Ed-Fi/VPAT/WCAG/ESSER/HEERF/Perkins V/WIOA/HBCU/HSI/R1/AACSB/ABET/OPM/NTR), 10 common mistakes, 4 data source categories (EdWeek/Chronicle/NCES/IPEDS/Ed.gov/state portals/LISTedTECH/cooperative contracts), 6 outreach hook templates, BANT/MEDDIC qualification, 12 common pitfalls
+- Created knowledge/industries/energy-utilities.md (~8,514 words) covering 7 sub-segments (upstream/midstream/downstream oil & gas, power generation, T&D utilities, renewables, grid edge/smart metering, energy trading/retail), 9 firmographic tiers, upstream/midstream/downstream/utility/renewables tech stack detection, 11 buyer personas (VP Operations/CPO/Director of Asset Integrity/Head of Renewables Development/Director of Grid Operations/Director of Smart Grid/Head of Grid Modernization/VP Engineering CTO/Head of Sustainability/Director of Turnarounds/Head of Trading), trigger events table (24 signals with outreach angles), energy vocabulary (60+ terms: upstream/midstream/downstream/bpd/bbl/Mcf/BOE/WTI/Brent/LNG/EOR/R-P ratio/decline curve/API gravity/refining margins/TAR/PSV/MTBF/RBI/FFS/PSM/RMP/NERC CIP/SAIDI/SAIFI/CAIDI/FLISR/DER/DERMS/VPP/AMI/RTO/ISO/LMP/PPA/VPPA/ITC/PTC/IRA credits 45Y/48E/45Q/45V/45U/REC/RPS/LCOE/LCOS/LCOH/capacity factor/heat rate/forced outage rate/OGMP 2.0/SBTi/TCFD/IFRS S2/CSRD/CBAM/CCUS/DAC/SAF/BESS/EV/V1G/V2G/GEB/ATEX/IECEx/API), 12 common mistakes, 7 data source categories (S&P Global Platts/Wood Mackenzie/BNEF/Rystad/EIA/IEA/FERC/EPA/PHMSA/DOE/NERC/BOEM/NRC/state PUCs/RTOs), 7 outreach hook templates, BANT/MEDDIC qualification, 12 common pitfalls
+
+Stage Summary:
+- 3 new industry docs in knowledge/industries/ (logistics-supply-chain.md, education.md, energy-utilities.md)
+- Total ~20,942 words added to knowledge base (well above 4,000-6,000 word target per file minimum)
+- All three files follow exact YAML frontmatter spec from task (slug, category, tags, agents, industries, intent_types, priority, version, updated, author, summary)
+- All files match depth/structure of saas.md: industry overview, sub-segments with buyer/sales cycle/budget source, firmographic signals, technographic signals with stack detection tables, 7-11 buyer personas per file, trigger events tables (signal → meaning → outreach angle), industry vocabulary sections, common mistakes sections, data sources sections, outreach angle templates with subject line patterns and body copy hooks, BANT/MEDDIC qualification criteria, common pitfalls, and LeadReach playbook summaries
+- Every paragraph contains 3-5+ sentences; every section contains 150-200+ words of body content (exceeds content depth standards)
+- Real company names referenced throughout (DHL/FedEx/UPS/Maersk/XPO/C.H. Robinson/Kuehne+Nagel/DB Schenker for logistics; PowerSchool/Instructure/Canvas/Blackboard/Coursera/Udemy/Chegg/Byju/Duolingo/Guild for education; ExxonMobil/Chevron/Shell/BP/NextEra/Duke/Southern Co/Iberdrola/Ørsted/Enel for energy)
+- Real data sources and platforms cited (FreightWaves/JOC/S&P Global/Project44/FourKites/Descartes/Loadsmart/FMCSA SAFER for logistics; EdWeek/Chronicle of Higher Ed/Inside Higher Ed/NCES/Department of Ed for education; S&P Global Platts/Wood Mackenzie/BNEF/Rystad/EIA/IEA for energy)
