@@ -142,6 +142,7 @@ const VIEW_LABELS: Record<ViewType, string> = {
   identity: 'Identity',
   icp: 'ICP Builder',
   'ai-assistant': 'AI Assistant',
+  knowledge: 'Knowledge Base',
 };
 
 const ACTION_CONFIG: Record<string, { emoji: string; color: string; bgColor: string; borderColor: string }> = {

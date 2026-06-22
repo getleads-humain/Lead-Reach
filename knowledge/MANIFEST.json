@@ -1,0 +1,239 @@
+{
+  "version": "1.1.0",
+  "generated_at": "2026-06-22",
+  "description": "LeadReach Knowledge Base — machine-readable index of every knowledge document",
+  "total_docs": 36,
+  "categories": {
+    "industries": {
+      "count": 8,
+      "docs": [
+        {
+          "id": "saas-b2b",
+          "path": "industries/saas-b2b.md",
+          "title": "SaaS B2B — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["saas", "b2b", "recurring-revenue", "net-retention", "churn"]
+        },
+        {
+          "id": "fintech",
+          "path": "industries/fintech.md",
+          "title": "FinTech — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["fintech", "payments", "banking", "lending", "compliance", "b2b"]
+        },
+        {
+          "id": "healthtech",
+          "path": "industries/healthtech.md",
+          "title": "HealthTech — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["healthtech", "hipaa", "ehr", "providers", "payers", "digital-health"]
+        },
+        {
+          "id": "ecommerce-dtc",
+          "path": "industries/ecommerce-dtc.md",
+          "title": "E-Commerce & DTC — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["ecommerce", "dtc", "retail", "shopify", "marketplace", "retention"]
+        },
+        {
+          "id": "manufacturing",
+          "path": "industries/manufacturing.md",
+          "title": "Manufacturing & Industrial — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["manufacturing", "industrial", "iiot", "supply-chain", "b2b", "mid-market"]
+        },
+        {
+          "id": "dev-tools",
+          "path": "industries/dev-tools.md",
+          "title": "Developer Tools (DevTools) — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["dev-tools", "developer-tools", "plg", "api", "sdk", "open-source", "seat-based"]
+        },
+        {
+          "id": "cybersecurity",
+          "path": "industries/cybersecurity.md",
+          "title": "Cybersecurity — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["cybersecurity", "infosec", "soc2", "iso27001", "compliance", "mssp", "ciso"]
+        },
+        {
+          "id": "ai-infrastructure",
+          "path": "industries/ai-infrastructure.md",
+          "title": "AI Infrastructure — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["ai-infrastructure", "llmops", "vector-db", "mlops", "gpu", "fine-tuning", "rag"]
+        }
+      ]
+    },
+    "regions": {
+      "count": 6,
+      "docs": [
+        {
+          "id": "us",
+          "path": "regions/us.md",
+          "title": "United States — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["us", "usa", "north-america", "ccpa", "casl", "b2b"]
+        },
+        {
+          "id": "eu-gdpr",
+          "path": "regions/eu-gdpr.md",
+          "title": "European Union (GDPR) — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["eu", "gdpr", "privacy", "consent", "b2b", "eprivacy"]
+        },
+        {
+          "id": "uk",
+          "path": "regions/uk.md",
+          "title": "United Kingdom — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["uk", "gdpr", "ico", "pecr", "post-brexit"]
+        },
+        {
+          "id": "apac-singapore",
+          "path": "regions/apac-singapore.md",
+          "title": "APAC (Singapore) — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["apac", "singapore", "pdpa", "mas", "fintech", "relationship"]
+        },
+        {
+          "id": "canada",
+          "path": "regions/canada.md",
+          "title": "Canada — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["canada", "casl", "pipeda", "quebec", "quebec-law-25", "b2b", "north-america"]
+        },
+        {
+          "id": "dach",
+          "path": "regions/dach.md",
+          "title": "DACH (Germany, Austria, Switzerland) — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["dach", "germany", "austria", "switzerland", "gdpr", "bdsg", "b2b", "eu"]
+        }
+      ]
+    },
+    "playbooks": {
+      "count": 5,
+      "docs": [
+        {
+          "id": "outbound-cold-email",
+          "path": "playbooks/outbound-cold-email.md",
+          "title": "Outbound Cold Email — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["outbound", "email", "sequencing", "b2b"]
+        },
+        {
+          "id": "icp-discovery",
+          "path": "playbooks/icp-discovery.md",
+          "title": "ICP Discovery — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["icp", "ideal-customer-profile", "segmentation", "fit-scoring"]
+        },
+        {
+          "id": "multi-threaded-selling",
+          "path": "playbooks/multi-threaded-selling.md",
+          "title": "Multi-Threaded Selling — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["multi-thread", "enterprise", "consensus-buying", "stakeholder-mapping"]
+        },
+        {
+          "id": "inbound-lead-routing",
+          "path": "playbooks/inbound-lead-routing.md",
+          "title": "Inbound Lead Routing — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["inbound", "lead-routing", "sla", "qualification", "abm"]
+        },
+        {
+          "id": "churn-recovery",
+          "path": "playbooks/churn-recovery.md",
+          "title": "Churn Recovery — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["churn", "retention", "win-back", "customer-success", "at-risk"]
+        }
+      ]
+    },
+    "tools": {
+      "count": 8,
+      "docs": [
+        { "id": "atlas", "path": "tools/atlas.md", "title": "Atlas — Orchestrator Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "scout", "path": "tools/scout.md", "title": "Scout — Prospect Discovery Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "forge", "path": "tools/forge.md", "title": "Forge — Data Enrichment Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "sage", "path": "tools/sage.md", "title": "Sage — Web Research Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "judge", "path": "tools/judge.md", "title": "Judge — Lead Qualification Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "bard", "path": "tools/bard.md", "title": "Bard — Outreach Composer Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "flow", "path": "tools/flow.md", "title": "Flow — Pipeline Manager Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "echo", "path": "tools/echo.md", "title": "Echo — Report Generator Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" }
+      ]
+    },
+    "training-data": {
+      "count": 8,
+      "docs": [
+        { "id": "atlas-decomposition", "path": "training-data/atlas-decomposition.jsonl", "format": "jsonl", "examples": 3 },
+        { "id": "scout-prospect-discovery", "path": "training-data/scout-prospect-discovery.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "forge-enrichment", "path": "training-data/forge-enrichment.jsonl", "format": "jsonl", "examples": 5 },
+        { "id": "sage-research", "path": "training-data/sage-research.jsonl", "format": "jsonl", "examples": 3 },
+        { "id": "judge-qualification", "path": "training-data/judge-qualification.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "bard-outreach", "path": "training-data/bard-outreach.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "flow-pipeline", "path": "training-data/flow-pipeline.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "echo-report", "path": "training-data/echo-report.jsonl", "format": "jsonl", "examples": 3 }
+      ]
+    },
+    "gap-reports": {
+      "count": 1,
+      "docs": [
+        {
+          "id": "2026-06-gap-report",
+          "path": "gap-reports/2026-06-gap-report.md",
+          "title": "Monthly Knowledge Gap Report — 2026-06",
+          "generated_at": "2026-06-22",
+          "total_gaps": 31
+        }
+      ]
+    }
+  },
+  "grading_rubric": {
+    "A": "Comprehensive coverage — all required sections present, current data, multiple regions/variants",
+    "B": "Solid coverage — required sections present, minor gaps in regions/variants",
+    "C": "Basic coverage — missing two or more required sections",
+    "D": "Stub or placeholder"
+  },
+  "reindex_command": "npm run knowledge:reindex",
+  "gap_report_command": "npm run knowledge:gap",
+  "embeddings_command": "npm run knowledge:embeddings",
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-06-22",
+      "changes": [
+        "Added 3 new industry docs: dev-tools, cybersecurity, ai-infrastructure",
+        "Added 2 new region docs: canada, dach",
+        "Added 2 new playbooks: inbound-lead-routing, churn-recovery",
+        "Added embeddings_command for semantic embeddings pre-computation"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-06-22",
+      "changes": ["Initial manifest"]
+    }
+  ]
+}

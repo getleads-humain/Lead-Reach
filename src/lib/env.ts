@@ -157,6 +157,21 @@ export function validateEnv(): EnvValidationResult {
         placeholders.push(name);
       }
     }
+
+    // Optional-but-recommended server vars — surface as placeholder if set
+    // to a non-real value (so misconfigurations are visible) but NEVER as
+    // missing (so the app still boots without them).
+    const optionalServerVars = [
+      'EXA_API_KEY',
+      'ZHIPU_API_KEY',
+    ] as const;
+
+    for (const name of optionalServerVars) {
+      const value = process.env[name];
+      if (value && value.trim() !== '' && !isRealValue(value)) {
+        placeholders.push(name);
+      }
+    }
   }
 
   return {
@@ -193,6 +208,12 @@ export function logEnvStatus(): void {
     console.warn('[LeadReach] SUPABASE_SERVICE_ROLE_KEY not set — admin API features disabled');
   }
 
+  if (isExaConfigured()) {
+    console.log('[LeadReach] Exa Search configured — semantic web search available for all agents');
+  } else {
+    console.warn('[LeadReach] EXA_API_KEY not set — Exa semantic search disabled (falling back to DuckDuckGo/Jina)');
+  }
+
   if (!validation.valid) {
     if (validation.missing.length > 0) {
       console.warn(`[LeadReach] Missing env vars: ${validation.missing.join(', ')}`);
@@ -201,4 +222,34 @@ export function logEnvStatus(): void {
       console.warn(`[LeadReach] Placeholder env vars: ${validation.placeholders.join(', ')}`);
     }
   }
+}
+
+/**
+ * Check if Exa Search is configured (server-only).
+ * When true, exaSearch() in agent-reach-bridge.ts will call the real Exa API
+ * as the primary search backend (zero-config — no other setup needed).
+ */
+export function isExaConfigured(): boolean {
+  if (typeof window !== 'undefined') return false;
+  return isRealValue(getServerVar('EXA_API_KEY'));
+}
+
+/**
+ * Get the Exa API key (server-only). Returns undefined on client or when
+ * not configured.
+ */
+export function getExaApiKey(): string | undefined {
+  if (typeof window !== 'undefined') return undefined;
+  const key = getServerVar('EXA_API_KEY');
+  return isRealValue(key) ? key : undefined;
+}
+
+/**
+ * Check if knowledge-base semantic embeddings are enabled (server-only).
+ * When true, the knowledge index will pre-compute Z.AI embedding-3 vectors
+ * for every chunk and use hybrid BM25 + cosine similarity retrieval.
+ */
+export function isKnowledgeEmbeddingsEnabled(): boolean {
+  if (typeof window !== 'undefined') return false;
+  return process.env.USE_KNOWLEDGE_EMBEDDINGS === 'true';
 }

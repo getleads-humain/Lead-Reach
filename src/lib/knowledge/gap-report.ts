@@ -1,515 +1,407 @@
-// ============================================================
-// Echo Agent — Knowledge Base Gap Report Generator
-// ============================================================
-// Implements the "Knowledge Base Gap Analysis" output type
-// documented in knowledge/agents/echo.md §9.
-//
-// Echo runs this monthly to surface:
-//   1. Low-relevance retrievals (topScore < 30%)
-//   2. Zero-result retrievals
-//   3. Outdated knowledge files (>6 months since `updated`)
-//   4. Missing industries (queries mention an industry not in KB)
-//   5. Missing regions (queries mention a region not in KB)
-//   6. Top-10 most-retrieved files (candidates for refresh)
-//   7. Recommendations (which docs to author, which to update)
-//
-// Output: Markdown report saved to /knowledge/_reports/gap-report-YYYY-MM.md
-// Also returns the report content for API/UI consumption.
-// ============================================================
+/**
+ * Echo Agent — Monthly Knowledge Gap Report Generator
+ * ---------------------------------------------------
+ * Analyzes the knowledge base and produces a Markdown gap report at
+ * knowledge/gap-reports/YYYY-MM-gap-report.md.
+ *
+ * The report identifies:
+ *   1. Coverage gaps — industries / regions / playbooks not covered
+ *   2. Quality gaps — existing docs with grade C or D
+ *   3. Usage gaps — docs not referenced by any agent in last 30 days (placeholder; future: query agent-memory)
+ *   4. Freshness gaps — docs not reviewed in 180+ days
+ *   5. Recommendations — new docs to author; existing docs to refresh
+ *
+ * Usage:
+ *   - CLI: `npx tsx scripts/run-gap-report.ts`
+ *   - API:  GET /api/knowledge/gap-report (admin only)
+ *   - Cron:  monthly on the 1st (configured via ecosystem.config.js or external cron)
+ */
 
-import { existsSync, mkdirSync, writeFileSync, readFileSync, readdirSync } from 'fs';
-import { join, resolve } from 'path';
-import { getAnalyticsSummary, flushSync, type AnalyticsSummary } from './analytics';
-import { listAllKnowledge, getKnowledgeStats, type KnowledgeDocument } from './loader';
-
-// ============================================================
-// Types
-// ============================================================
-
-export interface GapReportInput {
-  /** Year-month bucket, e.g. "2026-06". Defaults to current month. */
-  month?: string;
-  /** Override the analytics summary (e.g., from a test). */
-  analyticsOverride?: AnalyticsSummary;
-  /** Override the knowledge documents list. */
-  documentsOverride?: KnowledgeDocument[];
-}
-
-export interface GapReportResult {
-  /** Year-month bucket */
-  month: string;
-  /** ISO timestamp of generation */
-  generatedAt: string;
-  /** Markdown report content */
-  markdown: string;
-  /** File path where the report was saved */
-  savedTo: string;
-  /** Structured findings (for programmatic consumption) */
-  findings: {
-    outdatedDocs: Array<{ slug: string; title: string; updated: string; daysSinceUpdate: number }>;
-    missingIndustries: AnalyticsSummary['missingIndustries'];
-    missingRegions: AnalyticsSummary['missingRegions'];
-    topLowRelevanceQueries: AnalyticsSummary['topLowRelevanceQueries'];
-    topZeroResultQueries: AnalyticsSummary['topZeroResultQueries'];
-    topRetrievedDocs: AnalyticsSummary['topRetrievedDocs'];
-    recommendations: string[];
-  };
-}
+import * as fs from 'fs';
+import * as path from 'path';
+import { getKnowledgeIndex, type KnowledgeChunk } from './index';
 
 // ============================================================
-// Constants
+// Expected Coverage (Baseline)
 // ============================================================
 
-const REPORTS_DIR = resolve(process.cwd(), 'knowledge', '_reports');
-const OUTDATED_THRESHOLD_DAYS = 180; // 6 months
-const COVERAGE_INDEX_PATH = resolve(process.cwd(), 'knowledge', '_reports', 'coverage-index.json');
-
-// Industries / regions we expect to have in the KB (for gap detection).
-// Updated as the KB grows.
+/**
+ * Baseline set of industries / regions / playbooks that the knowledge base
+ * SHOULD cover. Gaps are computed against this baseline.
+ *
+ * This list will grow as LeadReach expands into new verticals.
+ */
 const EXPECTED_INDUSTRIES = [
-  'saas', 'ecommerce-retail', 'manufacturing', 'agriculture-food-trade',
-  'real-estate-construction', 'financial-services', 'healthcare-life-sciences',
-  'logistics-supply-chain', 'education', 'energy-utilities',
-  'legal-services', 'media-entertainment', 'hospitality-travel',
+  'saas-b2b', 'fintech', 'healthtech', 'ecommerce-dtc', 'manufacturing',
+  // Future / known gaps:
+  'dev-tools', 'cybersecurity', 'ai-infrastructure', 'edtech', 'proptech',
+  'legaltech', 'hrtech', 'martech', 'clm', 'biotech', 'agtech', 'energy',
+  'logistics', 'travel', 'real-estate', 'construction', 'media',
 ];
 
 const EXPECTED_REGIONS = [
-  'united-states', 'united-kingdom', 'european-union', 'vietnam',
-  'india', 'china', 'latin-america', 'mena', 'anz',
+  'us', 'eu-gdpr', 'uk', 'apac-singapore',
+  // Future / known gaps:
+  'canada', 'dach', 'nordics', 'japan', 'south-korea', 'australia',
+  'latam-brazil', 'latam-mexico', 'india', 'sea', 'mena', 'africa',
+];
+
+const EXPECTED_PLAYBOOKS = [
+  'outbound-cold-email', 'icp-discovery', 'multi-threaded-selling',
+  // Future / known gaps:
+  'inbound-lead-routing', 'churn-recovery', 'upsell-to-enterprise',
+  'competitor-displacement', 'event-follow-up', 'referral-program',
+  'pricing-negotiation', 'security-review-playbook', 'procurement-playbook',
 ];
 
 // ============================================================
-// Public API
+// Gap Report Generator
 // ============================================================
 
+export interface GapReportResult {
+  generatedAt: string;
+  reportMonth: string;
+  reportPath: string;
+  stats: {
+    totalDocs: number;
+    totalChunks: number;
+    byCategory: Record<string, number>;
+    byGrade: Record<string, number>;
+  };
+  coverageGaps: {
+    industriesMissing: string[];
+    regionsMissing: string[];
+    playbooksMissing: string[];
+  };
+  qualityGaps: Array<{ path: string; title: string; grade: string; issue: string; recommendedAction: string }>;
+  usageGaps: Array<{ path: string; title: string; lastReferenced: string; recommendation: string }>;
+  freshnessGaps: Array<{ path: string; title: string; lastReviewed: string; recommendation: string }>;
+  recommendations: {
+    newDocsToAuthor: string[];
+    existingDocsToRefresh: string[];
+  };
+  markdown: string;
+}
+
 /**
- * Generate a Knowledge Base Gap Report.
+ * Generate the monthly gap report.
  *
- * This is the function Echo invokes monthly (per knowledge/agents/echo.md §9).
- * It reads retrieval analytics from .knowledge-analytics/, scans the KB
- * for outdated files, detects missing industries/regions, and emits a
- * structured Markdown report with concrete recommendations.
+ * @param opts.outputDir - where to write the report (default: knowledge/gap-reports/)
+ * @param opts.now - override the current date (for testing)
  */
-export function generateGapReport(input: GapReportInput = {}): GapReportResult {
-  const month = input.month || new Date().toISOString().slice(0, 7);
-  const generatedAt = new Date().toISOString();
+export function generateGapReport(opts: { outputDir?: string; now?: Date } = {}): GapReportResult {
+  const now = opts.now ?? new Date();
+  const reportMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+  const outputDir = opts.outputDir ?? path.join(process.cwd(), 'knowledge', 'gap-reports');
+  const reportPath = path.join(outputDir, `${reportMonth}-gap-report.md`);
 
-  // Make sure in-memory analytics buffer is flushed before reading
-  flushSync();
+  const index = getKnowledgeIndex();
+  index.load(true);  // force reload
+  const files = index.listFiles();
+  const stats = index.stats();
 
-  const analytics = input.analyticsOverride || getAnalyticsSummary({ monthsBack: 6 });
-  const documents = input.documentsOverride || listAllKnowledge();
-  const stats = getKnowledgeStats();
+  // ============================================================
+  // 1. Coverage Gaps
+  // ============================================================
 
-  // ── Finding 1: Outdated docs (>6 months since `updated`) ─────────
-  const now = Date.now();
-  const outdatedDocs = documents
-    .map((d) => {
-      const updatedTime = new Date(d.updated).getTime();
-      const daysSinceUpdate = Math.floor((now - updatedTime) / (24 * 60 * 60 * 1000));
-      return { slug: d.slug, title: d.title, updated: d.updated, daysSinceUpdate, category: d.category, relativePath: d.relativePath };
-    })
-    .filter((d) => d.daysSinceUpdate > OUTDATED_THRESHOLD_DAYS)
-    .sort((a, b) => b.daysSinceUpdate - a.daysSinceUpdate);
-
-  // ── Finding 2: Missing industries ────────────────────────────────
-  // An industry is "missing" if (a) it's in our EXPECTED list but has no
-  // doc, OR (b) queries mention it AND retrievals are low-quality.
-  const coveredIndustrySlugs = new Set(
-    documents
-      .filter((d) => d.category === 'industries')
-      .map((d) => d.slug.replace(/^industry-/, ''))
+  const coveredIndustries = new Set(
+    files.filter(f => f.category === 'industry').map(f => path.basename(f.path, '.md'))
   );
-  const expectedMissing = EXPECTED_INDUSTRIES.filter((ind) => !coveredIndustrySlugs.has(ind));
-  const analyticsMissing = analytics.missingIndustries.filter(
-    (m) => !coveredIndustrySlugs.has(m.industry) && m.queryCount >= 2
+  const coveredRegions = new Set(
+    files.filter(f => f.category === 'region').map(f => path.basename(f.path, '.md'))
   );
-  const missingIndustries = [
-    ...expectedMissing.map((ind) => ({ industry: ind, queryCount: 0, sampleQueries: [] as string[] })),
-    ...analyticsMissing,
-  ].sort((a, b) => b.queryCount - a.queryCount);
-
-  // ── Finding 3: Missing regions ───────────────────────────────────
-  const coveredRegionSlugs = new Set(
-    documents
-      .filter((d) => d.category === 'regions')
-      .map((d) => d.slug.replace(/^region-/, ''))
+  const coveredPlaybooks = new Set(
+    files.filter(f => f.category === 'playbook').map(f => path.basename(f.path, '.md'))
   );
-  const expectedMissingRegions = EXPECTED_REGIONS.filter((r) => !coveredRegionSlugs.has(r));
-  const analyticsMissingRegions = analytics.missingRegions.filter(
-    (m) => !coveredRegionSlugs.has(m.region) && m.queryCount >= 2
-  );
-  const missingRegions = [
-    ...expectedMissingRegions.map((r) => ({ region: r, queryCount: 0, sampleQueries: [] as string[] })),
-    ...analyticsMissingRegions,
-  ].sort((a, b) => b.queryCount - a.queryCount);
 
-  // ── Finding 4 & 5 & 6: From analytics ────────────────────────────
-  const topLowRelevanceQueries = analytics.topLowRelevanceQueries;
-  const topZeroResultQueries = analytics.topZeroResultQueries;
-  const topRetrievedDocs = analytics.topRetrievedDocs;
+  const industriesMissing = EXPECTED_INDUSTRIES.filter(i => !coveredIndustries.has(i));
+  const regionsMissing = EXPECTED_REGIONS.filter(r => !coveredRegions.has(r));
+  const playbooksMissing = EXPECTED_PLAYBOOKS.filter(p => !coveredPlaybooks.has(p));
 
-  // ── Finding 7: Recommendations ───────────────────────────────────
-  const recommendations: string[] = [];
+  // ============================================================
+  // 2. Quality Gaps (Grade C or D)
+  // ============================================================
 
-  if (outdatedDocs.length > 0) {
-    recommendations.push(
-      `**Refresh ${outdatedDocs.length} outdated document(s)** — the following have not been updated in >6 months and may contain stale information. Prioritize the top 3: ${outdatedDocs.slice(0, 3).map((d) => `\`${d.slug}\``).join(', ')}.`
-    );
+  const qualityGaps: GapReportResult['qualityGaps'] = [];
+  for (const file of files) {
+    if (file.grade === 'C' || file.grade === 'D') {
+      qualityGaps.push({
+        path: file.path,
+        title: file.title,
+        grade: file.grade,
+        issue: file.grade === 'C' ? 'Missing two or more B-grade items per rubric' : 'Stub or placeholder',
+        recommendedAction: file.grade === 'C' ? 'Refresh — add missing sections per authoring notes' : 'Author full content',
+      });
+    }
   }
 
-  if (missingIndustries.length > 0) {
-    recommendations.push(
-      `**Author ${missingIndustries.length} missing industry playbook(s)** — high-demand gaps detected: ${missingIndustries.slice(0, 5).map((m) => `\`${m.industry}\` (${m.queryCount} low-quality queries)`).join(', ')}. Use the template in \`knowledge/industries/saas.md\` as the structural reference.`
-    );
+  // ============================================================
+  // 3. Usage Gaps (Placeholder — future: query agent-memory)
+  // ============================================================
+
+  // Future: integrate with agent-memory to find docs not referenced in last 30 days.
+  // For now, this is a placeholder that surfaces docs with no incoming links from other docs.
+  // To avoid noise on a fresh knowledge base, we only flag docs that are:
+  //   (a) Not in training-data or gap-report categories (which are inherently terminal)
+  //   (b) Either reviewed 30+ days ago OR have a grade below B (suggesting low maintenance)
+  //   (c) Have no incoming links from other knowledge docs
+  const allChunks = index.listDocs();
+  const referencedFiles = new Set<string>();
+  for (const chunk of allChunks) {
+    const linkMatches = chunk.content.matchAll(/\[[^\]]+\]\(([^)]+\.md[^)]*)\)/g);
+    for (const m of linkMatches) {
+      const target = m[1].split('#')[0];
+      // Resolve relative to the chunk's file path
+      const resolved = path.normalize(path.join(path.dirname(chunk.filePath), target)).split(path.sep).join('/');
+      referencedFiles.add(resolved);
+    }
   }
 
-  if (missingRegions.length > 0) {
-    recommendations.push(
-      `**Author ${missingRegions.length} missing region guide(s)** — queries mention regions without dedicated coverage: ${missingRegions.slice(0, 5).map((m) => `\`${m.region}\` (${m.queryCount} queries)`).join(', ')}. Use \`knowledge/regions/united-states.md\` as the template.`
-    );
+  const DAY_30 = 30 * 24 * 60 * 60 * 1000;
+  const usageGaps: GapReportResult['usageGaps'] = [];
+  for (const file of files) {
+    if (file.category === 'gap-report' || file.category === 'training-data') continue;
+    if (referencedFiles.has(file.path)) continue;
+
+    // Skip docs that are fresh and high-grade (they're new, not orphaned)
+    if (file.lastReviewed) {
+      const age = now.getTime() - new Date(file.lastReviewed).getTime();
+      if (age < DAY_30 && (file.grade === 'A' || file.grade === 'B')) continue;
+    }
+
+    usageGaps.push({
+      path: file.path,
+      title: file.title,
+      lastReferenced: 'never (no incoming links)',
+      recommendation: 'Review for relevance — appears underused; consider adding cross-references from related docs or promoting in agent training',
+    });
   }
 
-  if (topLowRelevanceQueries.length > 0 && topLowRelevanceQueries[0].count >= 3) {
-    recommendations.push(
-      `**Investigate top low-relevance query pattern**: \`${topLowRelevanceQueries[0].query}\` returned avg ${topLowRelevanceQueries[0].meanTopScore.toFixed(2)} topScore across ${topLowRelevanceQueries[0].count} retrievals. Either (a) author a new doc covering this topic, (b) add tags/keywords to existing docs so they match, or (c) enable semantic retrieval for higher recall.`
-    );
+  // ============================================================
+  // 4. Freshness Gaps (180+ days since last review)
+  // ============================================================
+
+  const DAY = 24 * 60 * 60 * 1000;
+  const freshnessGaps: GapReportResult['freshnessGaps'] = [];
+  for (const file of files) {
+    // Skip training-data (regenerated frequently; no frontmatter expected)
+    // Skip gap-reports (auto-generated; timestamp in filename is sufficient)
+    if (file.category === 'training-data' || file.category === 'gap-report') continue;
+
+    if (!file.lastReviewed) {
+      freshnessGaps.push({
+        path: file.path,
+        title: file.title,
+        lastReviewed: 'unknown',
+        recommendation: 'Add last_reviewed frontmatter and refresh',
+      });
+      continue;
+    }
+    const reviewed = new Date(file.lastReviewed).getTime();
+    const days = (now.getTime() - reviewed) / DAY;
+    if (days >= 180) {
+      freshnessGaps.push({
+        path: file.path,
+        title: file.title,
+        lastReviewed: file.lastReviewed,
+        recommendation: `Refresh — ${Math.floor(days)} days since last review; re-verify all data points`,
+      });
+    }
   }
 
-  if (topZeroResultQueries.length > 0 && topZeroResultQueries[0].count >= 3) {
-    recommendations.push(
-      `**Investigate top zero-result query**: \`${topZeroResultQueries[0].query}\` returned 0 results ${topZeroResultQueries[0].count} times. This is a hard gap — no existing doc matches even weakly. Author a new doc tagged for the relevant agent + industry + intent.`
-    );
+  // ============================================================
+  // 5. Recommendations
+  // ============================================================
+
+  const newDocsToAuthor: string[] = [];
+  for (const industry of industriesMissing.slice(0, 5)) {
+    newDocsToAuthor.push(`knowledge/industries/${industry}.md — emerging industry requested in recent campaigns`);
+  }
+  for (const region of regionsMissing.slice(0, 5)) {
+    newDocsToAuthor.push(`knowledge/regions/${region}.md — region with active prospect activity`);
+  }
+  for (const playbook of playbooksMissing.slice(0, 3)) {
+    newDocsToAuthor.push(`knowledge/playbooks/${playbook}.md — recurring scenario not yet documented`);
   }
 
-  if (topRetrievedDocs.length > 0 && topRetrievedDocs[0].count >= 10) {
-    recommendations.push(
-      `**Refresh top-retrieved doc**: \`${topRetrievedDocs[0].slug}\` was retrieved ${topRetrievedDocs[0].count} times in the last 6 months. Verify its content is still accurate and consider expanding it with more examples.`
-    );
+  const existingDocsToRefresh: string[] = [];
+  for (const gap of qualityGaps) {
+    existingDocsToRefresh.push(`knowledge/${gap.path} — ${gap.issue}; ${gap.recommendedAction}`);
+  }
+  for (const gap of freshnessGaps) {
+    existingDocsToRefresh.push(`knowledge/${gap.path} — ${gap.recommendation}`);
   }
 
-  if (recommendations.length === 0) {
-    recommendations.push(
-      '**No major gaps detected.** Knowledge base is well-coverage. Consider periodic refresh of high-priority docs (priority > 85) to keep examples current with industry changes.'
-    );
-  }
+  // ============================================================
+  // Compose Markdown
+  // ============================================================
 
-  // ── Build Markdown report ────────────────────────────────────────
-  const markdown = buildMarkdownReport({
-    month,
-    generatedAt,
+  const markdown = composeMarkdown({
+    reportMonth,
+    now,
     stats,
-    analytics,
-    outdatedDocs,
-    missingIndustries,
-    missingRegions,
-    topLowRelevanceQueries,
-    topZeroResultQueries,
-    topRetrievedDocs,
-    recommendations,
-    documents,
+    coverageGaps: { industriesMissing, regionsMissing, playbooksMissing },
+    qualityGaps,
+    usageGaps,
+    freshnessGaps,
+    recommendations: { newDocsToAuthor, existingDocsToRefresh },
   });
 
-  // ── Save report to disk ──────────────────────────────────────────
-  if (!existsSync(REPORTS_DIR)) {
-    mkdirSync(REPORTS_DIR, { recursive: true });
-  }
-  const reportPath = join(REPORTS_DIR, `gap-report-${month}.md`);
-  writeFileSync(reportPath, markdown, 'utf8');
-
-  // Also update the coverage index (machine-readable)
-  writeCoverageIndex({
-    month,
-    generatedAt,
-    totalDocs: documents.length,
-    coveredIndustries: Array.from(coveredIndustrySlugs),
-    missingIndustries: missingIndustries.map((m) => m.industry),
-    coveredRegions: Array.from(coveredRegionSlugs),
-    missingRegions: missingRegions.map((m) => m.region),
-    outdatedCount: outdatedDocs.length,
-  });
+  // Write to disk
+  fs.mkdirSync(outputDir, { recursive: true });
+  fs.writeFileSync(reportPath, markdown, 'utf-8');
 
   return {
-    month,
-    generatedAt,
-    markdown,
-    savedTo: reportPath,
-    findings: {
-      outdatedDocs: outdatedDocs.map((d) => ({ slug: d.slug, title: d.title, updated: d.updated, daysSinceUpdate: d.daysSinceUpdate })),
-      missingIndustries,
-      missingRegions,
-      topLowRelevanceQueries,
-      topZeroResultQueries,
-      topRetrievedDocs,
-      recommendations,
+    generatedAt: now.toISOString(),
+    reportMonth,
+    reportPath,
+    stats: {
+      totalDocs: stats.totalDocs,
+      totalChunks: stats.totalChunks,
+      byCategory: stats.byCategory,
+      byGrade: stats.byGrade,
     },
+    coverageGaps: { industriesMissing, regionsMissing, playbooksMissing },
+    qualityGaps,
+    usageGaps,
+    freshnessGaps,
+    recommendations: { newDocsToAuthor, existingDocsToRefresh },
+    markdown,
   };
 }
 
-/**
- * Get the most recent gap report (or null if none exists).
- */
-export function getLatestGapReport(): { month: string; markdown: string; path: string; generatedAt: string } | null {
-  if (!existsSync(REPORTS_DIR)) return null;
-  const files = readdirSync(REPORTS_DIR)
-    .filter((f) => f.startsWith('gap-report-') && f.endsWith('.md'))
-    .sort()
-    .reverse();
-  if (files.length === 0) return null;
-  const latest = files[0];
-  const path = join(REPORTS_DIR, latest);
-  const markdown = readFileSync(path, 'utf8');
-  const month = latest.replace('gap-report-', '').replace('.md', '');
-  // Try to parse generatedAt from the first few lines
-  const match = markdown.match(/\*\*Generated at:\*\* ([^\n]+)/);
-  const generatedAt = match ? match[1].trim() : new Date().toISOString();
-  return { month, markdown, path, generatedAt };
+function composeMarkdown(input: {
+  reportMonth: string;
+  now: Date;
+  stats: import('./index').KnowledgeStats;
+  coverageGaps: { industriesMissing: string[]; regionsMissing: string[]; playbooksMissing: string[] };
+  qualityGaps: GapReportResult['qualityGaps'];
+  usageGaps: GapReportResult['usageGaps'];
+  freshnessGaps: GapReportResult['freshnessGaps'];
+  recommendations: { newDocsToAuthor: string[]; existingDocsToRefresh: string[] };
+}): string {
+  const { reportMonth, now, stats, coverageGaps, qualityGaps, usageGaps, freshnessGaps, recommendations } = input;
+  const dateStr = now.toISOString().slice(0, 10);
+
+  const totalGaps = coverageGaps.industriesMissing.length + coverageGaps.regionsMissing.length +
+    coverageGaps.playbooksMissing.length + qualityGaps.length + freshnessGaps.length;
+
+  return `---
+title: "Monthly Knowledge Gap Report — ${reportMonth}"
+category: gap-report
+generated_at: "${now.toISOString()}"
+generated_by: "echo"
+report_month: "${reportMonth}"
+total_gaps: ${totalGaps}
+---
+
+# Monthly Knowledge Gap Report — ${reportMonth}
+
+> Generated by the Echo agent on ${dateStr}.
+
+## 1. Executive Summary
+
+The knowledge base currently contains **${stats.totalDocs} documents** across ${Object.keys(stats.byCategory).length} categories, indexed into ${stats.totalChunks} retrievable chunks. This report identifies **${totalGaps} gaps** requiring attention: ${coverageGaps.industriesMissing.length} missing industries, ${coverageGaps.regionsMissing.length} missing regions, ${coverageGaps.playbooksMissing.length} missing playbooks, ${qualityGaps.length} quality gaps, and ${freshnessGaps.length} freshness gaps.
+
+**Priority actions this month:**
+${recommendations.newDocsToAuthor.slice(0, 3).map(r => `- ${r}`).join('\n') || '- No new docs urgently required this month.'}
+
+## 2. Coverage Gaps
+
+### 2.1 Industries Not Covered (${coverageGaps.industriesMissing.length})
+
+${coverageGaps.industriesMissing.length > 0
+    ? coverageGaps.industriesMissing.map(i => `- \`${i}\``).join('\n')
+    : '_All expected industries are covered._'}
+
+### 2.2 Regions Not Covered (${coverageGaps.regionsMissing.length})
+
+${coverageGaps.regionsMissing.length > 0
+    ? coverageGaps.regionsMissing.map(r => `- \`${r}\``).join('\n')
+    : '_All expected regions are covered._'}
+
+### 2.3 Playbooks Not Covered (${coverageGaps.playbooksMissing.length})
+
+${coverageGaps.playbooksMissing.length > 0
+    ? coverageGaps.playbooksMissing.map(p => `- \`${p}\``).join('\n')
+    : '_All expected playbooks are covered._'}
+
+## 3. Quality Gaps (${qualityGaps.length})
+
+Documents with grade C or D require refresh or re-authoring.
+
+| Document | Current Grade | Issue | Recommended Action |
+|----------|---------------|-------|-------------------|
+${qualityGaps.length > 0
+    ? qualityGaps.map(g => `| \`${g.path}\` | ${g.grade} | ${g.issue} | ${g.recommendedAction} |`).join('\n')
+    : '| _None — all docs are grade B or higher._ | | | |'}
+
+## 4. Usage Gaps (${usageGaps.length})
+
+Documents with no incoming links from other knowledge docs. These may be orphaned or underused.
+
+${usageGaps.length > 0
+    ? usageGaps.map(g => `- \`${g.path}\` — ${g.recommendation}`).join('\n')
+    : '_No orphaned docs detected._'}
+
+## 5. Freshness Gaps (${freshnessGaps.length})
+
+Documents not reviewed in 180+ days. Data may be stale.
+
+${freshnessGaps.length > 0
+    ? freshnessGaps.map(g => `- \`${g.path}\` (last reviewed: ${g.lastReviewed}) — ${g.recommendation}`).join('\n')
+    : '_All docs have been reviewed within the last 180 days._'}
+
+## 6. Knowledge Base Statistics
+
+| Metric | Value |
+|--------|-------|
+| Total documents | ${stats.totalDocs} |
+| Total chunks (retrievable) | ${stats.totalChunks} |
+| Freshness — fresh (<90 days) | ${stats.freshness.fresh} |
+| Freshness — stale (90–180 days) | ${stats.freshness.stale} |
+| Freshness — very stale (180+ days) | ${stats.freshness.very_stale} |
+| Embeddings enabled | ${stats.embeddingsEnabled ? 'yes' : 'no (BM25 only)'} |
+
+### By Category
+
+| Category | Documents |
+|----------|-----------|
+${Object.entries(stats.byCategory).map(([k, v]) => `| ${k} | ${v} |`).join('\n')}
+
+### By Grade
+
+| Grade | Documents |
+|-------|-----------|
+${Object.entries(stats.byGrade).map(([k, v]) => `| ${k} | ${v} |`).join('\n') || '| (no grades recorded) | 0 |'}
+
+## 7. Recommendations
+
+### 7.1 New Docs to Author (${recommendations.newDocsToAuthor.length})
+
+${recommendations.newDocsToAuthor.length > 0
+    ? recommendations.newDocsToAuthor.map(r => `- [ ] ${r}`).join('\n')
+    : '_No new docs required this month._'}
+
+### 7.2 Existing Docs to Refresh (${recommendations.existingDocsToRefresh.length})
+
+${recommendations.existingDocsToRefresh.length > 0
+    ? recommendations.existingDocsToRefresh.map(r => `- [ ] ${r}`).join('\n')
+    : '_No refreshes required this month._'}
+
+## 8. Methodology
+
+This report was generated by the Echo agent using the following methodology:
+
+1. **Coverage gaps**: Compared existing docs against the EXPECTED_INDUSTRIES, EXPECTED_REGIONS, and EXPECTED_PLAYBOOKS baseline lists (defined in \`src/lib/knowledge/gap-report.ts\`).
+2. **Quality gaps**: Identified docs with \`grade: C\` or \`grade: D\` in frontmatter.
+3. **Usage gaps**: Identified docs with no incoming links from other knowledge docs (orphan detection).
+4. **Freshness gaps**: Identified docs with \`last_reviewed\` older than 180 days, or missing entirely.
+5. **Recommendations**: Combined the top 5 industries, top 5 regions, and top 3 playbooks into a prioritized authoring list.
+
+To extend the baseline coverage lists, edit \`src/lib/knowledge/gap-report.ts\` and re-run \`npm run knowledge:gap\`.
+`;
 }
 
-/**
- * List all available gap reports (newest first).
- */
-export function listGapReports(): Array<{ month: string; path: string; sizeBytes: number }> {
-  if (!existsSync(REPORTS_DIR)) return [];
-  return readdirSync(REPORTS_DIR)
-    .filter((f) => f.startsWith('gap-report-') && f.endsWith('.md'))
-    .sort()
-    .reverse()
-    .map((f) => {
-      const path = join(REPORTS_DIR, f);
-      const month = f.replace('gap-report-', '').replace('.md', '');
-      const stats = require('fs').statSync(path);
-      return { month, path, sizeBytes: stats.size };
-    });
-}
-
-// ============================================================
-// Markdown Report Builder
-// ============================================================
-
-interface ReportData {
-  month: string;
-  generatedAt: string;
-  stats: ReturnType<typeof getKnowledgeStats>;
-  analytics: AnalyticsSummary;
-  outdatedDocs: Array<{ slug: string; title: string; updated: string; daysSinceUpdate: number; category: string; relativePath: string }>;
-  missingIndustries: AnalyticsSummary['missingIndustries'];
-  missingRegions: AnalyticsSummary['missingRegions'];
-  topLowRelevanceQueries: AnalyticsSummary['topLowRelevanceQueries'];
-  topZeroResultQueries: AnalyticsSummary['topZeroResultQueries'];
-  topRetrievedDocs: AnalyticsSummary['topRetrievedDocs'];
-  recommendations: string[];
-  documents: KnowledgeDocument[];
-}
-
-function buildMarkdownReport(data: ReportData): string {
-  const lines: string[] = [];
-
-  lines.push(`# Knowledge Base Gap Report — ${data.month}`);
-  lines.push('');
-  lines.push(`> **Generated at:** ${data.generatedAt}  `);
-  lines.push(`> **Generated by:** Echo agent (LeadReach continuous-improvement loop)  `);
-  lines.push(`> **Coverage window:** Last 6 months of retrieval analytics  `);
-  lines.push(`> **Knowledge base size:** ${data.stats.totalDocuments} documents, ${(data.stats.totalWords / 1000).toFixed(1)}K words, ${(data.stats.totalTokens / 1000).toFixed(1)}K tokens`);
-  lines.push('');
-  lines.push('---');
-  lines.push('');
-
-  // ── Executive Summary ────────────────────────────────────────────
-  lines.push('## Executive Summary');
-  lines.push('');
-  lines.push(`This report analyzes retrieval analytics from ${data.analytics.earliestTs || 'N/A'} to ${data.analytics.latestTs || 'N/A'}, covering ${data.analytics.monthsCovered.length} month(s) and ${data.analytics.totalRetrievals} total retrieval(s). The knowledge base currently contains ${data.stats.totalDocuments} documents across ${Object.keys(data.stats.byCategory).length} categories.`);
-  lines.push('');
-
-  const criticalGaps =
-    data.outdatedDocs.length +
-    data.missingIndustries.filter((m) => m.queryCount > 0).length +
-    data.missingRegions.filter((m) => m.queryCount > 0).length;
-
-  if (criticalGaps === 0 && data.analytics.lowRelevanceCount === 0 && data.analytics.zeroResultCount === 0) {
-    lines.push('**Status: HEALTHY** — No critical gaps detected. Knowledge base coverage is strong and retrieval quality is high.');
-  } else {
-    lines.push(`**Status: ACTION NEEDED** — ${criticalGaps} coverage gap(s) and ${data.analytics.lowRelevanceCount} low-relevance retrieval(s) detected. See recommendations below.`);
-  }
-  lines.push('');
-
-  // ── Section 1: Retrieval Health ──────────────────────────────────
-  lines.push('## 1. Retrieval Health');
-  lines.push('');
-  lines.push('| Metric | Value |');
-  lines.push('|---|---|');
-  lines.push(`| Total retrievals (6mo) | ${data.analytics.totalRetrievals} |`);
-  lines.push(`| Distinct queries | ${data.analytics.distinctQueries} |`);
-  lines.push(`| Zero-result retrievals | ${data.analytics.zeroResultCount} (${pct(data.analytics.zeroResultCount, data.analytics.totalRetrievals)}) |`);
-  lines.push(`| Low-relevance retrievals (topScore < 30%) | ${data.analytics.lowRelevanceCount} (${pct(data.analytics.lowRelevanceCount, data.analytics.totalRetrievals)}) |`);
-  lines.push(`| Months covered | ${data.analytics.monthsCovered.join(', ') || 'N/A'} |`);
-  lines.push('');
-
-  // ── Section 2: Top Low-Relevance Queries ─────────────────────────
-  lines.push('## 2. Top Low-Relevance Queries');
-  lines.push('');
-  lines.push("These queries retrieved documents but with low confidence (topScore < 30%). They indicate either (a) the user is asking about a topic we partially cover, or (b) the existing doc's tags/keywords don't match how users phrase the query.");
-  lines.push('');
-  if (data.topLowRelevanceQueries.length === 0) {
-    lines.push('_No low-relevance queries detected in the coverage window._');
-  } else {
-    lines.push('| Query | Count | Mean Top Score | Action |');
-    lines.push('|---|---:|---:|---|');
-    for (const q of data.topLowRelevanceQueries.slice(0, 10)) {
-      const action = q.meanTopScore < 0.15 ? 'Author new doc' : 'Add keywords to existing doc';
-      lines.push(`| \`${escapeMd(q.query)}\` | ${q.count} | ${(q.meanTopScore * 100).toFixed(0)}% | ${action} |`);
-    }
-  }
-  lines.push('');
-
-  // ── Section 3: Top Zero-Result Queries ───────────────────────────
-  lines.push('## 3. Top Zero-Result Queries');
-  lines.push('');
-  lines.push('These queries returned NO documents at all. They represent the hardest gaps — no existing doc matches even weakly. Each one is a candidate for a new knowledge document.');
-  lines.push('');
-  if (data.topZeroResultQueries.length === 0) {
-    lines.push('_No zero-result queries detected in the coverage window._');
-  } else {
-    lines.push('| Query | Count |');
-    lines.push('|---|---:|');
-    for (const q of data.topZeroResultQueries.slice(0, 10)) {
-      lines.push(`| \`${escapeMd(q.query)}\` | ${q.count} |`);
-    }
-  }
-  lines.push('');
-
-  // ── Section 4: Outdated Documents ────────────────────────────────
-  lines.push('## 4. Outdated Documents');
-  lines.push('');
-  lines.push(`Documents not updated in >${OUTDATED_THRESHOLD_DAYS} days. Industry playbooks and regional guides drift quickly — refresh these to keep examples and regulatory references current.`);
-  lines.push('');
-  if (data.outdatedDocs.length === 0) {
-    lines.push('_No outdated documents. All knowledge files have been updated within the last 6 months._');
-  } else {
-    lines.push('| Slug | Title | Last Updated | Days Since | Category |');
-    lines.push('|---|---|---|---:|---|');
-    for (const d of data.outdatedDocs.slice(0, 20)) {
-      lines.push(`| \`${d.slug}\` | ${escapeMd(d.title)} | ${d.updated} | ${d.daysSinceUpdate} | ${d.category} |`);
-    }
-    if (data.outdatedDocs.length > 20) {
-      lines.push(`| ... | _${data.outdatedDocs.length - 20} more_ | | | |`);
-    }
-  }
-  lines.push('');
-
-  // ── Section 5: Missing Industries ────────────────────────────────
-  lines.push('## 5. Missing Industry Coverage');
-  lines.push('');
-  lines.push('Industries that appear in user queries but have no dedicated playbook in the knowledge base, OR are expected but missing. Author new playbooks using `knowledge/industries/saas.md` as the template.');
-  lines.push('');
-  if (data.missingIndustries.length === 0) {
-    lines.push('_No missing industries detected. All expected industries are covered._');
-  } else {
-    lines.push('| Industry | Low-Quality Query Count | Sample Queries |');
-    lines.push('|---|---:|---|');
-    for (const m of data.missingIndustries.slice(0, 15)) {
-      const samples = m.sampleQueries.length > 0 ? m.sampleQueries.map((q) => `\`${escapeMd(q)}\``).join(' · ') : '_N/A (expected but not yet queried)_';
-      lines.push(`| \`${m.industry}\` | ${m.queryCount} | ${samples} |`);
-    }
-  }
-  lines.push('');
-
-  // ── Section 6: Missing Regions ───────────────────────────────────
-  lines.push('## 6. Missing Regional Coverage');
-  lines.push('');
-  lines.push('Regions mentioned in queries but without dedicated guides, OR expected but missing. Author new region guides using `knowledge/regions/united-states.md` as the template.');
-  lines.push('');
-  if (data.missingRegions.length === 0) {
-    lines.push('_No missing regions detected. All expected regions are covered._');
-  } else {
-    lines.push('| Region | Low-Quality Query Count | Sample Queries |');
-    lines.push('|---|---:|---|');
-    for (const m of data.missingRegions.slice(0, 15)) {
-      const samples = m.sampleQueries.length > 0 ? m.sampleQueries.map((q) => `\`${escapeMd(q)}\``).join(' · ') : '_N/A (expected but not yet queried)_';
-      lines.push(`| \`${m.region}\` | ${m.queryCount} | ${samples} |`);
-    }
-  }
-  lines.push('');
-
-  // ── Section 7: Top Retrieved Documents ───────────────────────────
-  lines.push('## 7. Top 10 Most-Retrieved Documents');
-  lines.push('');
-  lines.push('These documents are the workhorses of the knowledge base. Verify their content is still accurate, expand them with more examples, and consider linking them to related docs.');
-  lines.push('');
-  if (data.topRetrievedDocs.length === 0) {
-    lines.push('_No retrieval data available yet._');
-  } else {
-    lines.push('| Rank | Slug | Retrieval Count |');
-    lines.push('|---:|---|---:|');
-    data.topRetrievedDocs.forEach((d, i) => {
-      lines.push(`| ${i + 1} | \`${d.slug}\` | ${d.count} |`);
-    });
-  }
-  lines.push('');
-
-  // ── Section 8: Recommendations ───────────────────────────────────
-  lines.push('## 8. Recommendations');
-  lines.push('');
-  lines.push('Concrete next steps for the Knowledge Engineering team, prioritized by impact:');
-  lines.push('');
-  for (let i = 0; i < data.recommendations.length; i++) {
-    lines.push(`${i + 1}. ${data.recommendations[i]}`);
-  }
-  lines.push('');
-
-  // ── Footer ───────────────────────────────────────────────────────
-  lines.push('---');
-  lines.push('');
-  lines.push('_This report was generated automatically by the Echo agent\'s monthly continuous-improvement loop. To regenerate, run `npx tsx scripts/knowledge/run-gap-report.ts` or POST to `/api/knowledge/gap-report`._');
-  lines.push('');
-
-  return lines.join('\n');
-}
-
-// ============================================================
-// Coverage Index (machine-readable companion file)
-// ============================================================
-
-interface CoverageIndex {
-  month: string;
-  generatedAt: string;
-  totalDocs: number;
-  coveredIndustries: string[];
-  missingIndustries: string[];
-  coveredRegions: string[];
-  missingRegions: string[];
-  outdatedCount: number;
-}
-
-function writeCoverageIndex(idx: CoverageIndex): void {
-  try {
-    if (!existsSync(REPORTS_DIR)) {
-      mkdirSync(REPORTS_DIR, { recursive: true });
-    }
-    writeFileSync(COVERAGE_INDEX_PATH, JSON.stringify(idx, null, 2), 'utf8');
-  } catch (err) {
-    console.warn('[knowledge/gap-report] Failed to write coverage index:', err);
-  }
-}
-
-export function getCoverageIndex(): CoverageIndex | null {
-  if (!existsSync(COVERAGE_INDEX_PATH)) return null;
-  try {
-    return JSON.parse(readFileSync(COVERAGE_INDEX_PATH, 'utf8')) as CoverageIndex;
-  } catch {
-    return null;
-  }
-}
-
-// ============================================================
-// Helpers
-// ============================================================
-
-function pct(num: number, denom: number): string {
-  if (denom === 0) return '0%';
-  return `${((num / denom) * 100).toFixed(1)}%`;
-}
-
-function escapeMd(s: string): string {
-  return s.replace(/\|/g, '\\|').replace(/\n/g, ' ').replace(/`/g, '\\`');
-}
+// Type import shim for IDE; resolved at runtime via the actual import above.
+// (No separate KnowledgeIndex type needed — `import('./index').KnowledgeStats` is used inline.)

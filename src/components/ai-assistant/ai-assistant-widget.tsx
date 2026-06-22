@@ -81,6 +81,7 @@ const VIEW_LABELS: Record<ViewType, string> = {
   identity: 'Identity',
   icp: 'ICP Builder',
   'ai-assistant': 'AI Assistant',
+  knowledge: 'Knowledge Base',
 };
 
 const SUGGESTED_PROMPTS = [

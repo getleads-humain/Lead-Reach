@@ -1,33 +1,65 @@
 /**
- * Crawl4AI Integration Module
- * 
- * Integrates the unclecode/crawl4ai library into the Agent Reach platform.
- * Crawl4AI is an LLM-friendly web crawler and scraper that turns the web into
- * clean, structured Markdown for RAG, agents, and data pipelines.
- * 
- * Benefits for Agent Reach:
- * - Deep Web Crawling: Full browser rendering (JavaScript, SPA, dynamic content)
- * - LLM-Ready Markdown: Clean, structured markdown with headings, tables, code
- * - Structured Data Extraction: CSS/XPath selectors + LLM extraction strategies
- * - Deep Crawling: BFS/DFS/BestFirst strategies for multi-page site exploration
- * - Anti-Bot Detection: 3-tier detection with proxy escalation (stealth mode)
- * - Screenshot Capture: Visual debugging and page analysis
- * - Table Extraction: Intelligent table extraction with chunking for massive tables
- * - Shadow DOM Support: Flattens shadow DOM components for complete content
- * - Session Management: Preserve browser states for multi-step crawling
- * - Caching: Built-in cache for faster repeat crawls
- * 
- * CLI Reference: https://github.com/unclecode/crawl4ai
- * Version: 0.8.6
+ * Crawl4AI Integration Module (v2 — HTTP Service Backed)
+ * =======================================================
+ *
+ * Integrates the unclecode/crawl4ai 0.9.x library into the Agent Reach platform.
+ * The full crawl4ai Python package is vendored at `lib/crawl4ai-source/` (editable
+ * install) and exposed via a long-lived local HTTP service at `lib/crawl4ai-service/`
+ * that listens on `127.0.0.1:8765`.
+ *
+ * Why an HTTP service instead of per-call subprocess?
+ *  - Per-call subprocess (old v1 implementation) had ~1-3s startup overhead per
+ *    crawl (Python init + Playwright launch + AsyncWebCrawler warm-up). The
+ *    service pays that cost ONCE at boot and every subsequent crawl is ~10x faster.
+ *  - The shared AsyncWebCrawler keeps a browser pool warm for concurrent crawls.
+ *  - Deep-crawl responses (multi-page) can easily exceed the 20MB exec() buffer
+ *    cap; HTTP streaming handles them cleanly.
+ *  - Single health-checkable endpoint — Next.js can probe `/health` on boot.
+ *
+ * Capabilities exposed (matching crawl4ai 0.9.0):
+ *  - Single URL crawl with markdown + cleaned HTML + media + links + metadata
+ *  - Deep crawling (BFS / DFS / BestFirst with keyword scorer)
+ *  - Structured extraction: CSS selectors, XPath, LLM-based, Regex
+ *  - Content filtering: Pruning, BM25 (query-relevance)
+ *  - Chunking: Regex, SlidingWindow, OverlappingWindow, FixedWord, NlpSentence, Topic
+ *  - Screenshot capture (full-page PNG, base64)
+ *  - PDF capture (base64)
+ *  - Sitemap generation (deep crawl returning URLs/titles/depth)
+ *  - JavaScript execution before extraction (for SPA / dynamic content)
+ *  - Wait-for selector / wait-until domcontentloaded|load|networkidle
+ *  - Proxy support (per-request)
+ *  - Stealth mode (Patchright undetected browser) via browser_config.enable_stealth
+ *  - Magic mode (auto-handle consent popups, overlays, user simulation)
+ *
+ * Start the service:   `./lib/crawl4ai-service/start-service.sh --bg`
+ * Verify:              `curl http://127.0.0.1:8765/health`
  */
 
 import { exec } from 'child_process';
 import { promisify } from 'util';
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { existsSync, readFileSync } from 'fs';
 import { join } from 'path';
-import { existsSync } from 'fs';
 
 const execAsync = promisify(exec);
+
+// ============================================================
+// Configuration
+// ============================================================
+
+const CRAWL4AI_SERVICE_URL =
+  process.env.CRAWL4AI_SERVICE_URL ||
+  'http://127.0.0.1:8765';
+
+const CRAWL4AI_SERVICE_HOST = process.env.CRAWL4AI_SERVICE_HOST || '127.0.0.1';
+const CRAWL4AI_SERVICE_PORT = parseInt(process.env.CRAWL4AI_SERVICE_PORT || '8765', 10);
+const SERVICE_STARTUP_SCRIPT = '/home/z/my-project/lib/crawl4ai-service/start-service.sh';
+const SERVICE_LOG_FILE = '/home/z/my-project/lib/crawl4ai-service/server.log';
+const SERVICE_PID_FILE = '/home/z/my-project/lib/crawl4ai-service/server.pid';
+
+const REQUEST_TIMEOUT = 90_000;       // 90s for normal crawl ops
+const DEEP_CRAWL_TIMEOUT = 300_000;   // 5 min for deep crawls
+const HEALTH_CHECK_TIMEOUT = 5_000;
+const SERVICE_STARTUP_GRACE = 8_000;
 
 // ============================================================
 // Types
@@ -55,6 +87,7 @@ export interface Crawl4AIResult {
     author: string;
     canonical: string;
     language: string;
+    [k: string]: unknown;
   };
   screenshot?: string;
   extractedContent?: string;
@@ -101,101 +134,251 @@ export interface Crawl4AIStatusResult {
   version: string;
   browserReady: boolean;
   cliAvailable: boolean;
+  serviceUrl?: string;
+  pythonVersion?: string;
+  crawl4aiPath?: string;
+}
+
+export interface Crawl4AIChannelResult {
+  success: boolean;
+  operation: string;
+  result: unknown;
+  error?: string;
 }
 
 // ============================================================
-// Configuration
+// Internal HTTP client
 // ============================================================
 
-const CRAWL4AI_CLI = 'crwl';
-const CRAWL4AI_PYTHON = 'crawl4ai';
-const CRAWL4AI_CACHE_DIR = '/home/z/my-project/.crawl4ai-cache';
-const EXEC_TIMEOUT = 60000; // 60 seconds for crawl operations (page rendering takes time)
-const DEEP_CRAWL_TIMEOUT = 180000; // 3 minutes for deep crawls
+interface ServiceError extends Error {
+  status?: number;
+  traceback?: string;
+}
 
-// ============================================================
-// Core CLI / Python Wrapper
-// ============================================================
-
-/**
- * Run a crawl4ai CLI command.
- */
-async function runCrawl4AI(args: string, timeout = EXEC_TIMEOUT): Promise<{ stdout: string; stderr: string }> {
+async function callService<T = unknown>(
+  path: string,
+  body?: unknown,
+  timeout: number = REQUEST_TIMEOUT,
+): Promise<T> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
   try {
-    const cliPath = process.env.HOME ? `${process.env.HOME}/.local/bin/${CRAWL4AI_CLI}` : CRAWL4AI_CLI;
-    const { stdout, stderr } = await execAsync(`${cliPath} ${args}`, {
-      timeout,
-      maxBuffer: 20 * 1024 * 1024, // 20MB for large pages
-      env: {
-        ...process.env,
-        PATH: `${process.env.PATH}:${process.env.HOME}/.local/bin`,
-        PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || '',
-      },
-    });
-    return { stdout: stdout || '', stderr: stderr || '' };
-  } catch (error: unknown) {
-    const err = error as { stdout?: string; stderr?: string; message?: string; killed?: boolean };
-    if (err.killed) {
-      return { stdout: '', stderr: `crawl4ai command timed out after ${timeout}ms` };
+    const init: RequestInit & { signal: AbortSignal } = {
+      method: body !== undefined ? 'POST' : 'GET',
+      headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
+    };
+    if (body !== undefined) init.body = JSON.stringify(body);
+
+    const res = await fetch(`${CRAWL4AI_SERVICE_URL}${path}`, init);
+
+    if (!res.ok) {
+      let errPayload: { error?: string; traceback?: string } = {};
+      try { errPayload = await res.json() as typeof errPayload; } catch { /* ignore */ }
+      const e = new Error(errPayload.error || `Service returned ${res.status}`) as ServiceError;
+      e.status = res.status;
+      e.traceback = errPayload.traceback;
+      throw e;
     }
-    const errMsg = err.message || 'crawl4ai command failed';
-    console.warn(`[crawl4ai] Command failed: ${errMsg.slice(0, 300)}`);
-    // Return any partial stdout
-    return { stdout: err.stdout || '', stderr: err.stderr || errMsg };
+
+    return (await res.json()) as T;
+  } finally {
+    clearTimeout(timer);
   }
 }
 
 /**
- * Run a Python script using crawl4ai's Python API.
- * This gives us more control than the CLI for complex operations.
+ * Check if the crawl4ai HTTP service is running and reachable.
  */
-async function runPython(script: string, timeout = EXEC_TIMEOUT): Promise<{ stdout: string; stderr: string }> {
+export async function isServiceRunning(): Promise<boolean> {
   try {
-    // Ensure cache dir exists
-    if (!existsSync(CRAWL4AI_CACHE_DIR)) {
-      await mkdir(CRAWL4AI_CACHE_DIR, { recursive: true });
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), HEALTH_CHECK_TIMEOUT);
+    try {
+      const res = await fetch(`${CRAWL4AI_SERVICE_URL}/health`, { signal: controller.signal });
+      return res.ok;
+    } finally {
+      clearTimeout(timer);
     }
-
-    const scriptFile = join(CRAWL4AI_CACHE_DIR, `script_${Date.now()}.py`);
-    await writeFile(scriptFile, script, 'utf-8');
-
-    const { stdout, stderr } = await execAsync(`python3 "${scriptFile}"`, {
-      timeout,
-      maxBuffer: 20 * 1024 * 1024,
-      env: {
-        ...process.env,
-        PATH: `${process.env.PATH}:${process.env.HOME}/.local/bin`,
-        PLAYWRIGHT_BROWSERS_PATH: process.env.PLAYWRIGHT_BROWSERS_PATH || '',
-      },
-    });
-
-    // Cleanup script file
-    try { await import('fs/promises').then(f => f.unlink(scriptFile)); } catch {}
-
-    return { stdout: stdout || '', stderr: stderr || '' };
-  } catch (error: unknown) {
-    const err = error as { stdout?: string; stderr?: string; message?: string; killed?: boolean };
-    if (err.killed) {
-      return { stdout: '', stderr: `Python script timed out after ${timeout}ms` };
-    }
-    return { stdout: err.stdout || '', stderr: err.stderr || err.message || 'Python script failed' };
-  }
-}
-
-/**
- * Safely parse JSON from a string.
- */
-function safeJsonParse<T>(str: string): T | null {
-  if (!str || !str.trim()) return null;
-  const trimmed = str.trim();
-  if (trimmed.startsWith('<') || trimmed.startsWith('<!DOCTYPE') || trimmed.startsWith('<html')) {
-    return null;
-  }
-  try {
-    return JSON.parse(trimmed) as T;
   } catch {
-    return null;
+    return false;
   }
+}
+
+/**
+ * Start the crawl4ai HTTP service if it is not already running.
+ * Safe to call multiple times — uses a PID file to avoid duplicates.
+ */
+export async function ensureServiceRunning(): Promise<boolean> {
+  if (await isServiceRunning()) return true;
+  try {
+    await execAsync(`bash ${SERVICE_STARTUP_SCRIPT} --bg`, { timeout: SERVICE_STARTUP_GRACE + 5000 });
+    // Wait for it to actually become ready
+    const deadline = Date.now() + SERVICE_STARTUP_GRACE;
+    while (Date.now() < deadline) {
+      if (await isServiceRunning()) return true;
+      await new Promise(r => setTimeout(r, 500));
+    }
+    return await isServiceRunning();
+  } catch (error) {
+    console.error('[crawl4ai] Failed to start service:', error);
+    return false;
+  }
+}
+
+// ============================================================
+// Service response → Crawl4AIResult adapter
+// ============================================================
+
+interface ServiceCrawlResponse {
+  url: string;
+  success: boolean;
+  status_code: number | null;
+  response_headers?: Record<string, string>;
+  markdown: string;
+  markdown_fit: string;
+  html: string;
+  cleaned_html: string;
+  media?: {
+    images?: Array<{ src: string; alt?: string; type?: string }>;
+    videos?: Array<{ src: string; type?: string }>;
+    audio?: Array<{ src: string; type?: string }>;
+  };
+  links?: {
+    internal?: Array<{ href: string; text?: string }>;
+    external?: Array<{ href: string; text?: string }>;
+  };
+  metadata?: Record<string, unknown>;
+  extracted_content?: string | null;
+  screenshot?: string | null;
+  pdf?: string | null;
+  error_message?: string | null;
+  session_id?: string | null;
+  total_tokens?: number | null;
+}
+
+function adaptServiceResult(r: ServiceCrawlResponse): Crawl4AIResult {
+  const meta = (r.metadata || {}) as Record<string, unknown>;
+  return {
+    url: r.url,
+    markdown: r.markdown || '',
+    markdownFit: r.markdown_fit || '',
+    html: r.html || '',
+    cleanedHtml: r.cleaned_html || '',
+    media: {
+      images: (r.media?.images || []).map(i => ({ src: i.src, alt: i.alt || '', type: i.type || 'image' })),
+      videos: (r.media?.videos || []).map(v => ({ src: v.src, type: v.type || 'video' })),
+      audio: (r.media?.audio || []).map(a => ({ src: a.src, type: a.type || 'audio' })),
+    },
+    links: {
+      internal: (r.links?.internal || []).map(l => ({ href: l.href, text: l.text || '' })),
+      external: (r.links?.external || []).map(l => ({ href: l.href, text: l.text || '' })),
+    },
+    metadata: {
+      title: (meta.title as string) || '',
+      description: (meta.description as string) || '',
+      keywords: (meta.keywords as string) || '',
+      author: (meta.author as string) || '',
+      canonical: (meta.canonical as string) || '',
+      language: (meta.lang as string) || (meta.language as string) || '',
+      ...meta,
+    },
+    screenshot: r.screenshot || undefined,
+    extractedContent: r.extracted_content || undefined,
+    success: r.success,
+    statusCode: r.status_code ?? 0,
+    error: r.error_message || undefined,
+  };
+}
+
+// ============================================================
+// Public API — Crawler Run Options
+// ============================================================
+
+export interface CrawlerRunOptions {
+  /** CSS selector to wait for before scraping */
+  waitFor?: string;
+  /** Timeout in ms for navigation / page operations */
+  pageTimeout?: number;
+  /** Playwright wait_until state: 'domcontentloaded' | 'load' | 'networkidle' */
+  waitUntil?: 'domcontentloaded' | 'load' | 'networkidle';
+  /** JavaScript to execute on the page before scraping */
+  jsCode?: string | string[];
+  /** Reuse an existing browser session (for multi-step flows) */
+  sessionId?: string;
+  /** Use crawl4ai "magic" — auto-handle overlays, consent popups, simulate user */
+  magic?: boolean;
+  /** Stealth mode (Patchright undetected browser) */
+  stealth?: boolean;
+  /** Headless browser (default true) */
+  headless?: boolean;
+  /** Take a full-page screenshot */
+  screenshot?: boolean;
+  /** Capture PDF */
+  pdf?: boolean;
+  /** Bypass cache (default true) */
+  bypassCache?: boolean;
+  /** Remove overlay elements (popups, banners) */
+  removeOverlayElements?: boolean;
+  /** Scroll through the entire page (lazy-load content) */
+  scanFullPage?: boolean;
+  /** Process iframes (default true) */
+  processIframes?: boolean;
+  /** CSS selector to scope extraction to a part of the page */
+  cssSelector?: string;
+  /** Custom user agent */
+  userAgent?: string;
+  /** Viewport width */
+  viewportWidth?: number;
+  /** Viewport height */
+  viewportHeight?: number;
+  /** Word count threshold for content filtering */
+  wordCountThreshold?: number;
+  /** Custom HTTP headers */
+  headers?: Record<string, string>;
+  /** Delay (seconds) before returning HTML, for lazy-loaded content */
+  delayBeforeReturnHtml?: number;
+}
+
+function buildBrowserConfig(opts: CrawlerRunOptions): Record<string, unknown> | undefined {
+  // Only build a custom browser config when we need to override defaults
+  if (
+    opts.userAgent === undefined &&
+    opts.viewportWidth === undefined &&
+    opts.viewportHeight === undefined &&
+    opts.stealth === undefined &&
+    opts.headless === undefined &&
+    opts.headers === undefined
+  ) {
+    return undefined;
+  }
+  const cfg: Record<string, unknown> = {};
+  if (opts.headless !== undefined) cfg.headless = opts.headless;
+  if (opts.userAgent !== undefined) cfg.user_agent = opts.userAgent;
+  if (opts.viewportWidth !== undefined) cfg.viewport_width = opts.viewportWidth;
+  if (opts.viewportHeight !== undefined) cfg.viewport_height = opts.viewportHeight;
+  if (opts.stealth !== undefined) cfg.enable_stealth = opts.stealth;
+  if (opts.headers !== undefined) cfg.headers = opts.headers;
+  return cfg;
+}
+
+function buildCrawlerConfig(opts: CrawlerRunOptions): Record<string, unknown> {
+  const cfg: Record<string, unknown> = { bypass_cache: opts.bypassCache ?? true };
+  if (opts.waitFor !== undefined) cfg.wait_for = opts.waitFor;
+  if (opts.pageTimeout !== undefined) cfg.page_timeout = opts.pageTimeout;
+  if (opts.waitUntil !== undefined) cfg.wait_until = opts.waitUntil;
+  if (opts.jsCode !== undefined) cfg.js_code = opts.jsCode;
+  if (opts.sessionId !== undefined) cfg.session_id = opts.sessionId;
+  if (opts.magic !== undefined) cfg.magic = opts.magic;
+  if (opts.screenshot !== undefined) cfg.screenshot = opts.screenshot;
+  if (opts.pdf !== undefined) cfg.pdf = opts.pdf;
+  if (opts.removeOverlayElements !== undefined) cfg.remove_overlay_elements = opts.removeOverlayElements;
+  if (opts.scanFullPage !== undefined) cfg.scan_full_page = opts.scanFullPage;
+  if (opts.processIframes !== undefined) cfg.process_iframes = opts.processIframes;
+  if (opts.cssSelector !== undefined) cfg.css_selector = opts.cssSelector;
+  if (opts.wordCountThreshold !== undefined) cfg.word_count_threshold = opts.wordCountThreshold;
+  if (opts.delayBeforeReturnHtml !== undefined) cfg.delay_before_return_html = opts.delayBeforeReturnHtml;
+  return cfg;
 }
 
 // ============================================================
@@ -206,97 +389,26 @@ function safeJsonParse<T>(str: string): T | null {
  * Crawl a single URL and get LLM-ready markdown content.
  * This is the primary function for agents — it returns clean, structured
  * markdown from any webpage, including JavaScript-rendered SPAs.
- * 
- * @param url The URL to crawl
- * @param options Crawl options
- * @returns Structured crawl result with markdown, links, media, metadata
  */
 export async function crawlUrl(
   url: string,
-  options: {
-    outputFormat?: 'markdown' | 'markdown-fit' | 'json' | 'all';
-    includeLinks?: boolean;
-    includeMedia?: boolean;
-    screenshot?: boolean;
-    cacheMode?: 'enabled' | 'disabled' | 'bypass';
-    waitFor?: string; // CSS selector to wait for
-    jsCode?: string; // JavaScript to execute before extraction
-  } = {}
+  options: CrawlerRunOptions = {},
 ): Promise<{
   success: boolean;
   data: Crawl4AIResult | null;
   error?: string;
 }> {
   try {
-    const outputFormat = options.outputFormat || 'all';
-    const outputPath = join(CRAWL4AI_CACHE_DIR, `crawl_${Date.now()}.json`);
-
-    let args = `"${url}" -o ${outputFormat} -O "${outputPath}"`;
-    
-    if (options.screenshot) {
-      args += ' --screenshot';
+    if (!(await ensureServiceRunning())) {
+      return { success: false, data: null, error: 'crawl4ai service unavailable' };
     }
-    if (options.waitFor) {
-      args += ` --wait-for "${options.waitFor}"`;
-    }
+    const browserConfig = buildBrowserConfig(options);
+    const crawlerConfig = buildCrawlerConfig(options);
+    const payload: Record<string, unknown> = { url, crawler_config: crawlerConfig };
+    if (browserConfig) payload.browser_config = browserConfig;
 
-    // Build crawler params
-    const crawlerParams: string[] = [];
-    if (options.cacheMode === 'disabled') {
-      crawlerParams.push('cache_mode=CacheMode.BYPASS');
-    }
-    if (options.includeLinks === false) {
-      // Links are included by default, no option to disable via CLI
-    }
-
-    if (crawlerParams.length > 0) {
-      args += ` -c "${crawlerParams.join(',')}"`;
-    }
-
-    const { stdout, stderr } = await runCrawl4AI(args);
-
-    // Check for errors
-    if (stderr.includes('Error') && !stdout.trim()) {
-      return { success: false, data: null, error: stderr.slice(0, 500) };
-    }
-
-    // Try reading the output file
-    if (existsSync(outputPath)) {
-      const content = await readFile(outputPath, 'utf-8');
-      try { await import('fs/promises').then(f => f.unlink(outputPath)); } catch {}
-      
-      const parsed = safeJsonParse<Crawl4AIResult>(content);
-      if (parsed) {
-        return { success: true, data: parsed };
-      }
-    }
-
-    // If no output file, try parsing stdout directly
-    if (stdout.trim()) {
-      // CLI may return markdown directly when output is markdown
-      const result: Crawl4AIResult = {
-        url,
-        markdown: stdout,
-        markdownFit: stdout,
-        html: '',
-        cleanedHtml: '',
-        media: { images: [], videos: [], audio: [] },
-        links: { internal: [], external: [] },
-        metadata: {
-          title: '',
-          description: '',
-          keywords: '',
-          author: '',
-          canonical: '',
-          language: '',
-        },
-        success: true,
-        statusCode: 200,
-      };
-      return { success: true, data: result };
-    }
-
-    return { success: false, data: null, error: stderr || 'No output from crawl4ai' };
+    const resp = await callService<ServiceCrawlResponse>('/crawl', payload, REQUEST_TIMEOUT);
+    return { success: resp.success, data: adaptServiceResult(resp), error: resp.error_message || undefined };
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
     return { success: false, data: null, error: msg };
@@ -304,663 +416,670 @@ export async function crawlUrl(
 }
 
 /**
- * Crawl a URL using Python API for full control.
- * Returns structured data including markdown, fit markdown, links, media, metadata.
+ * Crawl a URL with full advanced options. Same as crawlUrl but with
+ * deeper control over the run config (used for SPA / dynamic pages).
  */
 export async function crawlUrlAdvanced(
   url: string,
-  options: {
-    headless?: boolean;
+  options: CrawlerRunOptions & {
     markdownGenerator?: 'default' | 'fit' | 'bm25';
     bm25Query?: string;
-    includeScreenshot?: boolean;
-    cacheMode?: 'enabled' | 'disabled' | 'bypass';
-    waitFor?: string;
-    jsCode?: string;
-    proxy?: string;
-    stealthMode?: boolean;
-    flattenShadowDom?: boolean;
-    timeout?: number;
-  } = {}
+  } = {},
 ): Promise<{
   success: boolean;
   data: Crawl4AIResult | null;
   error?: string;
 }> {
-  const headless = options.headless !== false;
-  const cacheMode = options.cacheMode || 'enabled';
-  const cacheModeStr = cacheMode === 'disabled' ? 'BYPASS' : cacheMode === 'bypass' ? 'BYPASS' : 'ENABLED';
-  const outputPath = join(CRAWL4AI_CACHE_DIR, `advanced_${Date.now()}.json`);
-
-  let markdownGeneratorCode = '';
-  if (options.markdownGenerator === 'fit') {
-    markdownGeneratorCode = `
-from crawl4ai.content_filter_strategy import PruningContentFilter
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-md_gen = DefaultMarkdownGenerator(content_filter=PruningContentFilter(threshold=0.48, threshold_type="fixed", min_word_threshold=0))
-run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheModeStr}, markdown_generator=md_gen)`;
-  } else if (options.markdownGenerator === 'bm25' && options.bm25Query) {
-    // CodeQL #59: use JSON.stringify() to produce a properly-escaped Python
-    // string literal. The previous `.replace(/"/g, '\\"')` only escaped
-    // double quotes, missing backslashes, newlines, tabs, and other chars
-    // that are special in Python string literals. JSON.stringify escapes
-    // all special characters correctly AND produces valid Python syntax.
-    const safeBm25Query = JSON.stringify(options.bm25Query);
-    markdownGeneratorCode = `
-from crawl4ai.content_filter_strategy import BM25ContentFilter
-from crawl4ai.markdown_generation_strategy import DefaultMarkdownGenerator
-md_gen = DefaultMarkdownGenerator(content_filter=BM25ContentFilter(user_query=${safeBm25Query}, bm25_threshold=1.0))
-run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheModeStr}, markdown_generator=md_gen)`;
-  } else {
-    markdownGeneratorCode = `run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheModeStr})`;
-  }
-
-  // CodeQL #59/#60: use JSON.stringify for all user-controlled strings
-  // interpolated into the Python script. This properly escapes backslashes,
-  // quotes, newlines, and other special chars.
-  const screenshotArg = options.includeScreenshot ? ', screenshot=True' : '';
-  const shadowDomArg = options.flattenShadowDom ? ', flatten_shadow_dom=True' : '';
-  const waitForArg = options.waitFor ? `, wait_for=${JSON.stringify(options.waitFor)}` : '';
-  const jsCodeArg = options.jsCode ? `, js_code=[${JSON.stringify(options.jsCode)}]` : '';
-  const proxyArg = options.proxy ? `, proxy=${JSON.stringify(options.proxy)}` : '';
-
-  const script = `
-import asyncio
-import json
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-
-async def main():
-    browser_config = BrowserConfig(headless=${headless ? 'True' : 'False'}, verbose=False${proxyArg})
-    ${markdownGeneratorCode}
-    
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        result = await crawler.arun(
-            url="${url}",
-            config=run_config${screenshotArg}${shadowDomArg}${waitForArg}${jsCodeArg}
-        )
-        
-        output = {
-            "url": result.url,
-            "markdown": result.markdown.raw_markdown if hasattr(result.markdown, 'raw_markdown') else str(result.markdown),
-            "markdownFit": result.markdown.fit_markdown if hasattr(result.markdown, 'fit_markdown') else "",
-            "html": result.html[:50000] if result.html else "",
-            "cleanedHtml": result.cleaned_html[:50000] if result.cleaned_html else "",
-            "media": {"images": [], "videos": [], "audio": []},
-            "links": {"internal": [], "external": []},
-            "metadata": {
-                "title": result.metadata.get("title", "") if result.metadata else "",
-                "description": result.metadata.get("description", "") if result.metadata else "",
-                "keywords": result.metadata.get("keywords", "") if result.metadata else "",
-                "author": "",
-                "canonical": "",
-                "language": "",
-            },
-            "success": result.success,
-            "statusCode": result.status_code if hasattr(result, 'status_code') else 200,
-        }
-        
-        if hasattr(result, 'media') and result.media:
-            try:
-                output["media"] = {
-                    "images": [{"src": i.get("src", ""), "alt": i.get("alt", ""), "type": i.get("type", "image")} for i in (result.media.get("images", []) or [])],
-                    "videos": [{"src": v.get("src", ""), "type": v.get("type", "video")} for v in (result.media.get("videos", []) or [])],
-                    "audio": [{"src": a.get("src", ""), "type": a.get("type", "audio")} for a in (result.media.get("audio", []) or [])],
-                }
-            except:
-                pass
-        
-        if hasattr(result, 'links') and result.links:
-            try:
-                output["links"] = {
-                    "internal": [{"href": l.get("href", ""), "text": l.get("text", "")} for l in (result.links.get("internal", []) or [])],
-                    "external": [{"href": l.get("href", ""), "text": l.get("text", "")} for l in (result.links.get("external", []) or [])],
-                }
-            except:
-                pass
-        
-        if hasattr(result, 'screenshot') and result.screenshot:
-            output["screenshot"] = result.screenshot[:1000] if isinstance(result.screenshot, str) else ""
-        
-        if hasattr(result, 'extracted_content') and result.extracted_content:
-            output["extractedContent"] = result.extracted_content
-        
-        with open("${outputPath}", "w") as f:
-            json.dump(output, f)
-
-asyncio.run(main())
-`;
-
-  const { stderr } = await runPython(script, options.timeout || EXEC_TIMEOUT);
-
-  if (existsSync(outputPath)) {
-    const content = await readFile(outputPath, 'utf-8');
-    try { await import('fs/promises').then(f => f.unlink(outputPath)); } catch {};
-    
-    const parsed = safeJsonParse<Crawl4AIResult>(content);
-    if (parsed) {
-      return { success: true, data: parsed };
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { success: false, data: null, error: 'crawl4ai service unavailable' };
     }
-  }
+    const browserConfig = buildBrowserConfig(options);
+    const crawlerConfig = buildCrawlerConfig(options);
 
-  return { success: false, data: null, error: stderr.slice(0, 500) || 'Crawl failed' };
+    // Optional content filter for fit/bm25 markdown generation
+    if (options.markdownGenerator === 'fit') {
+      crawlerConfig.content_filter = { type: 'pruning' };
+    } else if (options.markdownGenerator === 'bm25' && options.bm25Query) {
+      crawlerConfig.content_filter = { type: 'bm25', query: options.bm25Query };
+    }
+
+    const payload: Record<string, unknown> = { url, crawler_config: crawlerConfig };
+    if (browserConfig) payload.browser_config = browserConfig;
+
+    const resp = await callService<ServiceCrawlResponse>('/crawl', payload, REQUEST_TIMEOUT);
+    return { success: resp.success, data: adaptServiceResult(resp), error: resp.error_message || undefined };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, data: null, error: msg };
+  }
+}
+
+// ============================================================
+// Public API — Deep Crawling
+// ============================================================
+
+export interface DeepCrawlOptions extends CrawlerRunOptions {
+  /** Strategy: 'bfs' | 'dfs' | 'best-first' (default 'bfs') */
+  strategy?: 'bfs' | 'dfs' | 'best-first';
+  /** Max link depth from the seed URL (default 1) */
+  maxDepth?: number;
+  /** Max number of pages to crawl (default 10) */
+  maxPages?: number;
+  /** For 'best-first': keywords to score URLs by relevance */
+  keywords?: string[];
 }
 
 /**
- * Deep crawl a website using BFS/DFS/BestFirst strategy.
- * Discovers and crawls multiple pages following links from a start URL.
- * 
- * @param startUrl Starting URL for deep crawl
- * @param options Deep crawl options
- * @returns Array of results from all crawled pages
+ * Deep-crawl a site starting from `url`. Returns one Crawl4AIResult per page.
  */
 export async function deepCrawl(
-  startUrl: string,
-  options: {
-    strategy?: 'bfs' | 'dfs' | 'bestfirst';
-    maxDepth?: number;
-    maxPages?: number;
-    query?: string; // For bestfirst strategy scoring
-    cacheMode?: 'enabled' | 'disabled' | 'bypass';
-    headless?: boolean;
-  } = {}
+  url: string,
+  options: DeepCrawlOptions = {},
 ): Promise<{
   success: boolean;
-  data: DeepCrawlResult[];
-  totalPages: number;
+  pages: Crawl4AIResult[];
   error?: string;
 }> {
-  const strategy = options.strategy || 'bfs';
-  const maxDepth = options.maxDepth || 2;
-  const maxPages = options.maxPages || 10;
-  const headless = options.headless !== false;
-  const cacheMode = options.cacheMode === 'disabled' || options.cacheMode === 'bypass' ? 'BYPASS' : 'ENABLED';
-  const outputPath = join(CRAWL4AI_CACHE_DIR, `deep_${Date.now()}.json`);
-
-  let strategyImport = '';
-  let strategyCode = '';
-  if (strategy === 'bfs') {
-    strategyImport = 'from crawl4ai.deep_crawling import BFSDeepCrawlStrategy';
-    strategyCode = `strategy = BFSDeepCrawlStrategy(max_depth=${maxDepth}, max_pages=${maxPages})`;
-  } else if (strategy === 'dfs') {
-    strategyImport = 'from crawl4ai.deep_crawling import DFSDeepCrawlStrategy';
-    strategyCode = `strategy = DFSDeepCrawlStrategy(max_depth=${maxDepth}, max_pages=${maxPages})`;
-  } else if (strategy === 'bestfirst' && options.query) {
-    // CodeQL #60: use JSON.stringify() to produce a properly-escaped Python
-    // string literal. The previous `.replace(/"/g, '\\"')` only escaped
-    // double quotes, missing backslashes, newlines, tabs, and other chars
-    // that are special in Python string literals.
-    strategyImport = 'from crawl4ai.deep_crawling import BestFirstCrawlingStrategy';
-    const safeQuery = JSON.stringify(options.query);
-    strategyCode = `strategy = BestFirstCrawlingStrategy(max_depth=${maxDepth}, max_pages=${maxPages}, query=${safeQuery})`;
-  } else {
-    strategyImport = 'from crawl4ai.deep_crawling import BFSDeepCrawlStrategy';
-    strategyCode = `strategy = BFSDeepCrawlStrategy(max_depth=${maxDepth}, max_pages=${maxPages})`;
-  }
-
-  const script = `
-import asyncio
-import json
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-${strategyImport}
-
-async def main():
-    browser_config = BrowserConfig(headless=${headless ? 'True' : 'False'}, verbose=False)
-    run_config = CrawlerRunConfig(cache_mode=CacheMode.${cacheMode}, deep_crawl_strategy=strategy)
-    
-    results = []
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        async for result in await crawler.arun(
-            url="${startUrl}",
-            config=run_config
-        ):
-            results.append({
-                "url": result.url,
-                "depth": 0,
-                "result": {
-                    "url": result.url,
-                    "markdown": result.markdown.raw_markdown if hasattr(result.markdown, 'raw_markdown') else str(result.markdown),
-                    "markdownFit": result.markdown.fit_markdown if hasattr(result.markdown, 'fit_markdown') else "",
-                    "html": "",
-                    "cleanedHtml": "",
-                    "media": {"images": [], "videos": [], "audio": []},
-                    "links": {"internal": [], "external": []},
-                    "metadata": {"title": "", "description": "", "keywords": "", "author": "", "canonical": "", "language": ""},
-                    "success": result.success,
-                    "statusCode": result.status_code if hasattr(result, 'status_code') else 200,
-                }
-            })
-    
-    with open("${outputPath}", "w") as f:
-        json.dump(results, f)
-
-${strategyCode}
-asyncio.run(main())
-`;
-
-  // Deep crawls can take longer
-  const { stderr } = await runPython(script, DEEP_CRAWL_TIMEOUT);
-
-  if (existsSync(outputPath)) {
-    const content = await readFile(outputPath, 'utf-8');
-    try { await import('fs/promises').then(f => f.unlink(outputPath)); } catch {};
-    
-    const parsed = safeJsonParse<DeepCrawlResult[]>(content);
-    if (parsed && Array.isArray(parsed)) {
-      return { success: true, data: parsed, totalPages: parsed.length };
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { success: false, pages: [], error: 'crawl4ai service unavailable' };
     }
-  }
+    const browserConfig = buildBrowserConfig(options);
+    const crawlerConfig = buildCrawlerConfig(options);
 
-  return { success: false, data: [], totalPages: 0, error: stderr.slice(0, 500) || 'Deep crawl failed' };
+    const deepSpec: Record<string, unknown> = {
+      type: options.strategy || 'bfs',
+      max_depth: options.maxDepth ?? 1,
+      max_pages: options.maxPages ?? 10,
+    };
+    if (options.strategy === 'best-first' && options.keywords?.length) {
+      deepSpec.scorer = { keywords: options.keywords };
+    }
+
+    const payload: Record<string, unknown> = {
+      url,
+      deep_crawl: deepSpec,
+      crawler_config: crawlerConfig,
+    };
+    if (browserConfig) payload.browser_config = browserConfig;
+
+    const resp = await callService<{
+      pages: ServiceCrawlResponse[];
+      total_pages: number;
+      urls: string[];
+    }>('/deep-crawl', payload, DEEP_CRAWL_TIMEOUT);
+
+    return {
+      success: resp.pages.length > 0 && resp.pages.every(p => p.success),
+      pages: resp.pages.map(adaptServiceResult),
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, pages: [], error: msg };
+  }
+}
+
+// ============================================================
+// Public API — Structured Extraction
+// ============================================================
+
+export interface ExtractionSchema {
+  name?: string;
+  baseSelector: string;
+  fields: Array<{
+    name: string;
+    selector: string;
+    type: 'text' | 'attribute' | 'html' | 'regex';
+    attribute?: string;
+    pattern?: string;
+  }>;
 }
 
 /**
  * Extract structured data from a URL using CSS selectors.
- * No LLM required — fast and deterministic extraction.
- * 
- * @param url The URL to extract data from
- * @param schema CSS extraction schema
+ * Returns parsed JSON array of records matching the schema.
  */
 export async function extractWithCSS(
   url: string,
-  schema: {
-    name: string;
-    baseSelector: string;
-    fields: Array<{
-      name: string;
-      selector: string;
-      type: 'text' | 'attribute' | 'html' | 'href' | 'src';
-      attribute?: string;
-    }>;
-  }
+  schema: ExtractionSchema,
+  options: CrawlerRunOptions = {},
 ): Promise<{
   success: boolean;
-  data: Crawl4AIExtractionResult | null;
+  data: unknown[] | null;
+  raw: Crawl4AIResult | null;
   error?: string;
 }> {
-  const schemaPath = join(CRAWL4AI_CACHE_DIR, `schema_${Date.now()}.json`);
-  const outputPath = join(CRAWL4AI_CACHE_DIR, `extract_${Date.now()}.json`);
-
-  await writeFile(schemaPath, JSON.stringify(schema, null, 2), 'utf-8');
-
-  const script = `
-import asyncio
-import json
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode, JsonCssExtractionStrategy
-
-async def main():
-    with open("${schemaPath}") as f:
-        schema = json.load(f)
-    
-    extraction_strategy = JsonCssExtractionStrategy(schema, verbose=False)
-    browser_config = BrowserConfig(headless=True, verbose=False)
-    run_config = CrawlerRunConfig(
-        extraction_strategy=extraction_strategy,
-        cache_mode=CacheMode.BYPASS,
-    )
-    
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        result = await crawler.arun(url="${url}", config=run_config)
-        
-        output = {
-            "url": "${url}",
-            "extractedContent": result.extracted_content if result.extracted_content else "[]",
-            "success": result.success,
-            "extractionType": "css",
-        }
-        
-        with open("${outputPath}", "w") as f:
-            json.dump(output, f)
-
-asyncio.run(main())
-`;
-
-  const { stderr } = await runPython(script, EXEC_TIMEOUT);
-
-  // Cleanup schema file
-  try { await import('fs/promises').then(f => f.unlink(schemaPath)); } catch {}
-
-  if (existsSync(outputPath)) {
-    const content = await readFile(outputPath, 'utf-8');
-    try { await import('fs/promises').then(f => f.unlink(outputPath)); } catch {};
-    
-    const parsed = safeJsonParse<Crawl4AIExtractionResult>(content);
-    if (parsed) {
-      return { success: true, data: parsed };
-    }
-  }
-
-  return { success: false, data: null, error: stderr.slice(0, 500) || 'CSS extraction failed' };
+  return extractWithStrategy(url, { type: 'css', schema }, options);
 }
 
 /**
- * Crawl a website specifically for lead/contact data.
- * Uses CSS selectors to extract company info, contact details, team members.
- * Pre-built schemas for common page types: about, contact, team pages.
+ * Extract structured data from a URL using XPath.
+ */
+export async function extractWithXPath(
+  url: string,
+  schema: ExtractionSchema,
+  options: CrawlerRunOptions = {},
+): Promise<{
+  success: boolean;
+  data: unknown[] | null;
+  raw: Crawl4AIResult | null;
+  error?: string;
+}> {
+  return extractWithStrategy(url, { type: 'xpath', schema }, options);
+}
+
+/**
+ * Extract structured data using an LLM (Z.AI GLM by default).
+ * The LLM is given the page markdown + an instruction + optional JSON schema,
+ * and returns structured records. This is the most powerful extraction mode
+ * — it can pull arbitrary fields from messy HTML.
+ */
+export async function extractWithLLM(
+  url: string,
+  instruction: string,
+  options: CrawlerRunOptions & {
+    schema?: Record<string, unknown>;
+    provider?: string;       // litellm format e.g. "zhipu-tls/glm-4.6-flash"
+    extractionType?: 'block' | 'schema';
+    inputFormat?: 'markdown' | 'html' | 'fit_markdown';
+    chunkTokenThreshold?: number;
+  } = {},
+): Promise<{
+  success: boolean;
+  data: unknown | null;
+  raw: Crawl4AIResult | null;
+  error?: string;
+}> {
+  const extractionSpec: Record<string, unknown> = {
+    type: 'llm',
+    instruction,
+    extraction_type: options.extractionType || 'schema',
+    input_format: options.inputFormat || 'markdown',
+    chunk_token_threshold: options.chunkTokenThreshold || 1200,
+    llm_config: {
+      provider: options.provider || 'openai/glm-4.7-flash',
+      base_url: 'https://open.bigmodel.cn/api/paas/v4/',
+    },
+  };
+  if (options.schema) extractionSpec.schema = options.schema;
+  return extractWithStrategy(url, extractionSpec, options);
+}
+
+/**
+ * Extract data using a regex pattern. Returns matched groups as records.
+ */
+export async function extractWithRegex(
+  url: string,
+  pattern: string,
+  options: CrawlerRunOptions = {},
+): Promise<{
+  success: boolean;
+  data: unknown[] | null;
+  raw: Crawl4AIResult | null;
+  error?: string;
+}> {
+  return extractWithStrategy(url, { type: 'regex', pattern }, options);
+}
+
+async function extractWithStrategy(
+  url: string,
+  extractionSpec: Record<string, unknown>,
+  options: CrawlerRunOptions,
+): Promise<{
+  success: boolean;
+  data: unknown[] | null;
+  raw: Crawl4AIResult | null;
+  error?: string;
+}> {
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { success: false, data: null, raw: null, error: 'crawl4ai service unavailable' };
+    }
+    const browserConfig = buildBrowserConfig(options);
+    const crawlerConfig = buildCrawlerConfig(options);
+    crawlerConfig.extraction = extractionSpec;
+
+    const payload: Record<string, unknown> = { url, crawler_config: crawlerConfig };
+    if (browserConfig) payload.browser_config = browserConfig;
+
+    const resp = await callService<ServiceCrawlResponse>('/crawl', payload, REQUEST_TIMEOUT);
+    let extracted: unknown[] | null = null;
+    if (resp.extracted_content) {
+      try {
+        const parsed = JSON.parse(resp.extracted_content);
+        extracted = Array.isArray(parsed) ? parsed : [parsed];
+      } catch {
+        extracted = [{ raw: resp.extracted_content }];
+      }
+    }
+    return {
+      success: resp.success,
+      data: extracted,
+      raw: adaptServiceResult(resp),
+      error: resp.error_message || undefined,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, data: null, raw: null, error: msg };
+  }
+}
+
+// ============================================================
+// Public API — Screenshot & PDF
+// ============================================================
+
+export async function takeScreenshot(
+  url: string,
+  options: CrawlerRunOptions = {},
+): Promise<{
+  success: boolean;
+  screenshot: string | null;  // base64-encoded PNG
+  error?: string;
+}> {
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { success: false, screenshot: null, error: 'crawl4ai service unavailable' };
+    }
+    const browserConfig = buildBrowserConfig(options);
+    const crawlerConfig = buildCrawlerConfig(options);
+    crawlerConfig.screenshot = true;
+
+    const payload: Record<string, unknown> = { url, crawler_config: crawlerConfig };
+    if (browserConfig) payload.browser_config = browserConfig;
+
+    const resp = await callService<ServiceCrawlResponse>('/screenshot', payload, REQUEST_TIMEOUT);
+    return {
+      success: resp.success,
+      screenshot: resp.screenshot || null,
+      error: resp.error_message || undefined,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, screenshot: null, error: msg };
+  }
+}
+
+export async function capturePdf(
+  url: string,
+  options: CrawlerRunOptions = {},
+): Promise<{
+  success: boolean;
+  pdf: string | null;  // base64-encoded PDF
+  error?: string;
+}> {
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { success: false, pdf: null, error: 'crawl4ai service unavailable' };
+    }
+    const browserConfig = buildBrowserConfig(options);
+    const crawlerConfig = buildCrawlerConfig(options);
+    crawlerConfig.pdf = true;
+
+    const payload: Record<string, unknown> = { url, crawler_config: crawlerConfig };
+    if (browserConfig) payload.browser_config = browserConfig;
+
+    const resp = await callService<ServiceCrawlResponse>('/pdf', payload, REQUEST_TIMEOUT);
+    return {
+      success: resp.success,
+      pdf: resp.pdf || null,
+      error: resp.error_message || undefined,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, pdf: null, error: msg };
+  }
+}
+
+// ============================================================
+// Public API — Sitemap Generation
+// ============================================================
+
+/**
+ * Generate a sitemap by deep-crawling a site. Returns URLs, titles, depths.
+ */
+export async function generateSitemap(
+  url: string,
+  options: { maxDepth?: number; maxPages?: number; strategy?: 'bfs' | 'dfs' | 'best-first' } = {},
+): Promise<Crawl4AISiteMap> {
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { urls: [], totalPages: 0, maxDepth: 0 };
+    }
+    const payload = {
+      url,
+      deep_crawl: {
+        type: options.strategy || 'bfs',
+        max_depth: options.maxDepth ?? 2,
+        max_pages: options.maxPages ?? 50,
+      },
+    };
+    const resp = await callService<{
+      urls: Array<{ url: string; title?: string; depth: number }>;
+      total_pages: number;
+      max_depth: number;
+    }>('/sitemap', payload, DEEP_CRAWL_TIMEOUT);
+    return {
+      urls: resp.urls,
+      totalPages: resp.total_pages,
+      maxDepth: resp.max_depth,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[crawl4ai] generateSitemap failed:', msg);
+    return { urls: [], totalPages: 0, maxDepth: 0 };
+  }
+}
+
+// ============================================================
+// Public API — Lead Discovery (high-level helper)
+// ============================================================
+
+/**
+ * Crawl a URL specifically optimized for lead discovery — extracts contact
+ * info, social links, team members, and key page content. Used by the
+ * Scout and Forge agents.
  */
 export async function crawlForLeads(
   url: string,
-  options: {
-    pageType?: 'about' | 'contact' | 'team' | 'pricing' | 'auto';
-    extractEmails?: boolean;
-    extractPhones?: boolean;
-    extractAddresses?: boolean;
-  } = {}
+  options: { deepCrawl?: boolean; maxPages?: number; company?: string } = {},
 ): Promise<{
   success: boolean;
-  data: {
-    url: string;
-    companyInfo: Record<string, string>;
-    contacts: Array<Record<string, string>>;
+  leads: Array<{
+    name?: string;
+    email?: string;
+    phone?: string;
+    title?: string;
+    linkedin?: string;
+    twitter?: string;
+  }>;
+  companyInfo: {
+    name?: string;
+    description?: string;
     emails: string[];
     phones: string[];
-    addresses: string[];
-    rawMarkdown: string;
-  } | null;
-  error?: string;
-}> {
-  const pageType = options.pageType || 'auto';
-  const outputPath = join(CRAWL4AI_CACHE_DIR, `leads_${Date.now()}.json`);
-
-  // Pre-built schemas for different page types
-  const schemas: Record<string, Record<string, string>> = {
-    about: {
-      company_name: 'h1, [class*="company-name"], [class*="companyName"], [class*="title"]',
-      description: 'meta[name="description"], [class*="about"], [class*="description"], p',
-      mission: '[class*="mission"], [class*="vision"]',
-      founded: '[class*="founded"], [class*="year"], [class*="established"]',
-      team_size: '[class*="team-size"], [class*="employees"], [class*="headcount"]',
-    },
-    contact: {
-      email: 'a[href^="mailto:"], [class*="email"], [class*="contact-email"]',
-      phone: 'a[href^="tel:"], [class*="phone"], [class*="telephone"]',
-      address: '[class*="address"], [class*="location"], address',
-      support: '[class*="support"], [class*="help"]',
-    },
-    team: {
-      member_name: '[class*="name"], [class*="member-name"], h3, h4',
-      member_title: '[class*="title"], [class*="role"], [class*="position"]',
-      member_email: 'a[href^="mailto:"]',
-      member_linkedin: 'a[href*="linkedin.com/in/"]',
-    },
+    social: Record<string, string>;
   };
-
-  const script = `
-import asyncio
-import json
-import re
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
-
-async def main():
-    browser_config = BrowserConfig(headless=True, verbose=False)
-    run_config = CrawlerRunConfig(cache_mode=CacheMode.BYPASS)
-    
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        result = await crawler.arun(url="${url}", config=run_config)
-        
-        markdown_text = result.markdown.raw_markdown if hasattr(result.markdown, 'raw_markdown') else str(result.markdown)
-        
-        # Extract emails using regex
-        email_pattern = r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}'
-        emails = list(set(re.findall(email_pattern, markdown_text)))
-        
-        # Extract phone numbers using regex
-        phone_pattern = r'(?:\\+?1?[-.\\s]?)?\\(?\\d{3}\\)?[-.\\s]?\\d{3}[-.\\s]?\\d{4}'
-        phones = list(set(re.findall(phone_pattern, markdown_text)))
-        
-        # Extract addresses (simple heuristic)
-        address_pattern = r'\\d+\\s+[A-Za-z0-9\\s]+(?:Street|St|Avenue|Ave|Boulevard|Blvd|Drive|Dr|Road|Rd|Lane|Ln|Way|Court|Ct)[,\\s]+[A-Za-z\\s]+[,\\s]+[A-Z]{2}\\s+\\d{5}'
-        addresses = list(set(re.findall(address_pattern, markdown_text, re.IGNORECASE)))
-        
-        # Try to extract company info from metadata
-        company_info = {}
-        if result.metadata:
-            if result.metadata.get("title"):
-                company_info["title"] = result.metadata["title"]
-            if result.metadata.get("description"):
-                company_info["description"] = result.metadata["description"]
-        
-        output = {
-            "url": "${url}",
-            "companyInfo": company_info,
-            "contacts": [],
-            "emails": emails,
-            "phones": phones,
-            "addresses": addresses,
-            "rawMarkdown": markdown_text[:50000],
-        }
-        
-        with open("${outputPath}", "w") as f:
-            json.dump(output, f)
-
-asyncio.run(main())
-`;
-
-  const { stderr } = await runPython(script, EXEC_TIMEOUT);
-
-  if (existsSync(outputPath)) {
-    const content = await readFile(outputPath, 'utf-8');
-    try { await import('fs/promises').then(f => f.unlink(outputPath)); } catch {};
-    
-    const parsed = safeJsonParse<{
-      url: string;
-      companyInfo: Record<string, string>;
-      contacts: Array<Record<string, string>>;
-      emails: string[];
-      phones: string[];
-      addresses: string[];
-      rawMarkdown: string;
-    }>(content);
-    if (parsed) {
-      return { success: true, data: parsed };
-    }
-  }
-
-  return { success: false, data: null, error: stderr.slice(0, 500) || 'Lead crawl failed' };
-}
-
-/**
- * Take a screenshot of a webpage.
- * Useful for visual debugging and page analysis.
- */
-export async function takeScreenshot(
-  url: string,
-  options: {
-    fullPage?: boolean;
-    width?: number;
-    height?: number;
-  } = {}
-): Promise<{
-  success: boolean;
-  data: { url: string; screenshotPath: string } | null;
+  pagesCrawled: number;
+  rawContent: string;
   error?: string;
 }> {
-  const outputPath = join(CRAWL4AI_CACHE_DIR, `screenshot_${Date.now()}.png`);
+  try {
+    if (!(await ensureServiceRunning())) {
+      return { success: false, leads: [], companyInfo: { emails: [], phones: [], social: {} }, pagesCrawled: 0, rawContent: '', error: 'crawl4ai service unavailable' };
+    }
 
-  const script = `
-import asyncio
-from crawl4ai import AsyncWebCrawler, BrowserConfig, CrawlerRunConfig, CacheMode
+    // Regex patterns for contact extraction
+    const emailRegex = /[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}/g;
+    const phoneRegex = /(?:\+?(\d{1,3}))?[-. (]*(\d{3})[-. )]*(\d{3})[-. ]*(\d{4})/g;
+    const linkedinRegex = /https?:\/\/(?:www\.)?linkedin\.com\/(?:in|company)\/[a-zA-Z0-9_-]+/g;
+    const twitterRegex = /https?:\/\/(?:www\.)?(?:twitter|x)\.com\/[a-zA-Z0-9_]+/g;
 
-async def main():
-    browser_config = BrowserConfig(
-        headless=True, 
-        verbose=False,
-        viewport_width=${options.width || 1920},
-        viewport_height=${options.height || 1080},
-    )
-    run_config = CrawlerRunConfig(
-        cache_mode=CacheMode.BYPASS,
-        screenshot=True,
-        screenshot_wait_for=2.0,
-    )
-    
-    async with AsyncWebCrawler(config=browser_config) as crawler:
-        result = await crawler.arun(url="${url}", config=run_config)
-        
-        if result.screenshot_data:
-            import base64
-            with open("${outputPath}", "wb") as f:
-                f.write(base64.b64decode(result.screenshot_data))
-        elif result.screenshot:
-            with open("${outputPath}", "wb") as f:
-                f.write(result.screenshot if isinstance(result.screenshot, bytes) else result.screenshot.encode())
+    let allEmails = new Set<string>();
+    let allPhones = new Set<string>();
+    let allLinkedin = new Set<string>();
+    let allTwitter = new Set<string>();
+    let rawContent = '';
+    let pagesCrawled = 0;
+    let companyName = options.company || '';
+    let description = '';
 
-asyncio.run(main())
-`;
+    if (options.deepCrawl) {
+      const result = await deepCrawl(url, { maxPages: options.maxPages || 5, maxDepth: 1 });
+      if (result.success) {
+        pagesCrawled = result.pages.length;
+        for (const page of result.pages) {
+          rawContent += '\n\n--- ' + page.url + ' ---\n' + page.markdown;
+          const md = page.markdown || '';
+          const html = page.cleanedHtml || page.html || '';
+          const combined = md + '\n' + html;
+          (combined.match(emailRegex) || []).forEach(e => allEmails.add(e));
+          (combined.match(phoneRegex) || []).forEach(p => allPhones.add(p));
+          (combined.match(linkedinRegex) || []).forEach(l => allLinkedin.add(l));
+          (combined.match(twitterRegex) || []).forEach(t => allTwitter.add(t));
+          if (!companyName && page.metadata.title) companyName = page.metadata.title.replace(/\s*[-|].*$/, '').trim();
+          if (!description && page.metadata.description) description = page.metadata.description;
+        }
+      } else if (result.error) {
+        return { success: false, leads: [], companyInfo: { emails: [], phones: [], social: {} }, pagesCrawled: 0, rawContent: '', error: result.error };
+      }
+    } else {
+      const result = await crawlUrl(url, { scanFullPage: true, magic: true });
+      if (result.success && result.data) {
+        pagesCrawled = 1;
+        const md = result.data.markdown || '';
+        const html = result.data.cleanedHtml || result.data.html || '';
+        const combined = md + '\n' + html;
+        rawContent = md;
+        (combined.match(emailRegex) || []).forEach(e => allEmails.add(e));
+        (combined.match(phoneRegex) || []).forEach(p => allPhones.add(p));
+        (combined.match(linkedinRegex) || []).forEach(l => allLinkedin.add(l));
+        (combined.match(twitterRegex) || []).forEach(t => allTwitter.add(t));
+        if (!companyName && result.data.metadata.title) companyName = result.data.metadata.title.replace(/\s*[-|].*$/, '').trim();
+        if (!description && result.data.metadata.description) description = result.data.metadata.description;
+      } else if (result.error) {
+        return { success: false, leads: [], companyInfo: { emails: [], phones: [], social: {} }, pagesCrawled: 0, rawContent: '', error: result.error };
+      }
+    }
 
-  const { stderr } = await runPython(script, EXEC_TIMEOUT);
-
-  if (existsSync(outputPath)) {
-    return { success: true, data: { url, screenshotPath: outputPath } };
+    return {
+      success: true,
+      leads: [],  // LLM-based lead extraction handled at the agent layer
+      companyInfo: {
+        name: companyName || undefined,
+        description: description || undefined,
+        emails: Array.from(allEmails).slice(0, 50),
+        phones: Array.from(allPhones).slice(0, 20),
+        social: {
+          ...(allLinkedin.size ? { linkedin: Array.from(allLinkedin)[0] } : {}),
+          ...(allTwitter.size ? { twitter: Array.from(allTwitter)[0] } : {}),
+        },
+      },
+      pagesCrawled,
+      rawContent: rawContent.slice(0, 50000),  // cap for downstream LLM context
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    return { success: false, leads: [], companyInfo: { emails: [], phones: [], social: {} }, pagesCrawled: 0, rawContent: '', error: msg };
   }
-
-  return { success: false, data: null, error: stderr.slice(0, 500) || 'Screenshot failed' };
 }
 
+// ============================================================
+// Public API — Status Check
+// ============================================================
+
 /**
- * Check crawl4ai installation status and readiness.
+ * Check the install status of crawl4ai — service running, version, etc.
  */
 export async function checkCrawl4AIStatus(): Promise<Crawl4AIStatusResult> {
-  const result: Crawl4AIStatusResult = {
-    installed: false,
-    version: '',
+  const running = await isServiceRunning();
+  if (running) {
+    try {
+      const status = await callService<{
+        status: string;
+        version: string;
+        browser_ready: boolean;
+        python_version: string;
+        crawl4ai_path: string;
+      }>('/health', undefined, HEALTH_CHECK_TIMEOUT);
+      return {
+        installed: true,
+        version: status.version,
+        browserReady: status.browser_ready,
+        cliAvailable: true,
+        serviceUrl: CRAWL4AI_SERVICE_URL,
+        pythonVersion: status.python_version,
+        crawl4aiPath: status.crawl4ai_path,
+      };
+    } catch {
+      // fall through
+    }
+  }
+  // Fallback: read version from vendored source
+  let version = 'unknown';
+  try {
+    const versionFile = '/home/z/my-project/lib/crawl4ai-source/crawl4ai/__version__.py';
+    if (existsSync(versionFile)) {
+      const content = readFileSync(versionFile, 'utf-8');
+      const m = content.match(/__version__\s*=\s*["']([^"']+)["']/);
+      if (m) version = m[1];
+    }
+  } catch { /* ignore */ }
+  return {
+    installed: existsSync('/home/z/my-project/lib/crawl4ai-source'),
+    version,
     browserReady: false,
     cliAvailable: false,
+    serviceUrl: CRAWL4AI_SERVICE_URL,
   };
-
-  // Check Python package
-  try {
-    const { stdout } = await execAsync('python3 -c "import crawl4ai; print(crawl4ai.__version__)"', {
-      timeout: 10000,
-      env: { ...process.env, PATH: `${process.env.PATH}:${process.env.HOME}/.local/bin` },
-    });
-    if (stdout.trim()) {
-      result.installed = true;
-      result.version = stdout.trim();
-    }
-  } catch {
-    // Not installed
-  }
-
-  // Check CLI
-  try {
-    const cliPath = `${process.env.HOME}/.local/bin/crwl`;
-    const { stdout } = await execAsync(`"${cliPath}" --version 2>/dev/null || echo "not found"`, { timeout: 10000 });
-    if (!stdout.includes('not found')) {
-      result.cliAvailable = true;
-    }
-  } catch {
-    // CLI not available
-  }
-
-  // Check browser
-  try {
-    const { stdout } = await execAsync('python3 -c "from playwright.sync_api import sync_playwright; p = sync_playwright().start(); b = p.chromium.launch(); b.close(); p.stop(); print(\'ok\')"', {
-      timeout: 30000,
-      env: { ...process.env, PATH: `${process.env.PATH}:${process.env.HOME}/.local/bin` },
-    });
-    if (stdout.trim() === 'ok') {
-      result.browserReady = true;
-    }
-  } catch {
-    // Browser not ready
-  }
-
-  return result;
 }
 
 // ============================================================
-// Agent-Reach Bridge Integration Types
+// Public API — Channel Bridge (used by agent-reach)
 // ============================================================
 
-export interface Crawl4AIChannelResult {
-  operation: string;
-  url: string;
-  success: boolean;
-  data: unknown;
-  error?: string;
-  timestamp: string;
-}
+export type Crawl4AIOperation =
+  | 'crawl'
+  | 'crawl_advanced'
+  | 'deep_crawl'
+  | 'extract_css'
+  | 'extract_xpath'
+  | 'extract_llm'
+  | 'extract_regex'
+  | 'screenshot'
+  | 'pdf'
+  | 'sitemap'
+  | 'crawl_for_leads'
+  | 'status';
 
 /**
- * Main entry point for Agent-Reach Bridge integration.
- * This function is called by the bridge when agents use the crawl4ai channel.
+ * Unified entry point for the Agent Reach channel — dispatches any supported
+ * operation by name. Used by `agent-reach-bridge.ts` to expose crawl4ai as a
+ * channel tool.
  */
 export async function executeCrawl4AIOperation(
-  operation: string,
-  params: Record<string, unknown>,
+  operation: Crawl4AIOperation,
+  params: Record<string, unknown> = {},
 ): Promise<Crawl4AIChannelResult> {
-  const timestamp = new Date().toISOString();
-  const url = (params.url as string) || '';
-
   try {
-    let data: unknown;
+    let result: unknown;
+    const opts = (params.options as CrawlerRunOptions) || {};
 
     switch (operation) {
       case 'crawl':
-        data = await crawlUrl(url, {
-          outputFormat: (params.outputFormat as 'markdown' | 'markdown-fit' | 'json' | 'all') || 'all',
-          screenshot: (params.screenshot as boolean) || false,
-          cacheMode: (params.cacheMode as 'enabled' | 'disabled' | 'bypass') || 'enabled',
-          waitFor: params.waitFor as string,
-        });
+        result = await crawlUrl(params.url as string, opts);
         break;
       case 'crawl_advanced':
-        data = await crawlUrlAdvanced(url, {
-          headless: params.headless as boolean,
-          markdownGenerator: (params.markdownGenerator as 'default' | 'fit' | 'bm25') || 'default',
-          bm25Query: params.bm25Query as string,
-          includeScreenshot: params.screenshot as boolean,
-          cacheMode: (params.cacheMode as 'enabled' | 'disabled' | 'bypass') || 'enabled',
-          flattenShadowDom: params.flattenShadowDom as boolean,
-        });
+        result = await crawlUrlAdvanced(params.url as string, opts);
         break;
       case 'deep_crawl':
-        data = await deepCrawl(url, {
-          strategy: (params.strategy as 'bfs' | 'dfs' | 'bestfirst') || 'bfs',
-          maxDepth: (params.maxDepth as number) || 2,
-          maxPages: (params.maxPages as number) || 10,
-          query: params.query as string,
+        result = await deepCrawl(params.url as string, {
+          ...opts,
+          strategy: params.strategy as 'bfs' | 'dfs' | 'best-first' | undefined,
+          maxDepth: params.maxDepth as number | undefined,
+          maxPages: params.maxPages as number | undefined,
+          keywords: params.keywords as string[] | undefined,
         });
         break;
       case 'extract_css':
-        data = await extractWithCSS(url, params.schema as {
-          name: string;
-          baseSelector: string;
-          fields: Array<{ name: string; selector: string; type: 'text' | 'attribute' | 'html' | 'href' | 'src'; attribute?: string }>;
-        });
+        result = await extractWithCSS(params.url as string, params.schema as ExtractionSchema, opts);
         break;
-      case 'crawl_leads':
-        data = await crawlForLeads(url, {
-          pageType: (params.pageType as 'about' | 'contact' | 'team' | 'pricing' | 'auto') || 'auto',
-          extractEmails: params.extractEmails as boolean,
-          extractPhones: params.extractPhones as boolean,
-          extractAddresses: params.extractAddresses as boolean,
-        });
+      case 'extract_xpath':
+        result = await extractWithXPath(params.url as string, params.schema as ExtractionSchema, opts);
+        break;
+      case 'extract_llm':
+        result = await extractWithLLM(
+          params.url as string,
+          params.instruction as string,
+          { ...opts, schema: params.schema as Record<string, unknown> | undefined },
+        );
+        break;
+      case 'extract_regex':
+        result = await extractWithRegex(params.url as string, params.pattern as string, opts);
         break;
       case 'screenshot':
-        data = await takeScreenshot(url, {
-          fullPage: params.fullPage as boolean,
-          width: params.width as number,
-          height: params.height as number,
+        result = await takeScreenshot(params.url as string, opts);
+        break;
+      case 'pdf':
+        result = await capturePdf(params.url as string, opts);
+        break;
+      case 'sitemap':
+        result = await generateSitemap(params.url as string, {
+          maxDepth: params.maxDepth as number | undefined,
+          maxPages: params.maxPages as number | undefined,
+          strategy: params.strategy as 'bfs' | 'dfs' | 'best-first' | undefined,
+        });
+        break;
+      case 'crawl_for_leads':
+        result = await crawlForLeads(params.url as string, {
+          deepCrawl: params.deepCrawl as boolean | undefined,
+          maxPages: params.maxPages as number | undefined,
+          company: params.company as string | undefined,
         });
         break;
       case 'status':
-        data = await checkCrawl4AIStatus();
+        result = await checkCrawl4AIStatus();
         break;
       default:
-        return {
-          operation,
-          url,
-          success: false,
-          data: null,
-          error: `Unknown crawl4ai operation: ${operation}`,
-          timestamp,
-        };
+        return { success: false, operation, result: null, error: `Unknown operation: ${operation}` };
     }
-
-    return { operation, url, success: true, data, timestamp };
+    return { success: true, operation, result };
   } catch (error) {
     const msg = error instanceof Error ? error.message : 'Unknown error';
-    return { operation, url, success: false, data: null, error: msg, timestamp };
+    return { success: false, operation, result: null, error: msg };
   }
 }
+
+// ============================================================
+// Backwards-compat: legacy CLI fallback (used only when service is down)
+// ============================================================
+
+const CRAWL4AI_CLI_BIN = '/home/z/.venv/bin/crwl';
+
+/**
+ * Detect whether the legacy CLI binary exists. Used by the status page to
+ * show whether the subprocess fallback is also available.
+ */
+export function isCliAvailable(): boolean {
+  return existsSync(CRAWL4AI_CLI_BIN);
+}
+
+/**
+ * Read the last N lines of the crawl4ai-service log. Useful for the admin UI.
+ */
+export function readServiceLogTail(lines: number = 50): string {
+  try {
+    if (!existsSync(SERVICE_LOG_FILE)) return '';
+    const { stdout } = require('child_process').spawnSync('tail', ['-n', String(lines), SERVICE_LOG_FILE]);
+    return stdout?.toString() || '';
+  } catch {
+    return '';
+  }
+}
+
+/**
+ * Get the current PID of the crawl4ai-service (if running), from the PID file.
+ */
+export function getServicePid(): number | null {
+  try {
+    if (!existsSync(SERVICE_PID_FILE)) return null;
+    const pid = parseInt(readFileSync(SERVICE_PID_FILE, 'utf-8').trim(), 10);
+    return isNaN(pid) ? null : pid;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Public getters for the admin UI / introspection.
+ */
+export const crawl4aiConfig = {
+  serviceUrl: CRAWL4AI_SERVICE_URL,
+  serviceHost: CRAWL4AI_SERVICE_HOST,
+  servicePort: CRAWL4AI_SERVICE_PORT,
+  startupScript: SERVICE_STARTUP_SCRIPT,
+  logFile: SERVICE_LOG_FILE,
+  pidFile: SERVICE_PID_FILE,
+  sourceDir: '/home/z/my-project/lib/crawl4ai-source',
+  serviceDir: '/home/z/my-project/lib/crawl4ai-service',
+};

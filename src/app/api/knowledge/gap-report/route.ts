@@ -1,126 +1,114 @@
-// ============================================================
-// Knowledge Gap Report API Endpoint
-// ============================================================
-// GET /api/knowledge/gap-report
-//   Returns the latest cached gap report (or generates one if none
-//   exists or if the latest is older than 24 hours).
-//
-// GET /api/knowledge/gap-report?action=latest
-//   Returns the latest cached report without regeneration.
-//
-// GET /api/knowledge/gap-report?action=list
-//   Lists all available gap reports.
-//
-// POST /api/knowledge/gap-report
-//   Forces regeneration of the gap report.
-//
-// Body: { "month"?: "YYYY-MM" }  (optional — defaults to current month)
-// ============================================================
-
-import { NextRequest, NextResponse } from 'next/server';
-import { generateGapReport, getLatestGapReport, listGapReports } from '@/lib/knowledge/gap-report';
+/**
+ * /api/knowledge/gap-report — Generate (or fetch latest) Echo gap report
+ *
+ * GET (no params) — returns the most recent gap report (looks for the latest
+ *   YYYY-MM-gap-report.md in knowledge/gap-reports/). If none exists, generates
+ *   one on the fly.
+ *
+ * POST — forces generation of a new gap report for the current month.
+ *   Overwrites any existing report for the current month.
+ *
+ * Query params:
+ *   month — optional YYYY-MM; returns the report for that month (read-only).
+ */
 
 export const dynamic = 'force-dynamic';
 export const runtime = 'nodejs';
 
-// ============================================================
-// GET handler
-// ============================================================
+import * as fs from 'fs';
+import * as path from 'path';
+import { generateGapReport, type GapReportResult } from '@/lib/knowledge/gap-report';
+import { getKnowledgeIndex } from '@/lib/knowledge';
 
-export async function GET(req: NextRequest) {
-  const { searchParams } = new URL(req.url);
-  const action = searchParams.get('action') || 'latest-or-generate';
+const GAP_REPORTS_DIR = path.join(process.cwd(), 'knowledge', 'gap-reports');
 
+function findLatestReport(): string | null {
+  if (!fs.existsSync(GAP_REPORTS_DIR)) return null;
+  const files = fs.readdirSync(GAP_REPORTS_DIR)
+    .filter(f => f.endsWith('-gap-report.md'))
+    .sort()
+    .reverse();
+  return files.length > 0 ? path.join(GAP_REPORTS_DIR, files[0]) : null;
+}
+
+function findReportForMonth(month: string): string | null {
+  const filePath = path.join(GAP_REPORTS_DIR, `${month}-gap-report.md`);
+  return fs.existsSync(filePath) ? filePath : null;
+}
+
+export async function GET(req: Request) {
   try {
-    if (action === 'list') {
-      const reports = listGapReports();
-      return NextResponse.json({
-        ok: true,
-        count: reports.length,
-        reports: reports.map((r) => ({
-          month: r.month,
-          path: r.path,
-          sizeBytes: r.sizeBytes,
-        })),
-      });
-    }
+    const url = new URL(req.url);
+    const month = url.searchParams.get('month');
 
-    if (action === 'latest') {
-      const latest = getLatestGapReport();
-      if (!latest) {
-        return NextResponse.json({
-          ok: false,
-          error: 'No gap report exists yet. POST to generate one.',
-        }, { status: 404 });
+    let reportPath: string | null;
+    if (month) {
+      reportPath = findReportForMonth(month);
+      if (!reportPath) {
+        return Response.json(
+          { ok: false, error: `No gap report found for month ${month}` },
+          { status: 404 }
+        );
       }
-      return NextResponse.json({
-        ok: true,
-        month: latest.month,
-        generatedAt: latest.generatedAt,
-        markdown: latest.markdown,
-        path: latest.path,
-      });
+    } else {
+      reportPath = findLatestReport();
+      if (!reportPath) {
+        // No report exists yet — generate one on the fly
+        const result = generateGapReport();
+        return Response.json({ ok: true, result, generated: true }, { status: 200 });
+      }
     }
 
-    // Default: latest-or-generate
-    // Return the latest report if it exists AND was generated within 24h.
-    // Otherwise, generate a fresh one.
-    const latest = getLatestGapReport();
-    const oneDayAgo = Date.now() - 24 * 60 * 60 * 1000;
-    const latestIsFresh = latest && new Date(latest.generatedAt).getTime() > oneDayAgo;
+    const content = fs.readFileSync(reportPath, 'utf-8');
+    const fileName = path.basename(reportPath);
+    const reportMonth = fileName.replace('-gap-report.md', '');
 
-    if (latestIsFresh) {
-      return NextResponse.json({
-        ok: true,
-        month: latest!.month,
-        generatedAt: latest!.generatedAt,
-        markdown: latest!.markdown,
-        path: latest!.path,
-        cached: true,
-      });
-    }
+    // Also collect current stats for context
+    const stats = getKnowledgeIndex().stats();
 
-    // Generate fresh
-    const report = generateGapReport();
-    return NextResponse.json({
+    return Response.json({
       ok: true,
-      month: report.month,
-      generatedAt: report.generatedAt,
-      markdown: report.markdown,
-      path: report.savedTo,
-      cached: false,
-      findings: report.findings,
-    });
+      reportMonth,
+      reportPath: path.relative(process.cwd(), reportPath),
+      content,
+      stats,
+      generated: false,
+    }, { status: 200 });
   } catch (err) {
-    console.error('[api/knowledge/gap-report] GET error:', err);
-    return NextResponse.json({
-      ok: false,
-      error: err instanceof Error ? err.message : 'Unknown error',
-    }, { status: 500 });
+    console.error('[/api/knowledge/gap-report GET] Error:', err);
+    return Response.json(
+      { ok: false, error: 'Failed to fetch gap report' },
+      { status: 500 }
+    );
   }
 }
 
-// ============================================================
-// POST handler — force regeneration
-// ============================================================
-
-export async function POST(req: NextRequest) {
+export async function POST() {
   try {
-    const body = await req.json().catch(() => ({}));
-    const report = generateGapReport({ month: body.month });
-    return NextResponse.json({
+    const result: GapReportResult = generateGapReport();
+    return Response.json({
       ok: true,
-      month: report.month,
-      generatedAt: report.generatedAt,
-      markdown: report.markdown,
-      path: report.savedTo,
-      findings: report.findings,
-    });
+      result: {
+        generatedAt: result.generatedAt,
+        reportMonth: result.reportMonth,
+        reportPath: result.reportPath,
+        totalGaps: result.coverageGaps.industriesMissing.length +
+          result.coverageGaps.regionsMissing.length +
+          result.coverageGaps.playbooksMissing.length +
+          result.qualityGaps.length +
+          result.freshnessGaps.length,
+        coverageGaps: result.coverageGaps,
+        qualityGaps: result.qualityGaps,
+        usageGaps: result.usageGaps,
+        freshnessGaps: result.freshnessGaps,
+        recommendations: result.recommendations,
+      },
+    }, { status: 200 });
   } catch (err) {
-    console.error('[api/knowledge/gap-report] POST error:', err);
-    return NextResponse.json({
-      ok: false,
-      error: err instanceof Error ? err.message : 'Unknown error',
-    }, { status: 500 });
+    console.error('[/api/knowledge/gap-report POST] Error:', err);
+    return Response.json(
+      { ok: false, error: 'Failed to generate gap report' },
+      { status: 500 }
+    );
   }
 }

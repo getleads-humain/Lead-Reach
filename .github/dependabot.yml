@@ -2,6 +2,18 @@
 # ======================================
 # Automated dependency updates per SECURITY_POLICY.md Section 16.1:
 # "Daily + every PR" dependency vulnerability scanning
+#
+# IMPORTANT — vendored upstream source trees (NOT Lead Reach deps):
+#   lib/crawl4ai-source/   — vendored unclecode/crawl4ai 0.9.0
+#     This is a Python SOURCE TREE imported via sys.path.insert by
+#     lib/crawl4ai-service/server.py. Lead Reach does NOT install
+#     crawl4ai via pip and does NOT consume its upstream uv.lock,
+#     requirements.txt, or sbom/*.cdx.json. Those files are gitignored
+#     so Dependabot cannot scan them as Lead Reach dependencies.
+#     We also explicitly DO NOT enable a `pip` ecosystem update block
+#     for lib/crawl4ai-source/, because doing so would re-introduce
+#     70+ false-positive alerts (nltk, aiohttp, pypdf, litellm, pyjwt,
+#     cryptography, urllib3, pillow, lxml, transformers, torch, etc.).
 
 version: 2
 
@@ -59,3 +71,15 @@ updates:
       - "dependencies"
     commit-message:
       prefix: "ci(docker)"
+
+# NOTE: We intentionally DO NOT enable any of the following ecosystems
+# because Lead Reach is a Next.js/TypeScript project that does not consume
+# Python dependencies via package managers:
+#   - package-ecosystem: "pip"        # would scan lib/crawl4ai-source/*.lock
+#   - package-ecosystem: "uv"         # would scan lib/crawl4ai-source/uv.lock
+#   - package-ecosystem: "pipenv"     # would scan lib/crawl4ai-source/Pipfile.lock
+#   - package-ecosystem: "poetry"     # would scan lib/crawl4ai-source/poetry.lock
+#
+# Lead Reach's actual Python sidecars (lib/crawl4ai-service/,
+# python-workers/, mini-services/*) manage their own deps via the
+# system Python runtime, not via committed lock files.

@@ -24,6 +24,8 @@ import {
   type SearchResult as DirectSearchResult,
 } from '@/lib/direct-search';
 import { fetchIPv4 } from '@/lib/network-helpers';
+import { isExaConfigured } from '@/lib/env';
+import { exaClient } from '@/lib/exa-sdk';
 
 const execFileAsync = promisify(execFile);
 
@@ -544,9 +546,42 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
 export async function exaSearch(query: string, numResults = 25): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
 
-  // ===== METHOD 0 (PRIMARY): DIRECT DuckDuckGo HTML fetch =====
+  // ===== METHOD 0 (PRIMARY when configured): Real Exa API via @exalabs/ai-sdk =====
+  // Zero-config: works the moment EXA_API_KEY is set in env.
+  // Powers: Prospect Discovery, Data Enrichment, Web Research, Lead Qualification, Outreach Composer.
+  // Falls through to METHOD 0b (DuckDuckGo) only if Exa fails or is not configured.
+  if (isExaConfigured()) {
+    try {
+      const exaResp = await exaClient.search({
+        query,
+        numResults: Math.min(numResults, 25),
+        contents: {
+          text: { maxCharacters: 800 },
+        },
+      });
+      const exaResults: SearchResult[] = (exaResp.results || [])
+        .filter(r => r.url)
+        .map(r => ({
+          title: r.title || '',
+          url: r.url,
+          snippet: (r.text || '').slice(0, 300) || r.highlights?.[0] || '',
+          score: undefined,
+          publishedDate: r.publishedDate,
+        }));
+      if (exaResults.length > 0) {
+        console.log(`[exaSearch] Real Exa API returned ${exaResults.length} results for "${query.slice(0, 60)}"`);
+        return makeResult(exaResults, channel, 'Exa AI SDK (real API)', JSON.stringify(exaResults).slice(0, 2000));
+      }
+      console.warn(`[exaSearch] Real Exa API returned 0 results for "${query.slice(0, 60)}" — falling through to DuckDuckGo`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[exaSearch] Real Exa API failed: ${msg.slice(0, 200)} — falling through to DuckDuckGo`);
+    }
+  }
+
+  // ===== METHOD 0b (FALLBACK): DIRECT DuckDuckGo HTML fetch =====
   // Bypasses Jina entirely. Uses fetchIPv4 to work around broken IPv6.
-  // This is the most reliable path: zero config, no API keys, no third-party deps.
+  // This is the most reliable path when Exa is not configured: zero config, no API keys, no third-party deps.
   try {
     const ddgResult = await directDuckDuckGoSearch(query, Math.min(numResults, 15));
     if (ddgResult.success && ddgResult.data.length > 0) {
@@ -2465,6 +2500,243 @@ export async function runDoctor(): Promise<ToolResult<Record<string, unknown>>> 
 }
 
 // ============================================================
+// Crawl4AI channel — vendored unclecode/crawl4ai 0.9.0
+// ============================================================
+
+import {
+  crawlUrl as crawl4aiCrawlUrl,
+  crawlUrlAdvanced as crawl4aiCrawlUrlAdvanced,
+  deepCrawl as crawl4aiDeepCrawl,
+  extractWithCSS as crawl4aiExtractCSS,
+  extractWithXPath as crawl4aiExtractXPath,
+  extractWithLLM as crawl4aiExtractLLM,
+  extractWithRegex as crawl4aiExtractRegex,
+  takeScreenshot as crawl4aiTakeScreenshot,
+  capturePdf as crawl4aiCapturePdf,
+  generateSitemap as crawl4aiGenerateSitemap,
+  crawlForLeads as crawl4aiCrawlForLeads,
+  checkCrawl4AIStatus as crawl4aiCheckStatus,
+  ensureServiceRunning as crawl4aiEnsureService,
+  executeCrawl4AIOperation,
+  type CrawlerRunOptions,
+  type ExtractionSchema,
+} from './crawl4ai';
+
+/**
+ * Crawl4AI-powered web reader. Use this as a MORE POWERFUL replacement for
+ * `webRead` when:
+ *  - The page is a JS-rendered SPA (React/Vue/Angular)
+ *  - You need clean structured markdown (not raw HTML)
+ *  - You need to extract structured data via CSS/XPath/LLM
+ *  - You need a screenshot or PDF
+ *  - You need to deep-crawl multiple pages from a single seed
+ *
+ * Backed by the local crawl4ai HTTP service at 127.0.0.1:8765 (auto-started).
+ */
+export async function crawl4aiRead(
+  url: string,
+  options: CrawlerRunOptions = {},
+): Promise<ToolResult<WebReadResult>> {
+  const result = await crawl4aiCrawlUrl(url, options);
+  if (!result.success || !result.data) {
+    return makeError<WebReadResult>(result.error || 'crawl4ai read failed', 'crawl4ai');
+  }
+  return makeResult<WebReadResult>(
+    {
+      url: result.data.url,
+      title: result.data.metadata.title || new URL(url).hostname,
+      content: result.data.markdownFit || result.data.markdown,
+      wordCount: (result.data.markdownFit || result.data.markdown).split(/\s+/).length,
+    },
+    'crawl4ai',
+    'Crawl4AI 0.9.0 (vendored)',
+    (result.data.markdownFit || result.data.markdown).slice(0, 2000),
+  );
+}
+
+/**
+ * Deep-crawl a site starting from `url`. Returns one Crawl4AIResult per page.
+ * Use for: building site maps, scraping a company's entire blog, extracting
+ * all product pages, etc.
+ */
+export async function crawl4aiDeepRead(
+  url: string,
+  options: {
+    strategy?: 'bfs' | 'dfs' | 'best-first';
+    maxDepth?: number;
+    maxPages?: number;
+    keywords?: string[];
+  } = {},
+): Promise<ToolResult<{ pages: Array<{ url: string; title: string; content: string }>; totalPages: number }>> {
+  const result = await crawl4aiDeepCrawl(url, options);
+  if (!result.success) {
+    return makeError(
+      result.error || 'crawl4ai deep crawl failed',
+      'crawl4ai',
+    );
+  }
+  return makeResult(
+    {
+      pages: result.pages.map(p => ({
+        url: p.url,
+        title: p.metadata.title || '',
+        content: p.markdownFit || p.markdown,
+      })),
+      totalPages: result.pages.length,
+    },
+    'crawl4ai',
+    `Deep crawl (${options.strategy || 'bfs'}, ${result.pages.length} pages)`,
+    `${result.pages.length} pages crawled from ${url}`,
+  );
+}
+
+/**
+ * Extract structured data from a URL using CSS selectors.
+ * Returns a JSON array of records matching the schema.
+ *
+ * Example schema:
+ *   {
+ *     baseSelector: ".product-card",
+ *     fields: [
+ *       { name: "title", selector: ".title", type: "text" },
+ *       { name: "price", selector: ".price", type: "text" },
+ *       { name: "url", selector: "a", type: "attribute", attribute: "href" }
+ *     ]
+ *   }
+ */
+export async function crawl4aiExtract(
+  url: string,
+  schema: ExtractionSchema,
+  options: CrawlerRunOptions = {},
+): Promise<ToolResult<{ records: unknown[]; raw: unknown }>> {
+  const result = await crawl4aiExtractCSS(url, schema, options);
+  if (!result.success) {
+    return makeError(result.error || 'crawl4ai extract failed', 'crawl4ai');
+  }
+  return makeResult(
+    { records: result.data || [], raw: result.raw },
+    'crawl4ai',
+    `CSS extraction (${(result.data || []).length} records)`,
+    `${(result.data || []).length} records extracted from ${url}`,
+  );
+}
+
+/**
+ * Extract structured data from a URL using an LLM (Z.AI GLM by default).
+ * Pass a natural-language instruction and an optional JSON schema.
+ *
+ * Example:
+ *   crawl4aiLLMExtract(
+ *     "https://example.com/about",
+ *     "Extract the company name, founding year, and CEO name as JSON.",
+ *     { schema: { type: "object", properties: { ... } } }
+ *   )
+ */
+export async function crawl4aiLLMExtract(
+  url: string,
+  instruction: string,
+  options: CrawlerRunOptions & { schema?: Record<string, unknown> } = {},
+): Promise<ToolResult<{ extracted: unknown; raw: unknown }>> {
+  const result = await crawl4aiExtractLLM(url, instruction, options);
+  if (!result.success) {
+    return makeError(result.error || 'crawl4ai LLM extract failed', 'crawl4ai');
+  }
+  return makeResult(
+    { extracted: result.data, raw: result.raw },
+    'crawl4ai',
+    'LLM extraction (GLM)',
+    `LLM-extracted data from ${url}`,
+  );
+}
+
+/**
+ * Crawl4AI-powered lead discovery. Crawls a company website (optionally
+ * deep-crawls) and extracts contact emails, phones, LinkedIn/Twitter URLs.
+ */
+export async function crawl4aiLeads(
+  url: string,
+  options: { deepCrawl?: boolean; maxPages?: number; company?: string } = {},
+): Promise<ToolResult<{
+  company: { name?: string; description?: string; emails: string[]; phones: string[]; social: Record<string, string> };
+  pagesCrawled: number;
+  rawContent: string;
+}>> {
+  const result = await crawl4aiCrawlForLeads(url, options);
+  if (!result.success) {
+    return makeError(result.error || 'crawl4ai leads failed', 'crawl4ai');
+  }
+  return makeResult(
+    {
+      company: result.companyInfo,
+      pagesCrawled: result.pagesCrawled,
+      rawContent: result.rawContent,
+    },
+    'crawl4ai',
+    `Lead crawl (${result.pagesCrawled} pages, ${result.companyInfo.emails.length} emails found)`,
+    `${result.companyInfo.emails.length} emails, ${result.companyInfo.phones.length} phones from ${url}`,
+  );
+}
+
+/**
+ * Take a full-page screenshot of a URL. Returns base64 PNG.
+ */
+export async function crawl4aiScreenshot(
+  url: string,
+  options: CrawlerRunOptions = {},
+): Promise<ToolResult<{ screenshot: string; format: 'png' }>> {
+  const result = await crawl4aiTakeScreenshot(url, options);
+  if (!result.success || !result.screenshot) {
+    return makeError(result.error || 'crawl4ai screenshot failed', 'crawl4ai');
+  }
+  return makeResult(
+    { screenshot: result.screenshot, format: 'png' as const },
+    'crawl4ai',
+    'Screenshot (full-page PNG)',
+    `Captured ${url} (${Math.round(result.screenshot.length * 0.75 / 1024)}KB)`,
+  );
+}
+
+/**
+ * Generate a sitemap for a website by deep-crawling it.
+ */
+export async function crawl4aiSitemap(
+  url: string,
+  options: { maxDepth?: number; maxPages?: number } = {},
+): Promise<ToolResult<{ urls: Array<{ url: string; title?: string; depth: number }>; totalPages: number }>> {
+  const result = await crawl4aiGenerateSitemap(url, options);
+  return makeResult(
+    { urls: result.urls, totalPages: result.totalPages },
+    'crawl4ai',
+    `Sitemap (${result.totalPages} pages, depth ${result.maxDepth})`,
+    `${result.totalPages} URLs discovered from ${url}`,
+  );
+}
+
+/**
+ * Check the status of the crawl4ai service.
+ */
+export async function crawl4aiStatus(): Promise<ToolResult<Record<string, unknown>>> {
+  const status = await crawl4aiCheckStatus();
+  return makeResult(
+    status as unknown as Record<string, unknown>,
+    'crawl4ai',
+    `Status: ${status.installed ? 'installed' : 'missing'} v${status.version}`,
+    `Service ${status.serviceUrl}: ${status.browserReady ? 'ready' : 'cold'}`,
+  );
+}
+
+/**
+ * Ensure the crawl4ai HTTP service is running (auto-starts it if not).
+ */
+export { crawl4aiEnsureService };
+
+/**
+ * Generic dispatcher — call any crawl4ai operation by name.
+ * Used by the agent executor when an agent specifies the 'crawl4ai' channel.
+ */
+export { executeCrawl4AIOperation };
+
+// ============================================================
 // Export all channel functions as a single toolkit object
 // for agents to access
 // ============================================================
@@ -2501,6 +2773,17 @@ export const AgentReachToolkit = {
   twitterSearchUsers,
   weiboSearch,
   xueqiuQuote,
+  
+  // Crawl4AI channel (vendored unclecode/crawl4ai 0.9.0)
+  crawl4aiRead,
+  crawl4aiDeepRead,
+  crawl4aiExtract,
+  crawl4aiLLMExtract,
+  crawl4aiLeads,
+  crawl4aiScreenshot,
+  crawl4aiSitemap,
+  crawl4aiStatus,
+  executeCrawl4AIOperation,
   
   // Composite tools (multi-channel)
   discoverBusinesses,
