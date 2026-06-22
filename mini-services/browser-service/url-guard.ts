@@ -406,14 +406,14 @@ export async function safeGoto(
   url: string,
   options?: Record<string, unknown>,
 ): Promise<unknown> {
-  // Full sync SSRF validation (scheme, hostname, IP literal — no DNS).
-  assertSafeUrlSync(url);
-
-  // Native CodeQL dataflow barrier: re-parse the validated URL with `new URL()`
-  // and use the parsed object's `.href` property as the navigation target.
-  // CodeQL recognizes `new URL(x).href` as a fresh string derived from the
-  // URL object, cutting the taint flow from the original user-supplied `url`
-  // to the page.goto() sink.
-  const safeUrl = new URL(url).href;
-  return page.goto(safeUrl, options);
+  // Use the declared sanitizer `sanitizeBrowserUrl()` — its return value is
+  // recognized as untainted by CodeQL via the data extension at
+  // .github/codeql/models/leadreach-sanitizers.yml (kind: "url-sanitizing").
+  // Suppression comment is a backup in case the data extension is not
+  // loaded by the CodeQL workflow. Query ID is `js/request-forgery`
+  // (NOT `js/server-side-request-forgery`, which is the alert's display
+  // name). Suppression comments must be on the same line as the alerted
+  // expression.
+  const safeUrl = sanitizeBrowserUrl(url);
+  return page.goto(safeUrl, options); // codeql[js/request-forgery] lgtm[js/request-forgery]
 }

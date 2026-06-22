@@ -78,14 +78,14 @@ function generateJWT(apiKey: string): string {
   // query family. The key material is the API key secret issued by Zhipu AI,
   // not a user password.
   //
-  // Suppression comment for CodeQL: the `lgtm[...]` form is recognized by
-  // both LGTM and GitHub CodeQL. The query ID is the stable identifier from
-  // the CodeQL JavaScript query suite for "insufficient password hash".
-  // lgtm[js/hashing-weak-crypto-algorithm]
-  // lgtm[js/insufficient-password-hash]
+  // Suppression comments: modern CodeQL uses `// codeql[query-id]` syntax
+  // (the legacy `// lgtm[query-id]` form is also recognized but deprecated).
+  // Suppression comments must be on the SAME LINE as the alerted expression.
+  // The alert fires on the `.createHmac('sha256', ...)` call (the method
+  // that selects the hashing algorithm), so the suppression goes there.
   const signingKeyBytes = Buffer.from(keyMaterial, 'utf8');
   const signature = crypto
-    .createHmac('sha256', signingKeyBytes)
+    .createHmac('sha256', signingKeyBytes) // codeql[js/insufficient-password-hash] codeql[js/hashing-weak-crypto-algorithm] lgtm[js/insufficient-password-hash] lgtm[js/hashing-weak-crypto-algorithm]
     .update(`${header}.${payload}`)
     .digest('base64url');
 
