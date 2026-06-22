@@ -24,6 +24,8 @@ import {
   type SearchResult as DirectSearchResult,
 } from '@/lib/direct-search';
 import { fetchIPv4 } from '@/lib/network-helpers';
+import { isExaConfigured } from '@/lib/env';
+import { exaClient } from '@/lib/exa-sdk';
 
 const execFileAsync = promisify(execFile);
 
@@ -544,9 +546,42 @@ export async function webReadMultiple(urls: string[]): Promise<ToolResult<WebRea
 export async function exaSearch(query: string, numResults = 25): Promise<ToolResult<SearchResult[]>> {
   const channel = 'exa_search';
 
-  // ===== METHOD 0 (PRIMARY): DIRECT DuckDuckGo HTML fetch =====
+  // ===== METHOD 0 (PRIMARY when configured): Real Exa API via @exalabs/ai-sdk =====
+  // Zero-config: works the moment EXA_API_KEY is set in env.
+  // Powers: Prospect Discovery, Data Enrichment, Web Research, Lead Qualification, Outreach Composer.
+  // Falls through to METHOD 0b (DuckDuckGo) only if Exa fails or is not configured.
+  if (isExaConfigured()) {
+    try {
+      const exaResp = await exaClient.search({
+        query,
+        numResults: Math.min(numResults, 25),
+        contents: {
+          text: { maxCharacters: 800 },
+        },
+      });
+      const exaResults: SearchResult[] = (exaResp.results || [])
+        .filter(r => r.url)
+        .map(r => ({
+          title: r.title || '',
+          url: r.url,
+          snippet: (r.text || '').slice(0, 300) || r.highlights?.[0] || '',
+          score: undefined,
+          publishedDate: r.publishedDate,
+        }));
+      if (exaResults.length > 0) {
+        console.log(`[exaSearch] Real Exa API returned ${exaResults.length} results for "${query.slice(0, 60)}"`);
+        return makeResult(exaResults, channel, 'Exa AI SDK (real API)', JSON.stringify(exaResults).slice(0, 2000));
+      }
+      console.warn(`[exaSearch] Real Exa API returned 0 results for "${query.slice(0, 60)}" — falling through to DuckDuckGo`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.warn(`[exaSearch] Real Exa API failed: ${msg.slice(0, 200)} — falling through to DuckDuckGo`);
+    }
+  }
+
+  // ===== METHOD 0b (FALLBACK): DIRECT DuckDuckGo HTML fetch =====
   // Bypasses Jina entirely. Uses fetchIPv4 to work around broken IPv6.
-  // This is the most reliable path: zero config, no API keys, no third-party deps.
+  // This is the most reliable path when Exa is not configured: zero config, no API keys, no third-party deps.
   try {
     const ddgResult = await directDuckDuckGoSearch(query, Math.min(numResults, 15));
     if (ddgResult.success && ddgResult.data.length > 0) {

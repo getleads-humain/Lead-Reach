@@ -1,10 +1,10 @@
 ---
 title: "Monthly Knowledge Gap Report — 2026-06"
 category: gap-report
-generated_at: "2026-06-22T01:49:38.573Z"
+generated_at: "2026-06-22T02:34:59.182Z"
 generated_by: "echo"
 report_month: "2026-06"
-total_gaps: 38
+total_gaps: 31
 ---
 
 # Monthly Knowledge Gap Report — 2026-06
@@ -13,20 +13,17 @@ total_gaps: 38
 
 ## 1. Executive Summary
 
-The knowledge base currently contains **29 documents** across 6 categories, indexed into 226 retrievable chunks. This report identifies **38 gaps** requiring attention: 17 missing industries, 12 missing regions, 9 missing playbooks, 0 quality gaps, and 0 freshness gaps.
+The knowledge base currently contains **36 documents** across 6 categories, indexed into 301 retrievable chunks. This report identifies **31 gaps** requiring attention: 14 missing industries, 10 missing regions, 7 missing playbooks, 0 quality gaps, and 0 freshness gaps.
 
 **Priority actions this month:**
-- knowledge/industries/dev-tools.md — emerging industry requested in recent campaigns
-- knowledge/industries/cybersecurity.md — emerging industry requested in recent campaigns
-- knowledge/industries/ai-infrastructure.md — emerging industry requested in recent campaigns
+- knowledge/industries/edtech.md — emerging industry requested in recent campaigns
+- knowledge/industries/proptech.md — emerging industry requested in recent campaigns
+- knowledge/industries/legaltech.md — emerging industry requested in recent campaigns
 
 ## 2. Coverage Gaps
 
-### 2.1 Industries Not Covered (17)
+### 2.1 Industries Not Covered (14)
 
-- `dev-tools`
-- `cybersecurity`
-- `ai-infrastructure`
 - `edtech`
 - `proptech`
 - `legaltech`
@@ -42,10 +39,8 @@ The knowledge base currently contains **29 documents** across 6 categories, inde
 - `construction`
 - `media`
 
-### 2.2 Regions Not Covered (12)
+### 2.2 Regions Not Covered (10)
 
-- `canada`
-- `dach`
 - `nordics`
 - `japan`
 - `south-korea`
@@ -57,10 +52,8 @@ The knowledge base currently contains **29 documents** across 6 categories, inde
 - `mena`
 - `africa`
 
-### 2.3 Playbooks Not Covered (9)
+### 2.3 Playbooks Not Covered (7)
 
-- `inbound-lead-routing`
-- `churn-recovery`
 - `upsell-to-enterprise`
 - `competitor-displacement`
 - `event-follow-up`
@@ -93,9 +86,9 @@ _All docs have been reviewed within the last 180 days._
 
 | Metric | Value |
 |--------|-------|
-| Total documents | 29 |
-| Total chunks (retrievable) | 226 |
-| Freshness — fresh (<90 days) | 20 |
+| Total documents | 36 |
+| Total chunks (retrievable) | 301 |
+| Freshness — fresh (<90 days) | 27 |
 | Freshness — stale (90–180 days) | 0 |
 | Freshness — very stale (180+ days) | 9 |
 | Embeddings enabled | no (BM25 only) |
@@ -105,9 +98,9 @@ _All docs have been reviewed within the last 180 days._
 | Category | Documents |
 |----------|-----------|
 | gap-report | 9 |
-| industry | 62 |
-| playbook | 26 |
-| region | 39 |
+| industry | 93 |
+| playbook | 48 |
+| region | 61 |
 | tool | 60 |
 | training-data | 30 |
 
@@ -115,26 +108,26 @@ _All docs have been reviewed within the last 180 days._
 
 | Grade | Documents |
 |-------|-----------|
-| B | 101 |
-| A | 86 |
+| B | 154 |
+| A | 108 |
 
 ## 7. Recommendations
 
 ### 7.1 New Docs to Author (13)
 
-- [ ] knowledge/industries/dev-tools.md — emerging industry requested in recent campaigns
-- [ ] knowledge/industries/cybersecurity.md — emerging industry requested in recent campaigns
-- [ ] knowledge/industries/ai-infrastructure.md — emerging industry requested in recent campaigns
 - [ ] knowledge/industries/edtech.md — emerging industry requested in recent campaigns
 - [ ] knowledge/industries/proptech.md — emerging industry requested in recent campaigns
-- [ ] knowledge/regions/canada.md — region with active prospect activity
-- [ ] knowledge/regions/dach.md — region with active prospect activity
+- [ ] knowledge/industries/legaltech.md — emerging industry requested in recent campaigns
+- [ ] knowledge/industries/hrtech.md — emerging industry requested in recent campaigns
+- [ ] knowledge/industries/martech.md — emerging industry requested in recent campaigns
 - [ ] knowledge/regions/nordics.md — region with active prospect activity
 - [ ] knowledge/regions/japan.md — region with active prospect activity
 - [ ] knowledge/regions/south-korea.md — region with active prospect activity
-- [ ] knowledge/playbooks/inbound-lead-routing.md — recurring scenario not yet documented
-- [ ] knowledge/playbooks/churn-recovery.md — recurring scenario not yet documented
+- [ ] knowledge/regions/australia.md — region with active prospect activity
+- [ ] knowledge/regions/latam-brazil.md — region with active prospect activity
 - [ ] knowledge/playbooks/upsell-to-enterprise.md — recurring scenario not yet documented
+- [ ] knowledge/playbooks/competitor-displacement.md — recurring scenario not yet documented
+- [ ] knowledge/playbooks/event-follow-up.md — recurring scenario not yet documented
 
 ### 7.2 Existing Docs to Refresh (0)
 

@@ -15,7 +15,8 @@
     "db:reset": "prisma migrate reset",
     "fix:security": "npx tsx scripts/fix-supabase-security.ts",
     "knowledge:reindex": "npx tsx -e \"import {getKnowledgeIndex} from './src/lib/knowledge'; getKnowledgeIndex().load(true); console.log('Knowledge base reindexed');\"",
-    "knowledge:gap": "npx tsx scripts/run-gap-report.ts"
+    "knowledge:gap": "npx tsx scripts/run-gap-report.ts",
+    "knowledge:embeddings": "npx tsx scripts/precompute-embeddings.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

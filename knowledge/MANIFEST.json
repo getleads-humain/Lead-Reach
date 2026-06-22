@@ -1,11 +1,11 @@
 {
-  "version": "1.0.0",
+  "version": "1.1.0",
   "generated_at": "2026-06-22",
   "description": "LeadReach Knowledge Base — machine-readable index of every knowledge document",
-  "total_docs": 22,
+  "total_docs": 36,
   "categories": {
     "industries": {
-      "count": 5,
+      "count": 8,
       "docs": [
         {
           "id": "saas-b2b",
@@ -46,11 +46,35 @@
           "grade": "B",
           "last_reviewed": "2026-06-22",
           "tags": ["manufacturing", "industrial", "iiot", "supply-chain", "b2b", "mid-market"]
+        },
+        {
+          "id": "dev-tools",
+          "path": "industries/dev-tools.md",
+          "title": "Developer Tools (DevTools) — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["dev-tools", "developer-tools", "plg", "api", "sdk", "open-source", "seat-based"]
+        },
+        {
+          "id": "cybersecurity",
+          "path": "industries/cybersecurity.md",
+          "title": "Cybersecurity — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["cybersecurity", "infosec", "soc2", "iso27001", "compliance", "mssp", "ciso"]
+        },
+        {
+          "id": "ai-infrastructure",
+          "path": "industries/ai-infrastructure.md",
+          "title": "AI Infrastructure — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["ai-infrastructure", "llmops", "vector-db", "mlops", "gpu", "fine-tuning", "rag"]
         }
       ]
     },
     "regions": {
-      "count": 4,
+      "count": 6,
       "docs": [
         {
           "id": "us",
@@ -83,11 +107,27 @@
           "grade": "B",
           "last_reviewed": "2026-06-22",
           "tags": ["apac", "singapore", "pdpa", "mas", "fintech", "relationship"]
+        },
+        {
+          "id": "canada",
+          "path": "regions/canada.md",
+          "title": "Canada — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["canada", "casl", "pipeda", "quebec", "quebec-law-25", "b2b", "north-america"]
+        },
+        {
+          "id": "dach",
+          "path": "regions/dach.md",
+          "title": "DACH (Germany, Austria, Switzerland) — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["dach", "germany", "austria", "switzerland", "gdpr", "bdsg", "b2b", "eu"]
         }
       ]
     },
     "playbooks": {
-      "count": 3,
+      "count": 5,
       "docs": [
         {
           "id": "outbound-cold-email",
@@ -112,6 +152,22 @@
           "grade": "A",
           "last_reviewed": "2026-06-22",
           "tags": ["multi-thread", "enterprise", "consensus-buying", "stakeholder-mapping"]
+        },
+        {
+          "id": "inbound-lead-routing",
+          "path": "playbooks/inbound-lead-routing.md",
+          "title": "Inbound Lead Routing — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["inbound", "lead-routing", "sla", "qualification", "abm"]
+        },
+        {
+          "id": "churn-recovery",
+          "path": "playbooks/churn-recovery.md",
+          "title": "Churn Recovery — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["churn", "retention", "win-back", "customer-success", "at-risk"]
         }
       ]
     },
@@ -142,8 +198,16 @@
       ]
     },
     "gap-reports": {
-      "count": 0,
-      "docs": []
+      "count": 1,
+      "docs": [
+        {
+          "id": "2026-06-gap-report",
+          "path": "gap-reports/2026-06-gap-report.md",
+          "title": "Monthly Knowledge Gap Report — 2026-06",
+          "generated_at": "2026-06-22",
+          "total_gaps": 31
+        }
+      ]
     }
   },
   "grading_rubric": {
@@ -153,5 +217,23 @@
     "D": "Stub or placeholder"
   },
   "reindex_command": "npm run knowledge:reindex",
-  "gap_report_command": "npm run knowledge:gap"
+  "gap_report_command": "npm run knowledge:gap",
+  "embeddings_command": "npm run knowledge:embeddings",
+  "changelog": [
+    {
+      "version": "1.1.0",
+      "date": "2026-06-22",
+      "changes": [
+        "Added 3 new industry docs: dev-tools, cybersecurity, ai-infrastructure",
+        "Added 2 new region docs: canada, dach",
+        "Added 2 new playbooks: inbound-lead-routing, churn-recovery",
+        "Added embeddings_command for semantic embeddings pre-computation"
+      ]
+    },
+    {
+      "version": "1.0.0",
+      "date": "2026-06-22",
+      "changes": ["Initial manifest"]
+    }
+  ]
 }

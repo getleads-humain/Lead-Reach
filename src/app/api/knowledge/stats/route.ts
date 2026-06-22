@@ -1,7 +1,8 @@
 /**
  * /api/knowledge/stats — Knowledge base statistics
  *
- * Returns aggregated stats: total docs, chunks, by category, by grade, freshness.
+ * Returns aggregated stats: total docs, chunks, by category, by grade, freshness,
+ * embeddings coverage.
  */
 
 export const dynamic = 'force-dynamic';
@@ -13,7 +14,14 @@ export async function GET() {
   try {
     const index = getKnowledgeIndex();
     const stats = index.stats();
-    return Response.json({ ok: true, stats }, { status: 200 });
+    const embeddingsCoverage = index.embeddingsCoverage();
+    return Response.json({
+      ok: true,
+      stats: {
+        ...stats,
+        embeddingsCoverage,
+      },
+    }, { status: 200 });
   } catch (err) {
     console.error('[/api/knowledge/stats] Error:', err);
     return Response.json(

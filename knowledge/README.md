@@ -20,17 +20,24 @@ knowledge/
 │   ├── healthtech.md
 │   ├── ecommerce-dtc.md
 │   ├── manufacturing.md
+│   ├── dev-tools.md           ← added 2026-06
+│   ├── cybersecurity.md       ← added 2026-06
+│   ├── ai-infrastructure.md   ← added 2026-06
 │   └── ...
 ├── regions/                   ← geographic + regulatory playbooks
 │   ├── us.md
 │   ├── eu-gdpr.md
 │   ├── uk.md
 │   ├── apac-singapore.md
+│   ├── canada.md              ← added 2026-06
+│   ├── dach.md                ← added 2026-06
 │   └── ...
 ├── playbooks/                 ← how-to playbooks for each agent + scenario
 │   ├── outbound-cold-email.md
 │   ├── icp-discovery.md
 │   ├── multi-threaded-selling.md
+│   ├── inbound-lead-routing.md  ← added 2026-06
+│   ├── churn-recovery.md        ← added 2026-06
 │   └── ...
 ├── tools/                     ← tool/agent capability manifests
 │   ├── atlas.md
@@ -54,6 +61,14 @@ knowledge/
     └── YYYY-MM-gap-report.md
 ```
 
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `npm run knowledge:reindex` | Reload the in-memory index from disk (use after adding/editing docs) |
+| `npm run knowledge:gap` | Generate (or refresh) the monthly Echo gap report |
+| `npm run knowledge:embeddings` | Pre-compute Z.AI embedding-3 vectors for all chunks and persist to `.knowledge-embeddings.cache.json` |
+
 ## Editing Conventions
 
 - **File naming**: `kebab-case.md`. Industry files: `<industry>.md`. Region files: `<iso-code-or-region>.md`.
@@ -67,6 +82,22 @@ knowledge/
 2. Add the YAML front matter.
 3. Append an entry to `MANIFEST.json` (or run `npm run knowledge:reindex`).
 4. Run `npm run knowledge:gap` to regenerate the gap report — your new doc may close existing gaps or open new ones.
+5. (Optional) If `USE_KNOWLEDGE_EMBEDDINGS=true` is set, run `npm run knowledge:embeddings` to pre-compute embeddings for the new doc.
+
+## Semantic Embeddings (Optional)
+
+When `USE_KNOWLEDGE_EMBEDDINGS=true` is set in `.env`, the knowledge index uses Z.AI's `embedding-3` model to pre-compute a 2048-dimensional vector for every chunk. At query time, the system:
+
+1. Generates a query embedding via the same model (single API call).
+2. Computes cosine similarity against pre-cached chunk embeddings.
+3. Combines BM25 (40%) with cosine similarity (60%) for a hybrid retrieval score.
+
+This significantly improves recall on paraphrased queries (e.g., "how do we handle churn?" matches `churn-recovery.md` even if the doc doesn't use the word "handle"). The cache is persisted to `.knowledge-embeddings.cache.json` (gitignored) and survives restarts.
+
+To enable:
+1. Set `USE_KNOWLEDGE_EMBEDDINGS=true` and `ZHIPU_API_KEY` in `.env`
+2. Run `npm run knowledge:embeddings` to pre-compute (~2-3 seconds per batch of 16 chunks)
+3. Restart the server — the cache loads automatically on first query
 
 ## Industry Grade
 
@@ -84,3 +115,4 @@ The current grade is recorded in each file's front matter as `grade`.
 ## License
 
 Proprietary. See the project root `LICENSE` file.
+

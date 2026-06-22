@@ -65,6 +65,7 @@ interface KnowledgeStats {
   byGrade: Record<string, number>;
   freshness: { fresh: number; stale: number; very_stale: number };
   embeddingsEnabled: boolean;
+  embeddingsCoverage?: { cached: number; total: number };
 }
 
 interface SearchResult {
@@ -141,6 +142,8 @@ export default function KnowledgeAdminPage() {
   const [gapReport, setGapReport] = useState<GapReportResponse | null>(null);
   const [generatingGap, setGeneratingGap] = useState(false);
   const [activeTab, setActiveTab] = useState('browse');
+  const [precomputing, setPrecomputing] = useState(false);
+  const [precomputeMsg, setPrecomputeMsg] = useState<string | null>(null);
 
   // ============================================================
   // Initial Load
@@ -186,6 +189,27 @@ export default function KnowledgeAdminPage() {
       setFileContent(`Error: ${(err as Error).message}`);
     } finally {
       setLoadingFile(false);
+    }
+  };
+
+  const precomputeEmbeddings = async () => {
+    setPrecomputing(true);
+    setPrecomputeMsg(null);
+    try {
+      const resp = await fetch('/api/knowledge/precompute-embeddings', { method: 'POST' });
+      const data = await resp.json();
+      if (data.ok) {
+        const r = data.result;
+        setPrecomputeMsg(`Done — generated ${r.generated}, cached ${r.cached}/${r.total}, failed ${r.failed}`);
+        // Refresh stats to show updated coverage
+        await loadStats();
+      } else {
+        setPrecomputeMsg(`Error: ${data.error}`);
+      }
+    } catch (err) {
+      setPrecomputeMsg(`Error: ${(err as Error).message}`);
+    } finally {
+      setPrecomputing(false);
     }
   };
 
@@ -549,9 +573,92 @@ export default function KnowledgeAdminPage() {
                 <div className="grid grid-cols-4 gap-4">
                   <StatCard icon={FileText} label="Total Docs" value={stats.totalDocs} color="text-blue-600" />
                   <StatCard icon={Database} label="Total Chunks" value={stats.totalChunks} color="text-purple-600" />
-                  <StatCard icon={Sparkles} label="Embeddings" value={stats.embeddingsEnabled ? 'ON' : 'OFF'} color={stats.embeddingsEnabled ? 'text-green-600' : 'text-slate-400'} />
+                  <StatCard
+                    icon={Sparkles}
+                    label="Embeddings"
+                    value={
+                      stats.embeddingsEnabled
+                        ? stats.embeddingsCoverage
+                          ? `${stats.embeddingsCoverage.cached}/${stats.embeddingsCoverage.total}`
+                          : 'ON'
+                        : 'OFF'
+                    }
+                    color={stats.embeddingsEnabled ? 'text-green-600' : 'text-slate-400'}
+                  />
                   <StatCard icon={TrendingUp} label="Fresh (90d)" value={stats.freshness.fresh} color="text-green-600" />
                 </div>
+
+                {stats.embeddingsEnabled && (
+                  <Card>
+                    <CardHeader>
+                      <CardTitle className="text-sm flex items-center gap-2">
+                        <Sparkles className="w-4 h-4 text-purple-500" />
+                        Semantic Embeddings — Z.AI embedding-3
+                      </CardTitle>
+                      <CardDescription>
+                        Hybrid retrieval (BM25 + cosine similarity) for better recall on paraphrased queries.
+                        Coverage shows how many chunks have pre-computed embeddings cached on disk.
+                      </CardDescription>
+                    </CardHeader>
+                    <CardContent>
+                      {stats.embeddingsCoverage && (
+                        <div className="space-y-3">
+                          <div className="flex items-center justify-between text-sm">
+                            <span className="text-slate-600">Coverage</span>
+                            <span className="font-medium text-slate-900">
+                              {stats.embeddingsCoverage.cached} / {stats.embeddingsCoverage.total} chunks (
+                              {stats.embeddingsCoverage.total > 0
+                                ? Math.round((stats.embeddingsCoverage.cached / stats.embeddingsCoverage.total) * 100)
+                                : 0}
+                              %)
+                            </span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                            <div
+                              className="bg-gradient-to-r from-purple-500 to-pink-500 h-2 transition-all"
+                              style={{
+                                width: `${
+                                  stats.embeddingsCoverage.total > 0
+                                    ? (stats.embeddingsCoverage.cached / stats.embeddingsCoverage.total) * 100
+                                    : 0
+                                }%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center gap-3 pt-2">
+                            <Button
+                              size="sm"
+                              variant="outline"
+                              onClick={() => void precomputeEmbeddings()}
+                              disabled={precomputing}
+                            >
+                              {precomputing ? (
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
+                              ) : (
+                                <RefreshCw className="w-3 h-3 mr-1" />
+                              )}
+                              {precomputing
+                                ? 'Computing...'
+                                : stats.embeddingsCoverage.cached < stats.embeddingsCoverage.total
+                                  ? 'Pre-compute Missing'
+                                  : 'Re-compute All'}
+                            </Button>
+                            {precomputeMsg && (
+                              <span className="text-xs text-slate-500">{precomputeMsg}</span>
+                            )}
+                          </div>
+                          {stats.embeddingsCoverage.cached < stats.embeddingsCoverage.total && (
+                            <p className="text-xs text-amber-600 pt-1">
+                              ⚠ {stats.embeddingsCoverage.total - stats.embeddingsCoverage.cached} chunks lack cached
+                              embeddings — those will fall back to BM25-only scoring at query time. Click "Pre-compute
+                              Missing" to populate the cache (~2-3 seconds per batch of 16).
+                            </p>
+                          )}
+                        </div>
+                      )}
+                    </CardContent>
+                  </Card>
+                )}
 
                 <div className="grid grid-cols-2 gap-4">
                   <Card>

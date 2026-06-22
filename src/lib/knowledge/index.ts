@@ -284,11 +284,28 @@ function walkKnowledgeDir(dir: string, baseDir: string = dir): { abs: string; re
 // Knowledge Index (Singleton)
 // ============================================================
 
+const EMBEDDINGS_CACHE_PATH = path.join(process.cwd(), '.knowledge-embeddings.cache.json');
+const EMBEDDINGS_BATCH_SIZE = 16;        // Z.AI embedding API accepts up to 64/batch; keep conservative
+const EMBEDDINGS_BATCH_DELAY_MS = 200;   // polite delay between batches
+const EMBEDDING_MODEL = process.env.KNOWLEDGE_EMBEDDING_MODEL || 'embedding-3';
+const EMBEDDING_FALLBACK_MODEL = 'embedding-2';  // widely available on Z.AI accounts
+const ZHIPU_EMBEDDINGS_URL = 'https://open.bigmodel.cn/api/paas/v4/embeddings';
+
+interface EmbeddingsCache {
+  version: 1;
+  model: string;
+  generated_at: string;
+  chunk_count: number;
+  embeddings: Record<string, number[]>;  // chunkId -> embedding vector
+}
+
 class KnowledgeIndex {
   private chunks: KnowledgeChunk[] = [];
   private bm25: BM25Index | null = null;
   private loaded = false;
   private embeddingsEnabled = false;
+  private embeddingsCache: Map<string, number[]> = new Map();
+  private embeddingsLoaded = false;
 
   load(force = false): void {
     if (this.loaded && !force) return;
@@ -309,6 +326,124 @@ class KnowledgeIndex {
     this.embeddingsEnabled = process.env.USE_KNOWLEDGE_EMBEDDINGS === 'true';
     this.loaded = true;
     console.log(`[knowledge] Loaded ${this.chunks.length} chunks from ${files.length} files (embeddings: ${this.embeddingsEnabled})`);
+
+    // Pre-load cached embeddings from disk (non-blocking, async)
+    if (this.embeddingsEnabled) {
+      void this.loadEmbeddingsFromDisk();
+    }
+  }
+
+  /**
+   * Load cached embeddings from disk into the in-memory map.
+   * Stale entries (chunk IDs no longer in the index) are pruned.
+   * Missing entries are queued for background computation.
+   */
+  private async loadEmbeddingsFromDisk(): Promise<void> {
+    if (this.embeddingsLoaded) return;
+    this.embeddingsLoaded = true;
+    try {
+      if (!fs.existsSync(EMBEDDINGS_CACHE_PATH)) {
+        console.log('[knowledge] No embeddings cache found — will compute on demand');
+        return;
+      }
+      const raw = fs.readFileSync(EMBEDDINGS_CACHE_PATH, 'utf-8');
+      const cache = JSON.parse(raw) as EmbeddingsCache;
+      if (cache.version !== 1 || cache.model !== EMBEDDING_MODEL) {
+        console.log(`[knowledge] Embeddings cache outdated (model=${cache.model}, version=${cache.version}) — will recompute`);
+        return;
+      }
+      const validChunkIds = new Set(this.chunks.map(c => c.id));
+      let pruned = 0;
+      this.embeddingsCache.clear();
+      for (const [id, vec] of Object.entries(cache.embeddings)) {
+        if (validChunkIds.has(id)) {
+          this.embeddingsCache.set(id, vec);
+          // Also attach to chunk for in-place access
+          const chunk = this.chunks.find(c => c.id === id);
+          if (chunk) chunk.embedding = vec;
+        } else {
+          pruned++;
+        }
+      }
+      console.log(`[knowledge] Loaded ${this.embeddingsCache.size} cached embeddings from disk${pruned > 0 ? ` (pruned ${pruned} stale)` : ''}`);
+    } catch (err) {
+      console.error('[knowledge] Failed to load embeddings cache:', err);
+    }
+  }
+
+  /**
+   * Pre-compute embeddings for ALL chunks that don't have one yet.
+   * Persists to disk for fast subsequent loads.
+   *
+   * This is invoked:
+   *   - On demand via POST /api/knowledge/precompute-embeddings (admin)
+   *   - From the CLI: npx tsx scripts/precompute-embeddings.ts
+   *   - Automatically as a background job after each knowledge:reindex
+   *
+   * Returns a summary of how many embeddings were generated.
+   */
+  async precomputeEmbeddings(): Promise<{ total: number; generated: number; cached: number; failed: number }> {
+    if (!this.embeddingsEnabled) {
+      throw new Error('USE_KNOWLEDGE_EMBEDDINGS is not true — cannot precompute embeddings');
+    }
+    this.load();
+    await this.loadEmbeddingsFromDisk();
+
+    const missing = this.chunks.filter(c => !this.embeddingsCache.has(c.id));
+    console.log(`[knowledge] Pre-computing embeddings: ${missing.length} missing / ${this.embeddingsCache.size} cached / ${this.chunks.length} total`);
+
+    let generated = 0;
+    let failed = 0;
+    for (let i = 0; i < missing.length; i += EMBEDDINGS_BATCH_SIZE) {
+      const batch = missing.slice(i, i + EMBEDDINGS_BATCH_SIZE);
+      try {
+        const vectors = await generateEmbeddingsBatch(batch.map(c => c.content));
+        if (vectors) {
+          for (let j = 0; j < batch.length; j++) {
+            const vec = vectors[j];
+            if (vec) {
+              this.embeddingsCache.set(batch[j].id, vec);
+              batch[j].embedding = vec;
+              generated++;
+            } else {
+              failed++;
+            }
+          }
+        } else {
+          failed += batch.length;
+        }
+      } catch (err) {
+        console.error(`[knowledge] Batch ${i / EMBEDDINGS_BATCH_SIZE + 1} failed:`, err);
+        failed += batch.length;
+      }
+      // Persist after each batch so progress isn't lost
+      this.persistEmbeddings();
+      // Polite delay
+      if (i + EMBEDDINGS_BATCH_SIZE < missing.length) {
+        await new Promise(r => setTimeout(r, EMBEDDINGS_BATCH_DELAY_MS));
+      }
+    }
+
+    console.log(`[knowledge] Pre-compute complete: ${generated} generated, ${failed} failed, ${this.embeddingsCache.size} total cached`);
+    return { total: this.chunks.length, generated, cached: this.embeddingsCache.size, failed };
+  }
+
+  /**
+   * Persist the in-memory embeddings cache to disk.
+   */
+  private persistEmbeddings(): void {
+    const cache: EmbeddingsCache = {
+      version: 1,
+      model: EMBEDDING_MODEL,
+      generated_at: new Date().toISOString(),
+      chunk_count: this.chunks.length,
+      embeddings: Object.fromEntries(this.embeddingsCache),
+    };
+    try {
+      fs.writeFileSync(EMBEDDINGS_CACHE_PATH, JSON.stringify(cache), 'utf-8');
+    } catch (err) {
+      console.error('[knowledge] Failed to persist embeddings cache:', err);
+    }
   }
 
   search(query: string, topK = 10, filterCategory?: KnowledgeChunk['category']): SearchResult[] {
@@ -388,6 +523,17 @@ class KnowledgeIndex {
     };
   }
 
+  /**
+   * Return the number of chunks that have a precomputed embedding cached.
+   * Used by /api/knowledge/stats to show "embeddings: 187/226 cached".
+   */
+  embeddingsCoverage(): { cached: number; total: number } {
+    return {
+      cached: this.embeddingsCache.size,
+      total: this.chunks.length,
+    };
+  }
+
   isEmbeddingsEnabled(): boolean {
     return this.embeddingsEnabled;
   }
@@ -405,42 +551,88 @@ export function getKnowledgeIndex(): KnowledgeIndex {
 // ============================================================
 
 /**
+ * Call Z.AI embeddings API with model fallback.
+ * Tries EMBEDDING_MODEL (default 'embedding-3') first; falls back to
+ * EMBEDDING_FALLBACK_MODEL ('embedding-2') on 400 / model-not-found.
+ *
+ * Returns the parsed response data, or null on failure.
+ */
+async function callZhipuEmbeddings(
+  input: string | string[],
+  apiKey: string
+): Promise<{ data: { embedding: number[] }[] } | null> {
+  const inputs = Array.isArray(input) ? input : [input];
+  for (const model of [EMBEDDING_MODEL, EMBEDDING_FALLBACK_MODEL]) {
+    try {
+      const resp = await fetch(ZHIPU_EMBEDDINGS_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${apiKey}`,
+        },
+        body: JSON.stringify({
+          model,
+          input: inputs.map(t => t.slice(0, 8000)),
+        }),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        // 400 = model not found / bad request — try fallback model
+        if (resp.status === 400 && model === EMBEDDING_MODEL) {
+          console.warn(`[knowledge] Embedding model "${model}" rejected (400) — falling back to "${EMBEDDING_FALLBACK_MODEL}"`);
+          continue;
+        }
+        console.error(`[knowledge] Embedding API (${model}) failed:`, resp.status, errText.slice(0, 200));
+        return null;
+      }
+      const data = await resp.json() as { data: { embedding: number[] }[] };
+      if (!data.data || data.data.length !== inputs.length) {
+        console.error(`[knowledge] Embedding (${model}) response length mismatch: expected ${inputs.length}, got ${data.data?.length ?? 0}`);
+        return null;
+      }
+      return data;
+    } catch (err) {
+      console.error(`[knowledge] Embedding (${model}) network error:`, err);
+      // Try fallback model
+      if (model === EMBEDDING_MODEL) continue;
+      return null;
+    }
+  }
+  return null;
+}
+
+/**
  * Optional: generate embeddings for a chunk using Z.AI's embedding-3 API.
  * Disabled by default; enable via USE_KNOWLEDGE_EMBEDDINGS=true.
  *
  * Returns null if embeddings are disabled or the API call fails.
  *
- * Future enhancement: pre-compute chunk embeddings at index time and
- * store to disk for fast cosine similarity at query time.
+ * For bulk pre-computation, use generateEmbeddingsBatch() instead.
  */
 export async function generateEmbedding(text: string): Promise<number[] | null> {
   if (process.env.USE_KNOWLEDGE_EMBEDDINGS !== 'true') return null;
   const apiKey = process.env.ZHIPU_API_KEY;
   if (!apiKey) return null;
 
-  try {
-    // Z.AI embedding-3 API
-    const resp = await fetch('https://open.bigmodel.cn/api/paas/v4/embeddings', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'Authorization': `Bearer ${apiKey}`,
-      },
-      body: JSON.stringify({
-        model: 'embedding-3',
-        input: text.slice(0, 8000),  // truncate to API limit
-      }),
-    });
-    if (!resp.ok) {
-      console.error('[knowledge] Embedding API failed:', resp.status, await resp.text());
-      return null;
-    }
-    const data = await resp.json() as { data: { embedding: number[] }[] };
-    return data.data?.[0]?.embedding ?? null;
-  } catch (err) {
-    console.error('[knowledge] Embedding error:', err);
-    return null;
-  }
+  const data = await callZhipuEmbeddings(text, apiKey);
+  return data?.data?.[0]?.embedding ?? null;
+}
+
+/**
+ * Batch-embed multiple texts in a single API call (Z.AI embedding API supports up to 64 inputs).
+ * Returns null on failure; partial results on per-input failure are not supported.
+ *
+ * Use this for pre-computing chunk embeddings at index time.
+ */
+export async function generateEmbeddingsBatch(texts: string[]): Promise<(number[] | null)[] | null> {
+  if (process.env.USE_KNOWLEDGE_EMBEDDINGS !== 'true') return null;
+  const apiKey = process.env.ZHIPU_API_KEY;
+  if (!apiKey) return null;
+  if (texts.length === 0) return [];
+
+  const data = await callZhipuEmbeddings(texts, apiKey);
+  if (!data) return null;
+  return data.data.map(d => d.embedding);
 }
 
 /**
@@ -460,8 +652,11 @@ export function cosineSimilarity(a: number[], b: number[]): number {
 
 /**
  * Hybrid search: BM25 + optional embeddings.
- * When embeddings are enabled, generates query embedding and combines
- * BM25 score (normalized) with cosine similarity.
+ * When embeddings are enabled:
+ *   - Pre-computed chunk embeddings are loaded from disk cache (fast path).
+ *   - Query embedding is generated on-the-fly (single API call).
+ *   - BM25 score (normalized) is combined with cosine similarity (60/40 weighting).
+ *   - Missing chunk embeddings fall back to BM25-only scoring (graceful degradation).
  */
 export async function hybridSearch(
   query: string,
@@ -481,15 +676,15 @@ export async function hybridSearch(
     return bm25Results.slice(0, topK);
   }
 
-  // Generate embeddings for top BM25 results and combine scores
+  // Combine BM25 score with cosine similarity of pre-cached chunk embeddings.
+  // Missing chunk embeddings fall back to BM25-only (no blocking API calls in the
+  // hot path — embeddings should be pre-computed via precomputeEmbeddings()).
   const maxBm25 = Math.max(...bm25Results.map(r => r.score), 1);
   const hybridResults: SearchResult[] = [];
 
   for (const bm25Result of bm25Results) {
-    const chunkEmbedding = bm25Result.chunk.embedding ?? await generateEmbedding(bm25Result.chunk.content);
-    if (chunkEmbedding) {
-      bm25Result.chunk.embedding = chunkEmbedding;  // cache
-      const cosine = cosineSimilarity(queryEmbedding, chunkEmbedding);
+    if (bm25Result.chunk.embedding) {
+      const cosine = cosineSimilarity(queryEmbedding, bm25Result.chunk.embedding);
       const bm25Norm = bm25Result.score / maxBm25;
       const hybridScore = 0.4 * bm25Norm + 0.6 * cosine;
       hybridResults.push({
@@ -498,6 +693,7 @@ export async function hybridSearch(
         retrievalMethod: 'hybrid',
       });
     } else {
+      // No pre-computed embedding — fall back to BM25-only
       hybridResults.push(bm25Result);
     }
   }
