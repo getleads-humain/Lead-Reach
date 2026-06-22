@@ -477,3 +477,30 @@ Stage Summary:
 - Auto-start: src/instrumentation.ts fires service on Next.js boot
 - All features verified working end-to-end through both Python and TypeScript
 - Ready to commit + push
+
+---
+Task ID: campaigns-start-pipeline-fix
+Agent: Super Z (main)
+Task: Fix the "Start Pipeline" / "Start Campaign" / "Create & Run Pipeline" buttons on campaign cards. They were navigating users to /dashboard and not actually starting the 8-agent pipeline.
+
+Work Log:
+- Used Explore subagent to map the campaign UI architecture. Found 7 different "Start Pipeline" buttons across CampaignsView (3 places), CampaignDetailView (2 places), and the legacy PipelineExecutionView (1 place, dead code).
+- Root cause identified: CampaignsView.handleRunPipeline was calling POST /api/campaigns/[id]/run-pipeline (the LEGACY detached 4-stage worker), which spawns a background process and provides NO visible UI feedback. Users see "nothing happens" and perceive it as "navigating to dashboard" because the Zustand store resets to 'dashboard' on reload.
+- The CORRECT pipeline is the 8-agent SSE orchestrator at POST /api/campaigns/[id]/stream, which was only reachable from CampaignDetailView's "Run Discovery Pipeline" button.
+- Solution: Add `autoRunPipelineOnSelect: boolean` flag to Zustand store (not persisted). CampaignsView's "Start Pipeline" buttons now navigate to campaign-detail view + set the flag. CampaignDetailView consumes the flag on mount and auto-triggers the SSE pipeline.
+- Files modified:
+  - src/lib/store.ts: Added `autoRunPipelineOnSelect` flag + `setAutoRunPipelineOnSelect` setter.
+  - src/components/campaigns/campaigns-view.tsx: Rewrote `handleRunPipeline` to set flag + navigate (instead of calling legacy endpoint). Updated `handleCreate` so "Create & Run Pipeline" actually runs the pipeline after creation. Added toast feedback via sonner.
+  - src/components/campaigns/campaign-detail-view.tsx: Added useEffect that consumes `autoRunPipelineOnSelect` on mount and calls runPipeline(). Added `autoRunConsumedRef` to prevent double-execution in StrictMode. Added toast feedback on `done` and `error` SSE events.
+  - src/app/layout.tsx: Added SonnerToaster next to existing shadcn Toaster so sonner's `toast.*()` calls actually render.
+  - src/lib/types.ts: Resolved merge conflict — union of `'campaign-detail'` (local) and `'knowledge'` (remote) ViewType values.
+- Tested: TypeScript compile passes (0 errors in changed files), Next.js production build succeeds (142/142 static pages generated).
+- Committed as 9f69bdf + merge commit 67691ff (had to merge with remote which had advanced 5 commits from earlier session).
+
+Stage Summary:
+- "Start Pipeline" / "Re-Run Pipeline" / "Start Agent Pipeline" / "Create & Run Pipeline" buttons now ALL trigger the 8-agent SSE pipeline (Atlas -> Scout -> Forge -> Sage -> Judge -> Bard -> Flow -> Echo) and show live progress in CampaignDetailView.
+- Toast notifications provide clear feedback: campaign created, pipeline starting, pipeline complete with discovered/enriched/failed counts, errors with recovery hints.
+- The flag auto-clears on consumption so the user can navigate away and back without auto-restarting.
+- autoRunConsumedRef prevents double-execution in React StrictMode.
+- The guard resets when selectedCampaignId changes so users can navigate from one campaign to another's "Start Pipeline" button and have it auto-start.
+- Pipeline SOP is preserved: DuckDuckGo discovery -> save top ~10 candidates as Lead rows -> enrich top N (default 3) via processWithOrchestrator (deep crawl + LLM extraction) -> forward enriched data + KPIs back to Campaign row (leadsFound, leadsQualified) via Prisma.
