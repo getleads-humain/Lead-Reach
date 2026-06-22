@@ -504,3 +504,70 @@ Stage Summary:
 - autoRunConsumedRef prevents double-execution in React StrictMode.
 - The guard resets when selectedCampaignId changes so users can navigate from one campaign to another's "Start Pipeline" button and have it auto-start.
 - Pipeline SOP is preserved: DuckDuckGo discovery -> save top ~10 candidates as Lead rows -> enrich top N (default 3) via processWithOrchestrator (deep crawl + LLM extraction) -> forward enriched data + KPIs back to Campaign row (leadsFound, leadsQualified) via Prisma.
+
+---
+Task ID: agentic-system-unified-layer
+Agent: Super Z (main)
+Task: Install a full agentic infrastructure into the LeadReach codebase — safety evals, evaluations, CI/CD pipeline, workflow, context window, memory, tools, MoE modeling, harness, constraints, and SOP — without breaking any existing functionality. The user explicitly said "keep everything the same and only add/modify on top."
+
+Work Log:
+- Explored the existing codebase to understand what was already in place:
+  - 8-agent orchestrator: src/lib/prospect-agent/orchestrator.ts (1574 lines) — Atlas→Scout→Forge→Sage→Judge→Bard→Flow→Echo
+  - Agent infrastructure: src/lib/agent-infrastructure/ — sessions, models, logs, cron, skills, plugins, profiles, config, keys, documentation, registry
+  - Vellum core: src/lib/vellum-core/ — agent-loop, channels, compaction, event-bus, mcp, memory, plugins, skills, streaming, tool-registry, types, z-ai-provider
+  - 34 Prisma models including AgentTask, AgentLog, AgentSession, VellumMemoryNode, VellumMemoryEdge, Campaign, Lead
+  - Existing CI: only .github/workflows/codeql-analysis.yml
+- Designed a unified agentic-system module that ADDS to the existing infrastructure without replacing anything. Ten sub-modules: sop, workflow, context, memory, tools, moe, harness, safety, evals, telemetry.
+- Created the SOP spec (src/lib/agentic-system/sop/sop-spec.ts) as the single source of truth — defines 8 agents, 6 SOP variants (discovery/enrichment/qualification/outreach/analysis/conversation), 8 phase specs with timeouts + success criteria + failure handling, and hard constraints (5min total timeout, 60s per-phase, 50k tokens, 5 leads, 8 HTTP/lead, SSRF blocklist).
+- Created the workflow engine (workflow/workflow-engine.ts) that wraps processWithOrchestrator with input/output guardrails, SOP variant selection, telemetry recording, and abort-signal support.
+- Created the context window manager (context/context-window.ts) with token estimation (separate CJK/Latin ratios), LRU cache, priority-based compaction, and a singleton manager per pipeline run.
+- Created the unified memory store (memory/memory-store.ts) — single API (remember/recall/forget/search/clearScope) over in-process LRU cache (500 entries) + Prisma VellumMemoryNode table for durability. Hierarchical scopes: campaign:<id> / lead:<id> / agent:<name> / global.
+- Created the tool registry (tools/tool-registry.ts) — unified schema (name/description/category/cost/external/requiredEnv) + invoke function. 6 built-in tools registered: duckduckgo_search, exa_search, crawl4ai_read, linkedin_search_companies, persist_lead, generate_summary. Tools lazy-load their backing modules.
+- Created the MoE router (moe/moe-router.ts) — 6 expert pipelines (discovery_expert, enrichment_expert, qualification_expert, outreach_expert, analysis_expert, conversation_expert) with quality scores, costs, latencies. Intent-based hard routing now; soft MoE fan-out is a future enhancement when LeadReach has multiple LLM backends.
+- Created the harness (harness/harness.ts) — pre-flight SSRF checks, total timeout enforcement, per-run counters (tokens/leads/HTTP), and constraint violation reporting. Counter bumps available via module-level active counters so agents can check limits without passing the counter object through every call.
+- Created the safety framework:
+  - safety/output-validator.ts — input guardrails (SSRF, prompt injection, PII redaction, length cap) + output guardrails (PII redaction, profanity filter, competitor mention block)
+  - safety/safety-evals.ts — 14 test cases across 5 categories (prompt injection, PII leakage, SSRF, length cap, profanity) + constraint validation
+- Created the eval framework:
+  - evals/eval-datasets.ts — 13 fixtures across 3 categories (intent classification 8, SOP selection 3, output quality 2)
+  - evals/eval-metrics.ts — per-fixture evaluation + suite report builder with by-category breakdown
+  - evals/eval-runner.ts — dry-run mode (simulated, no LLM calls — for CI) + real-run mode (uses live LLM — for admin UI) + smokeCheck() for fast sanity
+- Created the telemetry module (telemetry/trace.ts) — fluent recordRun.start/success/failure API, in-process ring buffer (100 runs), Prisma AgentLog persistence, getRecentRuns + getRunStats query API for admin UI.
+- Created the public API barrel (src/lib/agentic-system/index.ts) exporting all 10 modules' public functions + types.
+- Created 4 admin API routes:
+  - GET /api/admin/agents/overview — SOP manifest + experts + tools + recent runs + stats
+  - GET /api/admin/agents/evals?dryRun=1&category=...&maxFixtures=N — run eval suite
+  - GET /api/admin/agents/safety — run safety suite + constraint validation
+  - GET /api/admin/agents/runs?limit=N — recent runs + aggregate stats
+- Created the admin dashboard (src/app/admin/agents/page.tsx) — live view of the entire agentic system: stats grid, 8-agent pipeline cards, SOP variants, constraints, MoE experts, registered tools, recent pipeline runs (auto-refresh every 10s), safety report, eval report. Run safety + eval suites on demand.
+- Created 3 CI/CD workflow files:
+  - .github/workflows/ci.yml — main CI (lint + typecheck + build) on every push/PR
+  - .github/workflows/agentic-evals.yml — eval suite (dry-run) on PRs touching src/lib/agentic-system/**
+  - .github/workflows/agentic-safety.yml — safety suite on PRs touching src/lib/agentic-system/** + weekly schedule
+- Created 3 CI eval scripts:
+  - scripts/evals/run-evals.ts — runs the eval suite, writes report, exits non-zero on failure
+  - scripts/evals/run-safety.ts — runs the safety suite + constraint validation, exits non-zero on failure
+  - scripts/evals/smoke-check.ts — fast 3-fixture sanity check
+- Added 3 npm scripts to package.json: agentic:evals, agentic:safety, agentic:smoke
+- Authored 2 docs:
+  - docs/agentic-system/AGENTIC_SYSTEM.md — full technical reference (architecture, quick start, file map, how to add tools/variants/safety tests)
+  - docs/agentic-system/SOP.md — the Standard Operating Procedure (purpose, 8 agents, 6 variants, methodology principles, failure modes, change management)
+- Fixed multiple TypeScript correctness issues during development:
+  - AgentMessage.timestamp is Date not string; role is 'user'|'assistant'|'system' (no 'error')
+  - ConversationContext has recentProspects/activeICP/lastIntent/lastPersona/userPreferences (not messages/state/metadata)
+  - VellumMemoryNode has scopeId+sourceType (not metadata field) — adapted memory-store.ts to use those
+  - AgentLog requires a category field — added 'execution' to telemetry persistence
+  - Fixed `const violations: string[];` syntax error in output-validator.ts (must be `let ... = []`)
+- Verified the new module compiles cleanly: `bunx tsc --noEmit` shows ZERO errors in src/lib/agentic-system/**, src/app/admin/agents/**, src/app/api/admin/agents/**, or scripts/evals/**. (Pre-existing errors in other files remain unchanged.)
+- Verified the safety suite runs and passes: 14/14 tests pass, constraint validation passes.
+- Verified the eval suite runs and passes in dry-run mode: 13/13 fixtures pass.
+- Verified the smoke check passes: 3/3 fixtures pass.
+
+Stage Summary:
+- LeadReach now has a unified agentic system layer on top of the existing infrastructure. Nothing was removed or replaced — the new module adds SOP, workflow engine, context window, memory, tools, MoE, harness, constraints, safety evals, evals, and telemetry.
+- The admin dashboard at /admin/agents shows the live state of the entire agentic system.
+- Three CI workflows gate the codebase: main CI (lint+typecheck+build), agentic evals (dry-run, 13 fixtures), agentic safety (14 tests).
+- All safety tests pass (14/14). All eval fixtures pass in dry-run mode (13/13).
+- The SOP is the single source of truth — every module reads from it. Changing the SOP does not require touching the workflow engine.
+- The methodology principles (factual source-attributed insights, adapt to query, graceful degradation, never block on single point of failure, respect user's time + budget, safety first, auditable) are enforced by code, not just documentation.
+- Files created: 22 new files (10 in src/lib/agentic-system/, 4 admin API routes, 1 admin page, 3 CI workflows, 3 eval scripts, 2 docs). Files modified: 1 (package.json — added 3 scripts). No existing files were changed.

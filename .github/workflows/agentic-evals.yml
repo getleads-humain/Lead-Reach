@@ -1,0 +1,83 @@
+# LeadReach — Agentic Evals CI
+# =============================
+# Runs the agentic eval suite (dry-run mode) on every PR.
+# Verifies the SOP, MoE router, harness, and eval framework are wired
+# correctly without burning real LLM API quota.
+#
+# The eval suite is intentionally small (~13 fixtures) so it completes
+# in under 60 seconds.
+#
+# To run evals against the real LLM, use the /admin/agents dashboard.
+
+name: Agentic Evals
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/lib/agentic-system/**'
+      - 'src/lib/prospect-agent/**'
+      - 'src/lib/vellum-core/**'
+      - 'src/lib/agent-infrastructure/**'
+      - 'scripts/evals/**'
+      - '.github/workflows/agentic-evals.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/lib/agentic-system/**'
+      - 'src/lib/prospect-agent/**'
+      - 'src/lib/vellum-core/**'
+      - 'src/lib/agent-infrastructure/**'
+      - 'scripts/evals/**'
+      - '.github/workflows/agentic-evals.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  evals:
+    name: Run Agentic Evals (dry-run)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+        env:
+          DATABASE_URL: file:./db/ci.db
+
+      - name: Run eval suite (dry-run)
+        run: bun run scripts/evals/run-evals.ts
+        env:
+          DATABASE_URL: file:./db/ci.db
+          EVAL_DRY_RUN: '1'
+          ZHIPU_API_KEY: ci-placeholder-key
+
+      - name: Smoke check
+        run: bun run scripts/evals/smoke-check.ts
+        env:
+          DATABASE_URL: file:./db/ci.db
+          EVAL_DRY_RUN: '1'
+          ZHIPU_API_KEY: ci-placeholder-key
+
+      - name: Upload eval report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-eval-report
+          path: |
+            scripts/evals/latest-report.json
+            scripts/evals/latest-smoke.txt
+          retention-days: 14

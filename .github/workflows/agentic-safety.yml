@@ -1,0 +1,68 @@
+# LeadReach — Agentic Safety CI
+# ===============================
+# Runs the safety eval suite on every PR that touches the agentic
+# system. Verifies input guardrails (SSRF, prompt injection, PII) and
+# output guardrails (PII redaction, profanity filter) are working.
+#
+# Also validates the SOP constraints are well-formed.
+#
+# This workflow does NOT call the LLM — it only exercises the guardrail
+# functions, which are pure TypeScript. That makes it fast (< 30s) and
+# deterministic.
+
+name: Agentic Safety
+
+on:
+  push:
+    branches: [main, develop]
+    paths:
+      - 'src/lib/agentic-system/**'
+      - '.github/workflows/agentic-safety.yml'
+  pull_request:
+    branches: [main, develop]
+    paths:
+      - 'src/lib/agentic-system/**'
+      - '.github/workflows/agentic-safety.yml'
+  schedule:
+    - cron: '0 3 * * 1'  # Weekly Monday at 03:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  safety:
+    name: Run Safety Evals
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Generate Prisma client
+        run: bun run db:generate
+        env:
+          DATABASE_URL: file:./db/ci.db
+
+      - name: Run safety eval suite
+        run: bun run scripts/evals/run-safety.ts
+        env:
+          DATABASE_URL: file:./db/ci.db
+          ZHIPU_API_KEY: ci-placeholder-key
+
+      - name: Upload safety report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: agentic-safety-report
+          path: scripts/evals/latest-safety-report.json
+          retention-days: 30
