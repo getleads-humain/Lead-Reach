@@ -34,6 +34,11 @@ import {
   enrichCompanyData,
   youtubeSearch,
   rssRead,
+  crawl4aiRead,
+  crawl4aiDeepRead,
+  crawl4aiExtract,
+  crawl4aiLLMExtract,
+  crawl4aiLeads,
   type ToolResult,
   type SearchResult,
   type WebReadResult,
@@ -256,6 +261,77 @@ async function updateTaskProgress(taskId: string, progress: number, status?: str
     where: { id: taskId },
     data: updateData,
   });
+}
+
+// ============================================================
+// Smart Web Read — uses crawl4ai for JS-rendered / dynamic pages
+// and falls back to webRead (direct + Jina) for simple static pages.
+// crawl4ai gives us:
+//   - Full JS rendering (React, Vue, Angular SPAs)
+//   - Clean LLM-ready markdown (not raw HTML)
+//   - Lazy-load content (scan_full_page)
+//   - "Magic" mode (auto-handle overlays, consent popups)
+// Heuristics for when to use crawl4ai vs fast webRead:
+//   - URL path suggests SPA (/app/, /dashboard/, react/angular/vue sites)
+//   - URL is on a known JS-heavy domain (linkedin, twitter, reddit, etc.)
+//   - webRead returned <500 chars (likely an SPA shell)
+//   - Caller passes { useCrawl4AI: true } explicitly
+// ============================================================
+
+const CRAWL4AI_PRIORITY_DOMAINS = new Set([
+  'linkedin.com', 'twitter.com', 'x.com', 'reddit.com',
+  'instagram.com', 'facebook.com', 'tiktok.com',
+  'ycombinator.com', 'producthunt.com', 'crunchbase.com',
+  'bloomberg.com', 'nytimes.com', 'washingtonpost.com',
+  'medium.com', 'substack.com', 'notion.so', 'airtable.com',
+]);
+
+function shouldUseCrawl4AI(url: string, previousContentLength: number = 0): boolean {
+  try {
+    const u = new URL(url);
+    const host = u.hostname.replace(/^www\./, '');
+    if (CRAWL4AI_PRIORITY_DOMAINS.has(host)) return true;
+    if (previousContentLength > 0 && previousContentLength < 500) return true;
+    if (/\/(app|dashboard|portal|login|signup|cart|checkout)/.test(u.pathname)) return true;
+    return false;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Smart web reader — picks the best backend per-URL.
+ * Uses crawl4ai (with full JS rendering) for SPAs and JS-heavy domains,
+ * falls back to fast webRead (direct fetch + Jina) for static pages.
+ *
+ * Returns the same ToolResult<WebReadResult> shape as `webRead` so it's
+ * a drop-in replacement.
+ */
+async function smartWebRead(
+  url: string,
+  options: { useCrawl4AI?: boolean; deepCrawl?: boolean; maxPages?: number } = {},
+): Promise<ToolResult<WebReadResult>> {
+  // If caller explicitly requested crawl4ai, use it directly
+  if (options.useCrawl4AI) {
+    const r = await crawl4aiRead(url, { scanFullPage: true, magic: true });
+    if (r.success) return r;
+    // fall through to webRead as a fallback
+  }
+
+  // Try fast webRead first
+  const fastResult = await webRead(url);
+  if (fastResult.success && fastResult.data && fastResult.data.content.length > 800) {
+    return fastResult;
+  }
+
+  // Heuristic: if fast result was thin OR the URL is a known SPA, try crawl4ai
+  if (shouldUseCrawl4AI(url, fastResult.data?.content.length || 0)) {
+    const r = await crawl4aiRead(url, { scanFullPage: true, magic: true });
+    if (r.success) return r;
+  }
+
+  // Last resort: return whatever webRead gave us (even if thin)
+  return fastResult;
 }
 
 // ============================================================
@@ -901,20 +977,46 @@ async function executeDataEnrichment(ctx: AgentExecutionContext): Promise<AgentE
       await updateTaskProgress(ctx.taskId, progress, 'running');
 
       try {
-        // Step 1: Read company website via Jina Reader (Agent-Reach)
+        // Step 1: Read company website — use crawl4ai (with smartWebRead fallback)
+        // crawl4ai gives us clean LLM-ready markdown from JS-rendered company sites
+        // AND extracts contact info (emails, phones, social links) in one pass.
         let websiteContent: string | null = null;
+        let crawl4aiContactSignals: { emails: string[]; phones: string[]; social: Record<string, string> } | null = null;
         if (lead.website) {
-          const webResult = await enrichCompanyData(lead.website);
+          // Run both paths in parallel: crawl4ai lead-extract + smartWebRead fallback
+          const [leadsResult, webResult] = await Promise.all([
+            crawl4aiLeads(lead.website, { company: lead.companyName, deepCrawl: false }).catch(() => null),
+            smartWebRead(lead.website),
+          ]);
+
           channelActivity.push({
-            channel: 'web',
+            channel: webResult.channel || 'web',
             operation: 'read_company_site',
             success: webResult.success,
             timestamp: new Date().toISOString(),
             error: webResult.error,
           });
-          
+          if (leadsResult) {
+            channelActivity.push({
+              channel: 'crawl4ai',
+              operation: 'extract_contact_info',
+              success: leadsResult.success,
+              timestamp: new Date().toISOString(),
+              resultCount: leadsResult.success
+                ? leadsResult.data.company.emails.length + leadsResult.data.company.phones.length + Object.keys(leadsResult.data.company.social).length
+                : 0,
+            });
+            if (leadsResult.success) {
+              crawl4aiContactSignals = leadsResult.data.company;
+            }
+          }
+
           if (webResult.success) {
             websiteContent = webResult.data.content?.slice(0, 15000) || null;
+          }
+          // If smartWebRead failed OR returned thin content, use crawl4ai's rawContent
+          if ((!webResult.success || (websiteContent || '').length < 500) && leadsResult?.success) {
+            websiteContent = leadsResult.data.rawContent.slice(0, 15000) || websiteContent;
           }
         }
 
@@ -1164,8 +1266,11 @@ async function executeWebResearch(ctx: AgentExecutionContext): Promise<AgentExec
       topUrls.push(...exaRes.value.data.slice(0, 3).map(r => r.url));
     }
 
+    // Smart web read: uses crawl4ai for JS-rendered / SPA pages, falls back to webRead
+    // crawl4ai is critical for getting clean markdown from React/Vue/Angular sites
+    // where Jina Reader would otherwise return an empty SPA shell.
     const webReads = await Promise.allSettled(
-      topUrls.map(url => webRead(url)),
+      topUrls.map(url => smartWebRead(url)),
     );
     
     webReads.forEach((res, i) => {
@@ -1501,18 +1606,39 @@ async function executeOutreachComposer(ctx: AgentExecutionContext): Promise<Agen
           resultCount: companyResearch.success ? companyResearch.data.length : 0,
         });
 
-        // Read company website for hooks (Agent-Reach)
+        // Read company website for hooks — use smartWebRead so crawl4ai
+        // kicks in for JS-heavy sites (most company sites these days are React/Next.js).
+        // Also extract lead-relevant signals (emails, phones, social links) via crawl4ai.
         let websiteIntel = '';
         if (lead.website) {
-          const webResult = await webRead(lead.website);
+          const webResult = await smartWebRead(lead.website);
           channelActivity.push({
-            channel: 'web',
+            channel: webResult.channel || 'web',
             operation: 'read_company_site',
             success: webResult.success,
             timestamp: new Date().toISOString(),
           });
           if (webResult.success) {
             websiteIntel = webResult.data.content?.slice(0, 5000) || '';
+          }
+          // In parallel, use crawl4ai to extract contact info (emails, socials)
+          try {
+            const leadsResult = await crawl4aiLeads(lead.website, { company: lead.companyName });
+            if (leadsResult.success && leadsResult.data) {
+              const c = leadsResult.data.company;
+              if (c.emails.length > 0 || c.phones.length > 0 || Object.keys(c.social).length > 0) {
+                channelActivity.push({
+                  channel: 'crawl4ai',
+                  operation: 'extract_contact_info',
+                  success: true,
+                  timestamp: new Date().toISOString(),
+                  resultCount: c.emails.length + c.phones.length + Object.keys(c.social).length,
+                });
+                websiteIntel += `\n\n[Contact signals extracted by crawl4ai]\nEmails: ${c.emails.join(', ')}\nPhones: ${c.phones.join(', ')}\nSocial: ${JSON.stringify(c.social)}`;
+              }
+            }
+          } catch {
+            // Non-fatal — enrichment is best-effort
           }
         }
 

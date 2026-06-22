@@ -119,3 +119,32 @@ server.pid
 
 # Tool-results scratch dir (agent-only, never user-visible)
 tool-results/
+
+# ── Crawl4AI integration (vendored unclecode/crawl4ai 0.9.0) ───────────────
+# The vendored source is committed (lib/crawl4ai-source/) so the platform
+# has full offline access to crawl4ai's API. We exclude:
+#   - The upstream .git/ folder (we don't want a nested git repo)
+#   - Python bytecode caches
+#   - The crawl4ai HTTP service runtime artifacts (PID, log, cache)
+#   - The local venv (if anyone creates one inside lib/)
+lib/crawl4ai-source/.git/
+lib/crawl4ai-source/.git
+lib/crawl4ai-source/**/__pycache__/
+lib/crawl4ai-source/**/*.pyc
+lib/crawl4ai-source/.venv/
+lib/crawl4ai-source/venv/
+lib/crawl4ai-source/.pytest_cache/
+lib/crawl4ai-source/.coverage
+lib/crawl4ai-source/htmlcov/
+lib/crawl4ai-source/dist/
+lib/crawl4ai-source/build/
+lib/crawl4ai-source/*.egg-info/
+
+# Crawl4AI service runtime artifacts (regenerated on startup)
+lib/crawl4ai-service/server.pid
+lib/crawl4ai-service/server.log
+lib/crawl4ai-service/.cache/
+
+# Crawl4AI internal cache (browser cache, page cache)
+.crawl4ai-cache/
+.crawl4ai/

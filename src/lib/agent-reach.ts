@@ -224,6 +224,16 @@ const CHANNEL_DEFINITIONS: Omit<AgentReachChannelInfo, 'lastChecked'>[] = [
     message: 'Requires Groq API key and ffmpeg',
     icon: '🎙️',
   },
+  {
+    name: 'crawl4ai',
+    displayName: 'Crawl4AI',
+    description: 'Deep web crawler & LLM-ready extractor (unclecode/crawl4ai 0.9.0). JS rendering, deep crawl (BFS/DFS/BestFirst), CSS/XPath/LLM extraction, screenshots, sitemaps.',
+    status: 'ok',
+    tier: 0,
+    backend: 'unclecode/crawl4ai (vendored at lib/crawl4ai-source/)',
+    message: 'Vendored + warm HTTP service on 127.0.0.1:8765. Full browser rendering, structured extraction, deep crawling.',
+    icon: '🕷️',
+  },
 ];
 
 // ============================================================
@@ -282,11 +292,11 @@ export function getTierColor(tier: number): string {
 export function mapAgentToChannels(agentName: string): string[] {
   const mapping: Record<string, string[]> = {
     'orchestrator': [], // Orchestrator delegates, doesn't access channels directly
-    'prospect-discovery': ['exa_search', 'web', 'linkedin', 'github', 'twitter', 'reddit'],
-    'data-enrichment': ['web', 'linkedin', 'exa_search', 'twitter', 'github'],
-    'web-research': ['web', 'exa_search', 'linkedin', 'twitter', 'youtube', 'reddit', 'rss'],
-    'lead-qualification': ['web', 'linkedin', 'exa_search'],
-    'outreach-composer': ['linkedin', 'web', 'exa_search'],
+    'prospect-discovery': ['exa_search', 'web', 'crawl4ai', 'linkedin', 'github', 'twitter', 'reddit'],
+    'data-enrichment': ['crawl4ai', 'web', 'linkedin', 'exa_search', 'twitter', 'github'],
+    'web-research': ['crawl4ai', 'web', 'exa_search', 'linkedin', 'twitter', 'youtube', 'reddit', 'rss'],
+    'lead-qualification': ['crawl4ai', 'web', 'linkedin', 'exa_search'],
+    'outreach-composer': ['linkedin', 'web', 'crawl4ai', 'exa_search'],
     'pipeline-manager': [], // Operates on database, no direct channel access
     'report-generator': [], // Operates on collected data
   };
@@ -334,6 +344,15 @@ export function getChannelCommand(channel: string, operation: string): string {
     rss: {
       read: 'python3 -c "import feedparser; [print(e.title, e.link) for e in feedparser.parse(\'URL\').entries[:5]]"',
     },
+    crawl4ai: {
+      crawl:         'curl -sS -X POST http://127.0.0.1:8765/crawl -H "Content-Type: application/json" -d \'{"url":"URL"}\'',
+      deep_crawl:    'curl -sS -X POST http://127.0.0.1:8765/deep-crawl -H "Content-Type: application/json" -d \'{"url":"URL","deep_crawl":{"type":"bfs","max_depth":2,"max_pages":10}}\'',
+      extract_css:   'curl -sS -X POST http://127.0.0.1:8765/extract-css -H "Content-Type: application/json" -d \'{"url":"URL","schema":SCHEMA}\'',
+      extract_llm:   'curl -sS -X POST http://127.0.0.1:8765/extract-llm -H "Content-Type: application/json" -d \'{"url":"URL","instruction":"INSTRUCTION"}\'',
+      screenshot:    'curl -sS -X POST http://127.0.0.1:8765/screenshot -H "Content-Type: application/json" -d \'{"url":"URL"}\'',
+      sitemap:       'curl -sS -X POST http://127.0.0.1:8765/sitemap -H "Content-Type: application/json" -d \'{"url":"URL","deep_crawl":{"type":"bfs","max_depth":2,"max_pages":50}}\'',
+      health:        'curl -sS http://127.0.0.1:8765/health',
+    },
   };
   return commands[channel]?.[operation] || `# Channel ${channel} operation ${operation} not mapped`;
 }
@@ -341,8 +360,12 @@ export function getChannelCommand(channel: string, operation: string): string {
 /**
  * Get the Python source path for an Agent-Reach channel.
  * References the Python toolkit at /home/z/my-project/agent-reach-toolkit/
+ * (For crawl4ai, returns the vendored source location.)
  */
 export function getChannelSourcePath(channel: string): string {
+  if (channel === 'crawl4ai') {
+    return '/home/z/my-project/lib/crawl4ai-source/crawl4ai/';
+  }
   return `/home/z/my-project/agent-reach-toolkit/agent_reach/channels/${channel}.py`;
 }
 
