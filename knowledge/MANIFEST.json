@@ -1,0 +1,157 @@
+{
+  "version": "1.0.0",
+  "generated_at": "2026-06-22",
+  "description": "LeadReach Knowledge Base — machine-readable index of every knowledge document",
+  "total_docs": 22,
+  "categories": {
+    "industries": {
+      "count": 5,
+      "docs": [
+        {
+          "id": "saas-b2b",
+          "path": "industries/saas-b2b.md",
+          "title": "SaaS B2B — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["saas", "b2b", "recurring-revenue", "net-retention", "churn"]
+        },
+        {
+          "id": "fintech",
+          "path": "industries/fintech.md",
+          "title": "FinTech — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["fintech", "payments", "banking", "lending", "compliance", "b2b"]
+        },
+        {
+          "id": "healthtech",
+          "path": "industries/healthtech.md",
+          "title": "HealthTech — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["healthtech", "hipaa", "ehr", "providers", "payers", "digital-health"]
+        },
+        {
+          "id": "ecommerce-dtc",
+          "path": "industries/ecommerce-dtc.md",
+          "title": "E-Commerce & DTC — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["ecommerce", "dtc", "retail", "shopify", "marketplace", "retention"]
+        },
+        {
+          "id": "manufacturing",
+          "path": "industries/manufacturing.md",
+          "title": "Manufacturing & Industrial — Industry Intelligence",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["manufacturing", "industrial", "iiot", "supply-chain", "b2b", "mid-market"]
+        }
+      ]
+    },
+    "regions": {
+      "count": 4,
+      "docs": [
+        {
+          "id": "us",
+          "path": "regions/us.md",
+          "title": "United States — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["us", "usa", "north-america", "ccpa", "casl", "b2b"]
+        },
+        {
+          "id": "eu-gdpr",
+          "path": "regions/eu-gdpr.md",
+          "title": "European Union (GDPR) — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["eu", "gdpr", "privacy", "consent", "b2b", "eprivacy"]
+        },
+        {
+          "id": "uk",
+          "path": "regions/uk.md",
+          "title": "United Kingdom — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["uk", "gdpr", "ico", "pecr", "post-brexit"]
+        },
+        {
+          "id": "apac-singapore",
+          "path": "regions/apac-singapore.md",
+          "title": "APAC (Singapore) — Regional Playbook",
+          "grade": "B",
+          "last_reviewed": "2026-06-22",
+          "tags": ["apac", "singapore", "pdpa", "mas", "fintech", "relationship"]
+        }
+      ]
+    },
+    "playbooks": {
+      "count": 3,
+      "docs": [
+        {
+          "id": "outbound-cold-email",
+          "path": "playbooks/outbound-cold-email.md",
+          "title": "Outbound Cold Email — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["outbound", "email", "sequencing", "b2b"]
+        },
+        {
+          "id": "icp-discovery",
+          "path": "playbooks/icp-discovery.md",
+          "title": "ICP Discovery — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["icp", "ideal-customer-profile", "segmentation", "fit-scoring"]
+        },
+        {
+          "id": "multi-threaded-selling",
+          "path": "playbooks/multi-threaded-selling.md",
+          "title": "Multi-Threaded Selling — Playbook",
+          "grade": "A",
+          "last_reviewed": "2026-06-22",
+          "tags": ["multi-thread", "enterprise", "consensus-buying", "stakeholder-mapping"]
+        }
+      ]
+    },
+    "tools": {
+      "count": 8,
+      "docs": [
+        { "id": "atlas", "path": "tools/atlas.md", "title": "Atlas — Orchestrator Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "scout", "path": "tools/scout.md", "title": "Scout — Prospect Discovery Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "forge", "path": "tools/forge.md", "title": "Forge — Data Enrichment Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "sage", "path": "tools/sage.md", "title": "Sage — Web Research Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "judge", "path": "tools/judge.md", "title": "Judge — Lead Qualification Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "bard", "path": "tools/bard.md", "title": "Bard — Outreach Composer Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "flow", "path": "tools/flow.md", "title": "Flow — Pipeline Manager Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" },
+        { "id": "echo", "path": "tools/echo.md", "title": "Echo — Report Generator Agent Tools", "grade": "A", "last_reviewed": "2026-06-22" }
+      ]
+    },
+    "training-data": {
+      "count": 8,
+      "docs": [
+        { "id": "atlas-decomposition", "path": "training-data/atlas-decomposition.jsonl", "format": "jsonl", "examples": 3 },
+        { "id": "scout-prospect-discovery", "path": "training-data/scout-prospect-discovery.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "forge-enrichment", "path": "training-data/forge-enrichment.jsonl", "format": "jsonl", "examples": 5 },
+        { "id": "sage-research", "path": "training-data/sage-research.jsonl", "format": "jsonl", "examples": 3 },
+        { "id": "judge-qualification", "path": "training-data/judge-qualification.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "bard-outreach", "path": "training-data/bard-outreach.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "flow-pipeline", "path": "training-data/flow-pipeline.jsonl", "format": "jsonl", "examples": 4 },
+        { "id": "echo-report", "path": "training-data/echo-report.jsonl", "format": "jsonl", "examples": 3 }
+      ]
+    },
+    "gap-reports": {
+      "count": 0,
+      "docs": []
+    }
+  },
+  "grading_rubric": {
+    "A": "Comprehensive coverage — all required sections present, current data, multiple regions/variants",
+    "B": "Solid coverage — required sections present, minor gaps in regions/variants",
+    "C": "Basic coverage — missing two or more required sections",
+    "D": "Stub or placeholder"
+  },
+  "reindex_command": "npm run knowledge:reindex",
+  "gap_report_command": "npm run knowledge:gap"
+}
