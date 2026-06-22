@@ -46,6 +46,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
 import { AGENT_8_DISPLAY } from '@/lib/prospect-agent/orchestrator-types';
+import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────
 
@@ -117,7 +118,14 @@ interface LiveLead {
 // ── Component ──────────────────────────────────────────────────────
 
 export function CampaignDetailView() {
-  const { selectedCampaignId, setActiveView, setSelectedCampaignId, setSelectedLeadId } = useAppStore();
+  const {
+    selectedCampaignId,
+    setActiveView,
+    setSelectedCampaignId,
+    setSelectedLeadId,
+    autoRunPipelineOnSelect,
+    setAutoRunPipelineOnSelect,
+  } = useAppStore();
 
   const [campaign, setCampaign] = useState<Campaign | null>(null);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -136,6 +144,19 @@ export function CampaignDetailView() {
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const logContainerRef = useRef<HTMLDivElement | null>(null);
+
+  /**
+   * Guards against double-execution of the autoRunPipelineOnSelect flag.
+   *
+   * React 18 StrictMode runs effects twice in development; we don't want
+   * to start the SSE pipeline twice. We also don't want a re-render of
+   * this view (e.g. from a campaign data refresh) to re-trigger the
+   * pipeline if the user has already run it once.
+   *
+   * The flag is cleared from the store immediately upon consumption so
+   * that navigating away and back does NOT auto-restart.
+   */
+  const autoRunConsumedRef = useRef(false);
 
   // ── Load campaign + leads ──
   const loadCampaignData = useCallback(async () => {
@@ -167,6 +188,17 @@ export function CampaignDetailView() {
   useEffect(() => {
     loadCampaignData();
   }, [loadCampaignData]);
+
+  /**
+   * Reset the autoRun consumption guard whenever the selected campaign
+   * changes. This lets the user navigate from campaign A's detail view to
+   * campaign B's "Start Pipeline" button and have B's pipeline auto-start
+   * on arrival — without this reset, the guard would still be true from
+   * campaign A and the autoRun would silently no-op.
+   */
+  useEffect(() => {
+    autoRunConsumedRef.current = false;
+  }, [selectedCampaignId]);
 
   // ── Run pipeline via SSE ──
   const runPipeline = useCallback(async () => {
@@ -360,6 +392,17 @@ export function CampaignDetailView() {
                 // Show error
                 if (data.message) {
                   console.warn('[Pipeline] Error:', data.message);
+                  // Non-blocking toast for transient enrichment errors
+                  // (the pipeline continues for remaining candidates)
+                  if (data.recoverable) {
+                    toast.warning('Pipeline warning', {
+                      description: String(data.message).slice(0, 200),
+                    });
+                  } else {
+                    toast.error('Pipeline error', {
+                      description: String(data.message).slice(0, 200),
+                    });
+                  }
                 }
                 break;
 
@@ -369,6 +412,20 @@ export function CampaignDetailView() {
                 setPipelineRunning(false);
                 // Reload leads to get the final state from DB
                 setTimeout(() => loadCampaignData(), 500);
+                // Toast summary — give the user a clear "it worked" signal
+                if (data.error) {
+                  toast.error('Pipeline failed', {
+                    description: `Discovered ${summary.discovered}, enriched ${summary.enriched}, failed ${summary.failed}.`,
+                  });
+                } else if (summary.discovered === 0) {
+                  toast.info('Pipeline complete — no candidates found', {
+                    description: 'Try refining your campaign query, industry, or location filters.',
+                  });
+                } else {
+                  toast.success('Pipeline complete', {
+                    description: `${summary.discovered} discovered → ${summary.enriched} enriched → ${summary.failed} failed.`,
+                  });
+                }
                 break;
               }
             }
@@ -388,6 +445,52 @@ export function CampaignDetailView() {
       abortControllerRef.current = null;
     }
   }, [selectedCampaignId, pipelineRunning, loadCampaignData]);
+
+  /**
+   * Auto-run the 8-agent SSE pipeline when the user arrives at this view
+   * via a "Start Pipeline" / "Create & Run Pipeline" button.
+   *
+   * The autoRunPipelineOnSelect flag is set by CampaignsView's button
+   * handlers and cleared by this effect on consumption. We wait for the
+   * campaign data to load (so the campaign object is non-null and we can
+   * show its name in the UI before the pipeline kicks off).
+   *
+   * The autoRunConsumedRef prevents double-execution in StrictMode and
+   * also prevents re-triggering on subsequent re-renders.
+   */
+  useEffect(() => {
+    if (
+      autoRunPipelineOnSelect &&
+      !autoRunConsumedRef.current &&
+      selectedCampaignId &&
+      !loading &&
+      !pipelineRunning &&
+      campaign
+    ) {
+      autoRunConsumedRef.current = true;
+      // Clear the store flag immediately so that:
+      //   - A subsequent mount (e.g. navigating away and back) does NOT
+      //     auto-restart the pipeline
+      //   - A page reload also does NOT auto-restart (the flag is not
+      //     persisted in the store's partialize)
+      setAutoRunPipelineOnSelect(false);
+      // Kick off the pipeline. The SSE event stream will update the UI
+      // live (agent grid, thinking ticks, lead cards, etc).
+      // Use a microtask to ensure the cleared flag is committed to the
+      // store before the pipeline starts.
+      queueMicrotask(() => {
+        runPipeline();
+      });
+    }
+  }, [
+    autoRunPipelineOnSelect,
+    selectedCampaignId,
+    loading,
+    pipelineRunning,
+    campaign,
+    setAutoRunPipelineOnSelect,
+    runPipeline,
+  ]);
 
   // ── Cancel pipeline ──
   const cancelPipeline = useCallback(() => {

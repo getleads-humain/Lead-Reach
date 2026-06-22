@@ -12,6 +12,20 @@ interface AppState {
   agentStatuses: Record<AgentName, AgentInfo>;
   notifications: Notification[];
   userProfile: UserProfile;
+  /**
+   * When true, the CampaignDetailView will auto-trigger the 8-agent SSE
+   * pipeline (POST /api/campaigns/:id/stream) on mount instead of waiting
+   * for the user to click "Run Discovery Pipeline".
+   *
+   * Set by CampaignsView's "Start Pipeline" / "Re-Run Pipeline" buttons
+   * AND by the "Create & Run Pipeline" button in the create dialog so that
+   * the user is dropped straight into a running pipeline.
+   *
+   * The flag is auto-cleared by CampaignDetailView after the pipeline is
+   * kicked off (whether successfully or with error) so a subsequent
+   * unmount/remount (e.g. navigating away and back) does NOT auto-restart.
+   */
+  autoRunPipelineOnSelect: boolean;
 
   setActiveView: (view: ViewType) => void;
   setSelectedCampaignId: (id: string | null) => void;
@@ -27,6 +41,7 @@ interface AppState {
   removePortfolioItem: (id: string) => void;
   updatePortfolioItem: (id: string, update: Partial<PortfolioItem>) => void;
   resetUserProfile: () => void;
+  setAutoRunPipelineOnSelect: (v: boolean) => void;
 }
 
 const initialAgentStatuses: Record<AgentName, AgentInfo> = Object.fromEntries(
@@ -55,6 +70,7 @@ export const useAppStore = create<AppState>()(
       agentStatuses: initialAgentStatuses,
       notifications: [],
       userProfile: EMPTY_USER_PROFILE,
+      autoRunPipelineOnSelect: false,
 
       setActiveView: (view) => set({ activeView: view }),
       setSelectedCampaignId: (id) => set({ selectedCampaignId: id }),
@@ -115,6 +131,7 @@ export const useAppStore = create<AppState>()(
           },
         })),
       resetUserProfile: () => set({ userProfile: EMPTY_USER_PROFILE }),
+      setAutoRunPipelineOnSelect: (v) => set({ autoRunPipelineOnSelect: v }),
     }),
     {
       name: 'leadreach-store',

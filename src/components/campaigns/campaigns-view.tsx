@@ -49,6 +49,7 @@ import { useAppStore } from '@/lib/store';
 import type { CampaignWithCounts, CampaignStatus } from '@/lib/types';
 import { INDUSTRIES, LOCATIONS, COMPANY_SIZES } from '@/lib/types';
 import { safeFetchJSON } from '@/lib/utils';
+import { toast } from 'sonner';
 
 // ============================================================
 // Pipeline Status Types
@@ -95,7 +96,11 @@ const PIPELINE_STAGES = [
 // ============================================================
 
 export function CampaignsView() {
-  const { setActiveView, setSelectedCampaignId } = useAppStore();
+  const {
+    setActiveView,
+    setSelectedCampaignId,
+    setAutoRunPipelineOnSelect,
+  } = useAppStore();
   const [campaigns, setCampaigns] = useState<CampaignWithCounts[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -322,12 +327,21 @@ export function CampaignsView() {
       resetForm();
 
       // Navigate the user directly to the new campaign's detail page
-      // so they can immediately click "Run Discovery Pipeline" and watch
-      // the 8-agent pipeline execute in real-time.
+      // AND auto-start the 8-agent SSE pipeline on arrival. The button is
+      // labeled "Create & Run Pipeline" — the user expects the pipeline
+      // to start running immediately after creation, not just to land on
+      // a static detail page.
       setSelectedCampaignId(newCampaign.id);
+      setAutoRunPipelineOnSelect(true);
       setActiveView('campaign-detail');
+      toast.success('Campaign created', {
+        description: `Starting the 8-agent pipeline for "${newCampaign.name}"…`,
+      });
     } catch (error) {
       console.error('Error creating campaign:', error);
+      toast.error('Failed to create campaign', {
+        description: error instanceof Error ? error.message : 'Unknown error',
+      });
     } finally {
       setFormCreating(false);
     }
@@ -335,27 +349,31 @@ export function CampaignsView() {
 
   // ============================================================
   // Run Pipeline (for existing campaigns)
+  // ───────────────────────────────────────────────────────────
+  // The "Start Pipeline" / "Re-Run Pipeline" buttons in the campaign
+  // cards used to call POST /api/campaigns/[id]/run-pipeline (the legacy
+  // detached 4-stage worker). That endpoint spawns a background process
+  // and gives NO visible feedback to the user — so from the user's
+  // perspective "nothing happens."
+  //
+  // The CORRECT pipeline is the 8-agent SSE orchestrator at POST
+  // /api/campaigns/[id]/stream, which is wired into CampaignDetailView's
+  // "Run Discovery Pipeline" button and shows the live Atlas→Scout→
+  // Forge→Sage→Judge→Bard→Flow→Echo pipeline visualization.
+  //
+  // So instead of calling /run-pipeline, we navigate the user to the
+  // campaign-detail view and set `autoRunPipelineOnSelect=true` in the
+  // Zustand store. CampaignDetailView consumes that flag on mount and
+  // kicks off the SSE pipeline automatically.
   // ============================================================
 
-  const handleRunPipeline = async (campaignId: string, _campaignName: string) => {
-    try {
-      const result = await safeFetchJSON<{
-        started: boolean;
-        status: string;
-        message?: string;
-      }>(`/api/campaigns/${campaignId}/run-pipeline`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({}),
-      });
-
-      if (result.started) {
-        // Start polling for this campaign
-        pollPipelineStatus(campaignId);
-      }
-    } catch (error) {
-      console.error('Error running pipeline:', error);
-    }
+  const handleRunPipeline = (campaignId: string, campaignName: string) => {
+    setSelectedCampaignId(campaignId);
+    setAutoRunPipelineOnSelect(true);
+    setActiveView('campaign-detail');
+    toast.info('Starting 8-agent pipeline', {
+      description: `"${campaignName}" — discovery + enrichment will run live.`,
+    });
   };
 
   const resetForm = () => {
