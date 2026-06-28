@@ -571,3 +571,32 @@ Stage Summary:
 - The SOP is the single source of truth — every module reads from it. Changing the SOP does not require touching the workflow engine.
 - The methodology principles (factual source-attributed insights, adapt to query, graceful degradation, never block on single point of failure, respect user's time + budget, safety first, auditable) are enforced by code, not just documentation.
 - Files created: 22 new files (10 in src/lib/agentic-system/, 4 admin API routes, 1 admin page, 3 CI workflows, 3 eval scripts, 2 docs). Files modified: 1 (package.json — added 3 scripts). No existing files were changed.
+---
+Task ID: 1
+Agent: Main Agent
+Task: Enhance Leads section right-side panel with advanced features and agentic conversation view
+
+Work Log:
+- Analyzed current leads-view.tsx (1747 lines) — single-panel Sheet with basic lead info
+- Identified all available API endpoints: 9 enrichment capabilities across leads/ and lead-intelligence/
+- Designed 3-tab panel architecture: Overview, Enrich, Agent
+- Added new imports: useAIChat, Progress, Separator, 14 new lucide icons (Send, Brain, TrendingUp, Shield, Activity, Bot, Cpu, Database, Gauge, Layers, Rocket, Scan, Wand2, X)
+- Added new types: PanelTab, EnrichmentTask, AgentMessage
+- Added state variables: activePanelTab, enrichmentTasks (9 tasks), agentMessages, agentInput, agentIsTyping, agentChatEndRef, enrichmentResults
+- Implemented runEnrichmentTask() — executes all 9 enrichment types via their respective API routes
+- Implemented runAllEnrichments() — batch runs all idle/failed tasks sequentially
+- Implemented handleAgentSend() — sends messages with lead context to AI chat
+- Implemented agentRawMessages sync effect to capture AI responses
+- Replaced entire Sheet content with 3-tab enhanced panel:
+  - Overview: glassmorphic score cards, gradient progress bars, improved contact cards with avatar rings
+  - Enrich: 9 enrichment task cards with status tracking, Run All button, result previews, AI deep score panel
+  - Agent: full conversational AI interface with status bar, quick action prompts, typing indicator, auto-scroll
+- Applied industry-grade CSS: glassmorphism, gradient accents, ring borders, backdrop-blur, pulse animations, hover transitions
+- Build verified successfully (2393 lines, compiled in 11.5s)
+
+Stage Summary:
+- Right-side panel transformed from single-scroll to 3-tab interactive experience
+- 9 AI enrichment capabilities fully wired: BANT, Web Enrich, AI Score, Next Action, Conversion Prediction, Deal Size Prediction, Behavioral Profile, Alerts, Company Research
+- Live agentic conversation view with context-aware AI chat
+- All existing functionality preserved in Overview tab
+- File: src/components/leads/leads-view.tsx

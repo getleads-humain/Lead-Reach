@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -73,12 +73,28 @@ import {
   Eye,
   Copy,
   Check,
+  Send,
+  Brain,
+  TrendingUp,
+  Shield,
+  Activity,
+  Bot,
+  Cpu,
+  Database,
+  Gauge,
+  Layers,
+  Rocket,
+  Scan,
+  Wand2,
+  X,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import type { LeadTier, LeadStage } from '@/lib/types';
 import { TIER_COLORS, STAGE_LABELS, STAGE_COLORS } from '@/lib/types';
-import { safeFetchJSON } from '@/lib/utils';
-import { useAIOneShot } from '@/hooks/use-ai-chat';
+import { safeFetchJSON, cn } from '@/lib/utils';
+import { useAIOneShot, useAIChat } from '@/hooks/use-ai-chat';
+import { Progress } from '@/components/ui/progress';
+import { Separator } from '@/components/ui/separator';
 
 // ============================================================
 // Types
@@ -158,6 +174,39 @@ interface ActionItem {
   maxStages: number;
   collapsed: boolean;
   resultCollapsed: boolean;
+}
+
+// ============================================================
+// Panel Tab & Enrichment Types
+// ============================================================
+
+type PanelTab = 'overview' | 'enrich' | 'agent';
+
+interface EnrichmentTask {
+  id: string;
+  type: 'bant' | 'web_enrich' | 'ai_score' | 'next_action' | 'predict_conversion' | 'predict_deal' | 'behavioral_profile' | 'generate_alerts' | 'research_company';
+  label: string;
+  description: string;
+  icon: typeof Sparkles;
+  color: string;
+  bgColor: string;
+  borderColor: string;
+  status: 'idle' | 'running' | 'completed' | 'failed';
+  result?: unknown;
+  error?: string;
+}
+
+interface AgentMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: number;
+  isLoading?: boolean;
+  actions?: Array<{
+    label: string;
+    type: string;
+    status: 'pending' | 'done' | 'failed';
+  }>;
 }
 
 // ============================================================
@@ -397,6 +446,50 @@ export function LeadsView() {
 
   // Copy state for outreach
   const [copiedIdx, setCopiedIdx] = useState<number | null>(null);
+
+  // Panel tab state
+  const [activePanelTab, setActivePanelTab] = useState<PanelTab>('overview');
+
+  // Enrichment tasks state
+  const [enrichmentTasks, setEnrichmentTasks] = useState<EnrichmentTask[]>([
+    { id: 'bant', type: 'bant', label: 'BANT Enrichment', description: 'Infer Budget, Authority, Need, Timeline signals', icon: Shield, color: 'text-violet-400', bgColor: 'bg-violet-500/10', borderColor: 'border-violet-500/20', status: 'idle' },
+    { id: 'web_enrich', type: 'web_enrich', label: 'Web Data Enrichment', description: 'Search web & fill missing lead fields', icon: Database, color: 'text-blue-400', bgColor: 'bg-blue-500/10', borderColor: 'border-blue-500/20', status: 'idle' },
+    { id: 'ai_score', type: 'ai_score', label: 'AI Deep Scoring', description: '5-dimension scoring with risk analysis', icon: Gauge, color: 'text-emerald-400', bgColor: 'bg-emerald-500/10', borderColor: 'border-emerald-500/20', status: 'idle' },
+    { id: 'next_action', type: 'next_action', label: 'Next Action Advisor', description: 'AI recommends highest-leverage next step', icon: Rocket, color: 'text-amber-400', bgColor: 'bg-amber-500/10', borderColor: 'border-amber-500/20', status: 'idle' },
+    { id: 'predict_conversion', type: 'predict_conversion', label: 'Conversion Predictor', description: 'Predict win probability & timeline', icon: TrendingUp, color: 'text-cyan-400', bgColor: 'bg-cyan-500/10', borderColor: 'border-cyan-500/20', status: 'idle' },
+    { id: 'predict_deal', type: 'predict_deal', label: 'Deal Size Predictor', description: 'Estimate deal value based on firmographics', icon: BarChart3, color: 'text-rose-400', bgColor: 'bg-rose-500/10', borderColor: 'border-rose-500/20', status: 'idle' },
+    { id: 'behavioral_profile', type: 'behavioral_profile', label: 'Behavioral Profile', description: 'Build engagement & intent behavioral map', icon: Brain, color: 'text-purple-400', bgColor: 'bg-purple-500/10', borderColor: 'border-purple-500/20', status: 'idle' },
+    { id: 'generate_alerts', type: 'generate_alerts', label: 'Intelligence Alerts', description: 'Detect risk signals & opportunity triggers', icon: Activity, color: 'text-orange-400', bgColor: 'bg-orange-500/10', borderColor: 'border-orange-500/20', status: 'idle' },
+    { id: 'research_company', type: 'research_company', label: 'Deep Company Research', description: 'Comprehensive company deep-dive analysis', icon: Scan, color: 'text-indigo-400', bgColor: 'bg-indigo-500/10', borderColor: 'border-indigo-500/20', status: 'idle' },
+  ]);
+
+  // Agent conversation state
+  const [agentMessages, setAgentMessages] = useState<AgentMessage[]>([]);
+  const [agentInput, setAgentInput] = useState('');
+  const [agentIsTyping, setAgentIsTyping] = useState(false);
+  const agentChatEndRef = useRef<HTMLDivElement>(null);
+  const agentInputRef = useRef<HTMLInputElement>(null);
+
+  // Enrichment results storage
+  const [enrichmentResults, setEnrichmentResults] = useState<Record<string, unknown>>({});
+
+  // Use AI chat hook for agent conversation
+  const { sendMessage: agentSendMessage, isLoading: agentChatLoading, messages: agentRawMessages } = useAIChat({
+    systemPrompt: `You are LeadReach AI Agent — an expert B2B sales intelligence assistant embedded in the lead detail panel. You have direct access to the selected lead's data and can perform real-time enrichment, scoring, and analysis.
+
+Your capabilities:
+- BANT Enrichment (Budget, Authority, Need, Timeline)
+- Web Data Enrichment (search & fill missing fields)
+- AI Deep Scoring (5-dimension analysis)
+- Next Action Recommendation
+- Conversion Probability Prediction
+- Deal Size Prediction
+- Behavioral Profiling
+- Intelligence Alert Generation
+- Deep Company Research
+
+When the user asks you to perform an action, explain what you'll do, then provide actionable insights. Be concise but thorough. Format responses with clear sections and bullet points.`,
+  });
 
   useEffect(() => {
     if (selectedCampaignId) {
@@ -725,6 +818,281 @@ Format each action exactly like this:
   };
 
   // ============================================================
+  // Run enrichment task
+  // ============================================================
+
+  const runEnrichmentTask = useCallback(async (taskId: string) => {
+    if (!selectedLead) return;
+
+    setEnrichmentTasks(prev => prev.map(t =>
+      t.id === taskId ? { ...t, status: 'running' as const, error: undefined } : t
+    ));
+
+    const task = enrichmentTasks.find(t => t.id === taskId);
+    if (!task) return;
+
+    try {
+      let result: unknown;
+
+      switch (task.type) {
+        case 'bant': {
+          const res = await safeFetchJSON<{ action: string; result: string; modelUsed: string }>(
+            '/api/leads/ai-enrich',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                leadId: selectedLead.id,
+                companyName: selectedLead.companyName,
+                industry: selectedLead.industry,
+                website: selectedLead.website,
+                employeeCount: selectedLead.employeeCount,
+                revenueEstimate: selectedLead.revenueEstimate,
+                leadScore: selectedLead.leadScore,
+                stage: selectedLead.stage,
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+        case 'web_enrich': {
+          const res = await safeFetchJSON<{ lead: unknown; fieldsEnriched: number; dataPointsFound: number }>(
+            '/api/leads/enrich',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ leadId: selectedLead.id }),
+            }
+          );
+          result = res;
+          // Reload leads to reflect enriched data
+          if (res.lead) {
+            loadLeads();
+          }
+          break;
+        }
+        case 'ai_score': {
+          const res = await safeFetchJSON<{
+            scoring: {
+              overallScore: number;
+              tier: string;
+              confidence: number;
+              dimensions: Record<string, { score: number; rationale: string }>;
+              signals: { positive: string[]; negative: string[]; missing: string[] };
+              recommendedActions: string[];
+              riskFactors: string[];
+              nextBestChannel: string;
+              outreachAngle: string;
+            };
+          }>(`/api/leads/${selectedLead.id}/ai-score`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ applyUpdate: true }),
+          });
+          result = res.scoring;
+          if (res.scoring) {
+            setAiScoring(res.scoring);
+          }
+          break;
+        }
+        case 'next_action': {
+          const res = await safeFetchJSON<{ action: string; result: string; modelUsed: string }>(
+            '/api/leads/ai-next-action',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                leadId: selectedLead.id,
+                companyName: selectedLead.companyName,
+                industry: selectedLead.industry,
+                leadScore: selectedLead.leadScore,
+                stage: selectedLead.stage,
+                leadTier: selectedLead.leadTier,
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+        case 'predict_conversion': {
+          const res = await safeFetchJSON<unknown>(
+            '/api/lead-intelligence',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'predict_conversion',
+                leadId: selectedLead.id,
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+        case 'predict_deal': {
+          const res = await safeFetchJSON<unknown>(
+            '/api/lead-intelligence',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'predict_deal_size',
+                leadData: {
+                  id: selectedLead.id,
+                  companyName: selectedLead.companyName,
+                  industry: selectedLead.industry,
+                  employeeCount: selectedLead.employeeCount,
+                  revenueEstimate: selectedLead.revenueEstimate,
+                  leadScore: selectedLead.leadScore,
+                },
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+        case 'behavioral_profile': {
+          const res = await safeFetchJSON<unknown>(
+            '/api/lead-intelligence',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'build_profile',
+                leadId: selectedLead.id,
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+        case 'generate_alerts': {
+          const res = await safeFetchJSON<unknown>(
+            '/api/lead-intelligence',
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                action: 'generate_alerts',
+                leadId: selectedLead.id,
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+        case 'research_company': {
+          const res = await safeFetchJSON<{ success: boolean; result: string; actionType: string }>(
+            `/api/leads/${selectedLead.id}/execute-action`,
+            {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                actionType: 'research_company',
+                actionTitle: 'Deep Company Research',
+                actionDescription: `Comprehensive deep-dive analysis of ${selectedLead.companyName}`,
+                leadData: {
+                  companyName: selectedLead.companyName,
+                  industry: selectedLead.industry,
+                  website: selectedLead.website,
+                  employeeCount: selectedLead.employeeCount,
+                  revenueEstimate: selectedLead.revenueEstimate,
+                  city: selectedLead.city,
+                  country: selectedLead.country,
+                  techStack: selectedLead.techStack,
+                },
+                stage: 1,
+                previousResults: [],
+              }),
+            }
+          );
+          result = res;
+          break;
+        }
+      }
+
+      setEnrichmentTasks(prev => prev.map(t =>
+        t.id === taskId ? { ...t, status: 'completed' as const, result } : t
+      ));
+      setEnrichmentResults(prev => ({ ...prev, [taskId]: result }));
+    } catch (err) {
+      setEnrichmentTasks(prev => prev.map(t =>
+        t.id === taskId ? { ...t, status: 'failed' as const, error: err instanceof Error ? err.message : 'Task failed' } : t
+      ));
+    }
+  }, [selectedLead, enrichmentTasks, loadLeads]);
+
+  // ============================================================
+  // Run all enrichment tasks
+  // ============================================================
+
+  const runAllEnrichments = useCallback(async () => {
+    if (!selectedLead) return;
+    const idleTasks = enrichmentTasks.filter(t => t.status === 'idle' || t.status === 'failed');
+    for (const task of idleTasks) {
+      await runEnrichmentTask(task.id);
+    }
+  }, [enrichmentTasks, runEnrichmentTask, selectedLead]);
+
+  // ============================================================
+  // Agent: Send message
+  // ============================================================
+
+  const handleAgentSend = useCallback(async () => {
+    if (!agentInput.trim() || !selectedLead) return;
+
+    const userMsg: AgentMessage = {
+      id: `user-${Date.now()}`,
+      role: 'user',
+      content: agentInput.trim(),
+      timestamp: Date.now(),
+    };
+
+    setAgentMessages(prev => [...prev, userMsg]);
+    setAgentInput('');
+    setAgentIsTyping(true);
+
+    // Add lead context to the message
+    const contextMessage = `[Lead Context: ${selectedLead.companyName} | Industry: ${selectedLead.industry || 'Unknown'} | Score: ${selectedLead.leadScore}/100 | Tier: ${selectedLead.leadTier} | Stage: ${STAGE_LABELS[selectedLead.stage as LeadStage] || selectedLead.stage} | Employees: ${selectedLead.employeeCount || 'Unknown'} | Revenue: ${selectedLead.revenueEstimate || 'Unknown'} | Website: ${selectedLead.website || 'Unknown'} | City: ${selectedLead.city || 'Unknown'}]
+
+${agentInput.trim()}`;
+
+    try {
+      await agentSendMessage(contextMessage);
+    } catch {
+      // Fallback if chat API fails
+    }
+
+    setAgentIsTyping(false);
+  }, [agentInput, selectedLead, agentSendMessage]);
+
+  // Sync agent raw messages from hook to our display messages
+  useEffect(() => {
+    if (agentRawMessages.length > 0) {
+      const lastMsg = agentRawMessages[agentRawMessages.length - 1];
+      if (lastMsg.role === 'assistant' && lastMsg.content) {
+        setAgentMessages(prev => {
+          // Avoid duplicate
+          const last = prev[prev.length - 1];
+          if (last && last.role === 'assistant' && last.content === lastMsg.content) return prev;
+          return [...prev, {
+            id: `agent-${Date.now()}`,
+            role: 'assistant',
+            content: lastMsg.content,
+            timestamp: Date.now(),
+          }];
+        });
+      }
+    }
+  }, [agentRawMessages]);
+
+  // Auto-scroll agent chat
+  useEffect(() => {
+    agentChatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [agentMessages]);
+
+  // ============================================================
   // Computed: Pipeline progress
   // ============================================================
 
@@ -771,6 +1139,13 @@ Format each action exactly like this:
       researchNotes: [],
     });
     setActiveEnrichTab('contacts');
+    setActivePanelTab('overview');
+    // Reset enrichment tasks
+    setEnrichmentTasks(prev => prev.map(t => ({ ...t, status: 'idle' as const, result: undefined, error: undefined })));
+    setEnrichmentResults({});
+    // Reset agent messages
+    setAgentMessages([]);
+    setAgentInput('');
   };
 
   const handleCloseSheet = () => {
@@ -786,6 +1161,11 @@ Format each action exactly like this:
       channelIntel: [],
       researchNotes: [],
     });
+    setActivePanelTab('overview');
+    setEnrichmentTasks(prev => prev.map(t => ({ ...t, status: 'idle' as const, result: undefined, error: undefined })));
+    setEnrichmentResults({});
+    setAgentMessages([]);
+    setAgentInput('');
   };
 
   // ============================================================
@@ -1334,18 +1714,24 @@ Format each action exactly like this:
         </div>
       )}
 
-      {/* Lead Detail Sheet */}
+      {/* Lead Detail Sheet — Enhanced 3-Tab Panel */}
       <Sheet open={!!selectedLead} onOpenChange={() => handleCloseSheet()}>
-        <SheetContent className="sm:max-w-xl overflow-y-auto bg-card border-border/40">
+        <SheetContent className="sm:max-w-2xl overflow-hidden bg-card/95 backdrop-blur-xl border-border/40 p-0 flex flex-col">
           {selectedLead && (
-            <>
-              <SheetHeader>
-                <SheetTitle className="flex items-center gap-2">
-                  <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/10 text-emerald-400 text-lg font-bold">
+            <div className="flex flex-col h-full">
+              {/* ─── Header ─── */}
+              <SheetHeader className="px-5 pt-5 pb-3 border-b border-border/20 shrink-0">
+                <SheetTitle className="flex items-center gap-3">
+                  <div className="relative flex h-11 w-11 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-500/20 to-cyan-500/20 text-emerald-400 text-lg font-bold ring-1 ring-emerald-500/20">
                     {selectedLead.companyName.charAt(0)}
+                    {/* Live indicator dot */}
+                    <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-500" />
+                    </span>
                   </div>
-                  <div>
-                    <div className="text-lg text-foreground">{selectedLead.companyName}</div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-lg font-semibold text-foreground truncate">{selectedLead.companyName}</div>
                     <div className="flex gap-1.5 mt-1">
                       <Badge variant="outline" className={`text-[10px] ${TIER_COLORS[selectedLead.leadTier as LeadTier] || ''}`}>
                         {selectedLead.leadTier}
@@ -1353,391 +1739,652 @@ Format each action exactly like this:
                       <Badge variant="outline" className={`text-[10px] ${STAGE_COLORS[selectedLead.stage as LeadStage] || ''}`}>
                         {STAGE_LABELS[selectedLead.stage as LeadStage] || selectedLead.stage}
                       </Badge>
+                      <Badge variant="outline" className="text-[10px] border-foreground/10 text-foreground/50 bg-foreground/5">
+                        {selectedLead.leadScore}/100
+                      </Badge>
                     </div>
                   </div>
                 </SheetTitle>
               </SheetHeader>
 
-              <div className="mt-6 space-y-6">
-                {/* Score Breakdown */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-3 text-foreground/90">Lead Score: {selectedLead.leadScore}/100</h4>
-                  <div className="space-y-2">
-                    {[
-                      { label: 'Firmographic', value: selectedLead.firmographicScore },
-                      { label: 'Intent', value: selectedLead.intentScore },
-                      { label: 'Reachability', value: selectedLead.reachabilityScore },
-                      { label: 'Strategic', value: selectedLead.strategicScore },
-                      { label: 'Data Quality', value: selectedLead.dataCompleteness },
-                    ].map((item) => (
-                      <div key={item.label} className="flex items-center gap-3">
-                        <span className="text-xs text-muted-foreground w-24">{item.label}</span>
-                        <div className="flex-1 h-1.5 rounded-full bg-secondary/40 overflow-hidden">
-                          <div
-                            className="h-full rounded-full bg-emerald-400"
-                            style={{ width: `${item.value}%` }}
-                          />
-                        </div>
-                        <span className="text-xs font-semibold text-foreground/80 w-8">{item.value}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Company Info */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
-                    <Building2 className="h-4 w-4 text-muted-foreground" /> Company
-                  </h4>
-                  <div className="space-y-1.5 text-sm">
-                    {selectedLead.industry && <div><span className="text-muted-foreground">Industry:</span> <span className="text-foreground/80">{selectedLead.industry}</span>{selectedLead.subIndustry ? ` / ${selectedLead.subIndustry}` : ''}</div>}
-                    {selectedLead.employeeCount && <div><span className="text-muted-foreground">Employees:</span> <span className="text-foreground/80">{selectedLead.employeeCount}</span></div>}
-                    {selectedLead.revenueEstimate && <div><span className="text-muted-foreground">Revenue:</span> <span className="text-foreground/80">{selectedLead.revenueEstimate}</span></div>}
-                    {selectedLead.foundingYear && <div><span className="text-muted-foreground">Founded:</span> <span className="text-foreground/80">{selectedLead.foundingYear}</span></div>}
-                    {selectedLead.ownershipType && <div><span className="text-muted-foreground">Ownership:</span> <span className="text-foreground/80">{selectedLead.ownershipType}</span></div>}
-                  </div>
-                </div>
-
-                {/* AI Lead Scoring Panel */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/90">
-                      <Sparkles className="h-4 w-4 text-violet-400" />
-                      AI Lead Scoring
-                      <Badge variant="outline" className="text-[9px] border-violet-500/20 text-violet-400 bg-violet-500/5">glm-4.6v-flash</Badge>
-                    </h4>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 gap-1.5 text-[10px] text-violet-400 hover:text-violet-400 hover:bg-violet-500/10"
-                      onClick={() => generateAIScore(selectedLead)}
-                      disabled={aiScoringLoading}
-                    >
-                      {aiScoringLoading ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <Sparkles className="h-3 w-3" />
+              {/* ─── Tab Navigation ─── */}
+              <div className="flex items-center gap-0.5 px-4 py-2 border-b border-border/15 bg-secondary/5 shrink-0">
+                {([
+                  { key: 'overview' as PanelTab, label: 'Overview', icon: Layers },
+                  { key: 'enrich' as PanelTab, label: 'Enrich', icon: Wand2 },
+                  { key: 'agent' as PanelTab, label: 'Agent', icon: Bot },
+                ]).map(tab => (
+                  <button
+                    key={tab.key}
+                    className={cn(
+                      'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-all duration-200',
+                      activePanelTab === tab.key
+                        ? tab.key === 'overview'
+                          ? 'bg-blue-500/15 text-blue-400 shadow-sm shadow-blue-500/10'
+                          : tab.key === 'enrich'
+                          ? 'bg-violet-500/15 text-violet-400 shadow-sm shadow-violet-500/10'
+                          : 'bg-emerald-500/15 text-emerald-400 shadow-sm shadow-emerald-500/10'
+                        : 'text-muted-foreground hover:text-foreground/70 hover:bg-secondary/30'
+                    )}
+                    onClick={() => setActivePanelTab(tab.key)}
+                  >
+                    <tab.icon style={{ width: 13, height: 13 }} />
+                    {tab.label}
+                    {tab.key === 'enrich' && enrichmentTasks.some(t => t.status === 'running') && (
+                      <Loader2 className="h-3 w-3 animate-spin text-violet-400" />
+                    )}
+                    {tab.key === 'enrich' && enrichmentTasks.filter(t => t.status === 'completed').length > 0 && (
+                      <span className="ml-0.5 bg-violet-500/20 text-violet-400 px-1 rounded text-[9px]">
+                        {enrichmentTasks.filter(t => t.status === 'completed').length}
+                      </span>
+                    )}
+                    {tab.key === 'agent' && agentMessages.length > 0 && (
+                      <span className="ml-0.5 bg-emerald-500/20 text-emerald-400 px-1 rounded text-[9px]">
+                        {agentMessages.length}
+                      </span>
+                    )}
+                  </button>
+                ))}
+                <div className="flex-1" />
+                {/* Quick score pill */}
+                <div className="flex items-center gap-1.5 text-[10px] text-muted-foreground">
+                  <div className="h-1.5 w-16 rounded-full bg-secondary/40 overflow-hidden">
+                    <div
+                      className={cn(
+                        'h-full rounded-full transition-all duration-500',
+                        selectedLead.leadScore >= 70 ? 'bg-emerald-400' :
+                        selectedLead.leadScore >= 40 ? 'bg-amber-400' : 'bg-red-400'
                       )}
-                      {aiScoring ? 'Re-score' : 'Score with AI'}
-                    </Button>
+                      style={{ width: `${selectedLead.leadScore}%` }}
+                    />
                   </div>
+                  <span className="font-medium">{selectedLead.leadScore}</span>
+                </div>
+              </div>
 
-                  {aiScoringError ? (
-                    <div className="rounded-lg border border-red-500/20 bg-red-500/5 p-3 text-xs text-red-400">
-                      {aiScoringError}
-                    </div>
-                  ) : aiScoringLoading && !aiScoring ? (
-                    <div className="rounded-lg border border-violet-500/10 bg-violet-500/5 p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="h-3.5 w-3.5 text-violet-400 animate-spin" />
-                        <span className="text-xs text-muted-foreground">AI is scoring this lead across 5 dimensions...</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="h-2.5 bg-secondary/30 rounded w-full" />
-                        <div className="h-2.5 bg-secondary/30 rounded w-4/5" />
-                        <div className="h-2.5 bg-secondary/30 rounded w-3/5" />
-                      </div>
-                    </div>
-                  ) : aiScoring ? (
-                    <div className="rounded-lg border border-violet-500/20 bg-violet-500/5 p-3 space-y-3">
-                      {/* Overall score */}
-                      <div className="flex items-center justify-between">
-                        <div>
-                          <div className="text-xs text-muted-foreground">Overall AI Score</div>
-                          <div className="text-2xl font-bold text-violet-400">{aiScoring.overallScore}<span className="text-xs text-muted-foreground">/100</span></div>
-                        </div>
-                        <div className="text-right">
-                          <Badge variant="outline" className={`text-[9px] capitalize ${
-                            aiScoring.tier === 'hot' ? 'border-red-500/30 text-red-400 bg-red-500/10' :
-                            aiScoring.tier === 'warm' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
-                            'border-cyan-500/30 text-cyan-400 bg-cyan-500/10'
-                          }`}>
-                            {aiScoring.tier}
-                          </Badge>
-                          <div className="text-[10px] text-muted-foreground mt-1">Confidence: {Math.round(aiScoring.confidence * 100)}%</div>
-                        </div>
-                      </div>
-
-                      {/* Dimension scores */}
-                      <div className="space-y-1.5">
-                        {Object.entries(aiScoring.dimensions || {}).map(([dim, info]) => (
-                          <div key={dim}>
-                            <div className="flex items-center justify-between">
-                              <span className="text-[10px] text-muted-foreground capitalize">{dim}</span>
-                              <span className="text-[10px] font-semibold text-foreground/80">{info.score}</span>
+              {/* ─── Tab Content ─── */}
+              <div className="flex-1 overflow-y-auto">
+                {/* ═══════════════════════════════════════════ */}
+                {/* TAB: OVERVIEW                              */}
+                {/* ═══════════════════════════════════════════ */}
+                {activePanelTab === 'overview' && (
+                  <div className="p-5 space-y-5">
+                    {/* Score Breakdown — Glassmorphic card */}
+                    <div className="rounded-xl border border-border/20 bg-gradient-to-br from-secondary/20 to-secondary/5 p-4">
+                      <h4 className="text-sm font-semibold mb-3 text-foreground/90 flex items-center gap-2">
+                        <Gauge className="h-4 w-4 text-blue-400" />
+                        Lead Score: {selectedLead.leadScore}/100
+                      </h4>
+                      <div className="space-y-2.5">
+                        {[
+                          { label: 'Firmographic', value: selectedLead.firmographicScore, color: 'from-blue-400 to-blue-500' },
+                          { label: 'Intent', value: selectedLead.intentScore, color: 'from-amber-400 to-amber-500' },
+                          { label: 'Reachability', value: selectedLead.reachabilityScore, color: 'from-purple-400 to-purple-500' },
+                          { label: 'Strategic', value: selectedLead.strategicScore, color: 'from-emerald-400 to-emerald-500' },
+                          { label: 'Data Quality', value: selectedLead.dataCompleteness, color: 'from-cyan-400 to-cyan-500' },
+                        ].map((item) => (
+                          <div key={item.label} className="flex items-center gap-3">
+                            <span className="text-xs text-muted-foreground w-24 shrink-0">{item.label}</span>
+                            <div className="flex-1 h-2 rounded-full bg-secondary/30 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full bg-gradient-to-r ${item.color} transition-all duration-700`}
+                                style={{ width: `${item.value}%` }}
+                              />
                             </div>
-                            <div className="h-1 rounded-full bg-secondary/30 overflow-hidden">
-                              <div className="h-full rounded-full bg-gradient-to-r from-violet-400 to-cyan-400" style={{ width: `${info.score}%` }} />
-                            </div>
-                            <p className="text-[10px] text-muted-foreground/80 mt-0.5 italic">{info.rationale}</p>
+                            <span className="text-xs font-semibold text-foreground/80 w-8 text-right">{item.value}</span>
                           </div>
                         ))}
                       </div>
+                    </div>
 
-                      {/* Signals */}
-                      {aiScoring.signals && (aiScoring.signals.positive.length > 0 || aiScoring.signals.negative.length > 0) && (
-                        <div className="grid grid-cols-2 gap-2 text-[10px]">
-                          {aiScoring.signals.positive.length > 0 && (
+                    {/* Company Info */}
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
+                        <Building2 className="h-4 w-4 text-muted-foreground" /> Company
+                      </h4>
+                      <div className="rounded-lg border border-border/15 bg-secondary/8 p-3 space-y-1.5 text-sm">
+                        {selectedLead.industry && <div className="flex justify-between"><span className="text-muted-foreground">Industry</span><span className="text-foreground/80 text-right">{selectedLead.industry}{selectedLead.subIndustry ? ` / ${selectedLead.subIndustry}` : ''}</span></div>}
+                        {selectedLead.employeeCount && <div className="flex justify-between"><span className="text-muted-foreground">Employees</span><span className="text-foreground/80">{selectedLead.employeeCount}</span></div>}
+                        {selectedLead.revenueEstimate && <div className="flex justify-between"><span className="text-muted-foreground">Revenue</span><span className="text-foreground/80">{selectedLead.revenueEstimate}</span></div>}
+                        {selectedLead.foundingYear && <div className="flex justify-between"><span className="text-muted-foreground">Founded</span><span className="text-foreground/80">{selectedLead.foundingYear}</span></div>}
+                        {selectedLead.ownershipType && <div className="flex justify-between"><span className="text-muted-foreground">Ownership</span><span className="text-foreground/80">{selectedLead.ownershipType}</span></div>}
+                        {selectedLead.techStack && <div className="flex justify-between"><span className="text-muted-foreground">Tech Stack</span><span className="text-foreground/80 text-right max-w-[60%] truncate">{selectedLead.techStack}</span></div>}
+                      </div>
+                    </div>
+
+                    {/* Location */}
+                    {(selectedLead.city || selectedLead.hqAddress) && (
+                      <div>
+                        <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
+                          <MapPin className="h-4 w-4 text-muted-foreground" /> Location
+                        </h4>
+                        <div className="space-y-1.5 text-sm text-foreground/80">
+                          {selectedLead.hqAddress && <div>{selectedLead.hqAddress}</div>}
+                          {selectedLead.city && <div>{selectedLead.city}{selectedLead.stateProvince ? `, ${selectedLead.stateProvince}` : ''}{selectedLead.country ? `, ${selectedLead.country}` : ''}</div>}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Key Contacts */}
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
+                        <Users className="h-4 w-4 text-muted-foreground" /> Key Contacts
+                      </h4>
+                      <div className="space-y-2">
+                        {selectedLead.ceoName && (
+                          <div className="rounded-lg border border-border/15 bg-secondary/8 p-2.5 flex items-center gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-violet-500/20 to-purple-500/20 text-violet-400 text-xs font-bold ring-1 ring-violet-500/20">
+                              {selectedLead.ceoName.charAt(0)}
+                            </div>
                             <div>
-                              <div className="text-emerald-400 font-medium mb-1">Positive signals</div>
-                              <ul className="text-muted-foreground space-y-0.5">
-                                {aiScoring.signals.positive.slice(0, 3).map((s, i) => <li key={i}>+ {s}</li>)}
-                              </ul>
+                              <div className="font-medium text-sm text-foreground/90">{selectedLead.ceoName}</div>
+                              <div className="text-xs text-muted-foreground">CEO{selectedLead.ceoEmail ? ` · ${selectedLead.ceoEmail}` : ''}</div>
+                            </div>
+                          </div>
+                        )}
+                        {selectedLead.keyContactName && (
+                          <div className="rounded-lg border border-border/15 bg-secondary/8 p-2.5 flex items-center gap-3">
+                            <div className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-to-br from-blue-500/20 to-cyan-500/20 text-blue-400 text-xs font-bold ring-1 ring-blue-500/20">
+                              {selectedLead.keyContactName.charAt(0)}
+                            </div>
+                            <div>
+                              <div className="font-medium text-sm text-foreground/90">{selectedLead.keyContactName}</div>
+                              <div className="text-xs text-muted-foreground">
+                                {selectedLead.keyContactTitle || 'Key Contact'}{selectedLead.keyContactEmail ? ` · ${selectedLead.keyContactEmail}` : ''}
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Contact Channels */}
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 text-foreground/90">Contact Channels</h4>
+                      <div className="space-y-1.5 text-sm">
+                        {selectedLead.phoneMain && (
+                          <div className="flex items-center gap-2 text-muted-foreground hover:text-foreground/80 transition-colors">
+                            <Phone className="h-3.5 w-3.5" />
+                            {selectedLead.phoneMain}
+                          </div>
+                        )}
+                        {selectedLead.generalEmail && (
+                          <div className="flex items-center gap-2 text-muted-foreground hover:text-foreground/80 transition-colors">
+                            <Mail className="h-3.5 w-3.5" />
+                            {selectedLead.generalEmail}
+                          </div>
+                        )}
+                        {selectedLead.website && (
+                          <div className="flex items-center gap-2">
+                            <Globe className="h-3.5 w-3.5 text-muted-foreground" />
+                            <a href={selectedLead.website} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 transition-colors">
+                              {selectedLead.website.replace('https://', '')}
+                            </a>
+                          </div>
+                        )}
+                        {selectedLead.linkedinUrl && (
+                          <div className="flex items-center gap-2">
+                            <span className="text-[10px] font-bold text-cyan-400">in</span>
+                            <a href={selectedLead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs transition-colors">
+                              LinkedIn
+                            </a>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* AI Suggested Next Action — Compact */}
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/90">
+                          <Sparkles className="h-4 w-4 text-emerald-400" />
+                          Suggested Next Action
+                        </h4>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="h-7 gap-1.5 text-[10px] text-emerald-400 hover:text-emerald-400 hover:bg-emerald-500/10"
+                          onClick={() => generateAISuggestion(selectedLead)}
+                          disabled={aiSuggestionLoading || aiIsGenerating}
+                        >
+                          {(aiSuggestionLoading || aiIsGenerating) ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <RefreshCw className="h-3 w-3" />
+                          )}
+                          {aiSuggestion ? 'Regenerate' : 'Generate'}
+                        </Button>
+                      </div>
+
+                      {(aiSuggestionLoading || aiIsGenerating) ? (
+                        <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <Loader2 className="h-3.5 w-3.5 text-emerald-400 animate-spin" />
+                            <span className="text-xs text-muted-foreground">Analyzing lead & generating action plan...</span>
+                          </div>
+                          <div className="space-y-1.5">
+                            <div className="h-3 bg-secondary/30 rounded w-full" />
+                            <div className="h-3 bg-secondary/30 rounded w-4/5" />
+                            <div className="h-3 bg-secondary/30 rounded w-3/5" />
+                          </div>
+                        </div>
+                      ) : aiSuggestion && actionItems.length > 0 ? (
+                        <div className="space-y-3">
+                          {renderPipelineProgress()}
+                          <div className="space-y-2.5">
+                            {actionItems.map(action => renderActionItem(action))}
+                          </div>
+                          {totalEnrichments > 0 && (
+                            <div className="mt-4 pt-4 border-t border-border/20">
+                              {renderEnrichmentPanel()}
                             </div>
                           )}
-                          {aiScoring.signals.negative.length > 0 && (
-                            <div>
-                              <div className="text-red-400 font-medium mb-1">Negative signals</div>
-                              <ul className="text-muted-foreground space-y-0.5">
-                                {aiScoring.signals.negative.slice(0, 3).map((s, i) => <li key={i}>- {s}</li>)}
-                              </ul>
-                            </div>
-                          )}
                         </div>
-                      )}
-
-                      {/* Outreach angle */}
-                      {aiScoring.outreachAngle && (
-                        <div className="pt-2 border-t border-border/20">
-                          <div className="text-[10px] text-muted-foreground mb-1">Recommended outreach angle ({aiScoring.nextBestChannel})</div>
-                          <p className="text-xs text-foreground/90 leading-relaxed">{aiScoring.outreachAngle}</p>
-                        </div>
-                      )}
-
-                      {/* Recommended actions */}
-                      {aiScoring.recommendedActions && aiScoring.recommendedActions.length > 0 && (
-                        <div className="pt-2 border-t border-border/20">
-                          <div className="text-[10px] text-muted-foreground mb-1">Recommended actions</div>
-                          <ul className="space-y-1">
-                            {aiScoring.recommendedActions.slice(0, 4).map((a, i) => (
-                              <li key={i} className="text-xs text-foreground/80 flex gap-1.5">
-                                <span className="text-violet-400">→</span>
-                                {a}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )}
-
-                      {/* Risk factors */}
-                      {aiScoring.riskFactors && aiScoring.riskFactors.length > 0 && (
-                        <div className="pt-2 border-t border-border/20">
-                          <div className="text-[10px] text-amber-400 mb-1">Risk factors</div>
-                          <ul className="space-y-0.5">
-                            {aiScoring.riskFactors.slice(0, 3).map((r, i) => (
-                              <li key={i} className="text-[10px] text-muted-foreground flex gap-1.5">
-                                <span className="text-amber-400">!</span>
-                                {r}
-                              </li>
-                            ))}
-                          </ul>
+                      ) : (
+                        <div className="rounded-lg border border-border/30 bg-secondary/10 p-3 text-center">
+                          <p className="text-xs text-muted-foreground mb-2">
+                            Get AI-powered suggestions for the best next action with this lead
+                          </p>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            className="gap-1.5 text-[10px] border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400"
+                            onClick={() => generateAISuggestion(selectedLead)}
+                          >
+                            <Sparkles className="h-3 w-3" />
+                            Get AI Suggestion
+                          </Button>
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <div className="rounded-lg border border-border/30 bg-secondary/10 p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-2">
-                        Run AI scoring for a 5-dimension analysis with recommended actions
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5 text-[10px] border-violet-500/20 text-violet-400 hover:bg-violet-500/10 hover:text-violet-400"
-                        onClick={() => generateAIScore(selectedLead)}
+
+                    {/* Update Stage */}
+                    <div>
+                      <h4 className="text-sm font-semibold mb-2 text-foreground/90">Update Stage</h4>
+                      <Select
+                        value={selectedLead.stage}
+                        onValueChange={(v) => handleStageChange(selectedLead.id, v)}
                       >
-                        <Sparkles className="h-3 w-3" />
-                        Run AI Scoring
-                      </Button>
+                        <SelectTrigger className="bg-secondary/30 border-border/40">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-popover border-border/60">
+                          {Object.entries(STAGE_LABELS).map(([key, label]) => (
+                            <SelectItem key={key} value={key}>
+                              {label}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     </div>
-                  )}
-                </div>
 
-                {/* Location */}
-                {(selectedLead.city || selectedLead.hqAddress) && (
-                  <div>
-                    <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
-                      <MapPin className="h-4 w-4 text-muted-foreground" /> Location
-                    </h4>
-                    <div className="space-y-1.5 text-sm text-foreground/80">
-                      {selectedLead.hqAddress && <div>{selectedLead.hqAddress}</div>}
-                      {selectedLead.city && <div>{selectedLead.city}{selectedLead.stateProvince ? `, ${selectedLead.stateProvince}` : ''}{selectedLead.country ? `, ${selectedLead.country}` : ''}</div>}
+                    {/* Dates */}
+                    <div className="text-xs text-muted-foreground space-y-1">
+                      <div>Discovered: {new Date(selectedLead.discoveredAt).toLocaleDateString()}</div>
+                      {selectedLead.enrichedAt && <div>Enriched: {new Date(selectedLead.enrichedAt).toLocaleDateString()}</div>}
+                      {selectedLead.qualifiedAt && <div>Qualified: {new Date(selectedLead.qualifiedAt).toLocaleDateString()}</div>}
+                    </div>
+
+                    {/* Delete */}
+                    <div className="flex gap-2 pt-2">
+                      <Button
+                        variant="destructive"
+                        size="sm"
+                        onClick={() => handleDeleteLead(selectedLead.id)}
+                        className="gap-1"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Delete
+                      </Button>
                     </div>
                   </div>
                 )}
 
-                {/* Contact Info */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-2 flex items-center gap-2 text-foreground/90">
-                    <Users className="h-4 w-4 text-muted-foreground" /> Key Contacts
-                  </h4>
-                  <div className="space-y-2">
-                    {selectedLead.ceoName && (
-                      <div className="rounded-lg border border-border/30 bg-secondary/15 p-2.5">
-                        <div className="font-medium text-sm text-foreground/90">{selectedLead.ceoName}</div>
-                        <div className="text-xs text-muted-foreground">CEO{selectedLead.ceoEmail ? ` • ${selectedLead.ceoEmail}` : ''}</div>
-                      </div>
-                    )}
-                    {selectedLead.keyContactName && (
-                      <div className="rounded-lg border border-border/30 bg-secondary/15 p-2.5">
-                        <div className="font-medium text-sm text-foreground/90">{selectedLead.keyContactName}</div>
-                        <div className="text-xs text-muted-foreground">
-                          {selectedLead.keyContactTitle || 'Key Contact'}
-                          {selectedLead.keyContactEmail ? ` • ${selectedLead.keyContactEmail}` : ''}
+                {/* ═══════════════════════════════════════════ */}
+                {/* TAB: ENRICH                               */}
+                {/* ═══════════════════════════════════════════ */}
+                {activePanelTab === 'enrich' && (
+                  <div className="p-5 space-y-4">
+                    {/* Enrichment Dashboard Summary */}
+                    <div className="rounded-xl border border-violet-500/15 bg-gradient-to-br from-violet-500/8 via-card to-purple-500/5 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2">
+                          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-violet-500/15 text-violet-400">
+                            <Cpu style={{ width: 16, height: 16 }} />
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground/90">Enrichment Engine</h4>
+                            <p className="text-[10px] text-muted-foreground">9 AI capabilities ready</p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-muted-foreground">
+                            {enrichmentTasks.filter(t => t.status === 'completed').length}/{enrichmentTasks.length} done
+                          </span>
+                          <Button
+                            size="sm"
+                            className="h-7 gap-1.5 text-[10px] bg-violet-500/15 text-violet-400 hover:bg-violet-500/25 border border-violet-500/20"
+                            onClick={runAllEnrichments}
+                            disabled={enrichmentTasks.some(t => t.status === 'running')}
+                          >
+                            {enrichmentTasks.some(t => t.status === 'running') ? (
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                            ) : (
+                              <Zap style={{ width: 12, height: 12 }} />
+                            )}
+                            Run All
+                          </Button>
                         </div>
                       </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* Contact Channels */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-2 text-foreground/90">Contact Channels</h4>
-                  <div className="space-y-1.5 text-sm">
-                    {selectedLead.phoneMain && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Phone className="h-3.5 w-3.5" />
-                        {selectedLead.phoneMain}
-                      </div>
-                    )}
-                    {selectedLead.generalEmail && (
-                      <div className="flex items-center gap-2 text-muted-foreground">
-                        <Mail className="h-3.5 w-3.5" />
-                        {selectedLead.generalEmail}
-                      </div>
-                    )}
-                    {selectedLead.website && (
-                      <div className="flex items-center gap-2">
-                        <Globe className="h-3.5 w-3.5 text-muted-foreground" />
-                        <a href={selectedLead.website} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 transition-colors">
-                          {selectedLead.website.replace('https://', '')}
-                        </a>
-                      </div>
-                    )}
-                    {selectedLead.linkedinUrl && (
-                      <div className="flex items-center gap-2">
-                        <span className="text-[10px] font-bold text-cyan-400">in</span>
-                        <a href={selectedLead.linkedinUrl} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300 text-xs transition-colors">
-                          LinkedIn
-                        </a>
-                      </div>
-                    )}
-                  </div>
-                </div>
-
-                {/* ═══════════════════════════════════════════════════ */}
-                {/* AI SUGGESTED NEXT ACTION — REDESIGNED               */}
-                {/* ═══════════════════════════════════════════════════ */}
-                <div>
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-sm font-semibold flex items-center gap-2 text-foreground/90">
-                      <Sparkles className="h-4 w-4 text-emerald-400" />
-                      Suggested Next Action
-                    </h4>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="h-7 gap-1.5 text-[10px] text-emerald-400 hover:text-emerald-400 hover:bg-emerald-500/10"
-                      onClick={() => generateAISuggestion(selectedLead)}
-                      disabled={aiSuggestionLoading || aiIsGenerating}
-                    >
-                      {(aiSuggestionLoading || aiIsGenerating) ? (
-                        <Loader2 className="h-3 w-3 animate-spin" />
-                      ) : (
-                        <RefreshCw className="h-3 w-3" />
-                      )}
-                      {aiSuggestion ? 'Regenerate' : 'Generate'}
-                    </Button>
-                  </div>
-
-                  {(aiSuggestionLoading || aiIsGenerating) ? (
-                    <div className="rounded-lg border border-emerald-500/10 bg-emerald-500/5 p-3 space-y-2">
-                      <div className="flex items-center gap-2">
-                        <Loader2 className="h-3.5 w-3.5 text-emerald-400 animate-spin" />
-                        <span className="text-xs text-muted-foreground">Analyzing lead & generating action plan...</span>
-                      </div>
-                      <div className="space-y-1.5">
-                        <div className="h-3 bg-secondary/30 rounded w-full" />
-                        <div className="h-3 bg-secondary/30 rounded w-4/5" />
-                        <div className="h-3 bg-secondary/30 rounded w-3/5" />
+                      {/* Overall progress */}
+                      <div className="h-1.5 rounded-full bg-secondary/30 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-violet-400 to-purple-400 transition-all duration-700"
+                          style={{ width: `${(enrichmentTasks.filter(t => t.status === 'completed').length / enrichmentTasks.length) * 100}%` }}
+                        />
                       </div>
                     </div>
-                  ) : aiSuggestion && actionItems.length > 0 ? (
-                    <div className="space-y-3">
-                      {/* Pipeline Progress */}
-                      {renderPipelineProgress()}
 
-                      {/* Individual Action Items */}
-                      <div className="space-y-2.5">
-                        {actionItems.map(action => renderActionItem(action))}
+                    {/* Enrichment Task Cards */}
+                    <div className="grid grid-cols-1 gap-2.5">
+                      {enrichmentTasks.map(task => {
+                        const IconComp = task.icon;
+                        const isRunning = task.status === 'running';
+                        const isDone = task.status === 'completed';
+                        const isFailed = task.status === 'failed';
+
+                        return (
+                          <div
+                            key={task.id}
+                            className={cn(
+                              'group relative rounded-xl border p-3.5 transition-all duration-300',
+                              isDone
+                                ? `${task.borderColor} ${task.bgColor} shadow-sm`
+                                : isRunning
+                                ? 'border-blue-500/25 bg-blue-500/5 shadow-sm shadow-blue-500/5'
+                                : isFailed
+                                ? 'border-red-500/20 bg-red-500/5'
+                                : 'border-border/15 bg-secondary/5 hover:bg-secondary/10 hover:border-border/30'
+                            )}
+                          >
+                            <div className="flex items-start gap-3">
+                              <div className={cn(
+                                'flex h-9 w-9 items-center justify-center rounded-lg shrink-0 transition-all',
+                                isDone ? `${task.bgColor} ring-1 ${task.borderColor}` :
+                                isRunning ? 'bg-blue-500/15 ring-1 ring-blue-500/20' :
+                                'bg-secondary/20'
+                              )}>
+                                {isRunning ? (
+                                  <Loader2 className="h-4 w-4 text-blue-400 animate-spin" />
+                                ) : (
+                                  <IconComp className={cn('h-4 w-4', isDone ? task.color : 'text-muted-foreground/60')} />
+                                )}
+                              </div>
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2 mb-0.5">
+                                  <span className={cn(
+                                    'text-sm font-semibold',
+                                    isDone ? 'text-foreground/90' : 'text-foreground/70'
+                                  )}>{task.label}</span>
+                                  {isDone && (
+                                    <CheckCircle2 className="h-3.5 w-3.5 text-emerald-400" />
+                                  )}
+                                  {isFailed && (
+                                    <AlertCircle className="h-3.5 w-3.5 text-red-400" />
+                                  )}
+                                </div>
+                                <p className="text-[11px] text-muted-foreground/80 leading-relaxed">{task.description}</p>
+
+                                {/* Show result preview if completed */}
+                                {isDone && task.result && (
+                                  <div className="mt-2 p-2.5 rounded-lg bg-secondary/15 border border-border/10 text-[11px] text-foreground/70 leading-relaxed max-h-28 overflow-y-auto">
+                                    {typeof task.result === 'string'
+                                      ? task.result.slice(0, 300)
+                                      : JSON.stringify(task.result, null, 0).slice(0, 300)}
+                                    {(typeof task.result === 'string' ? task.result.length : JSON.stringify(task.result).length) > 300 && '...'}
+                                  </div>
+                                )}
+
+                                {/* Show error if failed */}
+                                {isFailed && task.error && (
+                                  <div className="mt-2 text-[10px] text-red-400/80">{task.error}</div>
+                                )}
+                              </div>
+                              <Button
+                                variant="ghost"
+                                size="sm"
+                                className={cn(
+                                  'h-7 shrink-0 gap-1 text-[10px] transition-all',
+                                  isDone
+                                    ? `${task.color} hover:${task.bgColor}`
+                                    : isRunning
+                                    ? 'text-blue-400'
+                                    : `${task.color} opacity-0 group-hover:opacity-100`
+                                )}
+                                onClick={() => runEnrichmentTask(task.id)}
+                                disabled={isRunning}
+                              >
+                                {isRunning ? (
+                                  <Loader2 className="h-3 w-3 animate-spin" />
+                                ) : isDone ? (
+                                  <RefreshCw className="h-3 w-3" />
+                                ) : (
+                                  <PlayCircle className="h-3 w-3" />
+                                )}
+                                {isRunning ? 'Running' : isDone ? 'Re-run' : 'Run'}
+                              </Button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* AI Scoring Deep Panel (if result available from enrich tab) */}
+                    {enrichmentResults['ai_score'] && (
+                      <div className="rounded-xl border border-violet-500/15 bg-violet-500/5 p-4 space-y-3">
+                        <h5 className="text-xs font-semibold text-violet-400 flex items-center gap-1.5">
+                          <Gauge style={{ width: 14, height: 14 }} />
+                          AI Deep Score Result
+                        </h5>
+                        {aiScoring && (
+                          <>
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <div className="text-2xl font-bold text-violet-400">{aiScoring.overallScore}<span className="text-xs text-muted-foreground">/100</span></div>
+                              </div>
+                              <div className="text-right">
+                                <Badge variant="outline" className={`text-[9px] capitalize ${
+                                  aiScoring.tier === 'hot' ? 'border-red-500/30 text-red-400 bg-red-500/10' :
+                                  aiScoring.tier === 'warm' ? 'border-amber-500/30 text-amber-400 bg-amber-500/10' :
+                                  'border-cyan-500/30 text-cyan-400 bg-cyan-500/10'
+                                }`}>
+                                  {aiScoring.tier}
+                                </Badge>
+                                <div className="text-[10px] text-muted-foreground mt-1">Confidence: {Math.round(aiScoring.confidence * 100)}%</div>
+                              </div>
+                            </div>
+                            {aiScoring.outreachAngle && (
+                              <div className="pt-2 border-t border-border/15">
+                                <div className="text-[10px] text-muted-foreground mb-1">Recommended outreach angle ({aiScoring.nextBestChannel})</div>
+                                <p className="text-xs text-foreground/80 leading-relaxed">{aiScoring.outreachAngle}</p>
+                              </div>
+                            )}
+                          </>
+                        )}
                       </div>
+                    )}
 
-                      {/* Enrichment Data Panel */}
-                      {totalEnrichments > 0 && (
-                        <div className="mt-4 pt-4 border-t border-border/20">
-                          {renderEnrichmentPanel()}
+                    {/* Enrichment Data Panel (from action pipeline) */}
+                    {totalEnrichments > 0 && (
+                      <div className="pt-3 border-t border-border/15">
+                        {renderEnrichmentPanel()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══════════════════════════════════════════ */}
+                {/* TAB: AGENT                                */}
+                {/* ═══════════════════════════════════════════ */}
+                {activePanelTab === 'agent' && (
+                  <div className="flex flex-col h-full min-h-[500px]">
+                    {/* Agent Status Bar */}
+                    <div className="px-4 py-2.5 border-b border-border/15 bg-gradient-to-r from-emerald-500/5 via-card to-cyan-500/5">
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 ring-1 ring-emerald-500/20">
+                          <Bot style={{ width: 14, height: 14 }} className="text-emerald-400" />
+                          <span className="absolute -top-0.5 -right-0.5 flex h-2 w-2">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+                            <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500" />
+                          </span>
+                        </div>
+                        <div>
+                          <div className="text-xs font-semibold text-foreground/90">LeadReach AI Agent</div>
+                          <div className="text-[10px] text-muted-foreground">
+                            {agentIsTyping || agentChatLoading ? 'Thinking...' : 'Ready · Ask anything about this lead'}
+                          </div>
+                        </div>
+                        <div className="flex-1" />
+                        {agentMessages.length > 0 && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            className="h-6 text-[9px] text-muted-foreground hover:text-foreground/70"
+                            onClick={() => setAgentMessages([])}
+                          >
+                            <Trash2 className="h-2.5 w-2.5 mr-1" />
+                            Clear
+                          </Button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Chat Messages */}
+                    <div className="flex-1 overflow-y-auto px-4 py-3 space-y-3">
+                      {agentMessages.length === 0 && (
+                        <div className="flex flex-col items-center justify-center h-full gap-4 py-8">
+                          <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-500/10 to-cyan-500/10 ring-1 ring-emerald-500/15">
+                            <Bot style={{ width: 28, height: 28 }} className="text-emerald-400/60" />
+                          </div>
+                          <div className="text-center space-y-1.5">
+                            <h4 className="text-sm font-semibold text-foreground/80">AI Agent Ready</h4>
+                            <p className="text-[11px] text-muted-foreground max-w-[280px]">
+                              Ask me to enrich, score, research, or analyze this lead. I have full access to all 9 enrichment capabilities.
+                            </p>
+                          </div>
+                          {/* Quick action prompts */}
+                          <div className="flex flex-wrap justify-center gap-1.5 max-w-[320px]">
+                            {[
+                              { label: 'Enrich this lead', icon: Wand2, color: 'violet' },
+                              { label: 'Predict conversion', icon: TrendingUp, color: 'cyan' },
+                              { label: 'Research company', icon: Scan, color: 'indigo' },
+                              { label: 'Score with AI', icon: Gauge, color: 'emerald' },
+                              { label: 'Find decision makers', icon: UserSearch, color: 'blue' },
+                              { label: 'Draft outreach', icon: MessageSquare, color: 'amber' },
+                            ].map((prompt, idx) => (
+                              <button
+                                key={idx}
+                                className={cn(
+                                  'flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10px] font-medium border transition-all duration-200',
+                                  prompt.color === 'violet' ? 'border-violet-500/15 text-violet-400 bg-violet-500/5 hover:bg-violet-500/15' :
+                                  prompt.color === 'cyan' ? 'border-cyan-500/15 text-cyan-400 bg-cyan-500/5 hover:bg-cyan-500/15' :
+                                  prompt.color === 'indigo' ? 'border-indigo-500/15 text-indigo-400 bg-indigo-500/5 hover:bg-indigo-500/15' :
+                                  prompt.color === 'emerald' ? 'border-emerald-500/15 text-emerald-400 bg-emerald-500/5 hover:bg-emerald-500/15' :
+                                  prompt.color === 'blue' ? 'border-blue-500/15 text-blue-400 bg-blue-500/5 hover:bg-blue-500/15' :
+                                  'border-amber-500/15 text-amber-400 bg-amber-500/5 hover:bg-amber-500/15'
+                                )}
+                                onClick={() => {
+                                  setAgentInput(prompt.label);
+                                  setTimeout(() => agentInputRef.current?.focus(), 50);
+                                }}
+                              >
+                                <prompt.icon style={{ width: 10, height: 10 }} />
+                                {prompt.label}
+                              </button>
+                            ))}
+                          </div>
                         </div>
                       )}
-                    </div>
-                  ) : (
-                    <div className="rounded-lg border border-border/30 bg-secondary/10 p-3 text-center">
-                      <p className="text-xs text-muted-foreground mb-2">
-                        Get AI-powered suggestions for the best next action with this lead
-                      </p>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        className="gap-1.5 text-[10px] border-emerald-500/20 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-400"
-                        onClick={() => generateAISuggestion(selectedLead)}
-                      >
-                        <Sparkles className="h-3 w-3" />
-                        Get AI Suggestion
-                      </Button>
-                    </div>
-                  )}
-                </div>
 
-                {/* ═══════════════════════════════════════════════════ */}
-                {/* STAGE UPDATE                                         */}
-                {/* ═══════════════════════════════════════════════════ */}
-                <div>
-                  <h4 className="text-sm font-semibold mb-2 text-foreground/90">Update Stage</h4>
-                  <Select
-                    value={selectedLead.stage}
-                    onValueChange={(v) => handleStageChange(selectedLead.id, v)}
-                  >
-                    <SelectTrigger className="bg-secondary/30 border-border/40">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="bg-popover border-border/60">
-                      {Object.entries(STAGE_LABELS).map(([key, label]) => (
-                        <SelectItem key={key} value={key}>
-                          {label}
-                        </SelectItem>
+                      {agentMessages.map(msg => (
+                        <div key={msg.id} className={cn(
+                          'flex gap-2.5',
+                          msg.role === 'user' ? 'justify-end' : 'justify-start'
+                        )}>
+                          {msg.role === 'assistant' && (
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 ring-1 ring-emerald-500/20 shrink-0 mt-0.5">
+                              <Bot style={{ width: 14, height: 14 }} className="text-emerald-400" />
+                            </div>
+                          )}
+                          <div className={cn(
+                            'max-w-[85%] rounded-xl px-3.5 py-2.5 text-[12px] leading-relaxed',
+                            msg.role === 'user'
+                              ? 'bg-blue-500/10 text-foreground/90 border border-blue-500/15'
+                              : 'bg-secondary/20 text-foreground/80 border border-border/15'
+                          )}>
+                            <div className="whitespace-pre-wrap">{msg.content}</div>
+                            <div className="text-[9px] text-muted-foreground/50 mt-1.5">
+                              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                            </div>
+                          </div>
+                          {msg.role === 'user' && (
+                            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-blue-500/10 ring-1 ring-blue-500/20 shrink-0 mt-0.5">
+                              <Users style={{ width: 14, height: 14 }} className="text-blue-400" />
+                            </div>
+                          )}
+                        </div>
                       ))}
-                    </SelectContent>
-                  </Select>
-                </div>
 
-                {/* Dates */}
-                <div className="text-xs text-muted-foreground space-y-1">
-                  <div>Discovered: {new Date(selectedLead.discoveredAt).toLocaleDateString()}</div>
-                  {selectedLead.enrichedAt && <div>Enriched: {new Date(selectedLead.enrichedAt).toLocaleDateString()}</div>}
-                  {selectedLead.qualifiedAt && <div>Qualified: {new Date(selectedLead.qualifiedAt).toLocaleDateString()}</div>}
-                </div>
+                      {/* Typing indicator */}
+                      {(agentIsTyping || agentChatLoading) && (
+                        <div className="flex gap-2.5 justify-start">
+                          <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-500/15 to-cyan-500/15 ring-1 ring-emerald-500/20 shrink-0">
+                            <Bot style={{ width: 14, height: 14 }} className="text-emerald-400" />
+                          </div>
+                          <div className="bg-secondary/20 border border-border/15 rounded-xl px-4 py-3">
+                            <div className="flex gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce" style={{ animationDelay: '0ms' }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce" style={{ animationDelay: '150ms' }} />
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400/60 animate-bounce" style={{ animationDelay: '300ms' }} />
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                      <div ref={agentChatEndRef} />
+                    </div>
 
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => handleDeleteLead(selectedLead.id)}
-                    className="gap-1"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" /> Delete
-                  </Button>
-                </div>
+                    {/* Chat Input */}
+                    <div className="px-4 py-3 border-t border-border/15 bg-secondary/5">
+                      <div className="flex items-center gap-2">
+                        <div className="relative flex-1">
+                          <Input
+                            ref={agentInputRef}
+                            value={agentInput}
+                            onChange={(e) => setAgentInput(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                handleAgentSend();
+                              }
+                            }}
+                            placeholder={`Ask about ${selectedLead.companyName}...`}
+                            className="bg-secondary/20 border-border/20 text-sm h-9 pr-10 focus-visible:ring-emerald-500/30"
+                            disabled={agentIsTyping || agentChatLoading}
+                          />
+                          <Button
+                            size="icon"
+                            className="absolute right-1 top-1 h-7 w-7 bg-emerald-500/15 text-emerald-400 hover:bg-emerald-500/25 border border-emerald-500/20 rounded-md"
+                            onClick={handleAgentSend}
+                            disabled={!agentInput.trim() || agentIsTyping || agentChatLoading}
+                          >
+                            <Send className="h-3.5 w-3.5" />
+                          </Button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
-            </>
+            </div>
           )}
         </SheetContent>
       </Sheet>
