@@ -79,7 +79,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 hidden md:flex',
         sidebarCollapsed ? 'w-16' : 'w-60'
       )}
     >
@@ -126,7 +126,7 @@ export function Sidebar() {
         <Link
           href="/ai-hub"
           target="_blank"
-          className="flex items-center gap-2.5 rounded-md bg-gradient-to-r from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 px-3 py-2 text-sm font-medium transition-colors border border-purple-200/50"
+          className="flex items-center gap-2.5 rounded-md bg-gradient-to-r from-purple-500/10 to-pink-500/10 hover:from-purple-500/20 hover:to-pink-500/20 px-3 py-2 text-sm font-medium transition-colors border border-purple-200/50 dark:border-purple-500/20"
         >
           <div className="flex h-7 w-7 items-center justify-center rounded-md bg-gradient-to-br from-purple-500 to-pink-500">
             <Brain className="h-4 w-4 text-white" />

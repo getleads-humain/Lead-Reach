@@ -913,7 +913,7 @@ export function CampaignsView() {
                     <Badge variant="outline" className="border-border/30 text-muted-foreground">{detailCampaign.targetLocation}</Badge>
                   )}
                 </div>
-                <div className="grid grid-cols-4 gap-3 text-center">
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-center">
                   {[
                     { value: detailCampaign.leadsFound, label: 'Found' },
                     { value: detailCampaign.leadsQualified, label: 'Qualified' },

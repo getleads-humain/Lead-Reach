@@ -30,7 +30,7 @@ import {
 import type { AgentName } from '@/lib/types';
 import { AGENT_DEFINITIONS } from '@/lib/types';
 import { getChannelStatusColor, getChannelStatusLabel, getTierLabel, mapAgentToChannels } from '@/lib/agent-reach';
-import { safeFetchJSON } from '@/lib/utils';
+import { safeFetchJSON, hexToRgba } from '@/lib/utils';
 
 interface AgentTask {
   id: string;
@@ -276,7 +276,7 @@ export function AgentsView() {
                 <div className="flex items-start justify-between">
                   <div
                     className="rounded-lg p-2"
-                    style={{ backgroundColor: `${def.color}12`, color: def.color }}
+                    style={{ backgroundColor: hexToRgba(def.color, 0.07), color: def.color }}
                   >
                     <Icon className="h-5 w-5" />
                   </div>
@@ -347,15 +347,15 @@ export function AgentsView() {
                 )}
 
                 <div className="mt-3 grid grid-cols-3 gap-1 text-center">
-                  <div className="rounded bg-emerald-500/8 p-1.5">
+                  <div className="rounded bg-emerald-500/10 p-1.5">
                     <div className="text-xs font-bold text-emerald-400">{stats.completed}</div>
                     <div className="text-[9px] text-muted-foreground">Done</div>
                   </div>
-                  <div className="rounded bg-cyan-500/8 p-1.5">
+                  <div className="rounded bg-cyan-500/10 p-1.5">
                     <div className="text-xs font-bold text-cyan-400">{stats.running}</div>
                     <div className="text-[9px] text-muted-foreground">Active</div>
                   </div>
-                  <div className="rounded bg-red-500/8 p-1.5">
+                  <div className="rounded bg-red-500/10 p-1.5">
                     <div className="text-xs font-bold text-red-400">{stats.failed}</div>
                     <div className="text-[9px] text-muted-foreground">Failed</div>
                   </div>

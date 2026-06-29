@@ -103,11 +103,11 @@ const AGENT_WORKSPACE_SCROLLBAR_STYLES = `
     background: transparent;
   }
   .agent-workspace-scroll::-webkit-scrollbar-thumb {
-    background: rgba(255,255,255,0.1);
+    background: oklch(0.5 0 0 / 30%);
     border-radius: 3px;
   }
   .agent-workspace-scroll::-webkit-scrollbar-thumb:hover {
-    background: rgba(255,255,255,0.2);
+    background: oklch(0.5 0 0 / 50%);
   }
 `;
 

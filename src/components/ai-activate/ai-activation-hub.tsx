@@ -20,9 +20,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Leads',
     icon: Users,
-    color: 'text-blue-500',
-    bgColor: 'bg-blue-50',
-    borderColor: 'border-blue-200',
+    color: 'text-blue-500 dark:text-blue-400',
+    bgColor: 'bg-blue-50 dark:bg-blue-500/10',
+    borderColor: 'border-blue-200 dark:border-blue-500/20',
     capabilities: [
       { action: 'lead.score', label: 'Score Lead', description: 'AI-powered lead scoring 0-100 with tier (A/B/C/D), reasoning, signals, and next best action.' },
       { action: 'lead.enrich', label: 'Enrich Lead', description: 'Infer BANT attributes (Budget, Authority, Need, Timeline) from available context.' },
@@ -32,9 +32,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Email',
     icon: Mail,
-    color: 'text-indigo-500',
-    bgColor: 'bg-indigo-50',
-    borderColor: 'border-indigo-200',
+    color: 'text-indigo-500 dark:text-indigo-400',
+    bgColor: 'bg-indigo-50 dark:bg-indigo-500/10',
+    borderColor: 'border-indigo-200 dark:border-indigo-500/20',
     capabilities: [
       { action: 'email.compose', label: 'Compose Email', description: 'Generate personalized B2B emails (cold outreach, follow-up, proposal, etc.).' },
       { action: 'email.reply', label: 'Draft Reply', description: 'Detect intent and draft thoughtful replies that advance the conversation.' },
@@ -44,9 +44,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Messaging',
     icon: MessageSquare,
-    color: 'text-emerald-500',
-    bgColor: 'bg-emerald-50',
-    borderColor: 'border-emerald-200',
+    color: 'text-emerald-500 dark:text-emerald-400',
+    bgColor: 'bg-emerald-50 dark:bg-emerald-500/10',
+    borderColor: 'border-emerald-200 dark:border-emerald-500/20',
     capabilities: [
       { action: 'messaging.suggest-reply', label: 'Suggest Reply', description: 'Real-time reply suggestions for live conversations across any channel.' },
       { action: 'messaging.summarize', label: 'Summarize Conversation', description: 'Auto-summarize long conversations into key points + action items.' },
@@ -55,9 +55,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Setters',
     icon: HeadsetIcon,
-    color: 'text-purple-500',
-    bgColor: 'bg-purple-50',
-    borderColor: 'border-purple-200',
+    color: 'text-purple-500 dark:text-purple-400',
+    bgColor: 'bg-purple-50 dark:bg-purple-500/10',
+    borderColor: 'border-purple-200 dark:border-purple-500/20',
     capabilities: [
       { action: 'setter.coach', label: 'Coach Call', description: 'AI analysis of call transcripts: strengths, improvements, objection handling.' },
       { action: 'setter.qualifying-rules', label: 'Generate Qualifying Rules', description: 'Design BANT qualification frameworks for any product.' },
@@ -66,9 +66,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Campaigns',
     icon: Target,
-    color: 'text-orange-500',
-    bgColor: 'bg-orange-50',
-    borderColor: 'border-orange-200',
+    color: 'text-orange-500 dark:text-orange-400',
+    bgColor: 'bg-orange-50 dark:bg-orange-500/10',
+    borderColor: 'border-orange-200 dark:border-orange-500/20',
     capabilities: [
       { action: 'campaign.generate', label: 'Generate Campaign', description: 'Design full multi-touch campaigns with sequence, messaging, and KPIs.' },
       { action: 'campaign.optimize', label: 'Optimize Campaign', description: 'Diagnose performance issues and recommend concrete fixes.' },
@@ -77,9 +77,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Reports',
     icon: BarChart3,
-    color: 'text-rose-500',
-    bgColor: 'bg-rose-50',
-    borderColor: 'border-rose-200',
+    color: 'text-rose-500 dark:text-rose-400',
+    bgColor: 'bg-rose-50 dark:bg-rose-500/10',
+    borderColor: 'border-rose-200 dark:border-rose-500/20',
     capabilities: [
       { action: 'report.summary', label: 'Executive Summary', description: 'Turn raw report data into executive-ready narrative + insights.' },
     ],
@@ -87,9 +87,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Analytics',
     icon: TrendingUp,
-    color: 'text-cyan-500',
-    bgColor: 'bg-cyan-50',
-    borderColor: 'border-cyan-200',
+    color: 'text-cyan-500 dark:text-cyan-400',
+    bgColor: 'bg-cyan-50 dark:bg-cyan-500/10',
+    borderColor: 'border-cyan-200 dark:border-cyan-500/20',
     capabilities: [
       { action: 'analytics.annotate', label: 'Annotate Metrics', description: 'Translate raw metrics into business-readable insights + anomalies.' },
       { action: 'analytics.forecast', label: 'Forecast Revenue', description: 'Generate honest, calibrated revenue forecasts with assumptions.' },
@@ -98,9 +98,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Outreach',
     icon: Zap,
-    color: 'text-yellow-500',
-    bgColor: 'bg-yellow-50',
-    borderColor: 'border-yellow-200',
+    color: 'text-yellow-500 dark:text-yellow-400',
+    bgColor: 'bg-yellow-50 dark:bg-yellow-500/10',
+    borderColor: 'border-yellow-200 dark:border-yellow-500/20',
     capabilities: [
       { action: 'outreach.sequence', label: 'Generate Sequence', description: 'Multi-touch outreach cadences personalized per lead.' },
     ],
@@ -108,9 +108,9 @@ const AI_CAPABILITIES = [
   {
     category: 'ABM',
     icon: Briefcase,
-    color: 'text-pink-500',
-    bgColor: 'bg-pink-50',
-    borderColor: 'border-pink-200',
+    color: 'text-pink-500 dark:text-pink-400',
+    bgColor: 'bg-pink-50 dark:bg-pink-500/10',
+    borderColor: 'border-pink-200 dark:border-pink-500/20',
     capabilities: [
       { action: 'abm.score', label: 'Score Account', description: 'Account-level fit + intent scoring for ABM targeting.' },
     ],
@@ -118,9 +118,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Bookings',
     icon: Calendar,
-    color: 'text-green-500',
-    bgColor: 'bg-green-50',
-    borderColor: 'border-green-200',
+    color: 'text-green-500 dark:text-green-400',
+    bgColor: 'bg-green-50 dark:bg-green-500/10',
+    borderColor: 'border-green-200 dark:border-green-500/20',
     capabilities: [
       { action: 'booking.brief', label: 'Meeting Brief', description: 'Generate 2-minute prep briefs for any meeting type.' },
     ],
@@ -128,9 +128,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Pipeline',
     icon: TrendingUp,
-    color: 'text-teal-500',
-    bgColor: 'bg-teal-50',
-    borderColor: 'border-teal-200',
+    color: 'text-teal-500 dark:text-teal-400',
+    bgColor: 'bg-teal-50 dark:bg-teal-500/10',
+    borderColor: 'border-teal-200 dark:border-teal-500/20',
     capabilities: [
       { action: 'pipeline.analyze', label: 'Analyze Deal', description: 'Deal health scoring + win probability + coaching tips.' },
     ],
@@ -138,9 +138,9 @@ const AI_CAPABILITIES = [
   {
     category: 'ICP',
     icon: Filter,
-    color: 'text-violet-500',
-    bgColor: 'bg-violet-50',
-    borderColor: 'border-violet-200',
+    color: 'text-violet-500 dark:text-violet-400',
+    bgColor: 'bg-violet-50 dark:bg-violet-500/10',
+    borderColor: 'border-violet-200 dark:border-violet-500/20',
     capabilities: [
       { action: 'icp.refine', label: 'Refine ICP', description: 'Use customer data to refine your ideal customer profile.' },
     ],
@@ -148,9 +148,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Settings',
     icon: SettingsIcon,
-    color: 'text-slate-500',
-    bgColor: 'bg-slate-50',
-    borderColor: 'border-slate-200',
+    color: 'text-slate-500 dark:text-slate-400',
+    bgColor: 'bg-slate-50 dark:bg-slate-500/10',
+    borderColor: 'border-slate-200 dark:border-slate-500/20',
     capabilities: [
       { action: 'settings.recommend', label: 'Optimize Settings', description: 'RevOps-style recommendations for configuration improvements.' },
     ],
@@ -158,9 +158,9 @@ const AI_CAPABILITIES = [
   {
     category: 'Billing',
     icon: DollarSign,
-    color: 'text-emerald-500',
-    bgColor: 'bg-emerald-50',
-    borderColor: 'border-emerald-200',
+    color: 'text-emerald-500 dark:text-emerald-400',
+    bgColor: 'bg-emerald-50 dark:bg-emerald-500/10',
+    borderColor: 'border-emerald-200 dark:border-emerald-500/20',
     capabilities: [
       { action: 'billing.analyze', label: 'Analyze Usage', description: 'Plan optimization + cost-saving recommendations.' },
     ],
@@ -439,15 +439,15 @@ export function AIActivationHub() {
       )}
 
       {/* Footer */}
-      <Card className="bg-gradient-to-br from-purple-50 to-pink-50 border-purple-200">
+      <Card className="bg-gradient-to-br from-purple-50 to-pink-50 dark:from-purple-500/5 dark:to-pink-500/5 border-purple-200 dark:border-purple-500/20">
         <CardContent className="pt-6">
           <div className="flex items-start gap-3">
             <Brain className="h-6 w-6 text-purple-500 flex-shrink-0 mt-0.5" />
             <div className="flex-1">
               <h3 className="font-semibold">All AI features are live</h3>
               <p className="text-sm text-muted-foreground mt-1">
-                These AI capabilities are also accessible programmatically via <code className="text-xs bg-white px-1.5 py-0.5 rounded border">POST /api/ai-activate</code>.
-                Use the <code className="text-xs bg-white px-1.5 py-0.5 rounded border">useAIActivate</code> hook in any component to invoke them inline.
+                These AI capabilities are also accessible programmatically via <code className="text-xs bg-white dark:bg-white/10 px-1.5 py-0.5 rounded border dark:border-white/20">POST /api/ai-activate</code>.
+                Use the <code className="text-xs bg-white dark:bg-white/10 px-1.5 py-0.5 rounded border dark:border-white/20">useAIActivate</code> hook in any component to invoke them inline.
               </p>
               <div className="flex flex-wrap gap-2 mt-3">
                 <Button variant="outline" size="sm" asChild>

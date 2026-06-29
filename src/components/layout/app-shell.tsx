@@ -42,7 +42,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div
           className={cn(
             'transition-all duration-300',
-            sidebarCollapsed ? 'ml-16' : 'ml-60'
+            sidebarCollapsed ? 'ml-0 md:ml-16' : 'ml-0 md:ml-60'
           )}
         >
           <TopBar />

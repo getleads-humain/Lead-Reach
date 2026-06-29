@@ -7,6 +7,7 @@ import { SplineBackground } from '@/components/spline-background';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
+import { hexToRgba } from '@/lib/utils';
 import {
   Zap,
   Search,
@@ -206,7 +207,7 @@ export default function LandingPage() {
       {/* Hero Section */}
       <section className="relative overflow-hidden">
         {/* Grid Background */}
-        <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+        <div className="absolute inset-0 bg-[linear-gradient(rgba(0,0,0,.04)_1px,transparent_1px),linear-gradient(90deg,rgba(0,0,0,.04)_1px,transparent_1px)] dark:bg-[linear-gradient(rgba(255,255,255,.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
         {/* Radial glow */}
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-[600px] bg-emerald-500/5 rounded-full blur-[120px]" />
 
@@ -321,7 +322,7 @@ export default function LandingPage() {
                       <div className="text-3xl font-bold text-muted-foreground/20">{item.step}</div>
                       <div
                         className="rounded-lg p-2.5"
-                        style={{ backgroundColor: `${item.color}12`, color: item.color }}
+                        style={{ backgroundColor: hexToRgba(item.color, 0.07), color: item.color }}
                       >
                         <item.icon className="h-6 w-6" />
                       </div>
@@ -444,7 +445,7 @@ export default function LandingPage() {
             ].map((item, i) => (
               <Card key={i} className="card-premium border-border/30 bg-card/50">
                 <CardContent className="p-6">
-                  <div className="rounded-lg p-2.5 inline-flex mb-4" style={{ backgroundColor: `${item.color}12`, color: item.color }}>
+                  <div className="rounded-lg p-2.5 inline-flex mb-4" style={{ backgroundColor: hexToRgba(item.color, 0.07), color: item.color }}>
                     <item.icon className="h-5 w-5" />
                   </div>
                   <h3 className="text-base font-semibold text-foreground mb-2">{item.title}</h3>
@@ -552,7 +553,7 @@ export default function LandingPage() {
                 <CardContent className="p-6">
                   <div
                     className="rounded-lg p-2.5 inline-flex mb-4"
-                    style={{ backgroundColor: `${feature.color}12`, color: feature.color }}
+                    style={{ backgroundColor: hexToRgba(feature.color, 0.07), color: feature.color }}
                   >
                     <feature.icon className="h-5 w-5" />
                   </div>
@@ -587,7 +588,7 @@ export default function LandingPage() {
                 <CardContent className="p-4 lg:p-6">
                   <div
                     className="rounded-xl p-3 inline-flex mx-auto mb-3"
-                    style={{ backgroundColor: `${agent.color}12`, color: agent.color }}
+                    style={{ backgroundColor: hexToRgba(agent.color, 0.07), color: agent.color }}
                   >
                     <agent.icon className="h-6 w-6" />
                   </div>

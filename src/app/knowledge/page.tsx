@@ -54,6 +54,7 @@ import {
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
 import { Sun, Moon, Monitor } from 'lucide-react';
+import { hexToRgba } from '@/lib/utils';
 
 // ============================================================
 // Types
@@ -119,19 +120,19 @@ interface GapReportResponse {
 // ============================================================
 
 const CATEGORY_META: Record<string, { icon: typeof FileText; label: string; color: string; darkColor: string; gradient: string; bgGlow: string; darkBgGlow: string }> = {
-  industry: { icon: Briefcase, label: 'Industries', color: 'text-blue-600 dark:text-blue-600 dark:text-blue-400', darkColor: 'text-blue-600 dark:text-blue-400', gradient: 'from-blue-500 to-cyan-400', bgGlow: 'bg-blue-100 dark:bg-blue-500/20', darkBgGlow: 'bg-blue-500/20' },
-  region: { icon: Globe, label: 'Regions', color: 'text-emerald-600 dark:text-emerald-600 dark:text-emerald-400', darkColor: 'text-emerald-600 dark:text-emerald-400', gradient: 'from-emerald-500 to-teal-400', bgGlow: 'bg-emerald-100 dark:bg-emerald-500/20', darkBgGlow: 'bg-emerald-500/20' },
-  playbook: { icon: BookOpen, label: 'Playbooks', color: 'text-violet-600 dark:text-violet-600 dark:text-violet-400', darkColor: 'text-violet-600 dark:text-violet-400', gradient: 'from-violet-500 to-purple-400', bgGlow: 'bg-violet-100 dark:bg-violet-500/20', darkBgGlow: 'bg-violet-500/20' },
+  industry: { icon: Briefcase, label: 'Industries', color: 'text-blue-600 dark:text-blue-400', darkColor: 'text-blue-600 dark:text-blue-400', gradient: 'from-blue-500 to-cyan-400', bgGlow: 'bg-blue-100 dark:bg-blue-500/20', darkBgGlow: 'bg-blue-500/20' },
+  region: { icon: Globe, label: 'Regions', color: 'text-emerald-600 dark:text-emerald-400', darkColor: 'text-emerald-600 dark:text-emerald-400', gradient: 'from-emerald-500 to-teal-400', bgGlow: 'bg-emerald-100 dark:bg-emerald-500/20', darkBgGlow: 'bg-emerald-500/20' },
+  playbook: { icon: BookOpen, label: 'Playbooks', color: 'text-violet-600 dark:text-violet-400', darkColor: 'text-violet-600 dark:text-violet-400', gradient: 'from-violet-500 to-purple-400', bgGlow: 'bg-violet-100 dark:bg-violet-500/20', darkBgGlow: 'bg-violet-500/20' },
   tool: { icon: Wrench, label: 'Agent Tools', color: 'text-orange-600 dark:text-orange-400', darkColor: 'text-orange-400', gradient: 'from-orange-500 to-amber-400', bgGlow: 'bg-orange-100 dark:bg-orange-500/20', darkBgGlow: 'bg-orange-500/20' },
   'training-data': { icon: GraduationCap, label: 'Training Data', color: 'text-pink-600 dark:text-pink-400', darkColor: 'text-pink-400', gradient: 'from-pink-500 to-rose-400', bgGlow: 'bg-pink-100 dark:bg-pink-500/20', darkBgGlow: 'bg-pink-500/20' },
-  'gap-report': { icon: AlertTriangle, label: 'Gap Reports', color: 'text-red-600 dark:text-red-600 dark:text-red-400', darkColor: 'text-red-600 dark:text-red-400', gradient: 'from-red-500 to-orange-400', bgGlow: 'bg-red-100 dark:bg-red-500/20', darkBgGlow: 'bg-red-500/20' },
+  'gap-report': { icon: AlertTriangle, label: 'Gap Reports', color: 'text-red-600 dark:text-red-400', darkColor: 'text-red-600 dark:text-red-400', gradient: 'from-red-500 to-orange-400', bgGlow: 'bg-red-100 dark:bg-red-500/20', darkBgGlow: 'bg-red-500/20' },
 };
 
 const GRADE_STYLES: Record<string, { bg: string; text: string; border: string; glow: string }> = {
-  A: { bg: 'bg-emerald-100 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-600 dark:text-emerald-400', border: 'border-emerald-300 dark:border-emerald-500/30', glow: 'shadow-emerald-500/20' },
-  B: { bg: 'bg-blue-100 dark:bg-blue-500/10', text: 'text-blue-700 dark:text-blue-600 dark:text-blue-400', border: 'border-blue-300 dark:border-blue-500/30', glow: 'shadow-blue-500/20' },
-  C: { bg: 'bg-amber-100 dark:bg-amber-500/10', text: 'text-amber-700 dark:text-amber-600 dark:text-amber-400', border: 'border-amber-300 dark:border-amber-500/30', glow: 'shadow-amber-500/20' },
-  D: { bg: 'bg-red-100 dark:bg-red-500/10', text: 'text-red-700 dark:text-red-600 dark:text-red-400', border: 'border-red-300 dark:border-red-500/30', glow: 'shadow-red-500/20' },
+  A: { bg: 'bg-emerald-100 dark:bg-emerald-500/10', text: 'text-emerald-700 dark:text-emerald-400', border: 'border-emerald-300 dark:border-emerald-500/30', glow: 'shadow-emerald-500/20' },
+  B: { bg: 'bg-blue-100 dark:bg-blue-500/10', text: 'text-blue-700 dark:text-blue-400', border: 'border-blue-300 dark:border-blue-500/30', glow: 'shadow-blue-500/20' },
+  C: { bg: 'bg-amber-100 dark:bg-amber-500/10', text: 'text-amber-700 dark:text-amber-400', border: 'border-amber-300 dark:border-amber-500/30', glow: 'shadow-amber-500/20' },
+  D: { bg: 'bg-red-100 dark:bg-red-500/10', text: 'text-red-700 dark:text-red-400', border: 'border-red-300 dark:border-red-500/30', glow: 'shadow-red-500/20' },
 };
 
 // ============================================================
@@ -299,12 +300,12 @@ export default function KnowledgeAdminPage() {
       </div>
 
       {/* ── Isometric Cube Decoration (uiverse.io/csemszepp/tiny-firefox-14) ── */}
-      <div className="fixed top-4 right-8 opacity-20 pointer-events-none hidden lg:block">
+      <div className="fixed top-4 right-8 opacity-20 pointer-events-none hidden lg:block overflow-hidden">
         <IsometricCubes />
       </div>
 
       {/* ── Header ── */}
-      <header className="relative border-b border-border dark:border-border/40 dark:border-white/5 bg-white/60 dark:bg-white/60 dark:bg-black/40 backdrop-blur-xl">
+      <header className="relative border-b border-border dark:border-white/5 bg-background/80 backdrop-blur-xl">
         <div className="max-w-7xl mx-auto px-6 py-5 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Link href="/app" className="text-muted-foreground hover:text-foreground transition-colors">
@@ -312,7 +313,7 @@ export default function KnowledgeAdminPage() {
             </Link>
             <div className="relative">
               <div className="p-2.5 bg-gradient-to-br from-violet-500 to-fuchsia-500 rounded-xl shadow-lg shadow-violet-500/25">
-                <BookOpen className="w-5 h-5 text-foreground dark:text-white" />
+                <BookOpen className="w-5 h-5 text-foreground" />
               </div>
               <div className="absolute -top-0.5 -right-0.5 w-2.5 h-2.5 bg-emerald-400 rounded-full animate-pulse" />
             </div>
@@ -330,7 +331,7 @@ export default function KnowledgeAdminPage() {
           <div className="flex items-center gap-3">
             {/* Theme Toggle */}
             {mounted && (
-              <div className="flex items-center gap-1 p-1 rounded-lg border border-border/40 dark:border-border dark:border-white/10 bg-secondary/20 dark:bg-secondary/30 dark:bg-white/5">
+              <div className="flex items-center gap-1 p-1 rounded-lg border border-border/40 dark:border-white/10 bg-secondary/20 dark:bg-white/5">
                 {([
                   { value: 'light', icon: Sun, label: 'Light' },
                   { value: 'dark', icon: Moon, label: 'Dark' },
@@ -341,7 +342,7 @@ export default function KnowledgeAdminPage() {
                     onClick={() => setTheme(opt.value)}
                     className={`flex items-center justify-center w-7 h-7 rounded-md transition-all duration-200 ${
                       theme === opt.value
-                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-600 dark:text-emerald-400 shadow-sm'
+                        ? 'bg-emerald-500/15 text-emerald-700 dark:text-emerald-400 shadow-sm'
                         : 'text-muted-foreground hover:text-foreground/80 hover:bg-secondary/30'
                     }`}
                     title={opt.label}
@@ -352,14 +353,14 @@ export default function KnowledgeAdminPage() {
               </div>
             )}
             {stats?.embeddingsEnabled && (
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-100 dark:bg-violet-100 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20">
-                <Sparkles className="w-3 h-3 text-violet-600 dark:text-violet-600 dark:text-violet-400" />
-                <span className="text-[11px] font-medium text-violet-700 dark:text-violet-600 dark:text-violet-400">Embeddings</span>
+              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-violet-100 dark:bg-violet-500/10 border border-violet-200 dark:border-violet-500/20">
+                <Sparkles className="w-3 h-3 text-violet-600 dark:text-violet-400" />
+                <span className="text-[11px] font-medium text-violet-700 dark:text-violet-400">Embeddings</span>
               </div>
             )}
             <button
               onClick={() => { void loadStats(); void loadList(); }}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary/30 dark:bg-secondary/30 dark:bg-white/5 border border-border/40 dark:border-border dark:border-white/10 text-xs font-medium text-foreground/80 hover:bg-secondary/50 dark:hover:bg-secondary/40 dark:bg-white/10 hover:border-border/60 dark:hover:border-white/20 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-secondary/30 dark:bg-white/5 border border-border/40 dark:border-white/10 text-xs font-medium text-foreground/80 hover:bg-secondary/50 dark:hover:bg-secondary/40 dark:bg-white/10 hover:border-border/60 dark:hover:border-white/20 transition-all"
             >
               <RefreshCw className="w-3 h-3" />
               Refresh
@@ -369,7 +370,7 @@ export default function KnowledgeAdminPage() {
       </header>
 
       {/* ── Tab Navigation ── */}
-      <div className="relative border-b border-border dark:border-border/40 dark:border-white/5 bg-white/30 dark:bg-black/20 backdrop-blur-sm">
+      <div className="relative border-b border-border dark:border-white/5 bg-white/30 dark:bg-black/20 backdrop-blur-sm">
         <div className="max-w-7xl mx-auto px-6">
           <nav className="flex gap-1 py-2">
             {tabItems.map((tab) => {
@@ -381,7 +382,7 @@ export default function KnowledgeAdminPage() {
                   onClick={() => setActiveTab(tab.id)}
                   className={`relative flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all duration-300 ${
                     isActive
-                      ? 'bg-secondary/60 dark:bg-secondary/40 dark:bg-white/10 text-foreground shadow-lg dark:shadow-white/5'
+                      ? 'bg-secondary/60 dark:bg-white/10 text-foreground shadow-lg dark:shadow-white/5'
                       : 'text-muted-foreground hover:text-foreground hover:bg-secondary/30 dark:hover:bg-secondary/30 dark:bg-white/5'
                   }`}
                 >
@@ -408,9 +409,9 @@ export default function KnowledgeAdminPage() {
             {/* Sidebar: categories + file list */}
             <div className="col-span-12 lg:col-span-4 space-y-4">
               {/* Category Nav */}
-              <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+              <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/40 dark:border-white/5">
-                  <h3 className="text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wider">Categories</h3>
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Categories</h3>
                 </div>
                 <div className="p-2 space-y-0.5">
                   {Object.entries(CATEGORY_META).map(([cat, meta]) => {
@@ -423,8 +424,8 @@ export default function KnowledgeAdminPage() {
                         onClick={() => setActiveCategory(cat)}
                         className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm transition-all duration-300 group ${
                           isActive
-                            ? 'bg-gradient-to-r ' + meta.gradient + ' bg-opacity-10 text-foreground dark:text-white shadow-lg'
-                            : 'text-muted-foreground dark:text-slate-400 hover:bg-secondary/30 dark:bg-white/5 hover:text-foreground'
+                            ? 'bg-gradient-to-r ' + meta.gradient + ' bg-opacity-10 text-foreground shadow-lg'
+                            : 'text-muted-foreground hover:bg-secondary/30 dark:bg-white/5 hover:text-foreground'
                         }`}
                         style={isActive ? { background: `linear-gradient(135deg, rgba(139,92,246,0.15), rgba(236,72,153,0.08))` } : {}}
                       >
@@ -435,7 +436,7 @@ export default function KnowledgeAdminPage() {
                           <span className={isActive ? 'font-semibold' : 'font-medium'}>{meta.label}</span>
                         </span>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
-                          isActive ? 'bg-white/20 text-foreground dark:text-white' : 'bg-secondary/30 dark:bg-white/5 text-muted-foreground'
+                          isActive ? 'bg-white/20 text-foreground' : 'bg-secondary/30 dark:bg-white/5 text-muted-foreground'
                         }`}>
                           {count}
                         </span>
@@ -446,9 +447,9 @@ export default function KnowledgeAdminPage() {
               </div>
 
               {/* File List */}
-              <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+              <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                 <div className="px-4 py-3 border-b border-border/40 dark:border-white/5">
-                  <h3 className="text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wider">
+                  <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
                     {CATEGORY_META[activeCategory]?.label || 'Files'}
                   </h3>
                 </div>
@@ -469,13 +470,13 @@ export default function KnowledgeAdminPage() {
                               onClick={() => void loadFile(file.path)}
                               className={`w-full text-left px-3 py-2.5 rounded-lg text-sm transition-all duration-200 group ${
                                 isSelected
-                                  ? 'bg-violet-500/15 border-l-2 border-violet-400 text-foreground dark:text-white shadow-lg shadow-violet-500/10'
-                                  : 'text-muted-foreground dark:text-slate-400 hover:bg-secondary/30 dark:bg-white/5 hover:text-foreground border-l-2 border-transparent'
+                                  ? 'bg-violet-500/15 border-l-2 border-violet-400 text-foreground shadow-lg shadow-violet-500/10'
+                                  : 'text-muted-foreground hover:bg-secondary/30 dark:bg-white/5 hover:text-foreground border-l-2 border-transparent'
                               }`}
                             >
                               <div className="flex items-start justify-between gap-2">
                                 <div className="flex-1 min-w-0">
-                                  <div className="font-medium truncate group-hover:text-foreground dark:text-white transition-colors">{file.title}</div>
+                                  <div className="font-medium truncate group-hover:text-foreground transition-colors">{file.title}</div>
                                   <div className="text-[11px] text-muted-foreground/70 truncate mt-0.5 font-mono">{file.path}</div>
                                 </div>
                                 {file.grade && gradeStyle && (
@@ -510,14 +511,14 @@ export default function KnowledgeAdminPage() {
 
             {/* Main: file content */}
             <div className="col-span-12 lg:col-span-8">
-              <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden h-full min-h-[600px] flex flex-col">
+              <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden h-full min-h-[600px] flex flex-col">
                 {/* File Header */}
                 <div className="px-5 py-3.5 border-b border-border/40 dark:border-white/5 flex items-center justify-between">
                   <div className="flex-1 min-w-0">
                     {selectedFile ? (
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-violet-600 dark:text-violet-400 flex-shrink-0" />
-                        <span className="text-sm font-medium text-foreground dark:text-white truncate">{selectedFile.split('/').pop()}</span>
+                        <span className="text-sm font-medium text-foreground truncate">{selectedFile.split('/').pop()}</span>
                         <span className="text-[10px] text-muted-foreground/70 font-mono truncate">{selectedFile}</span>
                       </div>
                     ) : (
@@ -540,7 +541,7 @@ export default function KnowledgeAdminPage() {
                     </ScrollArea>
                   ) : (
                     <div className="flex flex-col items-center justify-center py-20 text-muted-foreground/70">
-                      <div className="p-4 rounded-2xl bg-card dark:bg-white/[0.03] border border-border/40 dark:border-white/5 mb-4">
+                      <div className="p-4 rounded-2xl bg-card border border-border/40 dark:border-white/5 mb-4">
                         <FileText className="w-10 h-10 text-muted-foreground/50" />
                       </div>
                       <p className="text-sm text-muted-foreground">Select a file from the sidebar to view its contents.</p>
@@ -558,13 +559,13 @@ export default function KnowledgeAdminPage() {
         {activeTab === 'search' && (
           <div className="space-y-5">
             {/* Search Input */}
-            <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden p-5">
+            <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden p-5">
               <div className="flex items-center gap-3 mb-3">
                 <div className="p-2 rounded-lg bg-violet-100 dark:bg-violet-500/10">
                   <Search className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                 </div>
                 <div>
-                  <h3 className="text-sm font-semibold text-foreground dark:text-white">Semantic Search</h3>
+                  <h3 className="text-sm font-semibold text-foreground">Semantic Search</h3>
                   <p className="text-[11px] text-muted-foreground">
                     BM25 {stats?.embeddingsEnabled ? '+ Z.AI embeddings (hybrid)' : '(embeddings disabled)'}
                   </p>
@@ -577,7 +578,7 @@ export default function KnowledgeAdminPage() {
                   placeholder="Search: SaaS B2B Series B, GDPR consent, multi-threading..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-10 pr-10 py-3 rounded-xl bg-secondary/30 dark:bg-white/5 border border-border dark:border-white/10 text-sm text-foreground dark:text-white placeholder:text-muted-foreground/70 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/25 transition-all"
+                  className="w-full pl-10 pr-10 py-3 rounded-xl bg-secondary/30 dark:bg-white/5 border border-border dark:border-white/10 text-sm text-foreground placeholder:text-muted-foreground/70 focus:outline-none focus:border-violet-500/50 focus:ring-1 focus:ring-violet-500/25 transition-all"
                 />
                 {searching && (
                   <ThreeBodyLoader size={18} color="#8b5cf6" className="absolute right-3.5 top-1/2 -translate-y-1/2" />
@@ -600,7 +601,7 @@ export default function KnowledgeAdminPage() {
                   <div
                     key={result.chunkId}
                     onClick={() => void loadFile(result.filePath)}
-                    className="group rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] hover:border-violet-500/30 hover:bg-secondary/40 dark:bg-white/[0.05] backdrop-blur-sm p-4 cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-violet-500/5"
+                    className="group rounded-xl bg-card border border-border dark:border-white/[0.10] hover:border-violet-500/30 hover:bg-secondary/40 dark:bg-white/[0.05] backdrop-blur-sm p-4 cursor-pointer transition-all duration-300 hover:shadow-lg hover:shadow-violet-500/5"
                   >
                     <div className="flex items-start justify-between gap-4">
                       <div className="flex-1 min-w-0">
@@ -608,15 +609,15 @@ export default function KnowledgeAdminPage() {
                           <span className={`p-1 rounded ${meta?.bgGlow || 'bg-secondary/30 dark:bg-white/5'}`}>
                             <Icon className={`w-3.5 h-3.5 ${meta?.color || 'text-muted-foreground'}`} />
                           </span>
-                          <span className="font-medium text-sm text-foreground dark:text-white">{result.title}</span>
+                          <span className="font-medium text-sm text-foreground">{result.title}</span>
                           {result.section && (
                             <>
                               <ChevronRight className="w-3 h-3 text-muted-foreground/70" />
-                              <span className="text-sm text-muted-foreground dark:text-slate-400">{result.section}</span>
+                              <span className="text-sm text-muted-foreground">{result.section}</span>
                             </>
                           )}
                         </div>
-                        <p className="text-sm text-muted-foreground dark:text-slate-400 line-clamp-2 leading-relaxed">{result.contentPreview}</p>
+                        <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{result.contentPreview}</p>
                         <div className="flex items-center gap-2 mt-2.5 text-xs text-muted-foreground/70 flex-wrap">
                           <span className="font-mono text-[10px]">{result.filePath}</span>
                           {result.grade && gradeStyle && (
@@ -625,7 +626,7 @@ export default function KnowledgeAdminPage() {
                             </span>
                           )}
                           {result.matchedTokens.slice(0, 5).map((t) => (
-                            <span key={t} className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-600 dark:text-amber-400 border border-amber-300 dark:border-amber-500/20 rounded text-[10px]">
+                            <span key={t} className="px-1.5 py-0.5 bg-amber-100 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400 border border-amber-300 dark:border-amber-500/20 rounded text-[10px]">
                               {t}
                             </span>
                           ))}
@@ -642,13 +643,13 @@ export default function KnowledgeAdminPage() {
                 );
               })}
               {searchQuery.trim().length >= 2 && !searching && searchResults.length === 0 && (
-                <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] p-12 text-center">
+                <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] p-12 text-center">
                   <Search className="w-10 h-10 mx-auto mb-3 text-muted-foreground/50" />
                   <p className="text-sm text-muted-foreground">No results for &ldquo;{searchQuery}&rdquo;</p>
                 </div>
               )}
               {searchQuery.trim().length < 2 && (
-                <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] p-12 text-center">
+                <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] p-12 text-center">
                   <div className="flex justify-center mb-4">
                     <PathTraceLoader size={36} color="#8b5cf6" />
                   </div>
@@ -692,13 +693,13 @@ export default function KnowledgeAdminPage() {
 
                 {/* Embeddings Section */}
                 {stats.embeddingsEnabled && (
-                  <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+                  <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                     <div className="px-5 py-4 border-b border-border/40 dark:border-white/5 flex items-center gap-3">
                       <div className="p-2 rounded-lg bg-violet-100 dark:bg-violet-500/10">
                         <Sparkles className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-foreground dark:text-white">Semantic Embeddings — Z.AI embedding-3</h3>
+                        <h3 className="text-sm font-semibold text-foreground">Semantic Embeddings — Z.AI embedding-3</h3>
                         <p className="text-[11px] text-muted-foreground mt-0.5">
                           Hybrid retrieval (BM25 + cosine similarity) for better recall on paraphrased queries.
                         </p>
@@ -708,8 +709,8 @@ export default function KnowledgeAdminPage() {
                       {stats.embeddingsCoverage && (
                         <div className="space-y-4">
                           <div className="flex items-center justify-between text-sm">
-                            <span className="text-muted-foreground dark:text-slate-400">Coverage</span>
-                            <span className="font-medium text-foreground dark:text-white">
+                            <span className="text-muted-foreground">Coverage</span>
+                            <span className="font-medium text-foreground">
                               {stats.embeddingsCoverage.cached} / {stats.embeddingsCoverage.total} chunks (
                               {stats.embeddingsCoverage.total > 0
                                 ? Math.round((stats.embeddingsCoverage.cached / stats.embeddingsCoverage.total) * 100)
@@ -736,7 +737,7 @@ export default function KnowledgeAdminPage() {
                             <button
                               onClick={() => void precomputeEmbeddings()}
                               disabled={precomputing}
-                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-500/15 border border-violet-500/30 text-xs font-medium text-violet-300 hover:bg-violet-500/25 hover:border-violet-500/50 transition-all disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-4 py-2 rounded-lg bg-violet-500/15 border border-violet-500/30 text-xs font-medium text-violet-700 dark:text-violet-300 hover:bg-violet-500/25 hover:border-violet-500/50 transition-all disabled:opacity-50"
                             >
                               {precomputing ? (
                                 <ThreeBodyLoader size={12} color="#a78bfa" />
@@ -769,9 +770,9 @@ export default function KnowledgeAdminPage() {
                 {/* Category & Grade Grid */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* By Category */}
-                  <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+                  <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                     <div className="px-5 py-3 border-b border-border/40 dark:border-white/5">
-                      <h3 className="text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wider">By Category</h3>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">By Category</h3>
                     </div>
                     <div className="p-4 space-y-1.5">
                       {Object.entries(stats.byCategory).map(([cat, count]) => {
@@ -785,7 +786,7 @@ export default function KnowledgeAdminPage() {
                               </span>
                               {meta?.label || cat}
                             </span>
-                            <span className="text-xs px-2 py-0.5 bg-secondary/30 dark:bg-white/5 text-muted-foreground dark:text-slate-400 rounded-full">{count}</span>
+                            <span className="text-xs px-2 py-0.5 bg-secondary/30 dark:bg-white/5 text-muted-foreground rounded-full">{count}</span>
                           </div>
                         );
                       })}
@@ -793,16 +794,16 @@ export default function KnowledgeAdminPage() {
                   </div>
 
                   {/* By Grade */}
-                  <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+                  <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                     <div className="px-5 py-3 border-b border-border/40 dark:border-white/5">
-                      <h3 className="text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wider">By Grade</h3>
+                      <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">By Grade</h3>
                     </div>
                     <div className="p-4 space-y-1.5">
                       {Object.entries(stats.byGrade).map(([grade, count]) => {
                         const style = GRADE_STYLES[grade];
                         return (
                           <div key={grade} className="flex items-center justify-between px-3 py-2 rounded-lg hover:bg-secondary/30 dark:bg-white/5 transition-colors">
-                            <span className={`text-xs px-2 py-1 rounded font-bold ${style?.bg || ''} ${style?.text || 'text-muted-foreground dark:text-slate-400'} border ${style?.border || 'border-border dark:border-white/10'}`}>
+                            <span className={`text-xs px-2 py-1 rounded font-bold ${style?.bg || ''} ${style?.text || 'text-muted-foreground'} border ${style?.border || 'border-border dark:border-white/10'}`}>
                               Grade {grade}
                             </span>
                             <span className="text-sm font-medium text-foreground/80 dark:text-slate-300">{count} docs</span>
@@ -817,9 +818,9 @@ export default function KnowledgeAdminPage() {
                 </div>
 
                 {/* Freshness */}
-                <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+                <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                   <div className="px-5 py-3 border-b border-border/40 dark:border-white/5">
-                    <h3 className="text-xs font-semibold text-muted-foreground dark:text-slate-400 uppercase tracking-wider">Freshness Distribution</h3>
+                    <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Freshness Distribution</h3>
                   </div>
                   <div className="p-5 grid grid-cols-3 gap-4">
                     <div className="text-center p-5 rounded-xl bg-emerald-100 dark:bg-emerald-500/5 border border-emerald-300 dark:border-emerald-500/10">
@@ -846,14 +847,14 @@ export default function KnowledgeAdminPage() {
         ═══════════════════════════════════════════════════ */}
         {activeTab === 'gap-report' && (
           <div className="space-y-5">
-            <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+            <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
               <div className="px-5 py-4 border-b border-border/40 dark:border-white/5 flex items-start justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 rounded-lg bg-amber-100 dark:bg-amber-500/10">
                     <AlertTriangle className="w-4 h-4 text-amber-600 dark:text-amber-400" />
                   </div>
                   <div>
-                    <h3 className="text-sm font-semibold text-foreground dark:text-white">Echo Monthly Gap Report</h3>
+                    <h3 className="text-sm font-semibold text-foreground">Echo Monthly Gap Report</h3>
                     <p className="text-[11px] text-muted-foreground mt-0.5">
                       Generated by the Echo agent. Identifies coverage, quality, usage, and freshness gaps.
                     </p>
@@ -875,7 +876,7 @@ export default function KnowledgeAdminPage() {
               <div className="p-5">
                 {gapReport?.result && (
                   <>
-                    <div className="grid grid-cols-5 gap-3 mb-6">
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
                       <GapStat label="Industries Missing" value={gapReport.result.coverageGaps.industriesMissing.length} color="text-blue-600 dark:text-blue-400" bg="bg-blue-100 dark:bg-blue-500/5" border="border-blue-300 dark:border-blue-500/10" />
                       <GapStat label="Regions Missing" value={gapReport.result.coverageGaps.regionsMissing.length} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-100 dark:bg-emerald-500/5" border="border-emerald-300 dark:border-emerald-500/10" />
                       <GapStat label="Playbooks Missing" value={gapReport.result.coverageGaps.playbooksMissing.length} color="text-violet-600 dark:text-violet-400" bg="bg-violet-100 dark:bg-violet-500/5" border="border-violet-300 dark:border-violet-500/10" />
@@ -887,13 +888,13 @@ export default function KnowledgeAdminPage() {
                       <div className="space-y-5">
                         {gapReport.result.recommendations.newDocsToAuthor.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-semibold text-foreground dark:text-white mb-3 flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
                               <Zap className="w-4 h-4 text-violet-600 dark:text-violet-400" />
                               New Docs to Author
                             </h4>
                             <div className="space-y-1.5">
                               {gapReport.result.recommendations.newDocsToAuthor.map((rec, i) => (
-                                <div key={i} className="text-xs text-foreground/80 dark:text-slate-300 bg-card dark:bg-white/[0.03] border border-border/40 dark:border-white/5 px-3.5 py-2.5 rounded-lg hover:bg-secondary/40 dark:bg-white/[0.05] transition-colors">
+                                <div key={i} className="text-xs text-foreground/80 dark:text-slate-300 bg-card border border-border/40 dark:border-white/5 px-3.5 py-2.5 rounded-lg hover:bg-secondary/40 dark:bg-white/[0.05] transition-colors">
                                   {rec}
                                 </div>
                               ))}
@@ -902,13 +903,13 @@ export default function KnowledgeAdminPage() {
                         )}
                         {gapReport.result.recommendations.existingDocsToRefresh.length > 0 && (
                           <div>
-                            <h4 className="text-sm font-semibold text-foreground dark:text-white mb-3 flex items-center gap-2">
+                            <h4 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
                               <RefreshCw className="w-4 h-4 text-emerald-600 dark:text-emerald-400" />
                               Existing Docs to Refresh
                             </h4>
                             <div className="space-y-1.5">
                               {gapReport.result.recommendations.existingDocsToRefresh.slice(0, 10).map((rec, i) => (
-                                <div key={i} className="text-xs text-foreground/80 dark:text-slate-300 bg-card dark:bg-white/[0.03] border border-border/40 dark:border-white/5 px-3.5 py-2.5 rounded-lg hover:bg-secondary/40 dark:bg-white/[0.05] transition-colors">
+                                <div key={i} className="text-xs text-foreground/80 dark:text-slate-300 bg-card border border-border/40 dark:border-white/5 px-3.5 py-2.5 rounded-lg hover:bg-secondary/40 dark:bg-white/[0.05] transition-colors">
                                   {rec}
                                 </div>
                               ))}
@@ -930,10 +931,10 @@ export default function KnowledgeAdminPage() {
             </div>
 
             {gapReport?.content && (
-              <div className="rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden">
+              <div className="rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden">
                 <div className="px-5 py-3.5 border-b border-border/40 dark:border-white/5 flex items-center gap-2">
                   <Calendar className="w-4 h-4 text-muted-foreground" />
-                  <span className="text-sm font-medium text-foreground dark:text-white">Full Report — {gapReport.reportMonth}</span>
+                  <span className="text-sm font-medium text-foreground">Full Report — {gapReport.reportMonth}</span>
                   <span className="text-[10px] text-muted-foreground/70 font-mono ml-2">{gapReport.reportPath}</span>
                 </div>
                 <div className="p-5">
@@ -959,15 +960,15 @@ export default function KnowledgeAdminPage() {
 /** Stat card with gradient glow */
 function StatCard({ icon: Icon, label, value, gradient }: { icon: typeof FileText; label: string; value: number | string; gradient: string }) {
   return (
-    <div className="group rounded-xl bg-card dark:bg-white/[0.03] border border-border dark:border-white/[0.06] backdrop-blur-sm overflow-hidden hover:border-border dark:border-white/10 transition-all duration-300">
+    <div className="group rounded-xl bg-card border border-border dark:border-white/[0.10] backdrop-blur-sm overflow-hidden hover:border-border transition-all duration-300">
       <div className="p-5">
         <div className="flex items-center gap-4">
           <div className={`p-3 rounded-xl bg-gradient-to-br ${gradient} shadow-lg`}>
-            <Icon className="w-5 h-5 text-foreground dark:text-white" />
+            <Icon className="w-5 h-5 text-foreground" />
           </div>
           <div>
             <div className="text-[11px] text-muted-foreground uppercase tracking-wider font-medium">{label}</div>
-            <div className="text-2xl font-bold text-foreground dark:text-white mt-0.5">{value}</div>
+            <div className="text-2xl font-bold text-foreground mt-0.5">{value}</div>
           </div>
         </div>
       </div>
@@ -1001,15 +1002,15 @@ function ThreeBodyLoader({ size = 35, color = '#8b5cf6', className = '' }: { siz
   return (
     <div className={`inline-block ${className}`} style={{ width: size, height: size }}>
       <style>{`
-        @keyframes threeBodySpin {
+        @keyframes kb-threeBodySpin {
           0% { transform: rotate(0deg); }
           100% { transform: rotate(360deg); }
         }
-        @keyframes threeBodyWobble1 {
+        @keyframes kb-threeBodyWobble1 {
           0%, 100% { transform: translateY(0%) scale(1); opacity: 1; }
           50% { transform: translateY(-66%) scale(0.65); opacity: 0.8; }
         }
-        @keyframes threeBodyWobble2 {
+        @keyframes kb-threeBodyWobble2 {
           0%, 100% { transform: translateY(0%) scale(1); opacity: 1; }
           50% { transform: translateY(66%) scale(0.65); opacity: 0.8; }
         }
@@ -1018,7 +1019,7 @@ function ThreeBodyLoader({ size = 35, color = '#8b5cf6', className = '' }: { siz
         position: 'relative',
         width: '100%',
         height: '100%',
-        animation: 'threeBodySpin 2s infinite linear',
+        animation: 'kb-threeBodySpin 2s infinite linear',
       }}>
         {/* Dot 1: top-left */}
         <div style={{
@@ -1039,7 +1040,7 @@ function ThreeBodyLoader({ size = 35, color = '#8b5cf6', className = '' }: { siz
             borderRadius: '50%',
             bottom: 0,
             left: 0,
-            animation: 'threeBodyWobble1 0.8s infinite ease-in-out',
+            animation: 'kb-threeBodyWobble1 0.8s infinite ease-in-out',
             animationDelay: '-0.24s',
           }} />
         </div>
@@ -1062,7 +1063,7 @@ function ThreeBodyLoader({ size = 35, color = '#8b5cf6', className = '' }: { siz
             borderRadius: '50%',
             bottom: 0,
             left: 0,
-            animation: 'threeBodyWobble1 0.8s infinite ease-in-out',
+            animation: 'kb-threeBodyWobble1 0.8s infinite ease-in-out',
             animationDelay: '-0.12s',
           }} />
         </div>
@@ -1084,7 +1085,7 @@ function ThreeBodyLoader({ size = 35, color = '#8b5cf6', className = '' }: { siz
             borderRadius: '50%',
             top: 0,
             left: 0,
-            animation: 'threeBodyWobble2 0.8s infinite ease-in-out',
+            animation: 'kb-threeBodyWobble2 0.8s infinite ease-in-out',
           }} />
         </div>
       </div>
@@ -1100,17 +1101,17 @@ function ThreeBodyLoader({ size = 35, color = '#8b5cf6', className = '' }: { siz
  * dot tracing the perimeter using stroke-dashoffset animation.
  */
 function PathTraceLoader({ size = 44, color = '#8b5cf6' }: { size?: number; color?: string }) {
-  const pathColor = `${color}33`; // 20% opacity
+  const pathColor = hexToRgba(color, 0.2); // 20% opacity
   return (
     <div className="inline-block" style={{ width: size, height: size, position: 'relative' }}>
       <style>{`
-        @keyframes pathCircleTrace {
+        @keyframes kb-pathCircleTrace {
           25% { stroke-dashoffset: 125; }
           50% { stroke-dashoffset: 175; }
           75% { stroke-dashoffset: 225; }
           100% { stroke-dashoffset: 275; }
         }
-        @keyframes dotCircleTrace {
+        @keyframes kb-dotCircleTrace {
           0% { transform: translate(-18px, -18px); }
           25% { transform: translate(0, -18px); }
           50% { transform: translate(0, 0); }
@@ -1128,7 +1129,7 @@ function PathTraceLoader({ size = 44, color = '#8b5cf6' }: { size?: number; colo
         top: '50%',
         left: '50%',
         transform: 'translate(-18px, -18px)',
-        animation: 'dotCircleTrace 3s cubic-bezier(0.785, 0.135, 0.15, 0.86) infinite',
+        animation: 'kb-dotCircleTrace 3s cubic-bezier(0.785, 0.135, 0.15, 0.86) infinite',
         boxShadow: `0 0 8px ${color}`,
       }} />
       {/* SVG circle path */}
@@ -1143,7 +1144,7 @@ function PathTraceLoader({ size = 44, color = '#8b5cf6' }: { size?: number; colo
           strokeLinecap="round"
           strokeDasharray="150 50 150 50"
           strokeDashoffset={75}
-          style={{ animation: 'pathCircleTrace 3s cubic-bezier(0.785, 0.135, 0.15, 0.86) infinite' }}
+          style={{ animation: 'kb-pathCircleTrace 3s cubic-bezier(0.785, 0.135, 0.15, 0.86) infinite' }}
         />
       </svg>
     </div>
@@ -1163,14 +1164,14 @@ function IsometricCubes() {
   return (
     <div className="isometric-cubes">
       <style>{`
-        @keyframes isoHueRotate {
+        @keyframes kb-isoHueRotate {
           0% { filter: hue-rotate(0deg); }
           100% { filter: hue-rotate(360deg); }
         }
         .isometric-cubes {
           position: relative;
           transform: skewY(-20deg);
-          animation: isoHueRotate 8s linear infinite;
+          animation: kb-isoHueRotate 8s linear infinite;
         }
         .iso-cube {
           position: relative;

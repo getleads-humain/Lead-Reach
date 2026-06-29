@@ -33,7 +33,7 @@ import {
   Heart,
   ArrowUpRight,
 } from 'lucide-react';
-import { safeFetchJSON } from '@/lib/utils';
+import { safeFetchJSON, hexToRgba } from '@/lib/utils';
 
 const CHANNELS = [
   { id: 'sms', name: 'SMS', icon: MessageSquare, status: 'connected', messagesSent: 1247, responseRate: 68, color: '#10B981' },
@@ -126,7 +126,7 @@ export function MessagingView() {
             <Card key={channel.id} className="card-premium border-border/30 relative overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: channel.color }} />
               <CardContent className="p-4 text-center">
-                <div className="rounded-lg p-2 inline-flex mx-auto mb-2" style={{ backgroundColor: `${channel.color}12`, color: channel.color }}>
+                <div className="rounded-lg p-2 inline-flex mx-auto mb-2" style={{ backgroundColor: hexToRgba(channel.color, 0.07), color: channel.color }}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <h3 className="text-sm font-semibold text-foreground/90">{channel.name}</h3>

@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { AGENT_DEFINITIONS } from '@/lib/types';
+import { hexToRgba } from '@/lib/utils';
 import {
   Brain,
   Search,
@@ -235,7 +236,7 @@ export default function AgentPage() {
                     <div className="flex items-start gap-4">
                       <div
                         className="rounded-xl p-3 shrink-0"
-                        style={{ backgroundColor: `${agent.color}12`, color: agent.color }}
+                        style={{ backgroundColor: hexToRgba(agent.color, 0.07), color: agent.color }}
                       >
                         <Icon className="h-6 w-6" />
                       </div>
@@ -362,7 +363,7 @@ export default function AgentPage() {
                     <div key={a.name} className="flex flex-col items-center text-center">
                       <div
                         className="rounded-lg border border-border/30 p-3 w-full"
-                        style={{ backgroundColor: `${a.color}08` }}
+                        style={{ backgroundColor: hexToRgba(a.color, 0.03) }}
                       >
                         <a.icon className="h-5 w-5 mx-auto mb-1" style={{ color: a.color }} />
                         <div className="text-[10px] font-semibold text-foreground">{a.name}</div>
@@ -388,7 +389,7 @@ export default function AgentPage() {
                     <div key={a.name} className="flex flex-col items-center text-center">
                       <div
                         className="rounded-lg border border-border/30 p-3 w-full"
-                        style={{ backgroundColor: `${a.color}08` }}
+                        style={{ backgroundColor: hexToRgba(a.color, 0.03) }}
                       >
                         <a.icon className="h-5 w-5 mx-auto mb-1" style={{ color: a.color }} />
                         <div className="text-[10px] font-semibold text-foreground">{a.name}</div>

@@ -6,6 +6,21 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 /**
+ * Convert a hex color to rgba string for browser compatibility.
+ * Avoids 8-digit hex (#RRGGBBAA) which isn't supported in older browsers.
+ * @param hex - Hex color string like "#10B981" or "#10B981FF"
+ * @param alpha - Alpha value 0-1 (default 0.07 for ~12 in hex)
+ * @returns rgba string like "rgba(16,185,129,0.07)"
+ */
+export function hexToRgba(hex: string, alpha: number = 0.07): string {
+  const cleanHex = hex.replace('#', '');
+  const r = parseInt(cleanHex.slice(0, 2), 16);
+  const g = parseInt(cleanHex.slice(2, 4), 16);
+  const b = parseInt(cleanHex.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/**
  * Safely fetch a URL and parse the response as JSON.
  * Prevents the common SyntaxError: "Unexpected token '<'" when the server
  * returns an HTML error page (404, 500, rate-limit, etc.) instead of JSON.

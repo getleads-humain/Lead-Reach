@@ -20,7 +20,7 @@ import {
   Loader2,
   AlertCircle,
 } from 'lucide-react';
-import { safeFetchJSON } from '@/lib/utils';
+import { safeFetchJSON, hexToRgba } from '@/lib/utils';
 
 interface BookingSuggestion {
   conversationId: string;
@@ -106,7 +106,7 @@ export function BookingView() {
         ].map((item, i) => (
           <Card key={i} className="card-premium border-border/30 bg-card/50">
             <CardContent className="p-5">
-              <div className="rounded-lg p-2.5 inline-flex mb-3" style={{ backgroundColor: `${item.color}12`, color: item.color }}>
+              <div className="rounded-lg p-2.5 inline-flex mb-3" style={{ backgroundColor: hexToRgba(item.color, 0.07), color: item.color }}>
                 <item.icon className="h-5 w-5" />
               </div>
               <h3 className="text-sm font-semibold text-foreground mb-1.5">{item.title}</h3>
