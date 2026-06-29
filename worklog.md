@@ -600,3 +600,39 @@ Stage Summary:
 - Live agentic conversation view with context-aware AI chat
 - All existing functionality preserved in Overview tab
 - File: src/components/leads/leads-view.tsx
+---
+Task ID: 2
+Agent: Main Agent
+Task: Implement Light/Dark mode toggle for /knowledge page with full-page consistent theming
+
+Work Log:
+- Analyzed current state: app was dark-only with hardcoded bg-[#0a0a0f], text-white, bg-white/[0.03] etc.
+- next-themes package was installed but never used (no ThemeProvider, no toggle)
+- Added light mode CSS variables to :root in globals.css (clean professional palette with oklch)
+- Updated .dark class to keep premium dark palette
+- Added ThemeProvider from next-themes to root layout.tsx (attribute="class", defaultTheme="dark")
+- Removed hardcoded className="dark" from <html> element (now managed by next-themes)
+- Created /src/components/theme-toggle.tsx with ThemeToggle and ThemeToggleExpanded components
+- Refactored /knowledge/page.tsx (1252 lines) with full light/dark mode support:
+  - Page wrapper: light gradient (slate-50/white) / dark (#0a0a0f)
+  - Background ambient effects: light (violet-200/fuchsia-200) / dark (violet-600/fuchsia-600)
+  - Header: white/60 / black/40 with proper border colors
+  - Theme toggle: 3-button switch (Light/Dark/System) with Sun/Moon/Monitor icons
+  - All bg-white/[0.03] → bg-card dark:bg-white/[0.03]
+  - All border-white/[0.06] → border-border dark:border-white/[0.06]
+  - All text-white → text-foreground dark:text-white
+  - All text-slate-* → semantic tokens with dark: fallback
+  - CATEGORY_META: dual color classes (text-blue-600 dark:text-blue-400)
+  - GRADE_STYLES: light backgrounds (bg-emerald-100) / dark (bg-emerald-500/10)
+  - Ambient glows, glassmorphic cards all theme-aware
+- Updated globals.css utility classes (glow-emerald, glass, text-gradient, card-premium) with .dark variants
+- Build verified successfully
+
+Stage Summary:
+- Full light/dark mode support across entire /knowledge page
+- Theme toggle in header with Light/Dark/System options
+- Light mode: clean white/slate gradient, violet/fuchsia subtle glows, proper contrast
+- Dark mode: original premium dark theme preserved
+- ThemeProvider wraps entire app in layout.tsx
+- Files modified: globals.css, layout.tsx, knowledge/page.tsx
+- Files created: components/theme-toggle.tsx
