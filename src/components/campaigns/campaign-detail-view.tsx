@@ -46,6 +46,7 @@ import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
 import { AGENT_8_DISPLAY } from '@/lib/prospect-agent/orchestrator-types';
+import { AgenticPipelineWorkspace } from './agentic-pipeline-workspace';
 import { toast } from 'sonner';
 
 // ── Types ──────────────────────────────────────────────────────────
@@ -141,6 +142,7 @@ export function CampaignDetailView() {
   const [enrichmentTotal, setEnrichmentTotal] = useState(0);
   const [thinkingMs, setThinkingMs] = useState(0);
   const [pipelineSummary, setPipelineSummary] = useState<{ discovered: number; enriched: number; failed: number; skipped: number } | null>(null);
+  const [discoveryQuery, setDiscoveryQuery] = useState<string>('');
 
   const abortControllerRef = useRef<AbortController | null>(null);
   const logContainerRef = useRef<HTMLDivElement | null>(null);
@@ -212,6 +214,7 @@ export function CampaignDetailView() {
     setEnrichmentTotal(0);
     setThinkingMs(0);
     setPipelineSummary(null);
+    setDiscoveryQuery('');
     setError(null);
 
     const controller = new AbortController();
@@ -278,7 +281,8 @@ export function CampaignDetailView() {
             // Handle each event type
             switch (currentEventType) {
               case 'stream_open':
-                // Stream confirmed alive
+                // Capture the discovery query for workspace display
+                if (data.discoveryQuery) setDiscoveryQuery(data.discoveryQuery as string);
                 break;
 
               case 'pipeline_progress': {
@@ -688,111 +692,21 @@ export function CampaignDetailView() {
         </Card>
       </div>
 
-      {/* Pipeline Visualization (when running) */}
-      <AnimatePresence>
-        {pipelineRunning && (
-          <motion.div
-            initial={{ opacity: 0, height: 0 }}
-            animate={{ opacity: 1, height: 'auto' }}
-            exit={{ opacity: 0, height: 0 }}
-          >
-            <Card className="bg-card/30 border-cyan-500/30">
-              <CardHeader className="pb-3">
-                <div className="flex items-center justify-between">
-                  <CardTitle className="text-base flex items-center gap-2">
-                    <Loader2 className="h-4 w-4 animate-spin text-cyan-400" />
-                    Pipeline Running
-                    {enrichmentTotal > 0 && (
-                      <Badge variant="outline" className="text-[10px] border-cyan-500/30 text-cyan-400">
-                        Enrichment {currentEnrichmentIdx}/{enrichmentTotal}
-                      </Badge>
-                    )}
-                  </CardTitle>
-                  {thinkingMs > 0 && (
-                    <span className="text-xs text-muted-foreground">
-                      Thinking: {(thinkingMs / 1000).toFixed(1)}s
-                    </span>
-                  )}
-                </div>
-              </CardHeader>
-              <CardContent>
-                {/* Progress bar */}
-                <div className="mb-4">
-                  <div className="flex items-center justify-between text-xs text-muted-foreground mb-1">
-                    <span>
-                      {pipelineState?.phase === 'discovery' && 'Phase: Discovering candidates'}
-                      {pipelineState?.phase === 'enrichment' && 'Phase: Enriching top candidates'}
-                      {pipelineState?.phase === 'complete' && 'Phase: Complete'}
-                      {!pipelineState?.phase && 'Initializing...'}
-                    </span>
-                    <span>{Math.round(pipelineState?.overallProgress || 0)}%</span>
-                  </div>
-                  <div className="h-2 bg-muted/50 rounded-full overflow-hidden">
-                    <motion.div
-                      className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500"
-                      animate={{ width: `${pipelineState?.overallProgress || 0}%` }}
-                      transition={{ duration: 0.3 }}
-                    />
-                  </div>
-                </div>
-
-                {/* 8-Agent grid */}
-                <div className="grid grid-cols-4 sm:grid-cols-8 gap-2 mb-4">
-                  {Object.entries(AGENT_8_DISPLAY).map(([key, agent]) => {
-                    const state = pipelineState?.agents?.[key];
-                    const status = state?.status || 'idle';
-                    return (
-                      <div
-                        key={key}
-                        className={`flex flex-col items-center gap-1 p-2 rounded-lg border transition-all ${
-                          status === 'working' || status === 'thinking'
-                            ? 'border-cyan-500/50 bg-cyan-500/5'
-                            : status === 'completed'
-                            ? 'border-emerald-500/50 bg-emerald-500/5'
-                            : status === 'failed'
-                            ? 'border-red-500/50 bg-red-500/5'
-                            : 'border-border/30 bg-muted/20'
-                        }`}
-                      >
-                        <div className="text-lg">{agent.emoji}</div>
-                        <div className="text-[10px] font-medium text-center capitalize">{key}</div>
-                        <div className="text-[9px] text-muted-foreground capitalize">{status}</div>
-                      </div>
-                    );
-                  })}
-                </div>
-
-                {/* Recent log */}
-                <div
-                  ref={logContainerRef}
-                  className="h-32 overflow-y-auto bg-black/40 rounded-lg p-2 font-mono text-[10px] space-y-1"
-                >
-                  {pipelineLog.length === 0 && (
-                    <div className="text-muted-foreground">Waiting for events...</div>
-                  )}
-                  {pipelineLog.slice(-30).map((entry, i) => (
-                    <div key={i} className="text-muted-foreground">
-                      <span className="text-cyan-400">[{new Date(entry.timestamp).toLocaleTimeString()}]</span>{' '}
-                      <span className="text-violet-400">{entry.type}</span>{' '}
-                      <span className="text-foreground/80">
-                        {typeof entry.data.message === 'string'
-                          ? entry.data.message.slice(0, 150)
-                          : typeof entry.data.companyName === 'string'
-                          ? entry.data.companyName
-                          : entry.type === 'lead_created'
-                          ? `Lead: ${entry.data.companyName}`
-                          : entry.type === 'lead_enriched'
-                          ? `Enriched: ${entry.data.companyName} (${entry.data.dataCompleteness}%)`
-                          : JSON.stringify(entry.data).slice(0, 100)}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </CardContent>
-            </Card>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Agentic Pipeline Workspace — transparent live visualization */}
+      {(pipelineRunning || pipelineState || pipelineSummary) && (
+        <AgenticPipelineWorkspace
+          pipelineRunning={pipelineRunning}
+          pipelineState={pipelineState}
+          pipelineLog={pipelineLog}
+          liveLeads={liveLeads}
+          currentEnrichmentIdx={currentEnrichmentIdx}
+          enrichmentTotal={enrichmentTotal}
+          thinkingMs={thinkingMs}
+          campaignName={campaign.name}
+          discoveryQuery={discoveryQuery || campaign.description || campaign.name}
+          pipelineSummary={pipelineSummary}
+        />
+      )}
 
       {/* Pipeline Summary (when complete) */}
       <AnimatePresence>

@@ -636,3 +636,31 @@ Stage Summary:
 - ThemeProvider wraps entire app in layout.tsx
 - Files modified: globals.css, layout.tsx, knowledge/page.tsx
 - Files created: components/theme-toggle.tsx
+
+---
+Task ID: AGENTIC-WS-1
+Agent: main
+Task: Build transparent Agentic Pipeline Workspace to make 8-agent pipeline process fully visible to users
+
+Work Log:
+- Analyzed existing CampaignDetailView which had basic 8-agent grid + small text log — process was opaque to users
+- Read full orchestrator-types.ts, stream route, orchestrator.ts to understand SSE event types and data flow
+- Created new component: `src/components/campaigns/agentic-pipeline-workspace.tsx` (~580 lines)
+  - 5 tabbed panels: Architecture, Agents, Events, Leads, Comms
+  - **Architecture tab**: Visual pipeline flow diagram with 8 agent cards showing status/progress/role, phase indicators (Discovery→Enrichment→Complete), pipeline methodology description
+  - **Agents tab**: Expandable per-agent cards with capabilities, timing, recent activity events
+  - **Events tab**: Structured color-coded event stream with filtering by event type, auto-scroll toggle
+  - **Leads tab**: Lead tracker showing each lead's pipeline stage progress (Discovered→Data Saved→Scout→Forge→Judge→Enriched), data completeness
+  - **Comms tab**: Inter-agent communication messages with from→to visualization, message types, timestamps
+  - Expandable/collapsible workspace header with live indicator, progress bar, thinking timer
+  - Agent-specific color coding (indigo/emerald/cyan/violet/rose/sky/amber/teal)
+  - Status-specific styling (idle/thinking/working/completed/failed)
+  - Animated transitions via framer-motion
+- Integrated workspace into CampaignDetailView, replacing old basic pipeline visualization
+- Added `discoveryQuery` state capture from `stream_open` SSE event
+- Build verified successfully (19s compile time)
+
+Stage Summary:
+- Created `src/components/campaigns/agentic-pipeline-workspace.tsx`
+- Modified `src/components/campaigns/campaign-detail-view.tsx` to use AgenticPipelineWorkspace
+- Users can now see the complete 8-agent pipeline process transparently with real-time updates
