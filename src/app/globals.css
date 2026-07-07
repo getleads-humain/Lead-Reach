@@ -4,48 +4,65 @@
 @custom-variant dark (&:is(.dark *));
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
+  /* ── Fonts ── */
   --font-sans: var(--font-geist-sans);
   --font-mono: var(--font-geist-mono);
-  --color-sidebar-ring: var(--sidebar-ring);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar: var(--sidebar);
-  --color-chart-5: var(--chart-5);
-  --color-chart-4: var(--chart-4);
-  --color-chart-3: var(--chart-3);
-  --color-chart-2: var(--chart-2);
-  --color-chart-1: var(--chart-1);
-  --color-ring: var(--ring);
-  --color-input: var(--input);
-  --color-border: var(--border);
-  --color-destructive: var(--destructive);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-accent: var(--accent);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-muted: var(--muted);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-secondary: var(--secondary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-primary: var(--primary);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-popover: var(--popover);
-  --color-card-foreground: var(--card-foreground);
-  --color-card: var(--card);
+
+  /* ── Radius ── */
   --radius-sm: calc(var(--radius) - 4px);
   --radius-md: calc(var(--radius) - 2px);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
+
+  /* ── Colors (oklch with <alpha-value> so Tailwind v4 opacity modifiers work) ──
+   *
+   * By embedding the oklch() function DIRECTLY in @theme — instead of
+   * var(--background) — Tailwind v4 can decompose the channels and apply
+   * opacity modifiers like bg-card/50, text-foreground/80, border-border/30.
+   *
+   * The <alpha-value> placeholder is replaced by Tailwind at build time:
+   *   - No modifier  → oklch(L C H / 1)   (fully opaque)
+   *   - /50 modifier → oklch(L C H / 0.5)  (50% opacity)
+   */
+
+  /* Light-mode defaults (overridden by .dark below) */
+  --color-background: oklch(0.985 0.002 270 / <alpha-value>);
+  --color-foreground: oklch(0.15 0.01 270 / <alpha-value>);
+  --color-card: oklch(1.0 0 0 / <alpha-value>);
+  --color-card-foreground: oklch(0.15 0.01 270 / <alpha-value>);
+  --color-popover: oklch(1.0 0 0 / <alpha-value>);
+  --color-popover-foreground: oklch(0.15 0.01 270 / <alpha-value>);
+  --color-primary: oklch(0.55 0.18 165 / <alpha-value>);
+  --color-primary-foreground: oklch(1.0 0 0 / <alpha-value>);
+  --color-secondary: oklch(0.955 0.008 270 / <alpha-value>);
+  --color-secondary-foreground: oklch(0.25 0.01 270 / <alpha-value>);
+  --color-muted: oklch(0.955 0.008 270 / <alpha-value>);
+  --color-muted-foreground: oklch(0.50 0.01 270 / <alpha-value>);
+  --color-accent: oklch(0.945 0.01 270 / <alpha-value>);
+  --color-accent-foreground: oklch(0.25 0.01 270 / <alpha-value>);
+  --color-destructive: oklch(0.55 0.22 25 / <alpha-value>);
+  --color-destructive-foreground: oklch(1.0 0 0 / <alpha-value>);
+  --color-border: oklch(0.90 0.005 270 / <alpha-value>);
+  --color-input: oklch(0.90 0.005 270 / <alpha-value>);
+  --color-ring: oklch(0.55 0.18 165 / <alpha-value>);
+  --color-chart-1: oklch(0.55 0.18 165 / <alpha-value>);
+  --color-chart-2: oklch(0.50 0.16 255 / <alpha-value>);
+  --color-chart-3: oklch(0.55 0.16 300 / <alpha-value>);
+  --color-chart-4: oklch(0.60 0.14 85 / <alpha-value>);
+  --color-chart-5: oklch(0.50 0.20 25 / <alpha-value>);
+  --color-sidebar: oklch(0.975 0.004 270 / <alpha-value>);
+  --color-sidebar-foreground: oklch(0.25 0.01 270 / <alpha-value>);
+  --color-sidebar-primary: oklch(0.55 0.18 165 / <alpha-value>);
+  --color-sidebar-primary-foreground: oklch(1.0 0 0 / <alpha-value>);
+  --color-sidebar-accent: oklch(0.94 0.01 270 / <alpha-value>);
+  --color-sidebar-accent-foreground: oklch(0.25 0.01 270 / <alpha-value>);
+  --color-sidebar-border: oklch(0.90 0.005 270 / <alpha-value>);
+  --color-sidebar-ring: oklch(0.55 0.18 165 / <alpha-value>);
 }
 
 :root {
   --radius: 0.75rem;
-  /* Light mode — clean professional palette */
+  /* Legacy variable references kept for any JS/CSS that reads them directly */
   --background: oklch(0.985 0.002 270);
   --foreground: oklch(0.15 0.01 270);
   --card: oklch(1.0 0 0);
@@ -61,6 +78,7 @@
   --accent: oklch(0.945 0.01 270);
   --accent-foreground: oklch(0.25 0.01 270);
   --destructive: oklch(0.55 0.22 25);
+  --destructive-foreground: oklch(1.0 0 0);
   --border: oklch(0.90 0.005 270);
   --input: oklch(0.90 0.005 270);
   --ring: oklch(0.55 0.18 165);
@@ -80,7 +98,8 @@
 }
 
 .dark {
-  /* Dark mode — pitch black premium theme */
+  /* Dark mode — pitch black premium theme
+   * Also update the @theme inline colors for dark mode via CSS override */
   --background: oklch(0.03 0.005 270);
   --foreground: oklch(0.97 0 0);
   --card: oklch(0.06 0.005 270);
@@ -96,6 +115,7 @@
   --accent: oklch(0.10 0.008 270);
   --accent-foreground: oklch(0.90 0 0);
   --destructive: oklch(0.65 0.22 25);
+  --destructive-foreground: oklch(0.97 0 0);
   --border: oklch(0.18 0.01 270);
   --input: oklch(0.14 0.01 270);
   --ring: oklch(0.75 0.18 165);
@@ -112,6 +132,40 @@
   --sidebar-accent-foreground: oklch(0.90 0 0);
   --sidebar-border: oklch(0.14 0.01 270);
   --sidebar-ring: oklch(0.75 0.18 165);
+
+  /* Override @theme inline color values for dark mode */
+  --color-background: oklch(0.03 0.005 270 / <alpha-value>);
+  --color-foreground: oklch(0.97 0 0 / <alpha-value>);
+  --color-card: oklch(0.06 0.005 270 / <alpha-value>);
+  --color-card-foreground: oklch(0.97 0 0 / <alpha-value>);
+  --color-popover: oklch(0.06 0.005 270 / <alpha-value>);
+  --color-popover-foreground: oklch(0.97 0 0 / <alpha-value>);
+  --color-primary: oklch(0.75 0.18 165 / <alpha-value>);
+  --color-primary-foreground: oklch(0.03 0 0 / <alpha-value>);
+  --color-secondary: oklch(0.10 0.008 270 / <alpha-value>);
+  --color-secondary-foreground: oklch(0.90 0 0 / <alpha-value>);
+  --color-muted: oklch(0.10 0.008 270 / <alpha-value>);
+  --color-muted-foreground: oklch(0.60 0 0 / <alpha-value>);
+  --color-accent: oklch(0.10 0.008 270 / <alpha-value>);
+  --color-accent-foreground: oklch(0.90 0 0 / <alpha-value>);
+  --color-destructive: oklch(0.65 0.22 25 / <alpha-value>);
+  --color-destructive-foreground: oklch(0.97 0 0 / <alpha-value>);
+  --color-border: oklch(0.18 0.01 270 / <alpha-value>);
+  --color-input: oklch(0.14 0.01 270 / <alpha-value>);
+  --color-ring: oklch(0.75 0.18 165 / <alpha-value>);
+  --color-chart-1: oklch(0.75 0.18 165 / <alpha-value>);
+  --color-chart-2: oklch(0.70 0.16 255 / <alpha-value>);
+  --color-chart-3: oklch(0.75 0.16 300 / <alpha-value>);
+  --color-chart-4: oklch(0.80 0.14 85 / <alpha-value>);
+  --color-chart-5: oklch(0.70 0.20 25 / <alpha-value>);
+  --color-sidebar: oklch(0.04 0.006 270 / <alpha-value>);
+  --color-sidebar-foreground: oklch(0.90 0 0 / <alpha-value>);
+  --color-sidebar-primary: oklch(0.75 0.18 165 / <alpha-value>);
+  --color-sidebar-primary-foreground: oklch(0.03 0 0 / <alpha-value>);
+  --color-sidebar-accent: oklch(0.10 0.008 270 / <alpha-value>);
+  --color-sidebar-accent-foreground: oklch(0.90 0 0 / <alpha-value>);
+  --color-sidebar-border: oklch(0.14 0.01 270 / <alpha-value>);
+  --color-sidebar-ring: oklch(0.75 0.18 165 / <alpha-value>);
 }
 
 @layer base {
@@ -274,41 +328,29 @@
 
 /* ============================================================
    SPLINE 3D BACKGROUND — Landing Page Interactive Background
-   ============================================================
-   The Spline viewer is a fixed, interactive 3D background that
-   stays visible during scroll and responds to pointer movement.
-   The landing page content sits on top with pointer-events: none
-   on the wrapper, allowing mouse events to pass through to the
-   Spline. Interactive elements (buttons, links, cards) re-enable
-   pointer-events: auto so they remain fully clickable.
    ============================================================ */
 
-/* Spline background container — fixed, full viewport, behind content */
 .spline-bg-container {
   opacity: 0.3;
   pointer-events: auto;
   transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Make the Spline viewer background transparent to blend with our dark theme */
 spline-viewer {
   background: transparent !important;
   --spline-bg: transparent;
 }
 
-/* Ensure the Spline canvas fills its container */
 spline-viewer canvas {
   background: transparent !important;
 }
 
-/* Landing page content layer — above Spline, pointer-events pass through */
 .landing-content {
   position: relative;
   z-index: 2;
   pointer-events: none;
 }
 
-/* Re-enable pointer events on all interactive elements within landing content */
 .landing-content a,
 .landing-content button,
 .landing-content input,
@@ -325,14 +367,11 @@ spline-viewer canvas {
   pointer-events: auto;
 }
 
-/* Ensure cards are interactive and have a subtle glass backdrop
-   so content remains readable over the Spline background */
 .landing-content .card-premium {
   backdrop-filter: blur(8px) saturate(1.1);
   -webkit-backdrop-filter: blur(8px) saturate(1.1);
 }
 
-/* Footer must be above the Spline background on the landing page */
 .marketing-footer {
   position: relative;
   z-index: 10;
@@ -342,7 +381,6 @@ spline-viewer canvas {
    AI CHAT — Streaming Cursor & Markdown Content Styles
    ============================================================ */
 
-/* Blinking cursor for streaming text */
 .streaming-cursor::after {
   content: '▋';
   display: inline;
