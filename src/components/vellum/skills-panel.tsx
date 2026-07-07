@@ -55,7 +55,7 @@ function SkillCard({ skill, onToggle, onExpand, isExpanded }: {
       exit={{ opacity: 0, scale: 0.95 }}
       className={`rounded-xl border p-3 transition-all cursor-pointer ${
         skill.isActive
-          ? 'border-emerald-500/30 bg-emerald-500/5 shadow-[0_0_20px_oklch(0.75_0.18_165/8%)]'
+          ? 'border-emerald-500/30 bg-emerald-500/5 glow-emerald-sm'
           : 'border-border/30 bg-secondary/5 hover:border-border/50'
       }`}
       onClick={onExpand}

@@ -14,50 +14,50 @@
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) + 4px);
 
-  /* ── Colors (oklch with <alpha-value> so Tailwind v4 opacity modifiers work) ──
+  /* ── Colors (oklch — plain values for Tailwind v4) ──
    *
-   * By embedding the oklch() function DIRECTLY in @theme — instead of
-   * var(--background) — Tailwind v4 can decompose the channels and apply
-   * opacity modifiers like bg-card/50, text-foreground/80, border-border/30.
+   * Defined as plain oklch() values so Tailwind v4 can:
+   *   - Use them directly for base utilities (bg-primary, text-foreground, etc.)
+   *   - Use color-mix() for opacity modifiers (bg-primary/50, border-border/30, etc.)
    *
-   * The <alpha-value> placeholder is replaced by Tailwind at build time:
-   *   - No modifier  → oklch(L C H / 1)   (fully opaque)
-   *   - /50 modifier → oklch(L C H / 0.5)  (50% opacity)
+   * Dark mode is handled by overriding --color-* CSS custom properties in .dark below.
+   * The color-mix() opacity variants will use the light-mode oklch channels at build time,
+   * so we supplement them with explicit dark-mode overrides in the .dark section.
    */
 
-  /* Light-mode defaults (overridden by .dark below) */
-  --color-background: oklch(0.985 0.002 270 / <alpha-value>);
-  --color-foreground: oklch(0.15 0.01 270 / <alpha-value>);
-  --color-card: oklch(1.0 0 0 / <alpha-value>);
-  --color-card-foreground: oklch(0.15 0.01 270 / <alpha-value>);
-  --color-popover: oklch(1.0 0 0 / <alpha-value>);
-  --color-popover-foreground: oklch(0.15 0.01 270 / <alpha-value>);
-  --color-primary: oklch(0.55 0.18 165 / <alpha-value>);
-  --color-primary-foreground: oklch(1.0 0 0 / <alpha-value>);
-  --color-secondary: oklch(0.955 0.008 270 / <alpha-value>);
-  --color-secondary-foreground: oklch(0.25 0.01 270 / <alpha-value>);
-  --color-muted: oklch(0.955 0.008 270 / <alpha-value>);
-  --color-muted-foreground: oklch(0.50 0.01 270 / <alpha-value>);
-  --color-accent: oklch(0.945 0.01 270 / <alpha-value>);
-  --color-accent-foreground: oklch(0.25 0.01 270 / <alpha-value>);
-  --color-destructive: oklch(0.55 0.22 25 / <alpha-value>);
-  --color-destructive-foreground: oklch(1.0 0 0 / <alpha-value>);
-  --color-border: oklch(0.90 0.005 270 / <alpha-value>);
-  --color-input: oklch(0.90 0.005 270 / <alpha-value>);
-  --color-ring: oklch(0.55 0.18 165 / <alpha-value>);
-  --color-chart-1: oklch(0.55 0.18 165 / <alpha-value>);
-  --color-chart-2: oklch(0.50 0.16 255 / <alpha-value>);
-  --color-chart-3: oklch(0.55 0.16 300 / <alpha-value>);
-  --color-chart-4: oklch(0.60 0.14 85 / <alpha-value>);
-  --color-chart-5: oklch(0.50 0.20 25 / <alpha-value>);
-  --color-sidebar: oklch(0.975 0.004 270 / <alpha-value>);
-  --color-sidebar-foreground: oklch(0.25 0.01 270 / <alpha-value>);
-  --color-sidebar-primary: oklch(0.55 0.18 165 / <alpha-value>);
-  --color-sidebar-primary-foreground: oklch(1.0 0 0 / <alpha-value>);
-  --color-sidebar-accent: oklch(0.94 0.01 270 / <alpha-value>);
-  --color-sidebar-accent-foreground: oklch(0.25 0.01 270 / <alpha-value>);
-  --color-sidebar-border: oklch(0.90 0.005 270 / <alpha-value>);
-  --color-sidebar-ring: oklch(0.55 0.18 165 / <alpha-value>);
+  /* Light-mode defaults */
+  --color-background: oklch(0.985 0.002 270);
+  --color-foreground: oklch(0.15 0.01 270);
+  --color-card: oklch(1.0 0 0);
+  --color-card-foreground: oklch(0.15 0.01 270);
+  --color-popover: oklch(1.0 0 0);
+  --color-popover-foreground: oklch(0.15 0.01 270);
+  --color-primary: oklch(0.55 0.18 165);
+  --color-primary-foreground: oklch(1.0 0 0);
+  --color-secondary: oklch(0.955 0.008 270);
+  --color-secondary-foreground: oklch(0.25 0.01 270);
+  --color-muted: oklch(0.955 0.008 270);
+  --color-muted-foreground: oklch(0.50 0.01 270);
+  --color-accent: oklch(0.945 0.01 270);
+  --color-accent-foreground: oklch(0.25 0.01 270);
+  --color-destructive: oklch(0.55 0.22 25);
+  --color-destructive-foreground: oklch(1.0 0 0);
+  --color-border: oklch(0.90 0.005 270);
+  --color-input: oklch(0.90 0.005 270);
+  --color-ring: oklch(0.55 0.18 165);
+  --color-chart-1: oklch(0.55 0.18 165);
+  --color-chart-2: oklch(0.50 0.16 255);
+  --color-chart-3: oklch(0.55 0.16 300);
+  --color-chart-4: oklch(0.60 0.14 85);
+  --color-chart-5: oklch(0.50 0.20 25);
+  --color-sidebar: oklch(0.975 0.004 270);
+  --color-sidebar-foreground: oklch(0.25 0.01 270);
+  --color-sidebar-primary: oklch(0.55 0.18 165);
+  --color-sidebar-primary-foreground: oklch(1.0 0 0);
+  --color-sidebar-accent: oklch(0.94 0.01 270);
+  --color-sidebar-accent-foreground: oklch(0.25 0.01 270);
+  --color-sidebar-border: oklch(0.90 0.005 270);
+  --color-sidebar-ring: oklch(0.55 0.18 165);
 }
 
 :root {
@@ -99,7 +99,41 @@
 
 .dark {
   /* Dark mode — pitch black premium theme
-   * Also update the @theme inline colors for dark mode via CSS override */
+   * Override @theme inline --color-* variables for dark mode */
+  --color-background: oklch(0.03 0.005 270);
+  --color-foreground: oklch(0.97 0 0);
+  --color-card: oklch(0.06 0.005 270);
+  --color-card-foreground: oklch(0.97 0 0);
+  --color-popover: oklch(0.06 0.005 270);
+  --color-popover-foreground: oklch(0.97 0 0);
+  --color-primary: oklch(0.75 0.18 165);
+  --color-primary-foreground: oklch(0.03 0 0);
+  --color-secondary: oklch(0.10 0.008 270);
+  --color-secondary-foreground: oklch(0.90 0 0);
+  --color-muted: oklch(0.10 0.008 270);
+  --color-muted-foreground: oklch(0.60 0 0);
+  --color-accent: oklch(0.10 0.008 270);
+  --color-accent-foreground: oklch(0.90 0 0);
+  --color-destructive: oklch(0.65 0.22 25);
+  --color-destructive-foreground: oklch(0.97 0 0);
+  --color-border: oklch(0.18 0.01 270);
+  --color-input: oklch(0.14 0.01 270);
+  --color-ring: oklch(0.75 0.18 165);
+  --color-chart-1: oklch(0.75 0.18 165);
+  --color-chart-2: oklch(0.70 0.16 255);
+  --color-chart-3: oklch(0.75 0.16 300);
+  --color-chart-4: oklch(0.80 0.14 85);
+  --color-chart-5: oklch(0.70 0.20 25);
+  --color-sidebar: oklch(0.04 0.006 270);
+  --color-sidebar-foreground: oklch(0.90 0 0);
+  --color-sidebar-primary: oklch(0.75 0.18 165);
+  --color-sidebar-primary-foreground: oklch(0.03 0 0);
+  --color-sidebar-accent: oklch(0.10 0.008 270);
+  --color-sidebar-accent-foreground: oklch(0.90 0 0);
+  --color-sidebar-border: oklch(0.14 0.01 270);
+  --color-sidebar-ring: oklch(0.75 0.18 165);
+
+  /* Legacy variable overrides for dark mode */
   --background: oklch(0.03 0.005 270);
   --foreground: oklch(0.97 0 0);
   --card: oklch(0.06 0.005 270);
@@ -132,40 +166,6 @@
   --sidebar-accent-foreground: oklch(0.90 0 0);
   --sidebar-border: oklch(0.14 0.01 270);
   --sidebar-ring: oklch(0.75 0.18 165);
-
-  /* Override @theme inline color values for dark mode */
-  --color-background: oklch(0.03 0.005 270 / <alpha-value>);
-  --color-foreground: oklch(0.97 0 0 / <alpha-value>);
-  --color-card: oklch(0.06 0.005 270 / <alpha-value>);
-  --color-card-foreground: oklch(0.97 0 0 / <alpha-value>);
-  --color-popover: oklch(0.06 0.005 270 / <alpha-value>);
-  --color-popover-foreground: oklch(0.97 0 0 / <alpha-value>);
-  --color-primary: oklch(0.75 0.18 165 / <alpha-value>);
-  --color-primary-foreground: oklch(0.03 0 0 / <alpha-value>);
-  --color-secondary: oklch(0.10 0.008 270 / <alpha-value>);
-  --color-secondary-foreground: oklch(0.90 0 0 / <alpha-value>);
-  --color-muted: oklch(0.10 0.008 270 / <alpha-value>);
-  --color-muted-foreground: oklch(0.60 0 0 / <alpha-value>);
-  --color-accent: oklch(0.10 0.008 270 / <alpha-value>);
-  --color-accent-foreground: oklch(0.90 0 0 / <alpha-value>);
-  --color-destructive: oklch(0.65 0.22 25 / <alpha-value>);
-  --color-destructive-foreground: oklch(0.97 0 0 / <alpha-value>);
-  --color-border: oklch(0.18 0.01 270 / <alpha-value>);
-  --color-input: oklch(0.14 0.01 270 / <alpha-value>);
-  --color-ring: oklch(0.75 0.18 165 / <alpha-value>);
-  --color-chart-1: oklch(0.75 0.18 165 / <alpha-value>);
-  --color-chart-2: oklch(0.70 0.16 255 / <alpha-value>);
-  --color-chart-3: oklch(0.75 0.16 300 / <alpha-value>);
-  --color-chart-4: oklch(0.80 0.14 85 / <alpha-value>);
-  --color-chart-5: oklch(0.70 0.20 25 / <alpha-value>);
-  --color-sidebar: oklch(0.04 0.006 270 / <alpha-value>);
-  --color-sidebar-foreground: oklch(0.90 0 0 / <alpha-value>);
-  --color-sidebar-primary: oklch(0.75 0.18 165 / <alpha-value>);
-  --color-sidebar-primary-foreground: oklch(0.03 0 0 / <alpha-value>);
-  --color-sidebar-accent: oklch(0.10 0.008 270 / <alpha-value>);
-  --color-sidebar-accent-foreground: oklch(0.90 0 0 / <alpha-value>);
-  --color-sidebar-border: oklch(0.14 0.01 270 / <alpha-value>);
-  --color-sidebar-ring: oklch(0.75 0.18 165 / <alpha-value>);
 }
 
 @layer base {
@@ -179,6 +179,129 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
   }
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Explicit opacity-modifier overrides
+   ─────────────────────────────────────────────────────────────
+   Tailwind v4 generates color-mix() rules using the LIGHT mode
+   oklch channels at build time. These overrides ensure that
+   the most commonly used opacity-modifier classes produce
+   correct visual results in dark mode.
+   ───────────────────────────────────────────────────────────── */
+
+.dark {
+  /* bg-card with opacity */
+  .bg-card\/50 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 50%, transparent); }
+  .bg-card\/60 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 60%, transparent); }
+  .bg-card\/80 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 80%, transparent); }
+  .bg-card\/90 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 90%, transparent); }
+
+  /* bg-secondary with opacity */
+  .bg-secondary\/5  { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 5%, transparent); }
+  .bg-secondary\/8  { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 8%, transparent); }
+  .bg-secondary\/10 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 10%, transparent); }
+  .bg-secondary\/20 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 20%, transparent); }
+  .bg-secondary\/30 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 30%, transparent); }
+  .bg-secondary\/40 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 40%, transparent); }
+  .bg-secondary\/50 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
+  .bg-secondary\/60 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 60%, transparent); }
+
+  /* bg-muted with opacity */
+  .bg-muted\/30 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 30%, transparent); }
+  .bg-muted\/50 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
+
+  /* bg-background with opacity */
+  .bg-background\/50 { background-color: color-mix(in oklab, oklch(0.03 0.005 270) 50%, transparent); }
+  .bg-background\/80 { background-color: color-mix(in oklab, oklch(0.03 0.005 270) 80%, transparent); }
+
+  /* bg-primary with opacity */
+  .bg-primary\/10 { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 10%, transparent); }
+  .bg-primary\/20 { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 20%, transparent); }
+
+  /* bg-input with opacity */
+  .bg-input\/30 { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 30%, transparent); }
+  .bg-input\/50 { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 50%, transparent); }
+  .bg-input\/80 { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 80%, transparent); }
+
+  /* bg-destructive with opacity */
+  .bg-destructive\/20 { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 20%, transparent); }
+  .bg-destructive\/60 { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 60%, transparent); }
+
+  /* border-border with opacity */
+  .border-border\/5  { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 5%, transparent); }
+  .border-border\/10 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 10%, transparent); }
+  .border-border\/15 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 15%, transparent); }
+  .border-border\/20 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 20%, transparent); }
+  .border-border\/25 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 25%, transparent); }
+  .border-border\/30 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 30%, transparent); }
+  .border-border\/40 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 40%, transparent); }
+  .border-border\/50 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 50%, transparent); }
+  .border-border\/60 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 60%, transparent); }
+
+  /* text-foreground with opacity */
+  .text-foreground\/10 { color: color-mix(in oklab, oklch(0.97 0 0) 10%, transparent); }
+  .text-foreground\/20 { color: color-mix(in oklab, oklch(0.97 0 0) 20%, transparent); }
+  .text-foreground\/30 { color: color-mix(in oklab, oklch(0.97 0 0) 30%, transparent); }
+  .text-foreground\/40 { color: color-mix(in oklab, oklch(0.97 0 0) 40%, transparent); }
+  .text-foreground\/50 { color: color-mix(in oklab, oklch(0.97 0 0) 50%, transparent); }
+  .text-foreground\/60 { color: color-mix(in oklab, oklch(0.97 0 0) 60%, transparent); }
+  .text-foreground\/70 { color: color-mix(in oklab, oklch(0.97 0 0) 70%, transparent); }
+  .text-foreground\/80 { color: color-mix(in oklab, oklch(0.97 0 0) 80%, transparent); }
+  .text-foreground\/90 { color: color-mix(in oklab, oklch(0.97 0 0) 90%, transparent); }
+
+  /* text-muted-foreground with opacity */
+  .text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.60 0 0) 40%, transparent); }
+  .text-muted-foreground\/50 { color: color-mix(in oklab, oklch(0.60 0 0) 50%, transparent); }
+  .text-muted-foreground\/60 { color: color-mix(in oklab, oklch(0.60 0 0) 60%, transparent); }
+  .text-muted-foreground\/70 { color: color-mix(in oklab, oklch(0.60 0 0) 70%, transparent); }
+  .text-muted-foreground\/80 { color: color-mix(in oklab, oklch(0.60 0 0) 80%, transparent); }
+
+  /* ring-ring with opacity */
+  .ring-ring\/50 { --tw-ring-color: color-mix(in oklab, oklch(0.75 0.18 165) 50%, transparent); }
+
+  /* bg-popover with opacity */
+  .bg-popover\/50 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 50%, transparent); }
+
+  /* bg-accent with opacity */
+  .bg-accent\/50 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
+  .hover\:bg-accent\/50:hover { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
+
+  /* hover variants */
+  .hover\:bg-primary\/90:hover { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 90%, transparent); }
+  .hover\:bg-secondary\/90:hover { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 90%, transparent); }
+  .hover\:bg-destructive\/90:hover { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 90%, transparent); }
+  .hover\:bg-input\/50:hover { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 50%, transparent); }
+
+  /* focus variants */
+  .focus-visible\:ring-ring\/50:focus-visible { --tw-ring-color: color-mix(in oklab, oklch(0.75 0.18 165) 50%, transparent); }
+
+  /* outline-ring/50 */
+  .outline-ring\/50 { outline-color: color-mix(in oklab, oklch(0.75 0.18 165) 50%, transparent); }
+
+  /* border-muted */
+  .border-muted\/40 { border-color: color-mix(in oklab, oklch(0.10 0.008 270) 40%, transparent); }
+
+  /* text-foreground/50 for placeholders */
+  .text-foreground\/50 { color: color-mix(in oklab, oklch(0.97 0 0) 50%, transparent); }
+
+  /* text-destructive with opacity */
+  .text-destructive\/90 { color: color-mix(in oklab, oklch(0.65 0.22 25) 90%, transparent); }
+
+  /* bg-primary/20 for progress */
+  .bg-primary\/20 { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 20%, transparent); }
+
+  /* focus:bg-destructive/20 */
+  .focus\:bg-destructive\/20:focus { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 20%, transparent); }
+  .dark\:focus\:bg-destructive\/20:focus { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 20%, transparent); }
+
+  /* ring-destructive */
+  .ring-destructive\/20 { --tw-ring-color: color-mix(in oklab, oklch(0.65 0.22 25) 20%, transparent); }
+  .ring-destructive\/40 { --tw-ring-color: color-mix(in oklab, oklch(0.65 0.22 25) 40%, transparent); }
+
+  /* stroke-border/50 and border-border/50 for charts */
+  .stroke-border\/50 { stroke: color-mix(in oklab, oklch(0.18 0.01 270) 50%, transparent); }
+  .border-border\/50 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 50%, transparent); }
 }
 
 /* Premium scrollbar */

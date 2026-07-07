@@ -74,3 +74,28 @@ Stage Summary:
 - All 15 Browse tab categories now display with complete file listings
 - Gap report shows 0 coverage gaps across all 9 categories (36/36 industries, 36/36 regions, 21/21 playbooks, 14/14 domains, 8/8 agents, 6/6 methodologies, 6/6 integrations, 4/4 case studies, 6/6 product)
 - Browse tab now has scrollable categories and file count indicators for better UX
+
+---
+Task ID: 1
+Agent: Main Agent
+Task: Fix CSS not loading across LeadReach application
+
+Work Log:
+- Investigated CSS loading failure across all pages
+- Discovered root cause: globals.css used `<alpha-value>` placeholder in `@theme inline` color definitions
+- Tailwind v4.3.0 was NOT resolving `<alpha-value>` at build time, resulting in 319 literal `<alpha-value>` strings in compiled CSS
+- Browsers ignored ALL rules containing `<alpha-value>`, making ~95% of Tailwind utility classes non-functional
+- Also found stale build cache issue where HTML referenced CSS chunks that didn't exist on disk
+- Fixed globals.css: removed `<alpha-value>` from all 32 `@theme inline` color definitions, using plain oklch() values instead
+- Added explicit dark mode CSS overrides for all opacity modifier classes (bg-card/50, bg-secondary/20, border-border/30, text-foreground/80, etc.) using color-mix()
+- Fixed hardcoded oklch values in prospect-discovery-view.tsx (added dark mode scrollbar styles)
+- Fixed hardcoded oklch shadow in skills-panel.tsx (replaced with glow-emerald-sm utility class)
+- Fixed hardcoded oklch SVG attributes in memory-panel.tsx (replaced with Tailwind classes)
+- Clean rebuilt production app (3x, each time verifying CSS output)
+- Verified: 0 `<alpha-value>` tokens in compiled CSS, all 18+ public pages return 200 with proper CSS
+
+Stage Summary:
+- CSS is now fully functional across all pages
+- Root cause was Tailwind v4.3.0 not resolving `<alpha-value>` placeholder — switched to plain oklch values
+- Dark mode opacity modifiers work via explicit color-mix() overrides in .dark section
+- Production server running on port 3000 with valid CSS

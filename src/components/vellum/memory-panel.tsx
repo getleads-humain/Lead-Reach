@@ -119,8 +119,8 @@ function MemoryGraph({ memories }: { memories: MemoryNode[] }) {
       </div>
       <svg viewBox="0 0 160 160" className="w-full max-w-[200px] mx-auto">
         {/* Center node */}
-        <circle cx={centerX} cy={centerY} r={8} fill="oklch(0.75 0.18 165 / 30%)" stroke="oklch(0.75 0.18 165 / 50%)" strokeWidth="1.5" />
-        <text x={centerX} y={centerY + 1} textAnchor="middle" fontSize="6" fill="oklch(0.90 0 0)">AI</text>
+        <circle cx={centerX} cy={centerY} r={8} className="fill-primary/30 stroke-primary/50" strokeWidth="1.5" />
+        <text x={centerX} y={centerY + 1} textAnchor="middle" fontSize="6" className="fill-foreground/90">AI</text>
 
         {/* Memory nodes */}
         {nodes.map((node, i) => {
@@ -138,7 +138,7 @@ function MemoryGraph({ memories }: { memories: MemoryNode[] }) {
                 y1={centerY}
                 x2={x}
                 y2={y}
-                stroke="oklch(0.3 0.01 270 / 30%)"
+                className="stroke-border/30"
                 strokeWidth="1"
               />
               {/* Cross connections */}
@@ -155,7 +155,7 @@ function MemoryGraph({ memories }: { memories: MemoryNode[] }) {
                     y1={y}
                     x2={cx}
                     y2={cy}
-                    stroke="oklch(0.3 0.01 270 / 15%)"
+                    className="stroke-border/15"
                     strokeWidth="0.5"
                     strokeDasharray="2,2"
                   />
@@ -165,11 +165,10 @@ function MemoryGraph({ memories }: { memories: MemoryNode[] }) {
                 cx={x}
                 cy={y}
                 r={5 + node.significance * 4}
-                fill="oklch(0.5 0.15 180 / 20%)"
-                stroke="oklch(0.5 0.15 180 / 40%)"
+                className="fill-secondary/20 stroke-border/40"
                 strokeWidth="1"
               />
-              <text x={x} y={y + 1} textAnchor="middle" fontSize="5" fill="oklch(0.7 0 0)">
+              <text x={x} y={y + 1} textAnchor="middle" fontSize="5" className="fill-muted-foreground">
                 {node.type.slice(0, 3)}
               </text>
             </g>

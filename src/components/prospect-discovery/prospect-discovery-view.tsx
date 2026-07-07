@@ -106,7 +106,13 @@ const AGENT_WORKSPACE_SCROLLBAR_STYLES = `
     background: oklch(0.5 0 0 / 30%);
     border-radius: 3px;
   }
+  .dark .agent-workspace-scroll::-webkit-scrollbar-thumb {
+    background: oklch(0.4 0 0 / 30%);
+  }
   .agent-workspace-scroll::-webkit-scrollbar-thumb:hover {
+    background: oklch(0.5 0 0 / 50%);
+  }
+  .dark .agent-workspace-scroll::-webkit-scrollbar-thumb:hover {
     background: oklch(0.5 0 0 / 50%);
   }
 `;
