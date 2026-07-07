@@ -5,7 +5,7 @@
  * knowledge/gap-reports/YYYY-MM-gap-report.md.
  *
  * The report identifies:
- *   1. Coverage gaps — industries / regions / playbooks not covered
+ *   1. Coverage gaps — industries / regions / playbooks / domains / agents / methodologies / integrations / case-studies / product not covered
  *   2. Quality gaps — existing docs with grade C or D
  *   3. Usage gaps — docs not referenced by any agent in last 30 days (placeholder; future: query agent-memory)
  *   4. Freshness gaps — docs not reviewed in 180+ days
@@ -26,32 +26,87 @@ import { getKnowledgeIndex, type KnowledgeChunk } from './index';
 // ============================================================
 
 /**
- * Baseline set of industries / regions / playbooks that the knowledge base
- * SHOULD cover. Gaps are computed against this baseline.
- *
- * This list will grow as LeadReach expands into new verticals.
+ * Baseline set of knowledge categories that the knowledge base SHOULD cover.
+ * Gaps are computed against this baseline.
  */
 const EXPECTED_INDUSTRIES = [
+  // Existing coverage (20 docs):
   'saas-b2b', 'fintech', 'healthtech', 'ecommerce-dtc', 'manufacturing',
+  'dev-tools', 'cybersecurity', 'ai-infrastructure', 'ecommerce-retail',
+  'financial-services', 'legal-services', 'logistics-supply-chain',
+  'healthcare-life-sciences', 'agriculture-food-trade', 'education',
+  'media-entertainment', 'hospitality-travel', 'saas', 'energy-utilities',
+  'real-estate-construction',
   // Future / known gaps:
-  'dev-tools', 'cybersecurity', 'ai-infrastructure', 'edtech', 'proptech',
-  'legaltech', 'hrtech', 'martech', 'clm', 'biotech', 'agtech', 'energy',
-  'logistics', 'travel', 'real-estate', 'construction', 'media',
+  'edtech', 'proptech', 'legaltech', 'hrtech', 'martech',
+  'clm', 'biotech', 'agtech', 'insurance', 'government-public-sector',
+  'telecommunications', 'automotive', 'pharmaceutical', 'gaming',
+  'nonprofit-ngo', 'cleantech-sustainability',
 ];
 
 const EXPECTED_REGIONS = [
-  'us', 'eu-gdpr', 'uk', 'apac-singapore',
+  // Existing coverage (15 docs):
+  'us', 'eu-gdpr', 'uk', 'apac-singapore', 'canada', 'dach',
+  'vietnam', 'china', 'india', 'middle-east-north-africa',
+  'united-kingdom', 'latin-america', 'australia-nz',
+  'european-union', 'united-states',
   // Future / known gaps:
-  'canada', 'dach', 'nordics', 'japan', 'south-korea', 'australia',
-  'latam-brazil', 'latam-mexico', 'india', 'sea', 'mena', 'africa',
+  'nordics', 'japan', 'south-korea', 'latam-brazil', 'latam-mexico',
+  'sea', 'mena', 'africa', 'philippines', 'indonesia', 'taiwan',
+  'new-zealand', 'brazil', 'mexico', 'colombia', 'nigeria',
+  'south-africa', 'kenya', 'uae', 'saudi-arabia', 'israel',
 ];
 
 const EXPECTED_PLAYBOOKS = [
+  // Existing coverage (7 docs):
   'outbound-cold-email', 'icp-discovery', 'multi-threaded-selling',
+  'inbound-lead-routing', 'churn-recovery', 'find-suppliers-in-country',
+  'research-specific-company',
   // Future / known gaps:
-  'inbound-lead-routing', 'churn-recovery', 'upsell-to-enterprise',
-  'competitor-displacement', 'event-follow-up', 'referral-program',
-  'pricing-negotiation', 'security-review-playbook', 'procurement-playbook',
+  'upsell-to-enterprise', 'competitor-displacement', 'event-follow-up',
+  'referral-program', 'pricing-negotiation', 'security-review-playbook',
+  'procurement-playbook', 'partner-channel-selling', 'product-led-growth',
+  'sales-assisted-conversion', 'land-and-expand', 'renewal-management',
+  'cross-sell-expansion', 'technical-proof-of-concept',
+];
+
+const EXPECTED_DOMAINS = [
+  // Existing coverage (6 docs):
+  'b2b-lead-generation-core-theory', 'data-enrichment-methodology',
+  'icp-design-scoring-methodology', 'lead-qualification-frameworks',
+  'outreach-methodology-cold-email-sequences', 'trigger-events-detection-timing',
+  // Future / known gaps:
+  'pipeline-management-methodology', 'deal-velocity-optimization',
+  'account-based-marketing-methodology', 'sales-enablement-framework',
+  'revenue-operations-framework', 'customer-success-methodology',
+  'competitive-intelligence-methodology', 'market-entry-strategy',
+];
+
+const EXPECTED_AGENTS = [
+  'atlas', 'scout', 'forge', 'sage', 'judge', 'bard', 'flow', 'echo',
+];
+
+const EXPECTED_METHODOLOGIES = [
+  'prospecting-research-methodology', 'lead-scoring-deep-dive',
+  'objection-handling-framework', 'sales-playbook-design',
+  'territory-planning-methodology', 'forecasting-accuracy-methodology',
+];
+
+const EXPECTED_INTEGRATIONS = [
+  'crm-integration-guide', 'email-provider-integration',
+  'calendar-booking-integration', 'data-provider-integration',
+  'webhook-automation-integration', 'api-reference',
+];
+
+const EXPECTED_CASE_STUDIES = [
+  'saas-scaleup-50-to-500', 'fintech-enterprise-expansion',
+  'ecommerce-dtc-growth', 'healthtech-compliance-playbook',
+];
+
+const EXPECTED_PRODUCT = [
+  'leadreach-platform-overview', 'agent-pipeline-architecture',
+  'data-security-privacy', 'pricing-packaging-guide',
+  'onboarding-quickstart', 'release-notes',
 ];
 
 // ============================================================
@@ -72,6 +127,12 @@ export interface GapReportResult {
     industriesMissing: string[];
     regionsMissing: string[];
     playbooksMissing: string[];
+    domainsMissing: string[];
+    agentsMissing: string[];
+    methodologiesMissing: string[];
+    integrationsMissing: string[];
+    caseStudiesMissing: string[];
+    productMissing: string[];
   };
   qualityGaps: Array<{ path: string; title: string; grade: string; issue: string; recommendedAction: string }>;
   usageGaps: Array<{ path: string; title: string; lastReferenced: string; recommendation: string }>;
@@ -85,9 +146,6 @@ export interface GapReportResult {
 
 /**
  * Generate the monthly gap report.
- *
- * @param opts.outputDir - where to write the report (default: knowledge/gap-reports/)
- * @param opts.now - override the current date (for testing)
  */
 export function generateGapReport(opts: { outputDir?: string; now?: Date } = {}): GapReportResult {
   const now = opts.now ?? new Date();
@@ -113,10 +171,34 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   const coveredPlaybooks = new Set(
     files.filter(f => f.category === 'playbook').map(f => path.basename(f.path, '.md'))
   );
+  const coveredDomains = new Set(
+    files.filter(f => f.category === 'domain').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredAgents = new Set(
+    files.filter(f => f.category === 'agent').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredMethodologies = new Set(
+    files.filter(f => f.category === 'methodology').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredIntegrations = new Set(
+    files.filter(f => f.category === 'integration').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredCaseStudies = new Set(
+    files.filter(f => f.category === 'case-study').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredProduct = new Set(
+    files.filter(f => f.category === 'product').map(f => path.basename(f.path, '.md'))
+  );
 
   const industriesMissing = EXPECTED_INDUSTRIES.filter(i => !coveredIndustries.has(i));
   const regionsMissing = EXPECTED_REGIONS.filter(r => !coveredRegions.has(r));
   const playbooksMissing = EXPECTED_PLAYBOOKS.filter(p => !coveredPlaybooks.has(p));
+  const domainsMissing = EXPECTED_DOMAINS.filter(d => !coveredDomains.has(d));
+  const agentsMissing = EXPECTED_AGENTS.filter(a => !coveredAgents.has(a));
+  const methodologiesMissing = EXPECTED_METHODOLOGIES.filter(m => !coveredMethodologies.has(m));
+  const integrationsMissing = EXPECTED_INTEGRATIONS.filter(i => !coveredIntegrations.has(i));
+  const caseStudiesMissing = EXPECTED_CASE_STUDIES.filter(c => !coveredCaseStudies.has(c));
+  const productMissing = EXPECTED_PRODUCT.filter(p => !coveredProduct.has(p));
 
   // ============================================================
   // 2. Quality Gaps (Grade C or D)
@@ -136,22 +218,15 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   }
 
   // ============================================================
-  // 3. Usage Gaps (Placeholder — future: query agent-memory)
+  // 3. Usage Gaps
   // ============================================================
 
-  // Future: integrate with agent-memory to find docs not referenced in last 30 days.
-  // For now, this is a placeholder that surfaces docs with no incoming links from other docs.
-  // To avoid noise on a fresh knowledge base, we only flag docs that are:
-  //   (a) Not in training-data or gap-report categories (which are inherently terminal)
-  //   (b) Either reviewed 30+ days ago OR have a grade below B (suggesting low maintenance)
-  //   (c) Have no incoming links from other knowledge docs
   const allChunks = index.listDocs();
   const referencedFiles = new Set<string>();
   for (const chunk of allChunks) {
     const linkMatches = chunk.content.matchAll(/\[[^\]]+\]\(([^)]+\.md[^)]*)\)/g);
     for (const m of linkMatches) {
       const target = m[1].split('#')[0];
-      // Resolve relative to the chunk's file path
       const resolved = path.normalize(path.join(path.dirname(chunk.filePath), target)).split(path.sep).join('/');
       referencedFiles.add(resolved);
     }
@@ -162,13 +237,10 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   for (const file of files) {
     if (file.category === 'gap-report' || file.category === 'training-data') continue;
     if (referencedFiles.has(file.path)) continue;
-
-    // Skip docs that are fresh and high-grade (they're new, not orphaned)
     if (file.lastReviewed) {
       const age = now.getTime() - new Date(file.lastReviewed).getTime();
       if (age < DAY_30 && (file.grade === 'A' || file.grade === 'B')) continue;
     }
-
     usageGaps.push({
       path: file.path,
       title: file.title,
@@ -184,10 +256,7 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   const DAY = 24 * 60 * 60 * 1000;
   const freshnessGaps: GapReportResult['freshnessGaps'] = [];
   for (const file of files) {
-    // Skip training-data (regenerated frequently; no frontmatter expected)
-    // Skip gap-reports (auto-generated; timestamp in filename is sufficient)
     if (file.category === 'training-data' || file.category === 'gap-report') continue;
-
     if (!file.lastReviewed) {
       freshnessGaps.push({
         path: file.path,
@@ -223,6 +292,21 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   for (const playbook of playbooksMissing.slice(0, 3)) {
     newDocsToAuthor.push(`knowledge/playbooks/${playbook}.md — recurring scenario not yet documented`);
   }
+  for (const domain of domainsMissing.slice(0, 3)) {
+    newDocsToAuthor.push(`knowledge/domain/${domain}.md — missing domain methodology`);
+  }
+  for (const methodology of methodologiesMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/methodologies/${methodology}.md — missing sales methodology`);
+  }
+  for (const integration of integrationsMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/integrations/${integration}.md — missing integration guide`);
+  }
+  for (const cs of caseStudiesMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/case-studies/${cs}.md — missing case study`);
+  }
+  for (const prod of productMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/product/${prod}.md — missing product documentation`);
+  }
 
   const existingDocsToRefresh: string[] = [];
   for (const gap of qualityGaps) {
@@ -236,11 +320,17 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   // Compose Markdown
   // ============================================================
 
+  const coverageGaps = {
+    industriesMissing, regionsMissing, playbooksMissing,
+    domainsMissing, agentsMissing, methodologiesMissing,
+    integrationsMissing, caseStudiesMissing, productMissing,
+  };
+
   const markdown = composeMarkdown({
     reportMonth,
     now,
     stats,
-    coverageGaps: { industriesMissing, regionsMissing, playbooksMissing },
+    coverageGaps,
     qualityGaps,
     usageGaps,
     freshnessGaps,
@@ -261,7 +351,7 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
       byCategory: stats.byCategory,
       byGrade: stats.byGrade,
     },
-    coverageGaps: { industriesMissing, regionsMissing, playbooksMissing },
+    coverageGaps,
     qualityGaps,
     usageGaps,
     freshnessGaps,
@@ -274,7 +364,12 @@ function composeMarkdown(input: {
   reportMonth: string;
   now: Date;
   stats: import('./index').KnowledgeStats;
-  coverageGaps: { industriesMissing: string[]; regionsMissing: string[]; playbooksMissing: string[] };
+  coverageGaps: {
+    industriesMissing: string[]; regionsMissing: string[]; playbooksMissing: string[];
+    domainsMissing: string[]; agentsMissing: string[];
+    methodologiesMissing: string[]; integrationsMissing: string[];
+    caseStudiesMissing: string[]; productMissing: string[];
+  };
   qualityGaps: GapReportResult['qualityGaps'];
   usageGaps: GapReportResult['usageGaps'];
   freshnessGaps: GapReportResult['freshnessGaps'];
@@ -284,7 +379,10 @@ function composeMarkdown(input: {
   const dateStr = now.toISOString().slice(0, 10);
 
   const totalGaps = coverageGaps.industriesMissing.length + coverageGaps.regionsMissing.length +
-    coverageGaps.playbooksMissing.length + qualityGaps.length + freshnessGaps.length;
+    coverageGaps.playbooksMissing.length + coverageGaps.domainsMissing.length +
+    coverageGaps.agentsMissing.length + coverageGaps.methodologiesMissing.length +
+    coverageGaps.integrationsMissing.length + coverageGaps.caseStudiesMissing.length +
+    coverageGaps.productMissing.length + qualityGaps.length + freshnessGaps.length;
 
   return `---
 title: "Monthly Knowledge Gap Report — ${reportMonth}"
@@ -301,10 +399,10 @@ total_gaps: ${totalGaps}
 
 ## 1. Executive Summary
 
-The knowledge base currently contains **${stats.totalDocs} documents** across ${Object.keys(stats.byCategory).length} categories, indexed into ${stats.totalChunks} retrievable chunks. This report identifies **${totalGaps} gaps** requiring attention: ${coverageGaps.industriesMissing.length} missing industries, ${coverageGaps.regionsMissing.length} missing regions, ${coverageGaps.playbooksMissing.length} missing playbooks, ${qualityGaps.length} quality gaps, and ${freshnessGaps.length} freshness gaps.
+The knowledge base currently contains **${stats.totalDocs} documents** across ${Object.keys(stats.byCategory).length} categories, indexed into ${stats.totalChunks} retrievable chunks. This report identifies **${totalGaps} gaps** requiring attention: ${coverageGaps.industriesMissing.length} missing industries, ${coverageGaps.regionsMissing.length} missing regions, ${coverageGaps.playbooksMissing.length} missing playbooks, ${coverageGaps.domainsMissing.length} missing domain docs, ${coverageGaps.methodologiesMissing.length} missing methodologies, ${coverageGaps.integrationsMissing.length} missing integrations, ${coverageGaps.caseStudiesMissing.length} missing case studies, ${coverageGaps.productMissing.length} missing product docs, ${qualityGaps.length} quality gaps, and ${freshnessGaps.length} freshness gaps.
 
 **Priority actions this month:**
-${recommendations.newDocsToAuthor.slice(0, 3).map(r => `- ${r}`).join('\n') || '- No new docs urgently required this month.'}
+${recommendations.newDocsToAuthor.slice(0, 5).map(r => `- ${r}`).join('\n') || '- No new docs urgently required this month.'}
 
 ## 2. Coverage Gaps
 
@@ -325,6 +423,42 @@ ${coverageGaps.regionsMissing.length > 0
 ${coverageGaps.playbooksMissing.length > 0
     ? coverageGaps.playbooksMissing.map(p => `- \`${p}\``).join('\n')
     : '_All expected playbooks are covered._'}
+
+### 2.4 Domain Methodologies Not Covered (${coverageGaps.domainsMissing.length})
+
+${coverageGaps.domainsMissing.length > 0
+    ? coverageGaps.domainsMissing.map(d => `- \`${d}\``).join('\n')
+    : '_All expected domain docs are covered._'}
+
+### 2.5 Agent Docs Not Covered (${coverageGaps.agentsMissing.length})
+
+${coverageGaps.agentsMissing.length > 0
+    ? coverageGaps.agentsMissing.map(a => `- \`${a}\``).join('\n')
+    : '_All expected agent docs are covered._'}
+
+### 2.6 Sales Methodologies Not Covered (${coverageGaps.methodologiesMissing.length})
+
+${coverageGaps.methodologiesMissing.length > 0
+    ? coverageGaps.methodologiesMissing.map(m => `- \`${m}\``).join('\n')
+    : '_All expected methodology docs are covered._'}
+
+### 2.7 Integration Guides Not Covered (${coverageGaps.integrationsMissing.length})
+
+${coverageGaps.integrationsMissing.length > 0
+    ? coverageGaps.integrationsMissing.map(i => `- \`${i}\``).join('\n')
+    : '_All expected integration docs are covered._'}
+
+### 2.8 Case Studies Not Covered (${coverageGaps.caseStudiesMissing.length})
+
+${coverageGaps.caseStudiesMissing.length > 0
+    ? coverageGaps.caseStudiesMissing.map(c => `- \`${c}\``).join('\n')
+    : '_All expected case study docs are covered._'}
+
+### 2.9 Product Docs Not Covered (${coverageGaps.productMissing.length})
+
+${coverageGaps.productMissing.length > 0
+    ? coverageGaps.productMissing.map(p => `- \`${p}\``).join('\n')
+    : '_All expected product docs are covered._'}
 
 ## 3. Quality Gaps (${qualityGaps.length})
 
@@ -393,15 +527,12 @@ ${recommendations.existingDocsToRefresh.length > 0
 
 This report was generated by the Echo agent using the following methodology:
 
-1. **Coverage gaps**: Compared existing docs against the EXPECTED_INDUSTRIES, EXPECTED_REGIONS, and EXPECTED_PLAYBOOKS baseline lists (defined in \`src/lib/knowledge/gap-report.ts\`).
+1. **Coverage gaps**: Compared existing docs against the EXPECTED_INDUSTRIES, EXPECTED_REGIONS, EXPECTED_PLAYBOOKS, EXPECTED_DOMAINS, EXPECTED_AGENTS, EXPECTED_METHODOLOGIES, EXPECTED_INTEGRATIONS, EXPECTED_CASE_STUDIES, and EXPECTED_PRODUCT baseline lists (defined in \`src/lib/knowledge/gap-report.ts\`).
 2. **Quality gaps**: Identified docs with \`grade: C\` or \`grade: D\` in frontmatter.
 3. **Usage gaps**: Identified docs with no incoming links from other knowledge docs (orphan detection).
 4. **Freshness gaps**: Identified docs with \`last_reviewed\` older than 180 days, or missing entirely.
-5. **Recommendations**: Combined the top 5 industries, top 5 regions, and top 3 playbooks into a prioritized authoring list.
+5. **Recommendations**: Combined the top gaps across all categories into a prioritized authoring list.
 
 To extend the baseline coverage lists, edit \`src/lib/knowledge/gap-report.ts\` and re-run \`npm run knowledge:gap\`.
 `;
 }
-
-// Type import shim for IDE; resolved at runtime via the actual import above.
-// (No separate KnowledgeIndex type needed — `import('./index').KnowledgeStats` is used inline.)

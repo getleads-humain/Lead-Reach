@@ -24,7 +24,7 @@ import * as path from 'path';
 export interface KnowledgeChunk {
   id: string;
   filePath: string;            // relative path from /knowledge
-  category: 'industry' | 'region' | 'playbook' | 'tool' | 'training-data' | 'gap-report';
+  category: 'industry' | 'region' | 'playbook' | 'domain' | 'methodology' | 'agent' | 'tool' | 'integration' | 'compliance' | 'case-study' | 'product' | 'template' | 'dataset' | 'training-data' | 'gap-report';
   title: string;
   section?: string;            // for markdown sections
   content: string;
@@ -261,17 +261,51 @@ function deriveCategory(relPath: string): KnowledgeChunk['category'] {
   if (relPath.startsWith('tools/')) return 'tool';
   if (relPath.startsWith('training-data/')) return 'training-data';
   if (relPath.startsWith('gap-reports/')) return 'gap-report';
-  return 'playbook';
+  if (relPath.startsWith('domain/')) return 'domain';
+  if (relPath.startsWith('compliance/')) return 'compliance';
+  if (relPath.startsWith('datasets/')) return 'dataset';
+  if (relPath.startsWith('templates/')) return 'template';
+  if (relPath.startsWith('agents/')) return 'agent';
+  if (relPath.startsWith('methodologies/')) return 'methodology';
+  if (relPath.startsWith('integrations/')) return 'integration';
+  if (relPath.startsWith('case-studies/')) return 'case-study';
+  if (relPath.startsWith('product/')) return 'product';
+  // Fallback: try to guess from path prefix
+  const topDir = relPath.split('/')[0];
+  const knownDirs: Record<string, KnowledgeChunk['category']> = {
+    'industries': 'industry',
+    'regions': 'region',
+    'playbooks': 'playbook',
+    'tools': 'tool',
+    'training-data': 'training-data',
+    'gap-reports': 'gap-report',
+    'domain': 'domain',
+    'compliance': 'compliance',
+    'datasets': 'dataset',
+    'templates': 'template',
+    'agents': 'agent',
+    'methodologies': 'methodology',
+    'integrations': 'integration',
+    'case-studies': 'case-study',
+    'product': 'product',
+  };
+  return knownDirs[topDir] || 'domain';
 }
 
 function walkKnowledgeDir(dir: string, baseDir: string = dir): { abs: string; rel: string }[] {
   const out: { abs: string; rel: string }[] = [];
   if (!fs.existsSync(dir)) return out;
+  // Directories to skip entirely
+  const skipDirs = new Set(['_reports']);
+  // Root-level files to skip (not knowledge content, just meta/authoring docs)
+  const skipRootFiles = new Set(['README.md', 'CONTRIBUTING.md', 'MANIFEST.json']);
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
     const abs = path.join(dir, entry.name);
     if (entry.isDirectory()) {
+      if (skipDirs.has(entry.name)) continue;
       out.push(...walkKnowledgeDir(abs, baseDir));
     } else if (entry.isFile()) {
+      if (skipRootFiles.has(entry.name) && dir === baseDir) continue;
       if (entry.name === 'README.md') continue;
       const rel = path.relative(baseDir, abs).split(path.sep).join('/');
       out.push({ abs, rel });

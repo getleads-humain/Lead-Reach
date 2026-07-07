@@ -66,6 +66,9 @@ export async function GET(req: Request) {
     // Also collect current stats for context
     const stats = getKnowledgeIndex().stats();
 
+    // Generate fresh structured result for the UI
+    const freshResult = generateGapReport({ now: new Date(reportMonth + '-01') });
+
     return Response.json({
       ok: true,
       reportMonth,
@@ -73,6 +76,27 @@ export async function GET(req: Request) {
       content,
       stats,
       generated: false,
+      result: {
+        generatedAt: freshResult.generatedAt,
+        reportMonth: freshResult.reportMonth,
+        reportPath: freshResult.reportPath,
+        totalGaps: freshResult.coverageGaps.industriesMissing.length +
+          freshResult.coverageGaps.regionsMissing.length +
+          freshResult.coverageGaps.playbooksMissing.length +
+          freshResult.coverageGaps.domainsMissing.length +
+          freshResult.coverageGaps.agentsMissing.length +
+          freshResult.coverageGaps.methodologiesMissing.length +
+          freshResult.coverageGaps.integrationsMissing.length +
+          freshResult.coverageGaps.caseStudiesMissing.length +
+          freshResult.coverageGaps.productMissing.length +
+          freshResult.qualityGaps.length +
+          freshResult.freshnessGaps.length,
+        coverageGaps: freshResult.coverageGaps,
+        qualityGaps: freshResult.qualityGaps,
+        usageGaps: freshResult.usageGaps,
+        freshnessGaps: freshResult.freshnessGaps,
+        recommendations: freshResult.recommendations,
+      },
     }, { status: 200 });
   } catch (err) {
     console.error('[/api/knowledge/gap-report GET] Error:', err);
@@ -95,6 +119,12 @@ export async function POST() {
         totalGaps: result.coverageGaps.industriesMissing.length +
           result.coverageGaps.regionsMissing.length +
           result.coverageGaps.playbooksMissing.length +
+          result.coverageGaps.domainsMissing.length +
+          result.coverageGaps.agentsMissing.length +
+          result.coverageGaps.methodologiesMissing.length +
+          result.coverageGaps.integrationsMissing.length +
+          result.coverageGaps.caseStudiesMissing.length +
+          result.coverageGaps.productMissing.length +
           result.qualityGaps.length +
           result.freshnessGaps.length,
         coverageGaps: result.coverageGaps,
