@@ -124,6 +124,9 @@ interface GapReportResponse {
       integrationsMissing: string[];
       caseStudiesMissing: string[];
       productMissing: string[];
+      complianceMissing: string[];
+      templatesMissing: string[];
+      datasetsMissing: string[];
     };
     qualityGaps: Array<{ path: string; title: string; grade: string; issue: string; recommendedAction: string }>;
     usageGaps: Array<{ path: string; title: string; lastReferenced: string; recommendation: string }>;

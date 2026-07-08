@@ -90,23 +90,53 @@ const EXPECTED_METHODOLOGIES = [
   'prospecting-research-methodology', 'lead-scoring-deep-dive',
   'objection-handling-framework', 'sales-playbook-design',
   'territory-planning-methodology', 'forecasting-accuracy-methodology',
+  'meddic-meddpicc-framework', 'challenger-sale-methodology',
+  'spin-selling-methodology', 'sandler-selling-system',
+  'inbound-methodology', 'value-selling-framework',
+  'consultative-selling', 'snap-selling-methodology',
 ];
 
 const EXPECTED_INTEGRATIONS = [
   'crm-integration-guide', 'email-provider-integration',
   'calendar-booking-integration', 'data-provider-integration',
   'webhook-automation-integration', 'api-reference',
+  'salesforce-integration', 'hubspot-integration',
+  'slack-teams-integration', 'zapier-automation',
+  'apollo-zoominfo-integration',
 ];
 
 const EXPECTED_CASE_STUDIES = [
   'saas-scaleup-50-to-500', 'fintech-enterprise-expansion',
   'ecommerce-dtc-growth', 'healthtech-compliance-playbook',
+  'saas-plg-to-sales-led', 'enterprise-security-vendor',
+  'manufacturing-digital-transformation', 'healthtech-hipaa-compliant-outreach',
+  'fintech-cross-border-expansion', 'edtech-university-selling',
 ];
 
 const EXPECTED_PRODUCT = [
   'leadreach-platform-overview', 'agent-pipeline-architecture',
   'data-security-privacy', 'pricing-packaging-guide',
   'onboarding-quickstart', 'release-notes',
+  'ai-agent-orchestration', 'lead-scoring-engine',
+  'outreach-automation', 'analytics-dashboard',
+  'enterprise-security',
+];
+
+const EXPECTED_COMPLIANCE = [
+  'global-regulations', 'gdpr-data-handling', 'ccpa-cpra-compliance',
+  'can-spam-cas-law', 'ai-regulations-ethics', 'soc2-iso27001',
+  'dual-use-export-controls', 'industry-specific-regulations',
+];
+
+const EXPECTED_TEMPLATES = [
+  'prompt-schemas', 'email-sequence-templates', 'icp-scoring-templates',
+  'outreach-cadence-templates', 'qualification-framework-templates',
+  'objection-handling-templates', 'report-templates',
+];
+
+const EXPECTED_DATASETS = [
+  'few-shot-examples', 'b2b-contact-attributes', 'industry-classification-codes',
+  'technographic-signals', 'buying-intent-signals', 'kpi-benchmarks',
 ];
 
 // ============================================================
@@ -133,6 +163,9 @@ export interface GapReportResult {
     integrationsMissing: string[];
     caseStudiesMissing: string[];
     productMissing: string[];
+    complianceMissing: string[];
+    templatesMissing: string[];
+    datasetsMissing: string[];
   };
   qualityGaps: Array<{ path: string; title: string; grade: string; issue: string; recommendedAction: string }>;
   usageGaps: Array<{ path: string; title: string; lastReferenced: string; recommendation: string }>;
@@ -189,6 +222,15 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   const coveredProduct = new Set(
     files.filter(f => f.category === 'product').map(f => path.basename(f.path, '.md'))
   );
+  const coveredCompliance = new Set(
+    files.filter(f => f.category === 'compliance').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredTemplates = new Set(
+    files.filter(f => f.category === 'template').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredDatasets = new Set(
+    files.filter(f => f.category === 'dataset').map(f => path.basename(f.path, '.md'))
+  );
 
   const industriesMissing = EXPECTED_INDUSTRIES.filter(i => !coveredIndustries.has(i));
   const regionsMissing = EXPECTED_REGIONS.filter(r => !coveredRegions.has(r));
@@ -199,6 +241,9 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   const integrationsMissing = EXPECTED_INTEGRATIONS.filter(i => !coveredIntegrations.has(i));
   const caseStudiesMissing = EXPECTED_CASE_STUDIES.filter(c => !coveredCaseStudies.has(c));
   const productMissing = EXPECTED_PRODUCT.filter(p => !coveredProduct.has(p));
+  const complianceMissing = EXPECTED_COMPLIANCE.filter(c => !coveredCompliance.has(c));
+  const templatesMissing = EXPECTED_TEMPLATES.filter(t => !coveredTemplates.has(t));
+  const datasetsMissing = EXPECTED_DATASETS.filter(d => !coveredDatasets.has(d));
 
   // ============================================================
   // 2. Quality Gaps (Grade C or D)
@@ -324,6 +369,7 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
     industriesMissing, regionsMissing, playbooksMissing,
     domainsMissing, agentsMissing, methodologiesMissing,
     integrationsMissing, caseStudiesMissing, productMissing,
+    complianceMissing, templatesMissing, datasetsMissing,
   };
 
   const markdown = composeMarkdown({
@@ -369,6 +415,7 @@ function composeMarkdown(input: {
     domainsMissing: string[]; agentsMissing: string[];
     methodologiesMissing: string[]; integrationsMissing: string[];
     caseStudiesMissing: string[]; productMissing: string[];
+    complianceMissing: string[]; templatesMissing: string[]; datasetsMissing: string[];
   };
   qualityGaps: GapReportResult['qualityGaps'];
   usageGaps: GapReportResult['usageGaps'];
@@ -382,7 +429,9 @@ function composeMarkdown(input: {
     coverageGaps.playbooksMissing.length + coverageGaps.domainsMissing.length +
     coverageGaps.agentsMissing.length + coverageGaps.methodologiesMissing.length +
     coverageGaps.integrationsMissing.length + coverageGaps.caseStudiesMissing.length +
-    coverageGaps.productMissing.length + qualityGaps.length + freshnessGaps.length;
+    coverageGaps.productMissing.length + coverageGaps.complianceMissing.length +
+    coverageGaps.templatesMissing.length + coverageGaps.datasetsMissing.length +
+    qualityGaps.length + freshnessGaps.length;
 
   return `---
 title: "Monthly Knowledge Gap Report — ${reportMonth}"
