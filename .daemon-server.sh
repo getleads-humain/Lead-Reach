@@ -4,7 +4,7 @@ export DATABASE_URL="file:/home/z/my-project/db/custom.db"
 export NODE_ENV="production"
 export HOSTNAME="0.0.0.0"
 export PORT=3000
-export NODE_OPTIONS="--max-old-space-size=1024"
+export NODE_OPTIONS="--max-old-space-size=2048"
 
 # Supabase credentials (required for auth middleware)
 export NEXT_PUBLIC_SUPABASE_URL="https://ssaskkftdpidfwvpgdwl.supabase.co"

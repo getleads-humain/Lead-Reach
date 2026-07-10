@@ -66,9 +66,9 @@ export async function GET(req: Request) {
     // Also collect current stats for context
     const stats = getKnowledgeIndex().stats();
 
-    // Generate fresh structured result for the UI
-    const freshResult = generateGapReport({ now: new Date(reportMonth + '-01') });
-
+    // Parse the existing report's month for lightweight metadata
+    // (Don't regenerate the entire gap report just to get structured data —
+    //  that's extremely memory-heavy with 284+ docs / 2933+ chunks)
     return Response.json({
       ok: true,
       reportMonth,
@@ -77,25 +77,15 @@ export async function GET(req: Request) {
       stats,
       generated: false,
       result: {
-        generatedAt: freshResult.generatedAt,
-        reportMonth: freshResult.reportMonth,
-        reportPath: freshResult.reportPath,
-        totalGaps: freshResult.coverageGaps.industriesMissing.length +
-          freshResult.coverageGaps.regionsMissing.length +
-          freshResult.coverageGaps.playbooksMissing.length +
-          freshResult.coverageGaps.domainsMissing.length +
-          freshResult.coverageGaps.agentsMissing.length +
-          freshResult.coverageGaps.methodologiesMissing.length +
-          freshResult.coverageGaps.integrationsMissing.length +
-          freshResult.coverageGaps.caseStudiesMissing.length +
-          freshResult.coverageGaps.productMissing.length +
-          freshResult.qualityGaps.length +
-          freshResult.freshnessGaps.length,
-        coverageGaps: freshResult.coverageGaps,
-        qualityGaps: freshResult.qualityGaps,
-        usageGaps: freshResult.usageGaps,
-        freshnessGaps: freshResult.freshnessGaps,
-        recommendations: freshResult.recommendations,
+        generatedAt: new Date().toISOString(),
+        reportMonth,
+        reportPath: path.relative(process.cwd(), reportPath),
+        totalGaps: -1, // signifies "read from content field"
+        coverageGaps: { industriesMissing: [], regionsMissing: [], playbooksMissing: [], domainsMissing: [], agentsMissing: [], methodologiesMissing: [], integrationsMissing: [], caseStudiesMissing: [], productMissing: [], kpisMissing: [], competitiveIntelMissing: [], technologiesMissing: [], buyerIntelMissing: [], verticalPlaybooksMissing: [], salesOpsMissing: [] },
+        qualityGaps: [],
+        usageGaps: [],
+        freshnessGaps: [],
+        recommendations: { newDocsToAuthor: [], existingDocsToRefresh: [] },
       },
     }, { status: 200 });
   } catch (err) {

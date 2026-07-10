@@ -12,7 +12,7 @@ set +a
 export NODE_ENV=production
 export HOSTNAME=0.0.0.0
 export PORT=3000
-export NODE_OPTIONS="--max-old-space-size=768"
+export NODE_OPTIONS="--max-old-space-size=2048"
 
 echo "[LeadReach] Starting persistent production server..."
 

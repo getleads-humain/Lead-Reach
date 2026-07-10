@@ -5,7 +5,7 @@
 # to fully detach from the controlling terminal.
 cd /home/z/my-project || exit 1
 
-export NODE_OPTIONS="--max-old-space-size=1024"
+export NODE_OPTIONS="--max-old-space-size=2048"
 export DATABASE_URL="file:/home/z/my-project/db/custom.db"
 export NODE_ENV="production"
 export HOSTNAME="0.0.0.0"
@@ -27,9 +27,9 @@ if [ -n "$OLD_PID" ] && kill -0 "$OLD_PID" 2>/dev/null; then
   kill -KILL "$OLD_PID" 2>/dev/null || true
 fi
 
-# Start standalone server with full detachment
-cd .next/standalone || exit 1
-setsid nohup node server.js </dev/null >>/tmp/next-prod.log 2>&1 &
+# Start Next.js server using `next start` (more stable than standalone for this project)
+cd /home/z/my-project || exit 1
+setsid nohup npx next start -p 3000 -H 0.0.0.0 </dev/null >>/tmp/next-prod.log 2>&1 &
 SERVER_PID=$!
 disown $SERVER_PID 2>/dev/null || true
 

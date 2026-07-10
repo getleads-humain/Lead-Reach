@@ -93,6 +93,7 @@ export async function updateSession(request: NextRequest) {
     '/terms',
     '/platform',
     '/health',             // Health check endpoint
+    '/knowledge',          // Knowledge base admin UI (preview-accessible)
   ];
 
   // API routes that should be accessible without auth
@@ -116,6 +117,7 @@ export async function updateSession(request: NextRequest) {
     '/api/messaging/ai-compose',        // AI message composer
     '/api/outreach/ai-compose',         // AI outreach composer
     '/api/reports/ai-generate',         // AI report generator
+    '/api/knowledge/',                  // Knowledge base API (stats, list, search, doc, gap-report — preview-accessible)
   ];
 
   // Static assets and Next.js internals

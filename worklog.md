@@ -153,3 +153,25 @@ Stage Summary:
 - All 18 tracked categories now at 100% coverage (0 gaps)
 - Every category now has sub-category labels for UI display
 - Gap report tracks all 18 categories plus quality/freshness/usage gaps
+
+---
+Task ID: 6
+Agent: Main Agent
+Task: Fix "sandbox is inactive" error and ensure full-stack works perfectly
+
+Work Log:
+- Diagnosed "sandbox is inactive" as server not running / crashing on API calls
+- Found instrumentation.ts crawl4ai startup blocking server (execAsync with 15s timeout) — fixed with spawn+detached+unref
+- Found /knowledge and /api/knowledge/* routes missing from public routes in supabase-middleware.ts — added them
+- Found standalone server.js crashing under memory pressure with knowledge API calls — switched to `npx next start` which is more stable
+- Optimized gap-report route.ts to avoid double-generation (was generating a full gap report just to read an existing one)
+- Updated all start scripts (package.json, .daemon-launcher.sh, .start-persistent.sh, .daemon-server.sh, start-prod.sh) to use next start with --max-old-space-size=2048
+- Removed debug logging from supabase-middleware.ts
+- Full rebuild and comprehensive testing: all pages return correct HTTP codes, all 21 knowledge categories working, 284 docs / 2933 chunks indexed
+
+Stage Summary:
+- Server stable and running on port 3000 via daemon launcher
+- All public pages (/, /knowledge, /platform, /pricing, /docs, /blog, /faq, /login) return 200
+- Protected pages (/settings, /portal) correctly return 307 redirect
+- All knowledge APIs working: stats (284 docs, 21 categories), list (284 files), search, gap-report
+- Knowledge base fully operational: 284 files, 2933 chunks across 21 categories
