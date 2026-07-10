@@ -6,15 +6,12 @@
 //
 // Usage:
 //   npx tsx scripts/knowledge/run-gap-report.ts            # current month
-//   npx tsx scripts/knowledge/run-gap-report.ts 2026-05    # specific month
 //   npx tsx scripts/knowledge/run-gap-report.ts --print    # print to stdout
 //
-// The report is saved to knowledge/_reports/gap-report-YYYY-MM.md
+// The report is saved to knowledge/gap-reports/YYYY-MM-gap-report.md
 // ============================================================
 
 import { generateGapReport } from '../../src/lib/knowledge/gap-report';
-import { getAnalyticsSummary } from '../../src/lib/knowledge/analytics';
-import { listAllKnowledge, getKnowledgeStats } from '../../src/lib/knowledge/loader';
 
 function divider(title: string) {
   console.log('\n' + '═'.repeat(70));
@@ -24,70 +21,54 @@ function divider(title: string) {
 
 // Parse args
 const args = process.argv.slice(2);
-let month: string | undefined;
 let printOnly = false;
 
 for (const arg of args) {
   if (arg === '--print' || arg === '-p') {
     printOnly = true;
-  } else if (/^\d{4}-\d{2}$/.test(arg)) {
-    month = arg;
   }
 }
 
 divider('Echo Knowledge Gap Report Generator');
 
-// Step 1: Print current state
-const stats = getKnowledgeStats();
-const docs = listAllKnowledge();
-console.log(`Knowledge base: ${stats.totalDocuments} docs, ${(stats.totalWords / 1000).toFixed(1)}K words, ${(stats.totalTokens / 1000).toFixed(1)}K tokens`);
-console.log(`By category: ${Object.entries(stats.byCategory).map(([k, v]) => `${k}=${v}`).join(', ')}`);
+// Generate the report
+divider('Generating Gap Report');
+const report = generateGapReport();
 
-// Step 2: Print analytics summary
-divider('Analytics Summary (last 6 months)');
-const analytics = getAnalyticsSummary({ monthsBack: 6 });
-console.log(`Total retrievals: ${analytics.totalRetrievals}`);
-console.log(`Distinct queries: ${analytics.distinctQueries}`);
-console.log(`Zero-result retrievals: ${analytics.zeroResultCount}`);
-console.log(`Low-relevance retrievals (topScore<30%): ${analytics.lowRelevanceCount}`);
-console.log(`Months covered: ${analytics.monthsCovered.join(', ') || 'none'}`);
-
-if (analytics.topLowRelevanceQueries.length > 0) {
-  console.log('\nTop 5 low-relevance queries:');
-  for (const q of analytics.topLowRelevanceQueries.slice(0, 5)) {
-    console.log(`  [${q.count}x, score=${(q.meanTopScore * 100).toFixed(0)}%] ${q.query}`);
-  }
-}
-
-if (analytics.topZeroResultQueries.length > 0) {
-  console.log('\nTop 5 zero-result queries:');
-  for (const q of analytics.topZeroResultQueries.slice(0, 5)) {
-    console.log(`  [${q.count}x] ${q.query}`);
-  }
-}
-
-if (analytics.topRetrievedDocs.length > 0) {
-  console.log('\nTop 5 most-retrieved docs:');
-  for (const d of analytics.topRetrievedDocs.slice(0, 5)) {
-    console.log(`  [${d.count}x] ${d.slug}`);
-  }
-}
-
-// Step 3: Generate the report
-divider(`Generating Gap Report${month ? ` for ${month}` : ''}`);
-const report = generateGapReport({ month });
-
-console.log(`\nReport generated: ${report.savedTo}`);
-console.log(`Findings:`);
-console.log(`  - Outdated docs (>6mo): ${report.findings.outdatedDocs.length}`);
-console.log(`  - Missing industries: ${report.findings.missingIndustries.length}`);
-console.log(`  - Missing regions: ${report.findings.missingRegions.length}`);
-console.log(`  - Top low-relevance queries: ${report.findings.topLowRelevanceQueries.length}`);
-console.log(`  - Top zero-result queries: ${report.findings.topZeroResultQueries.length}`);
+console.log(`\nReport generated: ${report.reportPath}`);
+console.log(`Report month: ${report.reportMonth}`);
+console.log(`Total docs: ${report.stats.totalDocs}`);
+console.log(`Total chunks: ${report.stats.totalChunks}`);
+console.log(`\nCoverage Gaps:`);
+console.log(`  - Missing industries: ${report.coverageGaps.industriesMissing.length}`);
+console.log(`  - Missing regions: ${report.coverageGaps.regionsMissing.length}`);
+console.log(`  - Missing playbooks: ${report.coverageGaps.playbooksMissing.length}`);
+console.log(`  - Missing domains: ${report.coverageGaps.domainsMissing.length}`);
+console.log(`  - Missing agents: ${report.coverageGaps.agentsMissing.length}`);
+console.log(`  - Missing methodologies: ${report.coverageGaps.methodologiesMissing.length}`);
+console.log(`  - Missing integrations: ${report.coverageGaps.integrationsMissing.length}`);
+console.log(`  - Missing case studies: ${report.coverageGaps.caseStudiesMissing.length}`);
+console.log(`  - Missing product docs: ${report.coverageGaps.productMissing.length}`);
+console.log(`  - Missing compliance: ${report.coverageGaps.complianceMissing.length}`);
+console.log(`  - Missing templates: ${report.coverageGaps.templatesMissing.length}`);
+console.log(`  - Missing datasets: ${report.coverageGaps.datasetsMissing.length}`);
+console.log(`  - Missing KPIs: ${report.coverageGaps.kpisMissing.length}`);
+console.log(`  - Missing competitive intel: ${report.coverageGaps.competitiveIntelMissing.length}`);
+console.log(`  - Missing technologies: ${report.coverageGaps.technologiesMissing.length}`);
+console.log(`  - Missing buyer intel: ${report.coverageGaps.buyerIntelMissing.length}`);
+console.log(`  - Missing vertical playbooks: ${report.coverageGaps.verticalPlaybooksMissing.length}`);
+console.log(`  - Missing sales ops: ${report.coverageGaps.salesOpsMissing.length}`);
+console.log(`\nQuality Gaps: ${report.qualityGaps.length}`);
+console.log(`Freshness Gaps: ${report.freshnessGaps.length}`);
 
 console.log('\nRecommendations:');
-for (const rec of report.findings.recommendations) {
-  console.log(`  • ${rec}`);
+console.log(`  New docs to author: ${report.recommendations.newDocsToAuthor.length}`);
+for (const rec of report.recommendations.newDocsToAuthor.slice(0, 10)) {
+  console.log(`    • ${rec}`);
+}
+console.log(`  Existing docs to refresh: ${report.recommendations.existingDocsToRefresh.length}`);
+for (const rec of report.recommendations.existingDocsToRefresh.slice(0, 5)) {
+  console.log(`    • ${rec}`);
 }
 
 if (printOnly) {

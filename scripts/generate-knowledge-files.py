@@ -1,2595 +1,376 @@
 #!/usr/bin/env python3
-"""Generate remaining knowledge base files for LeadReach."""
+"""
+Knowledge Base Expansion Script
+================================
+Generates all new knowledge markdown files for the LeadReach platform.
+Creates files across 6 new categories and fills gaps in existing categories.
+"""
+
 import os
+import sys
+from datetime import date
 
 KNOWLEDGE_DIR = "/home/z/my-project/knowledge"
+TODAY = date.today().isoformat()
 
-def write_file(rel_path, content):
-    full_path = os.path.join(KNOWLEDGE_DIR, rel_path)
-    os.makedirs(os.path.dirname(full_path), exist_ok=True)
-    with open(full_path, 'w') as f:
+def write_md(rel_path: str, frontmatter: dict, body: str):
+    """Write a markdown file with YAML frontmatter."""
+    abs_path = os.path.join(KNOWLEDGE_DIR, rel_path)
+    os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+    fm_lines = ["---"]
+    for k, v in frontmatter.items():
+        if isinstance(v, list):
+            fm_lines.append(f"{k}: [{', '.join(v)}]")
+        elif isinstance(v, str) and ('"' in v or ':' in v or '#' in v):
+            fm_lines.append(f'{k}: "{v}"')
+        else:
+            fm_lines.append(f"{k}: {v}")
+    fm_lines.append("---")
+    content = "\n".join(fm_lines) + "\n\n" + body + "\n"
+    with open(abs_path, "w") as f:
         f.write(content)
-    print(f"  Created: {rel_path} ({len(content.splitlines())} lines)")
-
-# ── INTEGRATIONS ──────────────────────────────────────────────
-
-write_file("integrations/salesforce-integration.md", """---
-title: "Salesforce Integration"
-category: integration
-grade: A
-last_reviewed: 2026-07-08
-tags: [salesforce, crm, sfdc, integration, api, oauth]
----
-
-# Salesforce Integration
-
-## 1. Overview
-
-LeadReach integrates with Salesforce CRM to provide bidirectional data synchronization between the LeadReach agent pipeline and Salesforce objects. This integration enables sales teams to leverage AI-generated insights directly within their existing CRM workflow, while ensuring that LeadReach agents have access to the latest account and contact data from Salesforce.
-
-## 2. Authentication
-
-### OAuth 2.0 Configuration
-
-LeadReach uses Salesforce OAuth 2.0 for secure authentication:
-
-| Parameter | Value |
-|-----------|-------|
-| Auth URL | `https://login.salesforce.com/services/oauth2/authorize` |
-| Token URL | `https://login.salesforce.com/services/oauth2/token` |
-| Scope | `api refresh_token offline_access` |
-| Callback URL | `https://app.leadreach.ai/api/integrations/salesforce/callback` |
-
-### Connected App Setup
-
-1. Navigate to Setup > App Manager > New Connected App
-2. Set callback URL to LeadReach callback endpoint
-3. Enable OAuth scopes: api, refresh_token, offline_access
-4. Set consumer key and secret in LeadReach integration settings
-5. Test connection via LeadReach integration health check
-
-### Token Refresh
-
-- Access tokens expire every 1 hour
-- Refresh tokens are used automatically by LeadReach
-- If refresh fails, re-authorization is required
-- Monitor token health via `/api/integrations/salesforce/health`
-
-## 3. Data Synchronization
-
-### Lead Sync (LeadReach → Salesforce)
-
-| LeadReach Field | Salesforce Field | Direction |
-|-----------------|------------------|-----------|
-| company_name | Company | LR → SF |
-| contact_email | Email | LR → SF |
-| contact_name | FirstName + LastName | LR → SF |
-| icp_score | LeadReach_ICP_Score__c | LR → SF |
-| agent_insights | LeadReach_Insights__c | LR → SF |
-| lead_source | LeadSource | LR → SF |
-| engagement_score | LeadReach_Engagement__c | LR → SF |
-
-### Contact Sync (Bidirectional)
-
-| LeadReach Field | Salesforce Field | Direction |
-|-----------------|------------------|-----------|
-| email | Email | Bidirectional |
-| phone | Phone | Bidirectional |
-| title | Title | Bidirectional |
-| department | Department | Bidirectional |
-| linkedin_url | LinkedIn_URL__c | Bidirectional |
-| last_activity | Last_Activity_Date__c | SF → LR |
-| owner_id | OwnerId | SF → LR |
-
-### Opportunity Sync (Salesforce → LeadReach)
-
-| Salesforce Field | LeadReach Field | Direction |
-|------------------|-----------------|-----------|
-| Id | sf_opportunity_id | SF → LR |
-| Amount | deal_value | SF → LR |
-| StageName | pipeline_stage | SF → LR |
-| CloseDate | expected_close_date | SF → LR |
-| Probability | win_probability | SF → LR |
-| Type | deal_type | SF → LR |
-
-### Account Sync (Bidirectional)
-
-| LeadReach Field | Salesforce Field | Direction |
-|-----------------|------------------|-----------|
-| company_domain | Website | Bidirectional |
-| employee_count | NumberOfEmployees | Bidirectional |
-| industry | Industry | Bidirectional |
-| annual_revenue | AnnualRevenue | Bidirectional |
-| technographic | Tech_Stack__c | LR → SF |
-| intent_signals | Intent_Signals__c | LR → SF |
-
-## 4. API Integration Patterns
-
-### REST API (Real-time)
-
-```python
-# Example: Create lead in Salesforce from LeadReach
-import requests
-
-def create_sf_lead(access_token, instance_url, lead_data):
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    payload = {
-        'Company': lead_data['company_name'],
-        'Email': lead_data['contact_email'],
-        'FirstName': lead_data['first_name'],
-        'LastName': lead_data['last_name'],
-        'LeadSource': 'LeadReach AI',
-        'LeadReach_ICP_Score__c': lead_data['icp_score'],
-        'LeadReach_Insights__c': lead_data['agent_insights'],
-    }
-    response = requests.post(
-        f'{instance_url}/services/data/v59.0/sobjects/Lead',
-        headers=headers,
-        json=payload
-    )
-    return response.json()
-```
-
-### Bulk API 2.0 (Batch Operations)
-
-For large-scale data sync (>200 records), LeadReach uses Salesforce Bulk API 2.0:
-
-1. Create a job via `POST /services/data/v59.0/jobs/ingest`
-2. Upload data via `PUT /jobs/ingest/{jobId}/batches`
-3. Close job via `PATCH /jobs/ingest/{jobId}`
-4. Monitor via `GET /jobs/ingest/{jobId}`
-
-### Streaming API (Real-time Events)
-
-LeadReach subscribes to Salesforce PushTopics for real-time updates:
-- Lead conversion events
-- Opportunity stage changes
-- Account updates
-- Task completion events
-
-## 5. Custom Objects
-
-### LeadReach Activity Log
-
-| Field | Type | Description |
-|-------|------|-------------|
-| LeadReach_Activity__c | Custom Object | Tracks all LeadReach agent activities |
-| Agent_Name__c | Picklist | Atlas, Scout, Forge, Sage, Judge, Bard, Flow, Echo |
-| Activity_Type__c | Picklist | Enrichment, Scoring, Outreach, Qualification |
-| Activity_Details__c | Long Text | JSON details of agent action |
-| Related_Lead__c | Lookup(Lead) | Associated Lead |
-| Related_Contact__c | Lookup(Contact) | Associated Contact |
-| Related_Account__c | Lookup(Account) | Associated Account |
-| Activity_Timestamp__c | DateTime | When activity occurred |
-
-## 6. Workflow Integration
-
-### Lead Routing Rules
-
-When LeadReach qualifies a lead, the following Salesforce flow is triggered:
-
-1. LeadReach sends qualification event to Salesforce
-2. Salesforce Flow evaluates ICP score and assigns to appropriate sales rep
-3. Task is created for assigned rep with LeadReach insights
-4. Notification sent via Slack/Email to rep
-5. LeadReach monitors follow-up activity via Salesforce events
-
-### Escalation Rules
-
-| Condition | Action |
-|-----------|--------|
-| ICP Score > 85 + No response in 24h | Escalate to Sales Manager |
-| Hot lead + Assigned rep offline | Route to pool |
-| Enterprise lead + No stage change in 7d | Alert VP Sales |
-| LeadReach disqualification overridden | Flag for review |
-
-## 7. Rate Limits & Best Practices
-
-| API Type | Rate Limit | Recommendation |
-|----------|-----------|---------------|
-| REST API | 100,000/day | Use for real-time individual operations |
-| Bulk API 2.0 | 5,000 jobs/24h | Use for batch syncs > 200 records |
-| Streaming | 20 PushTopics | Subscribe only to essential events |
-| Composite API | 25 subqueries/call | Use for related object creation |
-
-### Optimization Strategies
-
-1. **Batch Operations**: Group multiple record operations into composite or collection API calls
-2. **Caching**: Cache frequently accessed metadata (picklist values, record types) locally
-3. **Incremental Sync**: Use `LastModifiedDate` for delta syncs instead of full refreshes
-4. **Error Handling**: Implement exponential backoff for API limit errors (HTTP 503)
-5. **Field-Level Security**: Respect Salesforce FLS; check accessibility before writing
-
-## 8. Data Quality
-
-### Deduplication Rules
-
-LeadReach applies the following dedup rules before writing to Salesforce:
-
-1. Email match: Exact match on Email field (primary)
-2. Domain + Name: Company domain + contact name (secondary)
-3. Salesforce ID: Direct SF ID match if previously synced
-4. Matching rules respect Salesforce duplicate rules configuration
-
-### Data Enrichment Flow
-
-1. Scout discovers new prospect
-2. Forge enriches with firmographic/technographic data
-3. Judge scores against ICP
-4. If score > threshold, sync to Salesforce as new Lead
-5. If existing Lead/Contact, update with enrichment data
-6. Sage research generates account insights attached as Activity
-
-## 9. Monitoring & Troubleshooting
-
-### Health Check Endpoints
-
-| Endpoint | Purpose |
-|----------|---------|
-| `/api/integrations/salesforce/health` | Connection status, token validity |
-| `/api/integrations/salesforce/sync-status` | Last sync timestamp, record counts |
-| `/api/integrations/salesforce/errors` | Recent error log |
-
-### Common Issues
-
-| Issue | Cause | Resolution |
-|-------|-------|------------|
-| 401 Unauthorized | Token expired | Re-authorize via OAuth flow |
-| 400 Bad Request | Missing required field | Check field mapping config |
-| 503 Service Unavailable | API limit exceeded | Wait and retry with backoff |
-| Entity is deleted | SF record deleted | Update LeadReach reference |
-| INSUFFICIENT_ACCESS | FLS or sharing rule | Check user permissions |
-
-## 10. Security Considerations
-
-- All data in transit encrypted via TLS 1.3
-- OAuth tokens stored encrypted at rest
-- API access restricted to named credentials
-- Field-level security respected per Salesforce profiles
-- Audit trail maintained in LeadReach Activity Log
-- PII handling complies with GDPR/CCPA requirements
-- Integration user follows least-privilege principle
-""")
-
-write_file("integrations/hubspot-integration.md", """---
-title: "HubSpot Integration"
-category: integration
-grade: A
-last_reviewed: 2026-07-08
-tags: [hubspot, crm, integration, api, contacts, deals]
----
-
-# HubSpot Integration
-
-## 1. Overview
-
-LeadReach integrates with HubSpot CRM to enable marketing and sales teams using HubSpot to leverage AI-driven prospecting, enrichment, and outreach directly within their HubSpot environment. This integration supports bidirectional contact and deal synchronization, list management, and engagement tracking.
-
-## 2. Authentication
-
-### OAuth 2.0 Setup
-
-| Parameter | Value |
-|-----------|-------|
-| Auth URL | `https://app.hubspot.com/oauth/authorize` |
-| Token URL | `https://api.hubapi.com/oauth/v1/token` |
-| Scopes | `contacts crm.objects.contacts.read crm.objects.contacts.write crm.objects.deals.read crm.objects.deals.write` |
-| Redirect URI | `https://app.leadreach.ai/api/integrations/hubspot/callback` |
-
-### Private App Token (Alternative)
-
-For enterprise customers preferring server-to-server auth:
-1. Create Private App in HubSpot Settings > Integrations > Private Apps
-2. Assign required scopes
-3. Copy access token to LeadReach integration settings
-4. Token does not expire unless revoked
-
-## 3. Object Mapping
-
-### Contacts
-
-| LeadReach Field | HubSpot Property | Direction |
-|-----------------|------------------|-----------|
-| email | email | Bidirectional |
-| first_name | firstname | Bidirectional |
-| last_name | lastname | Bidirectional |
-| company | company | Bidirectional |
-| phone | phone | Bidirectional |
-| job_title | jobtitle | Bidirectional |
-| icp_score | leadreach_icp_score | LR → HS |
-| agent_insights | leadreach_insights | LR → HS |
-| last_enriched | leadreach_last_enriched | LR → HS |
-
-### Companies
-
-| LeadReach Field | HubSpot Property | Direction |
-|-----------------|------------------|-----------|
-| domain | domain | Bidirectional |
-| name | name | Bidirectional |
-| industry | industry | Bidirectional |
-| employee_count | numberofemployees | Bidirectional |
-| annual_revenue | annualrevenue | Bidirectional |
-| technographic | leadreach_tech_stack | LR → HS |
-| intent_score | leadreach_intent_score | LR → HS |
-
-### Deals
-
-| HubSpot Property | LeadReach Field | Direction |
-|------------------|-----------------|-----------|
-| dealname | deal_name | Bidirectional |
-| amount | deal_value | Bidirectional |
-| dealstage | pipeline_stage | Bidirectional |
-| closedate | expected_close_date | Bidirectional |
-| pipeline | pipeline_name | HS → LR |
-| hubspot_owner_id | owner_id | HS → LR |
-
-## 4. API Integration
-
-### Contacts API
-
-```python
-# Create or update contact in HubSpot
-import requests
-
-def upsert_hubspot_contact(access_token, contact_data):
-    headers = {
-        'Authorization': f'Bearer {access_token}',
-        'Content-Type': 'application/json'
-    }
-    payload = {
-        'properties': {
-            'email': contact_data['email'],
-            'firstname': contact_data['first_name'],
-            'lastname': contact_data['last_name'],
-            'company': contact_data['company'],
-            'leadreach_icp_score': contact_data['icp_score'],
-            'leadreach_insights': contact_data['agent_insights'],
-        }
-    }
-    # Use email as dedup key
-    response = requests.post(
-        'https://api.hubapi.com/crm/v3/objects/contacts',
-        headers=headers,
-        json=payload
-    )
-    return response.json()
-```
-
-### Batch Operations
-
-For bulk syncs, HubSpot Batch API supports up to 100 records per call:
-- `POST /crm/v3/objects/contacts/batch/create`
-- `POST /crm/v3/objects/contacts/batch/update`
-- `POST /crm/v3/objects/contacts/batch/upsert`
-
-### List Management
-
-LeadReach can dynamically manage HubSpot lists:
-1. Auto-add ICP-qualified contacts to Active List
-2. Remove disqualified contacts automatically
-3. Create segment-specific lists for campaign targeting
-4. Sync list membership based on engagement signals
-
-## 5. Engagement Tracking
-
-### Activity Sync
-
-| Activity Type | HubSpot Event | Sync Direction |
-|---------------|---------------|---------------|
-| Email sent | Email send event | LR → HS |
-| Email opened | Email open event | LR → HS |
-| Email clicked | Email click event | LR → HS |
-| Meeting booked | Meeting event | Bidirectional |
-| Call completed | Call event | Bidirectional |
-| Web visit | Page view event | LR → HS |
-
-### Timeline Integration
-
-LeadReach agent activities appear on the HubSpot contact timeline:
-- Agent enrichment results
-- ICP score changes
-- Qualification decisions
-- Outreach activities
-- Research summaries
-
-## 6. Workflow Triggers
-
-### LeadReach → HubSpot Automations
-
-| Trigger | HubSpot Action |
-|---------|----------------|
-| ICP Score > 80 | Add to Hot Leads list + Notify owner |
-| New prospect discovered | Create contact + Enroll in sequence |
-| Qualification complete | Update deal stage + Create task |
-| Engagement spike | Trigger re-engagement workflow |
-| Agent finds trigger event | Update company notes + Alert team |
-
-### HubSpot → LeadReach Triggers
-
-| HubSpot Event | LeadReach Action |
-|---------------|------------------|
-| Form submission | Enrich contact via Forge agent |
-| Meeting booked | Update pipeline via Flow agent |
-| Deal stage change | Recalculate forecast via Echo agent |
-| Contact property change | Re-score via Judge agent |
-
-## 7. Rate Limits
-
-| API Tier | Limit | Burst |
-|----------|-------|-------|
-| Free/Starter | 100 req/10sec | 100 |
-| Professional | 150 req/10sec | 150 |
-| Enterprise | 200 req/10sec | 200 |
-
-### Best Practices
-
-1. Use batch APIs for bulk operations
-2. Implement exponential backoff on 429 errors
-3. Cache contact IDs to avoid duplicate lookups
-4. Use webhooks for real-time updates instead of polling
-5. Respect HubSpot subscription types for email compliance
-
-## 8. Setup Guide
-
-1. Navigate to Settings > Integrations in LeadReach
-2. Click "Connect HubSpot"
-3. Authorize via OAuth or paste Private App token
-4. Configure field mapping
-5. Set sync direction preferences
-6. Enable workflow triggers
-7. Run initial data sync
-8. Verify in HubSpot that LeadReach properties are visible
-9. Configure list management rules
-10. Test end-to-end workflow with sample contact
-
-## 9. Troubleshooting
-
-| Issue | Resolution |
-|-------|------------|
-| 401 Unauthorized | Re-authorize OAuth token |
-| 409 Conflict | Contact exists; use update instead of create |
-| 429 Rate Limited | Implement backoff; reduce sync frequency |
-| Property not found | Create custom property in HubSpot first |
-| Sync lag | Check webhook delivery; verify API health |
-
-## 10. Data Security
-
-- OAuth tokens encrypted at rest (AES-256)
-- Data in transit secured via TLS 1.3
-- Integration respects HubSpot portal data boundaries
-- PII handling per GDPR/CCPA compliance
-- Activity audit log maintained for 90 days
-- Integration user follows least-privilege principle
-""")
-
-write_file("integrations/slack-teams-integration.md", """---
-title: "Slack & Microsoft Teams Integration"
-category: integration
-grade: A
-last_reviewed: 2026-07-08
-tags: [slack, teams, notifications, alerts, messaging, real-time]
----
-
-# Slack & Microsoft Teams Integration
-
-## 1. Overview
-
-LeadReach integrates with Slack and Microsoft Teams to deliver real-time notifications about high-value prospect activities, agent insights, and pipeline events directly into team communication channels. This ensures that sales teams never miss critical moments and can take immediate action on AI-identified opportunities.
-
-## 2. Slack Integration
-
-### App Configuration
-
-1. Create Slack App at api.slack.com/apps
-2. Enable Incoming Webhooks
-3. Enable Bot Token Scopes: `chat:write`, `channels:read`, `groups:read`
-4. Install App to Workspace
-5. Copy Bot Token (xoxb-) to LeadReach settings
-6. Invite @LeadReach bot to desired channels
-
-### Webhook Setup
-
-```json
-{
-  "channel": "#leadreach-alerts",
-  "username": "LeadReach AI",
-  "icon_emoji": ":zap:",
-  "text": "🔥 Hot Lead Alert"
-}
-```
-
-### Notification Types
-
-| Notification | Channel | Priority |
-|-------------|---------|----------|
-| Hot lead identified | #hot-leads | 🔴 Critical |
-| ICP score > 85 | #qualified-leads | 🟠 High |
-| Trigger event detected | #trigger-events | 🟡 Medium |
-| Agent enrichment complete | #enrichment-updates | 🔵 Low |
-| Daily pipeline digest | #pipeline-summary | ⚪ Info |
-| Deal at risk alert | #deal-risk | 🔴 Critical |
-
-### Message Format
-
-```json
-{
-  "blocks": [
-    {
-      "type": "header",
-      "text": {
-        "type": "plain_text",
-        "text": "🔥 Hot Lead: Acme Corp"
-      }
-    },
-    {
-      "type": "section",
-      "fields": [
-        {"type": "mrkdwn", "text": "*ICP Score:* 92/100"},
-        {"type": "mrkdwn", "text": "*Contact:* Jane Smith, CTO"},
-        {"type": "mrkdwn", "text": "*Trigger:* Series C funding announced"},
-        {"type": "mrkdwn", "text": "*Est. ACV:* $150K"}
-      ]
-    },
-    {
-      "type": "actions",
-      "elements": [
-        {
-          "type": "button",
-          "text": {"type": "plain_text", "text": "View in LeadReach"},
-          "url": "https://app.leadreach.ai/leads/acme-corp"
-        },
-        {
-          "type": "button",
-          "text": {"type": "plain_text", "text": "Start Outreach"},
-          "action_id": "start_outreach"
-        }
-      ]
-    }
-  ]
-}
-```
-
-### Interactive Actions
-
-| Action | Description |
-|--------|-------------|
-| View in LeadReach | Opens lead profile in browser |
-| Start Outreach | Triggers Bard agent to begin sequence |
-| Enrich Contact | Triggers Forge agent for additional data |
-| Schedule Meeting | Opens calendar booking flow |
-| Dismiss | Marks alert as reviewed |
-
-## 3. Microsoft Teams Integration
-
-### App Registration
-
-1. Register app in Azure AD > App Registrations
-2. Configure redirect URI: `https://app.leadreach.ai/api/integrations/teams/callback`
-3. Add API permissions: `Team.ReadBasic.All`, `Channel.ReadBasic.All`, `ChatMessage.Send`
-4. Grant admin consent
-5. Copy Application ID and Secret to LeadReach settings
-
-### Webhook (Incoming Webhook)
-
-1. In Teams channel, click ... > Connectors > Incoming Webhook
-2. Name: "LeadReach AI"
-3. Copy webhook URL to LeadReach settings
-
-### Adaptive Card Format
-
-```json
-{
-  "type": "AdaptiveCard",
-  "version": "1.4",
-  "body": [
-    {
-      "type": "Container",
-      "style": "emphasis",
-      "items": [
-        {
-          "type": "ColumnSet",
-          "columns": [
-            {
-              "type": "Column",
-              "items": [
-                {
-                  "type": "TextBlock",
-                  "text": "🔥 Hot Lead Alert",
-                  "weight": "Bolder",
-                  "size": "Large"
-                }
-              ]
-            }
-          ]
-        }
-      ]
-    },
-    {
-      "type": "FactSet",
-      "facts": [
-        {"title": "Company", "value": "Acme Corp"},
-        {"title": "ICP Score", "value": "92/100"},
-        {"title": "Contact", "value": "Jane Smith, CTO"},
-        {"title": "Trigger", "value": "Series C funding"},
-        {"title": "Est. ACV", "value": "$150K"}
-      ]
-    }
-  ],
-  "actions": [
-    {
-      "type": "Action.OpenUrl",
-      "title": "View in LeadReach",
-      "url": "https://app.leadreach.ai/leads/acme-corp"
-    }
-  ]
-}
-```
-
-### Channel Routing
-
-| Team | Channel | Alert Type |
-|------|---------|------------|
-| Sales | hot-leads | ICP > 85 |
-| Sales | deal-alerts | Stage changes |
-| Marketing | mql-alerts | MQL conversions |
-| SDR | prospecting | New prospects |
-| Leadership | daily-digest | Summary |
-
-## 4. Alert Configuration
-
-### Routing Rules
-
-```yaml
-alert_rules:
-  - name: hot_lead
-    conditions:
-      - icp_score >= 85
-      - lead_status == "new"
-    channels:
-      - slack: "#hot-leads"
-      - teams: "Sales>hot-leads"
-    priority: critical
-    cooldown: 4h  # Don't re-alert for same company within 4h
-
-  - name: trigger_event
-    conditions:
-      - trigger_type IN [funding, executive_change, expansion]
-    channels:
-      - slack: "#trigger-events"
-    priority: high
-    cooldown: 24h
-
-  - name: deal_at_risk
-    conditions:
-      - deal_stage == "negotiation"
-      - days_in_stage > 14
-      - no_activity_days > 5
-    channels:
-      - slack: "#deal-risk"
-      - teams: "Sales>deal-risk"
-    priority: critical
-    cooldown: 0h  # Always alert
-```
-
-### Digest Configuration
-
-| Digest | Frequency | Channel | Content |
-|--------|-----------|---------|---------|
-| Daily Pipeline | 8:00 AM | #pipeline-summary | Pipeline changes, new leads |
-| Weekly Performance | Monday 9:00 AM | #weekly-review | Agent metrics, KPIs |
-| Real-time Hot | Immediate | #hot-leads | ICP > 85 leads |
-
-## 5. Rate Limits
-
-| Platform | Limit | Recommendation |
-|----------|-------|---------------|
-| Slack Webhook | 1 msg/sec/channel | Batch non-urgent alerts |
-| Slack API | 1 req/sec (Tier 2) | Use async posting |
-| Teams Webhook | 100 msg/min | Batch within 1-second windows |
-| Teams API | 30 req/30sec | Cache channel IDs |
-
-## 6. Setup Guide
-
-### Slack Setup (5 minutes)
-
-1. LeadReach Settings > Integrations > Slack
-2. Click "Add to Slack"
-3. Select workspace and channels
-4. Configure alert routing rules
-5. Test with sample notification
-
-### Teams Setup (10 minutes)
-
-1. LeadReach Settings > Integrations > Microsoft Teams
-2. Click "Connect Teams"
-3. Admin consent for Azure AD app
-4. Select team and channels
-5. Configure adaptive card templates
-6. Test with sample notification
-
-## 7. Troubleshooting
-
-| Issue | Cause | Resolution |
-|-------|-------|------------|
-| No notifications | Bot not in channel | Invite @LeadReach to channel |
-| 403 Forbidden | Missing scope | Re-install with correct scopes |
-| Rate limited | Too many messages | Add cooldown rules |
-| Card rendering error | Invalid Adaptive Card | Validate JSON schema |
-| Duplicate alerts | Missing dedup rule | Add cooldown configuration |
-""")
-
-write_file("integrations/zapier-automation.md", """---
-title: "Zapier & Make Automation"
-category: integration
-grade: A
-last_reviewed: 2026-07-08
-tags: [zapier, make, integromat, automation, workflows, no-code]
----
-
-# Zapier & Make Automation
-
-## 1. Overview
-
-LeadReach provides native integration with Zapier and Make (formerly Integromat) to enable no-code workflow automation. Users can create custom automations that connect LeadReach with 5,000+ apps without writing code, enabling powerful workflows like lead routing, CRM sync, Slack notifications, and spreadsheet logging.
-
-## 2. Zapier Integration
-
-### LeadReach Zapier App
-
-LeadReach is available as a public Zapier app with the following triggers and actions:
-
-#### Triggers (LeadReach → Zapier)
-
-| Trigger | Description | Sample Data |
-|---------|-------------|-------------|
-| New Qualified Lead | When ICP score exceeds threshold | Company, contact, score, insights |
-| New Prospect Discovered | When Scout finds a new prospect | Company, signals, source |
-| Lead Score Updated | When ICP score changes | Previous score, new score, delta |
-| Trigger Event Detected | When a buying signal is found | Event type, company, date |
-| Outreach Sequence Sent | When Bard sends a sequence | Sequence ID, channels, contacts |
-| Deal Stage Changed | When pipeline stage updates | Previous stage, new stage, deal |
-
-#### Actions (Zapier → LeadReach)
-
-| Action | Description | Required Fields |
-|--------|-------------|-----------------|
-| Enrich Contact | Trigger Forge enrichment | Email or domain |
-| Score Lead | Trigger Judge scoring | Company, contact data |
-| Create Prospect | Add to LeadReach pipeline | Company, contact info |
-| Start Outreach | Launch Bard sequence | Contact, sequence template |
-| Search Knowledge | Query knowledge base | Query string, category |
-
-#### Searches
-
-| Search | Description | Returns |
-|--------|-------------|---------|
-| Find Company | Look up company in LeadReach | Company profile, score |
-| Find Contact | Look up contact | Contact details, engagement |
-| Get ICP Score | Retrieve current score | Score, breakdown, grade |
-
-### Popular Zap Templates
-
-#### 1. LeadReach → Salesforce (New Qualified Lead)
-```
-Trigger: New Qualified Lead (ICP > 80)
-→ Action: Create/Update Lead in Salesforce
-→ Action: Send Slack Notification
-```
-
-#### 2. LeadReach → Google Sheets (Pipeline Tracker)
-```
-Trigger: New Prospect Discovered
-→ Action: Add Row in Google Sheets
-  Columns: Company, Contact, ICP Score, Date, Source
-```
-
-#### 3. LeadReach → HubSpot (Enrichment Sync)
-```
-Trigger: Lead Score Updated
-→ Filter: Only if score increased by >10
-→ Action: Update Contact in HubSpot
-→ Action: Add to HubSpot List
-```
-
-#### 4. Typeform → LeadReach (Inbound Form Capture)
-```
-Trigger: New Typeform Entry
-→ Action: Create Prospect in LeadReach
-→ Action: Enrich Contact
-→ Action: Score Lead
-→ Filter: If ICP > 70
-→ Action: Send Slack Alert
-```
-
-#### 5. LeadReach → Mailchimp (Nurture Unqualified)
-```
-Trigger: New Qualified Lead (ICP < 50)
-→ Action: Add to Mailchimp List (Nurture)
-→ Trigger: Score Updated > 70
-→ Action: Remove from Mailchimp List
-→ Action: Add to Salesforce
-```
-
-### Zap Configuration Best Practices
-
-1. **Use Filters**: Always add filter steps to prevent unnecessary API calls
-2. **Add Delay Steps**: For sequences requiring timing (e.g., follow-up after 24h)
-3. **Error Handling**: Set up fallback paths for API failures
-4. **Rate Limits**: Stay within LeadReach API limits (100 req/min)
-5. **Data Validation**: Use Formatter steps to clean/validate data before sending
-
-## 3. Make (Integromat) Integration
-
-### LeadReach Make Module
-
-LeadReach provides custom Make modules with the following capabilities:
-
-#### Watch Modules (Triggers)
-
-| Module | Polling Interval | Webhook Available |
-|--------|-----------------|-------------------|
-| Watch Qualified Leads | 15 min | Yes |
-| Watch New Prospects | 15 min | Yes |
-| Watch Score Changes | 15 min | Yes |
-| Watch Trigger Events | 15 min | Yes |
-
-#### Action Modules
-
-| Module | Description |
-|--------|-------------|
-| Enrich Contact | Trigger Forge enrichment |
-| Score Lead | Trigger Judge scoring |
-| Create Prospect | Add to pipeline |
-| Start Outreach | Launch sequence |
-| Search Knowledge | Query knowledge base |
-| Get Agent Status | Check agent health |
-
-#### Make Scenario Templates
-
-##### Multi-Channel Lead Routing
-```yaml
-scenario:
-  trigger: Watch Qualified Leads (webhook)
-  router:
-    - path: enterprise
-      filter: employee_count > 500 AND icp_score > 80
-      actions:
-        - Create Salesforce Lead
-        - Send Slack Alert (#enterprise-leads)
-        - Start Outreach (executive-sequence)
-    - path: mid-market
-      filter: employee_count 50-500 AND icp_score > 70
-      actions:
-        - Create HubSpot Contact
-        - Send Slack Alert (#mid-market-leads)
-        - Start Outreach (standard-sequence)
-    - path: nurture
-      filter: icp_score < 70
-      actions:
-        - Add to Mailchimp List
-        - Log to Google Sheets
-```
-
-##### Daily Pipeline Report
-```yaml
-scenario:
-  trigger: Schedule (daily 8:00 AM)
-  actions:
-    - Get Pipeline Summary (LeadReach)
-    - Aggregate by stage
-    - Create Slack message (rich format)
-    - Send to #pipeline-daily
-```
-
-## 4. Webhook Configuration
-
-### Outbound Webhooks (LeadReach → External)
-
-```json
-{
-  "url": "https://hooks.zapier.com/hooks/catch/12345/abcdef/",
-  "events": ["lead.qualified", "trigger.detected"],
-  "payload_template": {
-    "event": "{{event_type}}",
-    "company": "{{company_name}}",
-    "contact": "{{contact_email}}",
-    "icp_score": "{{icp_score}}",
-    "timestamp": "{{timestamp}}"
-  },
-  "retry_policy": {
-    "max_retries": 3,
-    "backoff": "exponential"
-  }
-}
-```
-
-### Inbound Webhooks (External → LeadReach)
-
-```bash
-curl -X POST https://app.leadreach.ai/api/webhooks/inbound \
-  -H "X-Webhook-Secret: whsec_abc123" \
-  -d '{
-    "source": "zapier",
-    "event": "form_submission",
-    "data": {
-      "email": "prospect@company.com",
-      "company": "Acme Corp",
-      "source": "website_contact_form"
-    }
-  }'
-```
-
-## 5. Rate Limits & Error Handling
-
-| Platform | Free Tier | Paid Tier |
-|----------|-----------|-----------|
-| Zapier | 100 tasks/mo | Unlimited |
-| Make | 1,000 ops/mo | 10,000+ ops/mo |
-| LeadReach API | 100 req/min | 500 req/min |
-
-### Error Handling Pattern
-
-```yaml
-error_handling:
-  - condition: api_timeout
-    action: retry_with_backoff
-    max_retries: 3
-  - condition: rate_limited (429)
-    action: wait_60_seconds_then_retry
-  - condition: validation_error (400)
-    action: log_error_and_skip
-    notification: email
-  - condition: server_error (5xx)
-    action: retry_3_times_then_alert
-```
-
-## 6. Setup Guide
-
-### Zapier Setup
-1. Go to zapier.com and log in
-2. Click "Create Zap"
-3. Select LeadReach as trigger app
-4. Connect LeadReach account (API key)
-5. Select trigger event
-6. Configure action app and action
-7. Test and activate
-
-### Make Setup
-1. Go to make.com and log in
-2. Click "Create Scenario"
-3. Add LeadReach module as first step
-4. Connect via API key
-5. Configure watch/action parameters
-6. Add additional modules
-7. Set schedule and activate
-""")
-
-write_file("integrations/apollo-zoominfo-integration.md", """---
-title: "Apollo & ZoomInfo Integration"
-category: integration
-grade: A
-last_reviewed: 2026-07-08
-tags: [apollo, zoominfo, data-provider, enrichment, contact-data, intent]
----
-
-# Apollo & ZoomInfo Integration
-
-## 1. Overview
-
-LeadReach integrates with Apollo.io and ZoomInfo as primary data enrichment providers, supplying firmographic, technographic, contact, and intent data to power the Forge and Scout agents. These integrations enable LeadReach to enrich prospect records with verified contact data, detect buying intent signals, and maintain data quality across the pipeline.
-
-## 2. Apollo.io Integration
-
-### API Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| Base URL | `https://api.apollo.io/v1` |
-| Auth | API Key (header: `Api-Key`) |
-| Rate Limit | 50 req/min (Growth), 200 req/min (Enterprise) |
-
-### Key Endpoints
-
-#### People Search
-```python
-# Search for contacts matching ICP criteria
-import requests
-
-def search_apollo_contacts(api_key, criteria):
-    headers = {'Api-Key': api_key}
-    params = {
-        'organization_domains': criteria.get('domains', []),
-        'person_titles': criteria.get('titles', ['VP', 'Director', 'CTO', 'CRO']),
-        'person_seniorities': criteria.get('seniorities', ['VP', 'C-Suite', 'Director']),
-        'organization_num_employees_ranges': criteria.get('employee_range', ['501-1000']),
-        'organization_industries': criteria.get('industries', ['SaaS', 'FinTech']),
-        'page': 1,
-        'per_page': 100,
-    }
-    response = requests.get(
-        'https://api.apollo.io/v1/people/search',
-        headers=headers,
-        params=params
-    )
-    return response.json()
-```
-
-#### Organization Enrichment
-```python
-def enrich_apollo_organization(api_key, domain):
-    headers = {'Api-Key': api_key}
-    params = {'domain': domain}
-    response = requests.get(
-        'https://api.apollo.io/v1/organizations/enrich',
-        headers=headers,
-        params=params
-    )
-    return response.json()
-```
-
-### Data Fields Available
-
-| Category | Fields | Quality |
-|----------|--------|---------|
-| Contact | Email (verified), Phone, LinkedIn URL | High |
-| Firmographic | Revenue, Employees, Industry, Funding | High |
-| Technographic | Tech stack (limited), Cloud provider | Medium |
-| Intent | Buyer intent topics (premium tier) | Medium |
-| Sequences | Email sequence management | High |
-
-### LeadReach → Apollo Sync
-
-1. Scout identifies target companies via ICP criteria
-2. LeadReach queries Apollo for contacts matching persona
-3. Forge enriches with verified email/phone
-4. Judge scores enriched records against ICP
-5. Qualified records added to LeadReach pipeline
-
-## 3. ZoomInfo Integration
-
-### API Configuration
-
-| Parameter | Value |
-|-----------|-------|
-| Base URL | `https://api.zoominfo.com/v2` |
-| Auth | OAuth 2.0 (jwt_token endpoint) |
-| Rate Limit | 100 req/min (Standard), 500 req/min (Advanced) |
-
-### Authentication Flow
-
-```python
-import requests
-
-def get_zoominfo_token(username, password):
-    response = requests.post(
-        'https://api.zoominfo.com/v2/authenticate',
-        json={'username': username, 'password': password}
-    )
-    return response.json()['jwt_token']
-```
-
-### Key Endpoints
-
-#### Company Search
-```python
-def search_zoominfo_companies(token, criteria):
-    headers = {'Authorization': f'Bearer {token}'}
-    payload = {
-        'companyName': criteria.get('name'),
-        'revenue': criteria.get('revenue_range'),
-        'employeeCount': criteria.get('employee_range'),
-        'industry': criteria.get('industry'),
-        'location': criteria.get('location'),
-        'techStack': criteria.get('tech_stack'),
-    }
-    response = requests.post(
-        'https://api.zoominfo.com/v2/company/search',
-        headers=headers,
-        json=payload
-    )
-    return response.json()
-```
-
-#### Contact Lookup
-```python
-def lookup_zoominfo_contact(token, email=None, company_id=None):
-    headers = {'Authorization': f'Bearer {token}'}
-    payload = {}
-    if email:
-        payload['email'] = email
-    if company_id:
-        payload['companyId'] = company_id
-    response = requests.post(
-        'https://api.zoominfo.com/v2/contact/search',
-        headers=headers,
-        json=payload
-    )
-    return response.json()
-```
-
-### Data Fields Available
-
-| Category | Fields | Quality |
-|----------|--------|---------|
-| Contact | Email, Direct Dial, Mobile, LinkedIn | Very High |
-| Firmographic | Revenue, Employees, HQ, Subsidiaries | Very High |
-| Technographic | Full tech stack, Install dates | High |
-| Intent | Buying intent (Scoops), Topic-level | Very High |
-| News | Scoops (trigger events), Company news | Very High |
-| Org Chart | Reporting structure, Decision makers | High |
-
-### Intent Data Integration
-
-ZoomInfo intent (Scoops) provides real-time buying signals:
-
-| Signal Type | Description | LeadReach Mapping |
-|-------------|-------------|-------------------|
-| Technology Install | New tech deployment detected | technographic_update |
-| Leadership Change | New executive hire | trigger_event |
-| Funding Round | New investment received | trigger_event (high priority) |
-| Office Expansion | New location opened | expansion_signal |
-| Contract Award | Government contract won | trigger_event |
-| M&A Activity | Merger or acquisition | trigger_event (critical) |
-
-## 4. Data Deduplication Strategy
-
-When enriching from multiple providers, LeadReach applies:
-
-1. **Primary Key Match**: Email address exact match
-2. **Domain + Name Match**: Company domain + contact full name
-3. **LinkedIn URL Match**: Normalized LinkedIn profile URL
-4. **Confidence Scoring**: When data conflicts, use highest-confidence source
-
-### Confidence Hierarchy
-
-| Source | Contact Data | Firmographic | Intent | Technographic |
-|--------|-------------|-------------|--------|--------------|
-| ZoomInfo | ★★★★★ | ★★★★★ | ★★★★★ | ★★★★ |
-| Apollo | ★★★★ | ★★★★ | ★★★ | ★★★ |
-| LinkedIn | ★★★★ | ★★★ | ★★ | ★★ |
-| Web Scraping | ★★ | ★★★ | ★★★ | ★★★ |
-
-## 5. Enrichment Workflow
-
-### Forge Agent Enrichment Pipeline
-
-1. **Initial Enrichment** (Apollo): Fast contact + firmographic data
-2. **Deep Enrichment** (ZoomInfo): Verified contact + intent signals
-3. **Cross-Validation**: Compare data from both providers
-4. **Confidence Score**: Calculate per-field confidence
-5. **Update Pipeline**: Push enriched data to CRM
-
-### Automated Re-Enrichment
-
-| Trigger | Action |
-|---------|--------|
-| New company in pipeline | Immediate Apollo enrichment |
-| ICP score > 60 | ZoomInfo deep enrichment |
-| 30 days since last enrichment | Re-enrich via Apollo |
-| Trigger event detected | Re-enrich via ZoomInfo |
-| Contact data stale > 90 days | Full re-enrichment |
-
-## 6. Cost Optimization
-
-| Provider | Cost/Contact | Cost/Enrichment | Recommended Use |
-|----------|-------------|-----------------|-----------------|
-| Apollo | $0.01-0.05 | $0.05-0.10 | Volume contact search |
-| ZoomInfo | $0.10-0.50 | $0.25-0.75 | High-value deep enrichment |
-
-### Optimization Rules
-
-1. Use Apollo for initial volume prospecting (cheaper)
-2. Use ZoomInfo for qualified leads (higher quality)
-3. Cache enriched data for 30 days to avoid re-fetching
-4. Only re-enrich when data is stale or trigger events occur
-5. Set credit limits per agent to control costs
-
-## 7. Monitoring
-
-| Metric | Apollo | ZoomInfo |
-|--------|--------|----------|
-| API calls today | Dashboard > Usage | Dashboard > API Usage |
-| Credits remaining | Settings > Plan | Settings > Credits |
-| Error rate | < 1% target | < 0.5% target |
-| Avg response time | < 2s | < 3s |
-| Data accuracy | 85%+ | 95%+ |
-""")
-
-# ── PRODUCT FILES ──────────────────────────────────────────────
-
-write_file("product/ai-agent-orchestration.md", """---
-title: "AI Agent Orchestration"
-category: product
-grade: A
-last_reviewed: 2026-07-08
-tags: [ai, agents, orchestration, pipeline, workflow, automation]
----
-
-# AI Agent Orchestration
-
-## 1. Overview
-
-LeadReach's AI Agent Orchestration layer coordinates eight specialized AI agents (Atlas, Scout, Forge, Sage, Judge, Bard, Flow, Echo) in a structured pipeline that mirrors the B2B sales process. Each agent has a defined role, domain expertise, and communication protocol, enabling the system to autonomously discover, enrich, qualify, engage, and track leads from identification to closed-won.
-
-## 2. Agent Pipeline Architecture
-
-### Pipeline Flow
-
-```
-Atlas (Strategy)
-  ↓ Define ICP, targets, markets
-Scout (Discovery)
-  ↓ Find matching prospects
-Forge (Enrichment)
-  ↓ Enrich contact/company data
-Sage (Research)
-  ↓ Deep account intelligence
-Judge (Qualification)
-  ↓ Score and qualify
-Bard (Engagement)
-  ↓ Generate outreach sequences
-Flow (Pipeline)
-  ↓ Manage deal progression
-Echo (Reporting)
-  ↓ Analytics and optimization
-```
-
-### Agent Definitions
-
-| Agent | Role | Input | Output | Triggers |
-|-------|------|-------|--------|----------|
-| Atlas | Strategic Planning | Market context, business goals | ICP definitions, target lists | User request, quarterly review |
-| Scout | Prospect Discovery | ICP criteria, target parameters | Raw prospect lists | Atlas output, user request |
-| Forge | Data Enrichment | Prospect records (raw) | Enriched records | Scout output, CRM import |
-| Sage | Account Research | Company domain, contact info | Research reports, talking points | Forge output, user request |
-| Judge | Lead Qualification | Enriched records + research | Qualified scores, decisions | Forge/Sage output |
-| Bard | Outreach Generation | Qualified leads, templates | Personalized sequences | Judge output, user request |
-| Flow | Pipeline Management | Qualified leads, activities | Pipeline state, forecasts | Bard output, CRM events |
-| Echo | Analytics & Reporting | Pipeline data, activities | Reports, insights, alerts | Scheduled, user request |
-
-## 3. Orchestration Engine
-
-### Task Decomposition
-
-When a user submits a request, the orchestration engine:
-
-1. Parses intent into structured task
-2. Maps task to agent sequence
-3. Determines parallel vs sequential execution
-4. Sets quality gates between stages
-5. Monitors execution and handles failures
-
-### Execution Patterns
-
-| Pattern | Agents | Use Case |
-|---------|--------|----------|
-| Sequential | A → B → C | Full pipeline: discovery → enrichment → qualification |
-| Parallel | A + B → C | Enrichment + Research simultaneously → Qualification |
-| Conditional | A → [B if X, C if Y] | Score > 80: outreach, Score < 80: nurture |
-| Iterative | A → B → A | Research → Enrich → Re-research |
-| Fan-out | A → [B, C, D] | Strategy → [Discover, Research, Analyze] |
-
-### Quality Gates
-
-| Gate | Condition | Pass Action | Fail Action |
-|------|-----------|-------------|-------------|
-| Discovery | Min 10 prospects found | Proceed to enrichment | Expand search criteria |
-| Enrichment | >60% fields populated | Proceed to research | Flag for manual review |
-| Research | Key insights identified | Proceed to qualification | Skip to basic qualification |
-| Qualification | ICP score computed | Route to appropriate path | Send to nurture |
-| Engagement | Personalization verified | Send sequence | Revise messaging |
-
-## 4. Agent Communication Protocol
-
-### Message Format
-
-```json
-{
-  "message_id": "uuid",
-  "from_agent": "scout",
-  "to_agent": "forge",
-  "message_type": "task_result",
-  "timestamp": "2026-07-08T10:00:00Z",
-  "payload": {
-    "prospects": [
-      {
-        "company": "Acme Corp",
-        "domain": "acme.com",
-        "estimated_employees": 500,
-        "industry": "SaaS"
-      }
+    return rel_path
+
+# ============================================================
+# 1. KPIs Category (NEW - 12 files)
+# ============================================================
+
+def generate_kpis():
+    files = []
+    
+    kpis = [
+        ("pipeline-kpis", "Pipeline KPIs", "pipeline", [
+            ("Pipeline Velocity Metrics", "Pipeline velocity measures the speed at which deals move through your sales funnel from initial qualification to closed-won. The fundamental formula combines deal value, win rate, and sales cycle length to produce a single velocity metric. For B2B SaaS companies, the benchmark pipeline velocity ranges from $50K to $500K per sales rep per month depending on average deal size and market segment. Enterprise deals typically show slower velocity ($80K-150K/month) due to longer sales cycles (90-180 days), while mid-market and SMB segments achieve higher velocity ($200K-500K/month) with shorter cycles (30-60 days). Tracking velocity by stage reveals bottlenecks — a common pattern is deals stalling between demo and proposal, where the average conversion rate drops from 60% to 25%. Leading organizations implement stage-gate criteria that require specific actions (stakeholder mapping, budget confirmation, timeline alignment) before advancing deals, which improves stage-to-stage conversion by 15-25%."),
+            ("Pipeline Coverage Ratio", "The pipeline coverage ratio represents the total value of open opportunities divided by the remaining quota to be achieved. Industry best practice maintains a 3x-4x coverage ratio for territory-level planning, meaning for every $1 of remaining quota, there should be $3-4 of pipeline. At the individual rep level, coverage ratios of 2.5x-3.5x are typical for high-performers, while underperformers often operate below 2x. Coverage ratios should be tracked both as a snapshot (current state) and as a trend over time (weekly/monthly movement). A declining coverage ratio over 2-3 consecutive weeks signals future quota risk 6-8 weeks out. For new business vs. expansion, the required coverage differs: new logos typically need 4x-5x coverage due to lower win rates (15-25%), while expansion deals need 2x-3x coverage given higher win rates (40-60%)."),
+            ("Pipeline Creation Rate", "Pipeline creation rate tracks the dollar value of new opportunities added to the pipeline per time period, typically measured weekly or monthly. This KPI is a leading indicator of future revenue performance, as pipeline created today converts to revenue 60-180 days from now depending on sales cycle length. Top-performing SaaS organizations create pipeline at 1.5x-2x their monthly quota target. For a rep with a $50K/month quota, this means generating $75K-100K in new pipeline monthly. The creation rate should be tracked by source (outbound, inbound, partner, expansion) to identify which channels produce the highest-quality pipeline. Outbound-sourced pipeline typically converts at 15-25% with an average deal size 1.3x higher than inbound, while inbound-sourced pipeline converts at 25-35% but with smaller average deal sizes."),
+            ("Stage Progression Metrics", "Stage progression measures the rate and efficiency at which opportunities advance through defined pipeline stages. Key metrics include: average days per stage (benchmark: 5-15 days per stage), stage-to-stage conversion rates, and total cycle time by segment. The most revealing analysis compares progression rates by deal source, rep, and segment. Enterprise deals typically have 6-8 stages with an average of 12-20 days per stage, while SMB deals move through 3-4 stages at 5-10 days per stage. A critical metric is the 'stage age' — opportunities that spend more than 2x the average time in any stage have a 70% lower probability of closing. Implementing automated stage-aging alerts and required next-step documentation at each stage transition improves progression rates by 20-30%."),
+        ]),
+        ("revenue-kpis", "Revenue KPIs", "revenue", [
+            ("Annual Recurring Revenue (ARR)", "ARR is the foundational revenue metric for SaaS and subscription businesses, representing the annualized value of recurring subscription revenue. It excludes one-time fees, professional services, and variable overages. ARR is calculated by multiplying the monthly recurring revenue (MRR) by 12, or by summing the annual contract values of all active subscriptions. Growth-stage SaaS companies target 30-50% year-over-year ARR growth, while mature companies aim for 15-25%. The ARR composition matters as much as the total: new ARR (from new logos), expansion ARR (from upsells and cross-sells), and renewal ARR each signal different aspects of business health. A healthy mix shows 40-60% new ARR, 20-35% expansion ARR, and consistent 90%+ renewal rates. Net ARR retention above 110% indicates that expansion revenue more than offsets churn and contraction."),
+            ("Average Contract Value (ACV)", "ACV measures the average annualized revenue per customer contract, excluding one-time fees. This KPI is critical for sizing territories, setting quotas, and calculating customer acquisition cost (CAC) payback periods. B2B SaaS ACV benchmarks by segment: SMB $5K-25K, mid-market $25K-100K, enterprise $100K-500K+, and strategic enterprise $500K+. ACV trends over time reveal whether the business is moving upmarket (rising ACV), experiencing down-market expansion (falling ACV), or maintaining position. A rising ACV often accompanies longer sales cycles and higher CAC but improves unit economics. The relationship between ACV and sales cycle length is approximately linear: $25K ACV = 30-45 day cycle, $100K ACV = 60-90 day cycle, $500K ACV = 120-180 day cycle."),
+            ("Net Revenue Retention (NRR)", "Net Revenue Retention measures the percentage of recurring revenue retained from existing customers over a period, accounting for churn, contraction, and expansion. The formula: (Starting MRR + Expansion - Contraction - Churn) / Starting MRR. World-class SaaS companies achieve NRR of 120-140%, meaning existing customers spend 20-40% more each year. NRR above 100% means the business grows even without new customers. Factors driving high NRR include: land-and-expand motions (start small, expand over time), strong product adoption programs, proactive customer success outreach, and self-service upgrade paths. NRR should be tracked by cohort (vintage, segment, geography) to identify which customer profiles expand most predictably. Enterprise cohorts typically show NRR of 115-130%, while SMB cohorts show 95-110% due to higher churn."),
+            ("Revenue per Employee", "Revenue per employee is an efficiency metric that measures total revenue divided by total headcount. For SaaS companies, the benchmark is $150K-300K per employee, with top-quartile companies exceeding $400K. This metric reveals whether the organization is scaling efficiently or adding headcount faster than revenue growth. The most productive segment is typically revenue/sales at $200K-500K per rep (quota attainment varies widely), while engineering and product teams should generate $300K+ per employee in efficient organizations. Tracking this alongside ARR per employee (which excludes non-recurring revenue) provides a cleaner picture of subscription business efficiency."),
+        ]),
+        ("activity-kpis", "Activity KPIs", "activity", [
+            ("Outbound Activity Metrics", "Outbound activity metrics track the volume and effectiveness of proactive outreach efforts. Key metrics include: emails sent per day (benchmark: 40-80 for SDRs), calls made per day (30-60 for SDRs), social touches per day (10-20 LinkedIn connections/messages), and total activities per day (80-120 combined). However, volume without quality produces diminishing returns. The activity-to-meeting conversion rate is the quality indicator: top performers achieve 3-5% email reply rates and 8-15% meeting booking rates from positive replies. Multi-channel outreach (email + phone + social) produces 2-3x higher meeting booking rates than single-channel. Activity metrics should be tracked both individually (rep performance) and by sequence/campaign (which outreach patterns produce the best results)."),
+            ("Meeting Metrics", "Meeting metrics quantify the volume and quality of sales conversations. Key metrics include: meetings set per week (benchmark: 8-15 for SDRs, 6-10 for AEs), meeting show rate (75-85%), meeting-to-opportunity conversion rate (40-60%), and average meeting duration (30-45 min for discovery, 45-60 min for demo). The most predictive metric is 'meaningful meetings' — those where the prospect shared specific pain points, budget context, or timeline constraints. Top-performing teams qualify 60-70% of meetings as meaningful, while underperforming teams fall below 40%. Tracking meeting outcomes (no-show, discovery-only, qualified, advanced-to-demo, closed-lost) by source and rep reveals which activity patterns produce the highest-quality conversations."),
+            ("Response Time Metrics", "Response time measures how quickly the sales team follows up on inbound leads and prospect responses. The data is unequivocal: responding within 5 minutes of an inbound inquiry increases contact rates by 900% compared to 10-minute response times (Harvard Business Review study). Benchmark response times: lead response under 5 minutes, prospect reply response under 15 minutes, meeting request response under 1 hour. Organizations using automated lead routing and real-time notifications achieve sub-5-minute response times consistently. The 'speed to lead' metric is particularly critical for inbound-heavy organizations, where the first responder wins 35-50% of deals. For outbound, response time to prospect replies should be under 15 minutes to maintain conversation momentum."),
+        ]),
+        ("efficiency-kpis", "Efficiency KPIs", "efficiency", [
+            ("Customer Acquisition Cost (CAC)", "CAC measures the total cost of acquiring a new customer, including sales compensation, marketing spend, tools, and overhead allocated to acquisition. The formula: (Total Sales + Marketing Costs) / Number of New Customers Acquired. B2B SaaS CAC benchmarks: SMB $5K-15K, mid-market $15K-50K, enterprise $50K-200K+. The CAC payback period — months to recoup CAC from gross margin — should be under 12 months for efficient businesses and under 18 months for enterprise-heavy models. CAC should be tracked by channel (outbound, inbound, partner, events) and by segment. Outbound CAC is typically 1.5-2x inbound CAC but produces 1.3x higher ACV. The LTV:CAC ratio should exceed 3:1, with top-performing SaaS companies achieving 5:1 or higher."),
+            ("Sales Cycle Length", "Sales cycle length measures the average time from opportunity creation to closed-won (or closed-lost). Benchmarks by segment: SMB 15-45 days, mid-market 45-90 days, enterprise 90-180 days, strategic enterprise 180-365 days. Cycle length correlates strongly with ACV, number of stakeholders, and deal complexity. Key factors that extend cycles: multi-threading gaps (single point of contact), security review requirements (adds 2-6 weeks), procurement processes (adds 2-8 weeks), and lack of executive sponsorship. Organizations that implement structured close plans, multi-thread from day one, and run parallel workstreams (security review while negotiation continues) reduce cycle times by 20-35%. Tracking cycle length by rep, segment, and source identifies where process improvements have the greatest impact."),
+            ("Win Rate", "Win rate measures the percentage of opportunities that close as won. Overall win rates for B2B SaaS: 15-30% depending on segment and deal size. SMB win rates tend to be 25-35%, mid-market 20-30%, enterprise 15-25%. Win rate should be analyzed by source (outbound vs. inbound vs. partner), by competitor present vs. no competitor, and by deal size bucket. The most actionable win rate analysis breaks opportunities into 'close reasons' — budget won, lost to competitor, no decision, timing, etc. 'No decision' (the prospect does nothing) accounts for 40-60% of losses and represents the largest improvement opportunity. Rep-level win rates vary from 10% to 40%+ — the gap is primarily explained by qualification rigor, multi-threading discipline, and executive engagement."),
+            ("Quota Attainment", "Quota attainment measures the percentage of assigned revenue target achieved by a rep, team, or organization. The benchmark distribution: 60-65% of reps should attain quota, with a median attainment of 85-95%. Only 10-15% of reps should significantly over-achieve (>120%), and 20-25% should underperform (<70%). Setting quotas requires balancing ambition (driving stretch performance) with achievability (maintaining rep morale and retention). Quota capacity planning should account for: ramp time (new reps need 3-9 months), territory maturity, pipeline coverage requirements, and seasonal patterns. Organizations that set quotas based on data-driven territory scoring and historical attainment patterns see 15-20% higher overall attainment compared to top-down quota allocation."),
+        ]),
+        ("customer-kpis", "Customer KPIs", "customer", [
+            ("Customer Health Score", "Customer health scores aggregate multiple signals into a single metric predicting account retention and expansion likelihood. Typical components: product adoption (30-40% weight), support ticket trends (15-20%), NPS/CSAT scores (15-20%), engagement frequency (10-15%), and payment/contract signals (10-15%). Scoring models range from simple red/yellow/green classifications to weighted numeric scores (0-100). Healthy accounts score 70+ (strong retention, expansion candidates), at-risk accounts score 40-69 (require proactive intervention), and critical accounts score below 40 (immediate escalation). The predictive power of health scores depends on data freshness — real-time adoption signals outperform quarterly NPS surveys for churn prediction. Organizations that operationalize health scores into automated playbooks (trigger outreach at score <60) achieve 15-25% lower churn rates."),
+            ("Churn Rate Analysis", "Churn rate measures the percentage of customers or revenue lost over a period. Logo churn (customer count) and revenue churn (ARR lost) should both be tracked. B2B SaaS benchmarks: annual logo churn 5-15%, annual revenue churn 3-10% (lower due to expansion offset). Net churn (accounting for expansion) should be negative for healthy SaaS businesses — meaning expansion revenue exceeds lost revenue. Churn should be analyzed by cohort (when did they join?), segment (SMB vs. enterprise), product line, and reason category (product gap, competitor, budget, business closure). The most actionable churn analysis identifies leading indicators 60-90 days before cancellation: declining login frequency, support ticket spikes, stakeholder departures, and contract term reductions."),
+            ("Net Promoter Score (NPS)", "NPS measures customer loyalty through a single question: 'How likely are you to recommend [product] to a colleague?' on a 0-10 scale. Promoters (9-10) minus detractors (0-6) equals the NPS score. B2B SaaS NPS benchmarks: average 30-40, good 40-60, excellent 60+. NPS should be tracked by segment (enterprise typically scores 10-15 points higher than SMB), by product area, and over time. The real value of NPS lies not in the score itself but in the follow-up: asking 'why' and routing responses to the appropriate team. Promoters become referral sources and case study candidates, while detractors receive immediate outreach from customer success. Transactional NPS (after specific interactions) provides more actionable feedback than relationship NPS (annual surveys). Organizations that close the loop on every detractor within 48 hours see 20-30% improvement in NPS over 6 months."),
+            ("Time to Value (TTV)", "Time to value measures how long it takes a new customer to realize the first meaningful benefit from the product. This metric is critical because TTV directly correlates with long-term retention — customers who experience value within the first 14 days have 2-3x higher 12-month retention rates. B2B SaaS TTV benchmarks: self-serve products 1-7 days, mid-market with implementation 14-45 days, enterprise with custom integration 30-90 days. Strategies to reduce TTV include: pre-built integrations, templated configurations, guided onboarding workflows, and dedicated implementation support for enterprise accounts. Tracking TTV by segment and onboarding path reveals which implementation approaches accelerate value realization and which create friction that leads to churn."),
+        ]),
+        ("marketing-kpis", "Marketing KPIs", "marketing", [
+            ("Marketing Qualified Leads (MQLs)", "MQLs measure the volume of leads that meet defined qualification criteria indicating sales-readiness. MQL definitions vary by organization but typically include: demographic fit (title, company size, industry), behavioral signals (content downloads, website visits, webinar attendance), and intent signals (searching for solutions, visiting pricing pages). The MQL-to-SQL conversion rate benchmark is 10-25% — rates below 10% indicate poor lead quality or misaligned qualification criteria, while rates above 25% may suggest overly restrictive criteria leaving viable leads untouched. MQL volume should be tracked by source (organic, paid, events, referral) and by campaign to optimize marketing spend allocation. The most effective organizations use lead scoring models that combine firmographic fit (40-50% weight) with behavioral engagement (30-40%) and intent signals (10-20%)."),
+            ("Cost per Lead (CPL)", "CPL measures the marketing spend required to generate one lead. B2B SaaS CPL benchmarks vary dramatically by channel: organic/social $20-80, paid search $50-200, content marketing $30-100, events/webinars $100-400, and partner referrals $20-60. CPL should be evaluated alongside lead quality metrics — a $200 lead that converts at 15% with $50K ACV is more valuable than a $50 lead that converts at 2% with $20K ACV. The fully-loaded CPL (including content creation, tools, and team costs) is typically 2-3x the direct media CPL. Organizations should track both blended CPL (total marketing spend / total leads) and channel-specific CPL to optimize budget allocation toward highest-ROI channels."),
+            ("Conversion Rate Optimization", "Conversion rate metrics track the percentage of visitors or prospects that complete desired actions at each funnel stage. B2B SaaS website conversion benchmarks: visitor-to-lead 2-5%, lead-to-MQL 15-25%, MQL-to-SQL 10-25%, SQL-to-opportunity 40-60%, opportunity-to-closed-won 15-30%. The cumulative effect of small improvements at each stage compounds dramatically: improving each stage conversion by just 10% increases overall funnel throughput by 60%. A/B testing, landing page optimization, personalization by segment, and progressive profiling are the primary levers for conversion improvement. The highest-impact optimization opportunities typically exist at the top-of-funnel (visitor-to-lead) and mid-funnel (MQL-to-SQL) transitions."),
+            ("Content Performance Metrics", "Content performance metrics evaluate the effectiveness of marketing content in driving engagement, pipeline, and revenue. Key metrics include: content consumption (views, reads, time-on-page), engagement (shares, comments, backlinks), conversion (content-to-lead rate, typically 2-8%), and pipeline influence (content touched before deal creation, benchmark 60-75% of pipeline has content touch). The most sophisticated attribution models track content influence across the full buyer journey: first-touch (awareness), last-touch (conversion), and multi-touch (weighted contribution). Content should be scored by pipeline influenced per dollar invested. High-performing content types for B2B: ROI calculators (3-5x higher conversion), industry reports (2-3x), and customer case studies (2-4x), compared to generic blog posts."),
+        ]),
+        ("sales-enablement-kpis", "Sales Enablement KPIs", "enablement", [
+            ("Ramp Time to Productivity", "Ramp time measures how long it takes a new sales hire to reach full productivity (typically defined as achieving quota for 2 consecutive months). Benchmarks: SDR/BDR ramp 3-6 months, AE ramp 6-9 months, enterprise AE ramp 9-12 months. Organizations with structured onboarding programs (playbooks, certifications, shadowing, coaching) reduce ramp time by 30-40% compared to unstructured approaches. Key ramp milestones: Week 2 — product certification complete, Week 4 — first qualified meetings booked, Month 2 — first opportunity created, Month 3 — first deal closed, Month 6 — consistent quota attainment. Tracking ramp by cohort reveals onboarding program effectiveness and identifies which training components have the highest correlation with fast ramp."),
+            ("Content Utilization Rate", "Content utilization measures the percentage of sales content that is actually used by the sales team in customer-facing interactions. Industry average is shockingly low: only 33% of marketing-created content is ever used by sales. The primary reasons: content doesn't match buyer stage (45%), reps can't find relevant content (30%), content is perceived as too generic (25%). High-performing organizations achieve 60-80% utilization by: mapping content to buyer journey stages, implementing content recommendation engines, tracking content usage per rep, and creating content based on rep requests and win/loss analysis. Content utilization should be measured by: number of pieces sent per deal, content-to-meeting correlation, and content-influenced win rate vs. non-content-influenced win rate."),
+            ("Win/Loss Analysis Metrics", "Win/loss analysis systematically captures the reasons behind deal outcomes to inform strategy, messaging, and process improvements. Key metrics include: win rate by competitive scenario, win rate by deal characteristics (segment, ACV, source), loss reason distribution (no decision 40-60%, competitor 20-30%, budget/timing 15-25%), and trend analysis over time. Organizations that conduct structured win/loss interviews with prospects (not internal assumptions) gain the most actionable insights. The interview data should be coded, quantified, and shared with product (feature gaps), marketing (messaging misalignment), sales leadership (process gaps), and enablement (training gaps). Companies that operationalize win/loss insights improve win rates by 15-25% within two quarters."),
+        ]),
+        ("data-quality-kpis", "Data Quality KPIs", "data-quality", [
+            ("Data Completeness Score", "Data completeness measures the percentage of required fields populated across CRM records. The formula: (Fields Populated / Total Required Fields) x 100. Benchmark: enterprise CRM completeness should exceed 85%, while mid-market should target 75%+. The most critical fields for B2B sales data completeness include: contact email (98%+ target), contact title/role (90%+), company industry (95%+), company revenue/size (80%+), and decision-maker identification (70%+). Data completeness directly impacts lead scoring accuracy, routing efficiency, and personalization capability. Organizations that implement real-time data validation and enrichment at point-of-entry achieve 90%+ completeness rates, compared to 55-65% for organizations relying on periodic data hygiene campaigns."),
+            ("Data Accuracy Rate", "Data accuracy measures the percentage of CRM data that is factually correct and current. Industry research estimates that B2B data decays at 2-3% per month for contact-level data (job changes, email changes) and 1-2% per month for company-level data (acquisitions, relocations, funding changes). This means a database that is 100% accurate today will be approximately 70% accurate after 12 months without maintenance. Key accuracy metrics include: email deliverability rate (target 95%+), phone connectivity rate (target 80%+), title accuracy (target 85%+), and company attribute accuracy (target 90%+). Organizations that implement continuous data verification — validating email deliverability at point of use, verifying company data on opportunity creation, and flagging potential job changes via LinkedIn integration — maintain accuracy rates 15-20% higher than those relying on annual batch updates."),
+            ("CRM Adoption Rate", "CRM adoption measures the degree to which sales teams consistently and comprehensively use the CRM system. Key adoption metrics include: daily active users (target 85%+ of sales team), activity logging completeness (target 90%+ of activities logged), opportunity update frequency (target: opportunities updated at least weekly), and data entry timeliness (target: activities logged within 24 hours). Low CRM adoption creates a vicious cycle: incomplete data reduces the value of CRM reports and insights, which further reduces the motivation to use the system. High adoption is achieved through: making CRM the single source of truth for pipeline management, simplifying data entry (automation, mobile access, voice-to-text), providing training and coaching, and making CRM data actionable through dashboards and alerts that reps find genuinely useful."),
+        ]),
+        ("outreach-kpis", "Outreach KPIs", "outreach", [
+            ("Email Deliverability Metrics", "Email deliverability measures the percentage of sent emails that reach the recipient's inbox (not spam or promotions folder). Key metrics: delivery rate (target 95%+), inbox placement rate (target 85-90%), bounce rate (target below 3%), spam complaint rate (target below 0.1%). Deliverability is influenced by: sender reputation (domain age, sending history), authentication setup (SPF, DKIM, DMARC), email content (spam trigger words, link-to-text ratio), and sending patterns (volume ramps, frequency consistency). Organizations that implement dedicated sending domains per team, warm up new domains gradually (starting at 10 emails/day and increasing by 20% daily), and monitor blacklist status across major providers maintain deliverability rates 10-15% higher than those using shared infrastructure."),
+            ("Response Rate Benchmarks", "Response rate measures the percentage of outreach emails that receive a reply (positive, negative, or neutral). B2B cold email response benchmarks: cold outbound 1-5%, warm outbound (prior engagement) 5-15%, trigger-based outreach (job change, funding, etc.) 8-25%. The highest-response outreach patterns include: personalized first lines referencing specific company/role context (3-5x higher response), mentioning mutual connections or shared events (2-3x higher), and sending Tuesday-Thursday between 8-10am in the recipient's timezone (20-30% higher than Monday/Friday). Response rates should be tracked by sequence position (first email vs. follow-up), personalization level, segment, and sender. A/B testing subject lines, email length, CTAs, and send times produces incremental improvements that compound across thousands of outreach touches."),
+            ("Sequence Completion Rate", "Sequence completion rate measures the percentage of enrolled contacts that complete all steps in a defined outreach cadence. Benchmark: 40-60% of contacts complete a 5-7 step sequence, with drop-off highest after step 3. The completion rate correlates with: sequence length (shorter sequences complete at higher rates but may miss later responders), step spacing (2-3 business days between steps is optimal), and channel mix (multi-channel sequences have 15-20% higher completion rates than email-only). Analysis of completion rates by sequence, segment, and rep reveals which cadence designs are most effective. The most sophisticated outreach programs use conditional branching — if a prospect opens but doesn't reply, the next step adjusts messaging; if they click a link, the follow-up references that specific content."),
+        ]),
+        ("sdr-kpis", "SDR/BDR KPIs", "sdr", [
+            ("SDR Productivity Metrics", "SDR productivity encompasses the volume and quality of activities that generate pipeline. Key metrics: daily activities (target 80-120 combined touches), weekly meetings set (target 8-15), monthly qualified pipeline created (target $100K-300K depending on ACV), and opportunity acceptance rate (target 70-85% of SDR-created opportunities accepted by AE). Productivity varies significantly by experience: ramping SDRs (months 1-3) produce 40-60% of tenured SDR output, while top performers exceed median productivity by 2-3x. The highest-leverage productivity improvements come from: automating manual research (saves 1-2 hours/day), providing pre-built prospect lists (eliminates list-building time), and implementing AI-assisted personalization (increases email volume while maintaining quality)."),
+            ("SDR-to-AE Handoff Quality", "The SDR-to-AE handoff is a critical transition point where qualified opportunities move from prospecting to closing. Handoff quality metrics include: opportunity acceptance rate (target 75-85%), first meeting show rate after handoff (target 80%+), and time-to-first-AE-meeting (target under 48 hours from qualification). The most effective handoffs include: documented qualification criteria (BANT, MEDDIC, or custom framework), recorded discovery call excerpts, stakeholder map, identified pain points and urgency drivers, and suggested next-step recommendations. Organizations that implement structured handoff templates and require joint SDR-AE briefings before the first AE meeting see 20-30% higher opportunity acceptance rates and 15% higher win rates on SDR-sourced pipeline."),
+            ("SDR Ramp and Retention", "SDR ramp time averages 3-6 months to full productivity, with the highest attrition occurring in months 1-3 (30-40% of new SDRs leave or are terminated during ramp). Key ramp milestones: Week 1 — product and process training complete, Week 2-3 — live outreach begins, Month 2 — first qualified meetings set, Month 3 — consistent meeting flow established, Month 4-6 — quota attainment. SDR team annual turnover averages 30-50% across the industry, with top-performing organizations reducing this to 20-25% through: clear career progression paths (SDR to AE in 12-18 months), competitive compensation with achievable quotas, structured coaching programs, and recognition/reward systems for milestone achievements."),
+        ]),
+        ("forecasting-kpis", "Forecasting KPIs", "forecasting", [
+            ("Forecast Accuracy", "Forecast accuracy measures the alignment between predicted revenue and actual closed revenue. The benchmark for commit-level forecast accuracy is 85-95%, while best-case/pipeline forecast accuracy should be 50-70%. Most organizations struggle with forecast accuracy — the average B2B SaaS company achieves only 65-75% accuracy on commit forecasts. The primary sources of inaccuracy: optimistic deal probabilities (reps marking 50% deals as 75%), missing close dates (pushed deals not flagged), and insufficient multi-threading (single point of contact deals flip unexpectedly). Improving forecast accuracy requires: consistent inspection cadence (weekly pipeline reviews, bi-weekly forecast calls), defined stage exit criteria, weighted probability calculations based on historical data rather than rep intuition, and early identification of 'risky' deals that have stalled or show single-threaded risk patterns."),
+            ("Commit vs. Upside Analysis", "Commit vs. upside analysis separates high-confidence revenue (commit) from possible but uncertain revenue (upside/best-case). Commit deals should have: verbal agreement or LOI, defined close date within the forecast period, budget confirmed, and decision-maker engaged. Upside deals show strong signals but lack one or more commit criteria. The typical distribution: commit represents 60-70% of final revenue, upside contributes 20-30%, and 5-10% comes from 'surprise' deals not in the original forecast. Tracking the commit-to-close conversion rate (target 85%+) and upside-to-close rate (target 25-40%) over time calibrates the forecast model. Organizations that separately track commit, best-case, and pipeline forecasts with distinct probability weightings achieve 15-20% higher forecast accuracy than those using a single forecast category."),
+            ("Pipeline Aging and Slippage", "Pipeline aging measures how long opportunities remain in the pipeline without progressing, while slippage tracks deals that push from one forecast period to the next. The average close date slippage for B2B SaaS deals is 30-45 days — meaning the typical deal closes 30-45 days later than initially projected. Slippage rates above 35% of quarterly pipeline indicate systemic forecasting issues. Key slippage indicators: close dates repeatedly pushed (3+ pushes is a strong negative signal), lack of next steps scheduled beyond the current stage, single point of contact, and no executive engagement. Organizations that implement 'close date integrity' rules — requiring specific evidence to keep a close date (meeting scheduled, verbal timeline, contract sent) — reduce slippage by 25-40% and significantly improve forecast accuracy."),
+        ]),
+        ("expansion-kpis", "Expansion KPIs", "expansion", [
+            ("Upsell and Cross-Sell Rates", "Upsell rate measures the percentage of existing customers who purchase additional capacity or premium features, while cross-sell rate measures those purchasing complementary products. B2B SaaS benchmarks: annual upsell rate 15-25% of install base, cross-sell rate 8-15%. The timing of expansion conversations is critical: the highest propensity for upsell occurs at 90-120 days post-onboarding (after initial value realization), at contract renewal (60-90 days before expiration), and following positive health score movements. Expansion revenue typically has 3-5x higher margins than new business due to lower CAC and shorter sales cycles (15-30 days vs. 60-180 days). Organizations that implement systematic expansion motions — health-score triggered outreach, quarterly business reviews, and product usage-based recommendations — achieve expansion ARR 2-3x higher than those relying on reactive expansion."),
+            ("Account Penetration Depth", "Account penetration depth measures the breadth of engagement within an account — how many departments, teams, and stakeholders are actively using the product. The metric is calculated as: (Active Users / Total Addressable Users in Account) x 100. Benchmarks: low penetration below 20% (limited expansion potential without broadening), medium penetration 20-50% (significant expansion opportunity within existing departments), high penetration 50-80% (expansion focus shifts to new departments or use cases). Accounts with penetration above 40% show 3x higher NRR and 5x lower churn rates compared to accounts below 20%. Tracking penetration by department reveals cross-sell opportunities, while tracking by user role identifies adoption gaps that indicate training or feature gaps."),
+            ("Land-and-Expand Metrics", "Land-and-expand is a go-to-market strategy where the initial deal is small (department-level or pilot) with the intent to expand over time. Key metrics: land deal ACV (typically $10K-50K for enterprise land), time to first expansion (benchmark 90-180 days), expansion multiplier (target 3-5x land ACV over 24 months), and land-to-expand conversion rate (target 60-70% of land deals expand within 12 months). The success of land-and-expand depends on: rapid time to value for the initial use case, identifying expansion champions within the landing department, demonstrating value to adjacent teams, and building executive relationships during the land phase. Organizations with mature land-and-expand motions generate 40-60% of new ARR from expansion of existing accounts."),
+        ]),
     ]
-  },
-  "metadata": {
-    "pipeline_id": "pipeline_abc123",
-    "parent_task": "task_xyz789",
-    "priority": "high"
-  }
-}
-```
 
-### Agent Memory System
-
-Each agent maintains a memory store with:
-
-| Memory Type | Retention | Purpose |
-|-------------|-----------|---------|
-| Working Memory | Current task | Active processing context |
-| Short-term | 24 hours | Recent results, in-progress data |
-| Long-term | Permanent | Learned patterns, preferences |
-| Shared Memory | 30 days | Cross-agent communication context |
-
-### Memory Sharing Protocol
-
-1. Agent completes task → writes results to shared memory
-2. Downstream agent reads from shared memory before starting
-3. Conflicts resolved by timestamp (latest wins)
-4. Critical fields require explicit acknowledgment
-
-## 5. Agent Customization
-
-### Configuration Options
-
-| Setting | Default | Range | Description |
-|---------|---------|-------|-------------|
-| `icp_strictness` | 0.7 | 0.1-1.0 | How strictly to apply ICP criteria |
-| `enrichment_depth` | standard | basic/standard/deep | How much data to enrich |
-| `outreach_style` | professional | casual/professional/executive | Tone of generated content |
-| `max_daily_outreach` | 50 | 10-200 | Max outreach actions per day |
-| `qualification_threshold` | 70 | 0-100 | Minimum ICP score to qualify |
-| `research_breadth` | focused | focused/comprehensive | How deep to research accounts |
-
-### Custom Instructions
-
-Users can provide custom instructions to each agent:
-
-```yaml
-atlas:
-  custom_instruction: "Focus on fintech companies in APAC with >100 employees"
-  market_priorities: ["fintech", "healthtech", "saas"]
-  
-scout:
-  custom_instruction: "Prioritize companies showing hiring signals for sales roles"
-  search_channels: ["linkedin", "job_boards", "news"]
-  
-bard:
-  custom_instruction: "Use concise, value-driven messaging. Never use exclamation marks."
-  sequence_length: 5
-  channels: ["email", "linkedin"]
-```
-
-## 6. Error Handling & Fallback
-
-### Failure Modes
-
-| Failure | Agent | Detection | Fallback |
-|---------|-------|-----------|----------|
-| API timeout | Forge | >30s response | Retry with cached data |
-| Rate limited | Scout | HTTP 429 | Queue and retry after cooldown |
-| Data not found | Sage | Empty result | Return partial research |
-| Scoring error | Judge | Score outside 0-100 | Use heuristic fallback |
-| Sequence failure | Bard | Email bounce | Try alternative channel |
-| Pipeline error | Flow | State inconsistency | Reset to last known good state |
-
-### Circuit Breaker Pattern
-
-Each agent has a circuit breaker:
-- **Closed**: Normal operation
-- **Open**: After 5 consecutive failures, stop for 5 minutes
-- **Half-Open**: Try one request; if success, close; if fail, stay open
-
-## 7. Monitoring & Observability
-
-### Agent Health Dashboard
-
-| Metric | Target | Alert Threshold |
-|--------|--------|-----------------|
-| Task completion rate | >95% | <90% |
-| Average task duration | <30s | >60s |
-| Error rate | <2% | >5% |
-| Queue depth | <50 | >100 |
-| Memory usage | <80% | >90% |
-
-### Pipeline Metrics
-
-| Metric | Target | Description |
-|--------|--------|-------------|
-| End-to-end latency | <5 min | Discovery to qualified lead |
-| Throughput | >100 prospects/day | Full pipeline processed |
-| Quality score | >0.8 | Accuracy of agent outputs |
-| Cost per lead | <$2.00 | Total API + compute cost |
-""")
-
-write_file("product/lead-scoring-engine.md", """---
-title: "Lead Scoring Engine"
-category: product
-grade: A
-last_reviewed: 2026-07-08
-tags: [lead-scoring, scoring, qualification, prioritization, model, ai]
----
-
-# Lead Scoring Engine
-
-## 1. Overview
-
-LeadReach's Lead Scoring Engine, powered by the Judge agent, uses a multi-dimensional scoring model that combines firmographic fit, technographic alignment, intent signals, and engagement data to produce a composite ICP score (0-100). The scoring model is continuously refined through feedback loops and A/B testing to optimize conversion prediction accuracy.
-
-## 2. Scoring Dimensions
-
-### Dimension Weights
-
-| Dimension | Weight | Description |
-|-----------|--------|-------------|
-| Firmographic Fit | 35% | Company size, industry, revenue, location |
-| Technographic Alignment | 20% | Technology stack compatibility |
-| Intent Signals | 20% | Buying intent and trigger events |
-| Engagement Level | 15% | Interaction depth and recency |
-| BANT Overlay | 10% | Budget, Authority, Need, Timeline signals |
-
-### Firmographic Scoring (0-35)
-
-| Criterion | Max Points | Scoring Rules |
-|-----------|-----------|---------------|
-| Industry Match | 10 | Exact ICP industry: 10, Adjacent: 5, Other: 0 |
-| Employee Count | 8 | In ICP range: 8, Adjacent: 4, Outside: 0 |
-| Revenue Range | 7 | In ICP range: 7, Adjacent: 3, Unknown: 2 |
-| Geography | 5 | Target region: 5, Adjacent: 2, Other: 0 |
-| Company Stage | 5 | Ideal stage: 5, Compatible: 2, Other: 0 |
-
-### Technographic Scoring (0-20)
-
-| Criterion | Max Points | Scoring Rules |
-|-----------|-----------|---------------|
-| Tech Stack Match | 8 | Uses complementary tech: 8, Neutral: 4, Competing: 0 |
-| Cloud Provider | 4 | Same cloud: 4, Compatible: 2, Unknown: 1 |
-| Integration Potential | 4 | High: 4, Medium: 2, Low: 0 |
-| Tech Maturity | 4 | Early adopter: 4, Mainstream: 2, Laggard: 0 |
-
-### Intent Scoring (0-20)
-
-| Signal Type | Max Points | Decay |
-|-------------|-----------|-------|
-| Third-party intent topic match | 8 | 10% per week |
-| Website visit (pricing page) | 5 | 20% per week |
-| Content download | 4 | 15% per week |
-| Job posting (relevant role) | 3 | No decay (event-based) |
-
-### Engagement Scoring (0-15)
-
-| Activity | Points | Decay |
-|----------|--------|-------|
-| Email opened | 1 | 5% per day |
-| Email clicked | 2 | 5% per day |
-| Meeting booked | 5 | 10% per week |
-| Demo requested | 4 | No decay |
-| Reply received | 3 | 5% per day |
-
-### BANT Overlay (0-10)
-
-| Factor | Points | Detection Method |
-|--------|--------|-----------------|
-| Budget | 3 | Funding signals, company size, spend indicators |
-| Authority | 3 | Title seniority, decision-maker signals |
-| Need | 2 | Pain points mentioned, competitor usage |
-| Timeline | 2 | Trigger events, contract renewal dates |
-
-## 3. Score Interpretation
-
-| Score Range | Grade | Classification | Action |
-|-------------|-------|---------------|--------|
-| 90-100 | A+ | Hot Lead | Immediate outreach, priority routing |
-| 80-89 | A | Qualified Lead | Fast-track outreach, assigned rep |
-| 70-79 | B | Warm Lead | Standard outreach cadence |
-| 60-69 | C | Nurture Lead | Long-term nurture campaign |
-| 50-59 | D | Low Priority | Light nurture, periodic check |
-| 0-49 | F | Disqualified | Archive, monitor for changes |
-
-## 4. Model Training
-
-### Training Data
-
-- Historical win/loss data from CRM
-- Conversion outcomes by score range
-- Agent feedback on lead quality
-- Rep activity and outcome data
-
-### Model Types
-
-| Model | Use Case | Update Frequency |
-|-------|----------|-----------------|
-| Rule-based | Default scoring | Manual updates |
-| Logistic Regression | Simple conversion prediction | Monthly |
-| Gradient Boosted Trees | Multi-dimensional scoring | Weekly |
-| Neural Network | Complex pattern detection | Daily (online learning) |
-
-### A/B Testing
-
-LeadReach supports A/B testing of scoring models:
-1. Route 50% of leads through Model A, 50% through Model B
-2. Measure conversion rate by score range
-3. Statistical significance test (p < 0.05)
-4. Promote winner to production
-
-## 5. Custom Scoring Rules
-
-Users can define custom scoring overrides:
-
-```yaml
-custom_rules:
-  - name: "enterprise_boost"
-    condition: employee_count > 1000
-    action: add_score(10)
+    for slug, title, kpi_type, sections in kpis:
+        body = f"# {title}\n\n"
+        body += f"Comprehensive KPI reference for the LeadReach platform covering {kpi_type}-related performance metrics.\n"
+        body += "These benchmarks enable agents to assess prospect performance, identify improvement opportunities, and deliver data-driven recommendations.\n\n"
+        for heading, content in sections:
+            body += f"## {heading}\n\n{content}\n\n"
+        files.append(write_md(f"kpis/{slug}.md", {
+            "title": title,
+            "category": "kpi",
+            "kpi_type": kpi_type,
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["kpi", kpi_type, "benchmark", "metrics"],
+        }, body))
     
-  - name: "competitor_penalty"
-    condition: uses_competitor == true
-    action: add_score(-15)
+    return files
+
+# ============================================================
+# 2. Competitive Intelligence (NEW - 10 files)
+# ============================================================
+
+def generate_competitive_intel():
+    files = []
     
-  - name: "trigger_event_boost"
-    condition: trigger_event == "funding_round"
-    action: add_score(20)
+    competitors = [
+        ("zoominfo-competitive-profile", "ZoomInfo Competitive Profile", "ZoomInfo is a leading B2B contact and company intelligence platform that provides access to a database of over 100 million professional contacts and 14 million company profiles. Their core offering includes: contact data with direct dial phone numbers and verified emails, buyer intent signals based on web browsing behavior, and sales engagement tools for outreach automation. ZoomInfo's key differentiators include their proprietary data collection methodology (combining community-contributed data, web crawling, and partner integrations), their SCOOP intent data network covering 300K+ websites, and their integration ecosystem with major CRM and sales engagement platforms. Their pricing model is tier-based, starting at approximately $15K/year for basic access and scaling to $50K+ for enterprise features including intent data and advanced analytics. Key weaknesses that competitors exploit: data accuracy concerns (particularly for international contacts where accuracy rates drop to 60-70% vs. 85-90% for US contacts), limited real-time data freshness (some records may be 30-90 days outdated), and a complex pricing structure that can make ROI calculation difficult for smaller organizations. For LeadReach positioning, emphasize real-time data freshness, AI-driven insights, and superior international coverage as key differentiators."),
+        ("apollo-competitive-profile", "Apollo Competitive Profile", "Apollo.io is a sales intelligence and engagement platform that combines a B2B database with sequencing and outreach tools. Their database includes 275M+ contacts and 60M+ companies, with data sourced from web crawling, community contributions, and partnerships. Apollo's primary differentiators are: an all-in-one platform approach (combining prospecting, sequencing, and analytics in a single tool), a freemium pricing model that allows individual users to access limited data for free (making bottom-up adoption common), and Chrome extension-based workflow integration. Their paid tiers range from $49/user/month (Basic) to $119/user/month (Organization), with custom enterprise pricing. Key weaknesses: data quality varies significantly across regions and industries, with users reporting 50-70% email accuracy for non-US contacts; the sequencing capabilities are less sophisticated than dedicated sales engagement tools (Outreach, Salesloft); and advanced analytics and reporting are limited compared to best-of-breed solutions. Apollo's market position targets SMB and mid-market teams that value cost efficiency over premium data quality. For LeadReach positioning, emphasize superior data accuracy, deeper agent-driven insights, and enterprise-grade compliance as key advantages over Apollo's breadth-over-depth approach."),
+        ("lusha-competitive-profile", "Lusha Competitive Profile", "Lusha is a B2B contact data platform specializing in providing direct dial phone numbers and professional email addresses. Their database covers 100M+ business profiles with a focus on decision-maker contact information. Lusha's key differentiators include: high phone number accuracy (claiming 95%+ direct dial accuracy for US contacts), a simple and intuitive Chrome extension interface, and transparent per-credit pricing that ranges from $29/user/month (360 credits) to custom enterprise plans. Lusha's primary market is sales development teams that prioritize phone-based outreach and need reliable direct dial numbers. Key weaknesses: limited company intelligence beyond contact data (no intent signals, limited firmographic depth), no built-in outreach or sequencing capabilities, and international coverage that is significantly weaker than US coverage (60-75% accuracy for EMEA/APAC contacts). For LeadReach positioning, emphasize comprehensive intelligence beyond contact data, multi-channel outreach capabilities, and AI-driven prospecting that goes beyond simple data lookup."),
+        ("outreach-competitive-profile", "Outreach Competitive Profile", "Outreach.io is a sales execution platform focused on sales engagement, sequence management, and revenue intelligence. While not a direct data competitor, Outreach competes in the sales workflow layer that LeadReach's agents aim to enhance. Outreach's core capabilities include: multi-channel sequence management (email, phone, social, custom actions), AI-powered deal insights and forecasting (Outreach Kaia), and revenue operations analytics. Their pricing starts at approximately $100/user/month and scales to $200+/user/month for enterprise features. Outreach processes over 400M sales activities annually across their customer base. Key weaknesses: no native data or prospecting capability (requires integration with ZoomInfo, Apollo, or similar for contact data), complex setup and configuration that requires dedicated admin resources, and a UI that can feel overwhelming for new users. The platform is best suited for enterprise sales teams with 50+ reps that have dedicated sales ops resources. For LeadReach positioning, emphasize the integrated nature of LeadReach's approach — combining intelligence, prospecting, and outreach in a single AI-driven platform rather than requiring separate tools for each function."),
+        ("salesloft-competitive-profile", "Salesloft Competitive Profile", "Salesloft is a sales engagement platform that competes directly with Outreach in the sequencing and sales execution space. Their Modern Revenue Workspace includes: cadence management for multi-channel outreach, dialer functionality with local presence, and analytics for team performance measurement. Salesloft differentiates through: a more intuitive UI than Outreach (often cited in competitive wins), stronger integration with Salesforce (native integration built co-developed), and their Rhythm pipeline management feature that prioritizes daily selling activities. Pricing is comparable to Outreach at $100-200/user/month. Key weaknesses: similar to Outreach, Salesloft lacks native data and prospecting capability, requires third-party integrations for contact data and intent signals, and the analytics capabilities, while improved, still lag behind dedicated revenue intelligence platforms like Gong. For LeadReach positioning, highlight the advantage of AI agents that automatically determine the optimal outreach cadence and messaging, versus manual cadence creation in Salesloft."),
+        ("gong-competitive-profile", "Gong Competitive Profile", "Gong is a revenue intelligence platform that captures and analyzes customer interactions across phone, video, email, and web conferencing. Their AI engine processes deal intelligence, competitive mentions, risk signals, and coaching opportunities from these interactions. Gong's key differentiators include: industry-leading conversation intelligence with real-time transcription and analysis, deal intelligence that identifies at-risk deals based on interaction patterns, and market intelligence that aggregates competitive and market trends across their customer base. Pricing starts at approximately $1,600/user/year for the Revenue Intelligence product, with enterprise tiers exceeding $2,400/user/year. Key weaknesses: Gong is purely an intelligence/analysis tool — it does not provide data, prospecting, or outreach capabilities; the platform captures data passively and cannot drive proactive selling actions; and deployment requires extensive integration work and change management. For LeadReach positioning, emphasize that LeadReach agents are proactive (they find prospects, craft outreach, and drive pipeline) versus Gong's reactive analysis of existing conversations."),
+        ("6sense-competitive-profile", "6sense Competitive Profile", "6sense is an account-based orchestration platform that uses AI to identify buying signals and predict which accounts are in-market for purchase. Their platform analyzes billions of behavioral signals across web, search, and third-party data sources to create an AI-powered Buyer Intent Score. 6sense's key differentiators include: the most comprehensive intent data network (covering 70%+ of B2B web activity), predictive account scoring that identifies accounts 6-12 months before they enter active buying cycles, and orchestration capabilities that trigger automated actions based on account behavior. Pricing is enterprise-only, typically $50K-150K+ annually. Key weaknesses: the platform is complex and requires significant implementation effort (3-6 months to full deployment), intent data interpretation requires specialized training, and the lack of native outreach capability means actions must be executed through integrated tools. For LeadReach positioning, emphasize simplicity and speed to value — LeadReach agents deliver actionable prospecting immediately without the implementation overhead of 6sense, while incorporating intent signals as one input among many into the agent decision framework."),
+        ("clearbit-competitive-profile", "Clearbit Competitive Profile", "Clearbit (now part of HubSpot) is a data enrichment and intelligence platform that provides firmographic data, technographic signals, and intent data. Their API-first approach makes them popular for embedding data enrichment into existing workflows and tools. Clearbit's key differentiators include: real-time enrichment API that processes 250M+ API calls monthly, extensive technographic data covering 40M+ websites and technology installations, and seamless integration with marketing automation and CRM platforms. Their pricing ranges from $99/month for basic enrichment to custom enterprise plans. Key weaknesses: after the HubSpot acquisition, Clearbit's roadmap and feature development are aligned with HubSpot's ecosystem, creating potential concerns for non-HubSpot users; the contact data coverage is thinner than dedicated contact databases (ZoomInfo, Apollo); and the enrichment accuracy for small companies and startups is lower than for established enterprises. For LeadReach positioning, emphasize platform independence and agent-driven enrichment that selects the best data source for each use case, rather than being tied to a single data provider's ecosystem."),
+        ("demandbase-competitive-profile", "Demandbase Competitive Profile", "Demandbase is an account-based marketing (ABM) and advertising platform that combines intent data, advertising, and personalization for B2B go-to-market teams. Their platform identifies in-market accounts, serves targeted advertising, and personalizes website experiences based on account-level signals. Demandbase's key differentiators include: a proprietary B2B advertising network reaching 95% of the B2B web, account identification technology that de-anonymizes website visitors at the company level, and integrated ABM workflow from identification through engagement to measurement. Pricing is enterprise-focused, typically $50K-200K annually. Key weaknesses: primarily an advertising and marketing tool rather than a sales intelligence platform; the account-level identification cannot identify individual contacts within accounts; and the ROI measurement focuses on marketing metrics (impressions, engagement) rather than sales outcomes (pipeline, revenue). For LeadReach positioning, emphasize the sales-outcome focus — LeadReach agents are designed to generate and advance pipeline, not just serve ads and measure engagement."),
+        ("hunter-competitive-profile", "Hunter Competitive Profile", "Hunter.io is an email finding and verification tool that helps sales professionals discover professional email addresses associated with a domain. Their database includes 100M+ email addresses sourced from public web crawling. Hunter's key differentiators include: simple and focused tool that excels at one task (finding and verifying emails), transparent pricing (free tier with 25 searches/month, paid from $49/month), and domain search that reveals the email pattern and key contacts at any company. Key weaknesses: extremely limited scope (email finding only, no phone numbers, no intent data, no firmographics beyond what's on the website), data freshness issues (emails may be outdated if the person has left the company), and no integration with sales workflows beyond basic CRM export. For LeadReach positioning, Hunter represents the most basic competitor in the space — LeadReach's AI agents provide comprehensive prospecting intelligence that goes far beyond simple email lookup, including qualification scoring, trigger events, and personalized outreach recommendations."),
+    ]
+
+    for slug, title, content in competitors:
+        body = f"# {title}\n\n{content}\n\n## Competitive Positioning Summary\n\nThis profile enables LeadReach agents to position against {title.split()[0]} by leveraging our advantages in AI-driven insights, real-time data freshness, and integrated agent workflows.\n\n## Key Battle Cards\n\n### When to Position LeadReach Over {title.split()[0]}\n\n- When the prospect needs proactive AI agents vs. manual data lookup\n- When international coverage and data accuracy are priorities\n- When the buyer wants an integrated intelligence + outreach platform\n- When real-time trigger events and buying signals are valued\n- When compliance and data governance requirements are strict\n\n### Anticipated Objections and Responses\n\n- **Price objection**: LeadReach delivers higher ROI through automation and agent-driven pipeline generation\n- **Incumbent comfort**: Manual processes create hidden costs in rep productivity and missed opportunities\n- **Data concerns**: LeadReach multi-source verification exceeds single-source accuracy\n"
+        files.append(write_md(f"competitive-intel/{slug}.md", {
+            "title": title,
+            "category": "competitive-intel",
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["competitive", "battle-card", slug.split("-")[0]],
+        }, body))
     
-  - name: "stale_engagement_decay"
-    condition: last_engagement_days > 30
-    action: multiply_score(0.8)
-```
-
-## 6. Integration Points
-
-| Integration | Direction | Data |
-|-------------|-----------|------|
-| Scout → Judge | Input | Raw prospect data |
-| Forge → Judge | Input | Enrichment data |
-| Sage → Judge | Input | Research insights |
-| Judge → Bard | Output | Qualified leads + scores |
-| Judge → CRM | Output | Score updates |
-| Judge → Flow | Output | Pipeline routing |
-| CRM → Judge | Feedback | Win/loss outcomes |
-
-## 7. Monitoring
-
-| Metric | Target | Alert |
-|--------|--------|-------|
-| Scoring accuracy | >75% (A-grades convert) | <65% |
-| Score distribution | Bell curve centered at 60 | Skewed >80% below 40 |
-| Model drift | <5% per month | >10% per month |
-| Processing time | <2 seconds per lead | >5 seconds |
-| False positive rate | <20% | >30% |
-""")
-
-write_file("product/outreach-automation.md", """---
-title: "Outreach Automation Engine"
-category: product
-grade: A
-last_reviewed: 2026-07-08
-tags: [outreach, automation, sequences, cadence, email, linkedin, personalization]
----
-
-# Outreach Automation Engine
-
-## 1. Overview
-
-LeadReach's Outreach Automation Engine, powered by the Bard agent, generates highly personalized, multi-channel outreach sequences that combine email, LinkedIn, and phone touchpoints. The engine leverages AI-driven personalization, send-time optimization, and compliance guardrails to maximize response rates while maintaining deliverability.
-
-## 2. Sequence Builder
-
-### Sequence Architecture
-
-Each outreach sequence consists of:
-
-| Component | Description |
-|-----------|-------------|
-| Template | Base message structure with personalization tokens |
-| Triggers | When and how to send each step |
-| Channels | Email, LinkedIn, Phone |
-| Timing | Delays between steps |
-| Conditions | Branching logic based on engagement |
-| Fallback | Alternative path if primary fails |
-
-### Personalization Engine
-
-The Bard agent personalizes each message using:
-
-| Data Source | Personalization Type | Example |
-|-------------|---------------------|---------|
-| Company research | Industry-specific pain points | "As a fintech scaling post-Series B..." |
-| Contact role | Role-relevant value props | "...help VPs of Sales hit quota faster" |
-| Trigger events | Timely context | "Congrats on the Series C..." |
-| Technographic | Tech-specific integration | "Since you use Salesforce..." |
-| Recent activity | Engagement-aware | "I noticed your team downloaded our..." |
-
-### Personalization Tokens
-
-```
-{{company_name}}          - Target company name
-{{contact_first_name}}   - Prospect first name
-{{contact_title}}        - Job title
-{{industry_pain_point}}  - AI-generated industry pain point
-{{trigger_event}}        - Recent trigger event reference
-{{tech_integration}}     - Relevant tech stack reference
-{{competitor_mention}}   - Competitor displacement angle
-{{value_proposition}}    - ICP-aligned value prop
-```
-
-## 3. Multi-Channel Orchestration
-
-### Channel Sequencing
-
-```
-Day 1:  LinkedIn connection request
-Day 2:  Email #1 (first touch)
-Day 4:  LinkedIn message (if connected)
-Day 5:  Email #2 (value-add follow-up)
-Day 8:  Phone call attempt #1
-Day 10: Email #3 (social proof)
-Day 14: Email #4 (breakup)
-```
-
-### Send-Time Optimization
-
-| Channel | Best Day | Best Time (recipient TZ) | Worst Time |
-|---------|----------|--------------------------|------------|
-| Email | Tue-Thu | 8:00-10:00 AM | Mon 8 AM, Fri 5 PM |
-| LinkedIn | Tue-Wed | 7:00-9:00 AM | Weekend |
-| Phone | Tue-Thu | 10:00-11:30 AM | Mon AM, Fri PM |
-
-### A/B Testing Framework
-
-| Element | Testable | Sample Size Needed |
-|---------|----------|-------------------|
-| Subject line | Yes | 100 per variant |
-| CTA | Yes | 150 per variant |
-| Channel mix | Yes | 200 per variant |
-| Send time | Yes | 100 per time slot |
-| Sequence length | Yes | 200 per variant |
-| Personalization depth | Yes | 150 per variant |
-
-## 4. Compliance Guardrails
-
-### Email Compliance
-
-| Rule | Implementation |
-|------|---------------|
-| CAN-SPAM | Unsubscribe link in every email, physical address included |
-| GDPR | Consent verification before EU prospects, DPO contact |
-| CASL | Express/implied consent check for Canadian prospects |
-| CCPA | Opt-out mechanism, data usage disclosure |
-
-### Frequency Limits
-
-| Channel | Max per prospect | Max per day (per rep) |
-|---------|-----------------|----------------------|
-| Email | 1 per day, 6 per sequence | 100 |
-| LinkedIn | 1 per day, 3 per week | 20 connection requests |
-| Phone | 1 per day, 3 per sequence | 30 calls |
-
-### Do-Not-Contact Lists
-
-- Global DNC list maintained in LeadReach
-- Automatic suppression of bounced emails
-- Opt-out processing within 24 hours
-- Salesforce DNC sync for consistency
-- Compliance audit trail for all outreach
-
-## 5. Deliverability Management
-
-### Email Infrastructure
-
-| Component | Configuration |
-|-----------|---------------|
-| Sending domains | Dedicated per customer |
-| IP addresses | Dedicated IPs (warm-up required) |
-| Authentication | SPF, DKIM, DMARC configured |
-| Warm-up | 14-day gradual ramp-up for new IPs |
-| Monitoring | Real-time bounce/complaint tracking |
-
-### Deliverability Scoring
-
-| Factor | Weight | Target |
-|--------|--------|--------|
-| Bounce rate | 30% | <2% |
-| Spam complaint rate | 25% | <0.1% |
-| Authentication pass rate | 20% | 100% |
-| Engagement rate | 15% | >5% open rate |
-| List hygiene score | 10% | >90% valid emails |
-
-## 6. Performance Analytics
-
-### Key Metrics
-
-| Metric | Definition | Benchmark |
-|--------|------------|-----------|
-| Open rate | Unique opens / delivered | 25-35% |
-| Click rate | Unique clicks / delivered | 2-5% |
-| Reply rate | Replies / delivered | 5-15% |
-| Meeting booked rate | Meetings / replies | 20-30% |
-| Sequence completion rate | Completed / started | 40-60% |
-| Opt-out rate | Unsubscribes / delivered | <0.5% |
-
-### Attribution
-
-LeadReach tracks multi-touch attribution:
-1. First-touch: Sequence that initiated contact
-2. Last-touch: Final action before conversion
-3. Multi-touch: Weighted contribution across all touches
-4. Channel attribution: Which channel drove the response
-""")
-
-write_file("product/analytics-dashboard.md", """---
-title: "Analytics Dashboard"
-category: product
-grade: A
-last_reviewed: 2026-07-08
-tags: [analytics, dashboard, reporting, metrics, kpi, visualization]
----
-
-# Analytics Dashboard
-
-## 1. Overview
-
-LeadReach's Analytics Dashboard provides real-time visibility into pipeline health, agent performance, outreach effectiveness, and revenue forecasting. The dashboard aggregates data from all eight AI agents and external integrations to present actionable insights for sales leaders, SDR managers, and individual contributors.
-
-## 2. Dashboard Sections
-
-### 2.1 Pipeline Overview
-
-| Widget | Data Source | Update Frequency |
-|--------|-----------|-----------------|
-| Pipeline value by stage | Flow agent | Real-time |
-| New leads this week | Scout + Judge | Hourly |
-| Conversion funnel | All agents | Daily |
-| Average deal cycle | Flow + CRM | Daily |
-| Pipeline coverage ratio | Flow + CRM | Real-time |
-
-### 2.2 Agent Performance
-
-| Metric | Atlas | Scout | Forge | Sage | Judge | Bard | Flow | Echo |
-|--------|-------|-------|-------|------|-------|------|------|------|
-| Tasks completed | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Success rate | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Avg duration | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Error rate | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Cost per task | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ | ✅ |
-
-### 2.3 Outreach Performance
-
-| Metric | Description | Visualization |
-|--------|-------------|---------------|
-| Email open rate | Unique opens / delivered | Line chart (7/30/90 day) |
-| Reply rate | Replies / delivered | Bar chart by sequence |
-| Meeting rate | Meetings / replies | Funnel chart |
-| Channel comparison | Email vs LinkedIn vs Phone | Grouped bar chart |
-| Best send times | Opens by hour/day | Heatmap |
-
-### 2.4 Revenue Forecasting
-
-| Widget | Description | Data Source |
-|--------|-------------|-------------|
-| Weighted pipeline | Deal value × probability | Flow + CRM |
-| Forecast by month | Expected close date distribution | Flow + CRM |
-| Coverage gap | Quota vs weighted pipeline | CRM |
-| Win rate trend | Close-won rate over time | CRM |
-| Average deal size | ACV by segment | CRM |
-
-## 3. Custom Report Builder
-
-### Report Types
-
-| Type | Parameters | Output |
-|------|-----------|--------|
-| Pipeline Report | Date range, team, stage | Table + chart |
-| Agent Report | Agent, date range, task type | Table + metrics |
-| Sequence Report | Sequence, date range | Performance table |
-| Territory Report | Region, industry | Heatmap + table |
-| Executive Summary | Date range | KPI cards + trend |
-
-### Export Options
-
-- CSV download for all tabular data
-- PDF export for executive reports
-- Scheduled email delivery (daily/weekly/monthly)
-- API access for custom integrations
-- Slack/Teams delivery for real-time alerts
-
-## 4. Alert Configuration
-
-### Pre-built Alerts
-
-| Alert | Condition | Channel |
-|-------|-----------|---------|
-| Pipeline below quota | Coverage < 3x | Email + Slack |
-| Hot lead idle | Qualified lead no activity > 24h | Slack |
-| Deal at risk | Stage stuck > 14 days | Email |
-| Agent failure | Error rate > 5% | Email + PagerDuty |
-| Daily digest | Every morning 8 AM | Email |
-
-### Custom Alert Rules
-
-```yaml
-alert:
-  name: "enterprise_deal_alert"
-  condition: "deal_value > 100000 AND pipeline_stage == 'negotiation'"
-  action: 
-    - notify: ["vp-sales@company.com"]
-    - channel: "#enterprise-deals"
-  frequency: "immediate"
-  cooldown: 3600
-```
-
-## 5. Data Architecture
-
-| Source | Retention | Refresh |
-|--------|-----------|---------|
-| Agent events | 90 days | Real-time |
-| CRM data | 2 years | 15 min sync |
-| Outreach data | 1 year | Real-time |
-| Aggregated metrics | 3 years | Daily rollup |
-| Custom reports | 1 year | On-demand |
-
-## 6. API Access
-
-### Analytics API Endpoints
-
-```
-GET  /api/analytics/pipeline          - Pipeline overview
-GET  /api/analytics/agents             - Agent performance
-GET  /api/analytics/outreach           - Outreach metrics
-GET  /api/analytics/forecast           - Revenue forecast
-GET  /api/analytics/kpis               - KPI definitions and values
-POST /api/analytics/reports/custom     - Generate custom report
-GET  /api/analytics/reports/{id}       - Download report
-```
-""")
-
-write_file("product/enterprise-security.md", """---
-title: "Enterprise Security & Compliance"
-category: product
-grade: A
-last_reviewed: 2026-07-08
-tags: [security, compliance, enterprise, soc2, encryption, gdpr, access-control]
----
-
-# Enterprise Security & Compliance
-
-## 1. Security Architecture
-
-### Infrastructure
-
-| Component | Configuration |
-|-----------|---------------|
-| Cloud Provider | AWS (us-east-1, eu-west-1) |
-| Compute | ECS Fargate (isolated containers) |
-| Database | RDS PostgreSQL (encrypted at rest) |
-| Cache | ElastiCache Redis (encryption in transit) |
-| Storage | S3 (SSE-S3 + SSE-KMS) |
-| CDN | CloudFront (TLS 1.3) |
-| WAF | AWS WAF with managed rule sets |
-| DDoS | AWS Shield Advanced |
-
-### Network Security
-
-- VPC isolation with private subnets for application and database tiers
-- Security groups enforcing least-privilege network access
-- No direct internet access to database or cache tiers
-- VPN required for administrative access
-- API traffic routed through CloudFront + WAF
-
-## 2. Data Encryption
-
-### At Rest
-
-| Data Type | Encryption Method | Key Management |
-|-----------|-------------------|---------------|
-| Database | AES-256 (RDS) | AWS KMS (customer-managed keys available) |
-| File storage | AES-256 (S3 SSE-KMS) | AWS KMS |
-| Backups | AES-256 | AWS KMS |
-| Secrets | AES-256 | AWS Secrets Manager |
-| API keys | AES-256 | HashiCorp Vault |
-
-### In Transit
-
-| Connection | Protocol | Certificate |
-|------------|----------|-------------|
-| Browser ↔ LeadReach | TLS 1.3 | DigiCert EV |
-| API ↔ LeadReach | TLS 1.3 | DigiCert |
-| LeadReach ↔ CRM | TLS 1.3 | Platform-managed |
-| LeadReach ↔ Data Providers | TLS 1.3 | Provider-managed |
-| Internal services | mTLS | Internal CA |
-
-## 3. Access Control
-
-### Authentication
-
-| Method | Support | MFA |
-|--------|---------|-----|
-| Email + Password | Yes | Required |
-| Google SSO | Yes | Inherited |
-| Microsoft SSO | Yes | Inherited |
-| SAML 2.0 | Yes (Enterprise) | Inherited from IdP |
-| API Keys | Yes | N/A (scoped access) |
-
-### Role-Based Access Control (RBAC)
-
-| Role | Permissions |
-|------|------------|
-| Admin | Full access, user management, billing |
-| Sales Manager | Team pipeline, reports, agent config |
-| SDR | Own pipeline, outreach, contacts |
-| Marketing | Campaigns, templates, analytics (read) |
-| Analyst | Read-only analytics and reports |
-| API User | Programmatic access (scoped) |
-
-### Data Access Policies
-
-- Row-level security: Users see only their team's data
-- Column-level masking: PII hidden from non-privileged roles
-- API scope limiting: Tokens scoped to specific operations
-- Audit logging: All data access recorded
-
-## 4. Compliance Certifications
-
-### SOC 2 Type II
-
-- Audit period: Annual
-- Auditor: Independent CPA firm
-- Trust Service Criteria: Security, Availability, Confidentiality
-- Report available under NDA
-
-### GDPR Compliance
-
-| Requirement | Implementation |
-|-------------|---------------|
-| Lawful basis | Legitimate interest for B2B; consent where required |
-| Data minimization | Collect only necessary data fields |
-| Right to access | Self-service data export |
-| Right to deletion | 30-day deletion SLA |
-| Data portability | JSON/CSV export |
-| DPO | Designated DPO available |
-| DPIA | Conducted for AI processing |
-| International transfers | Standard Contractual Clauses |
-
-### Additional Compliance
-
-| Standard | Status | Scope |
-|----------|--------|-------|
-| CCPA/CPRA | Compliant | California resident data |
-| CAN-SPAM | Compliant | All outbound email |
-| CASL | Compliant | Canadian prospects |
-| PECR | Compliant | UK/EU email |
-| ISO 27001 | In progress | Expected Q4 2026 |
-
-## 5. Incident Response
-
-### Response SLA
-
-| Severity | Definition | Response Time | Resolution Target |
-|----------|-----------|---------------|-------------------|
-| P1 Critical | Data breach, service down | 15 min | 4 hours |
-| P2 High | Security vulnerability, degraded | 1 hour | 8 hours |
-| P3 Medium | Non-critical security issue | 4 hours | 24 hours |
-| P4 Low | Security improvement | 24 hours | 5 business days |
-
-### Notification Policy
-
-- P1: Immediate notification to affected customers + CISO
-- P2: Notification within 4 hours to affected customers
-- P3: Included in monthly security update
-- GDPR breach notification: Within 72 hours to supervisory authority
-
-## 6. Data Residency
-
-| Region | Data Center | Available |
-|--------|-------------|-----------|
-| United States | AWS us-east-1 | Yes |
-| European Union | AWS eu-west-1 (Ireland) | Yes |
-| Asia Pacific | AWS ap-southeast-1 | Q3 2026 |
-
-### Data Processing Controls
-
-- Customer data stays in selected region
-- No cross-region replication without consent
-- Backup data encrypted and region-locked
-- AI model training: customer data not used for model improvement
-- Data isolation: Multi-tenant with logical separation
-
-## 7. Vulnerability Management
-
-| Activity | Frequency | Tool |
-|----------|-----------|------|
-| Penetration testing | Quarterly | Third-party firm |
-| Vulnerability scanning | Weekly | Qualys |
-| Dependency scanning | Per build | Snyk |
-| Code review | Every PR | Manual + Semgrep |
-| Bug bounty | Continuous | HackerOne |
-
-## 8. Audit Trail
-
-All significant actions are logged:
-
-| Event Category | Examples | Retention |
-|----------------|----------|-----------|
-| Authentication | Login, logout, MFA, SSO | 1 year |
-| Data access | View contact, export report | 1 year |
-| Data modification | Create/update/delete records | 2 years |
-| Configuration | Agent settings, RBAC changes | 2 years |
-| Integration | CRM sync, webhook events | 1 year |
-| Security | Failed login, API key rotation | 2 years |
-""")
-
-# ── CASE STUDY FILES ──────────────────────────────────────────
-
-write_file("case-studies/saas-plg-to-sales-led.md", """---
-title: "SaaS PLG to Sales-Led Conversion"
-category: case-study
-grade: A
-last_reviewed: 2026-07-08
-tags: [saas, plg, product-led, sales-assisted, conversion, icp]
----
-
-# SaaS PLG to Sales-Led Conversion
-
-## 1. Customer Profile
-
-| Attribute | Value |
-|-----------|-------|
-| Company | CloudMetrics (pseudonym) |
-| Industry | SaaS - Data Analytics |
-| ARR | $5M |
-| Employees | 80 |
-| Customers | 2,000+ free users, 200 paid |
-| Sales Model | Transitioning from PLG to sales-led |
-
-## 2. Challenge
-
-CloudMetrics had built a successful product-led growth engine with 2,000+ free users, but struggled to convert these users into high-value enterprise accounts. Their challenges included:
-
-- **No ICP definition**: Free users spanned too many segments; sales team couldn't prioritize
-- **Manual prospecting**: SDRs spent 70% of time researching, 30% actually selling
-- **Low conversion**: Free-to-paid conversion rate was 3.2% (industry avg: 5-7%)
-- **No scoring model**: All leads treated equally regardless of account potential
-- **Inconsistent outreach**: Each SDR crafted their own messaging, no A/B testing
-
-## 3. Approach
-
-### Phase 1: ICP Definition (Atlas Agent)
-- Analyzed existing customer base for highest-LTV accounts
-- Identified pattern: 200+ employee B2B SaaS companies with data teams
-- Defined 3 ICP tiers: Enterprise (500+), Mid-Market (50-500), SMB (<50)
-- Created negative personas (B2C, solo entrepreneurs, non-tech industries)
-
-### Phase 2: Pipeline Discovery (Scout Agent)
-- Connected to product usage database via webhook
-- Identified 340 free users matching Enterprise ICP
-- Discovered 180 matching Mid-Market ICP
-- Cross-referenced with Apollo for enrichment
-
-### Phase 3: Automated Enrichment (Forge + Sage)
-- Enriched all 520 ICP-matched users with firmographic data
-- Generated account-specific research for Enterprise tier
-- Identified 12 trigger events (funding rounds, executive hires)
-- Calculated ICP scores for all accounts
-
-### Phase 4: Targeted Outreach (Bard Agent)
-- Created persona-specific sequences (Data Team Lead, VP Engineering, CTO)
-- Personalized messaging using product usage data and research insights
-- A/B tested subject lines and CTAs
-- Multi-channel: Email + LinkedIn for Enterprise, Email-only for Mid-Market
-
-### Phase 5: Pipeline Management (Flow Agent)
-- Automated lead routing based on ICP tier
-- Set up stage progression rules
-- Configured deal-at-risk alerts
-- Generated weekly pipeline reports via Echo
-
-## 4. Results (90 Days)
-
-| Metric | Before LeadReach | After LeadReach | Change |
-|--------|-----------------|-----------------|--------|
-| Free-to-paid conversion | 3.2% | 9.7% | +203% |
-| Enterprise meetings booked | 3/month | 12/month | +300% |
-| Sales cycle (Enterprise) | 85 days | 52 days | -39% |
-| SDR efficiency (talk time) | 30% | 65% | +117% |
-| Pipeline value | $1.2M | $4.8M | +300% |
-| Average deal size | $8K ACV | $24K ACV | +200% |
-| Cost per qualified lead | $180 | $45 | -75% |
-
-## 5. Key Learnings
-
-1. **Product usage signals are gold**: Users who hit specific feature thresholds were 4x more likely to convert. LeadReach automated detection of these signals.
-
-2. **ICP precision matters more than volume**: Focusing on 520 ICP-matched users instead of 2,000 total users drove significantly better results despite smaller initial pool.
-
-3. **Personalization depth correlates with response**: Bard-generated emails using 3+ personalization signals achieved 28% reply rate vs 8% for generic templates.
-
-4. **Speed to lead is critical**: Accounts contacted within 24 hours of trigger event detection had 3x higher meeting booking rate.
-
-5. **Multi-channel beats single-channel**: Email+LinkedIn sequences had 45% higher conversion than email-only.
-
-## 6. Replicable Patterns
-
-### For PLG Companies Transitioning to Sales-Led
-
-1. Start with Atlas ICP definition using existing customer LTV data
-2. Use Scout to match free users against ICP (focus on top 20%)
-3. Prioritize accounts with trigger events (funding, hiring, feature usage milestones)
-4. Deploy Bard with product-usage-aware personalization
-5. Set Flow to route Enterprise leads directly to AE, Mid-Market to SDR
-6. Use Echo for weekly PLG-to-SQL conversion tracking
-""")
-
-write_file("case-studies/enterprise-security-vendor.md", """---
-title: "Enterprise Security Vendor Expansion"
-category: case-study
-grade: A
-last_reviewed: 2026-07-08
-tags: [cybersecurity, enterprise, expansion, compliance, security-review]
----
-
-# Enterprise Security Vendor Expansion
-
-## 1. Customer Profile
-
-| Attribute | Value |
-|-----------|-------|
-| Company | ShieldNet (pseudonym) |
-| Industry | Cybersecurity - Endpoint Protection |
-| ARR | $12M |
-| Employees | 150 |
-| Target Market | Enterprise (1000+ employees) |
-| Sales Cycle | 6-9 months |
-
-## 2. Challenge
-
-ShieldNet had proven product-market fit with mid-market customers but struggled to penetrate enterprise accounts due to:
-
-- **Extended security review processes**: Enterprise buyers required 4-8 week security/compliance evaluations
-- **Multi-stakeholder complexity**: 7-12 decision makers per deal (CISO, IT, Legal, Procurement, Risk)
-- **No account intelligence**: Sales reps couldn't map organizational structure or identify champions
-- **Generic outreach**: Same messaging for Fortune 500 CISOs as for mid-market IT directors
-- **Pipeline leakage**: 35% of enterprise deals stalled in security review stage
-
-## 3. Approach
-
-### Phase 1: Enterprise ICP Refinement
-- Atlas redefined ICP for enterprise: 1000+ employees, regulated industry, existing security budget
-- Created security-buyer personas: CISO, VP Security, Security Architect, Compliance Officer
-- Mapped buying committee roles and influence patterns
-
-### Phase 2: Strategic Account Discovery
-- Scout identified 200 target enterprise accounts using ZoomInfo + LinkedIn intent
-- Filtered by companies showing security-related buying signals
-- Prioritized by regulatory compliance pressure (fintech, healthcare, government)
-
-### Phase 3: Deep Account Intelligence
-- Sage generated comprehensive research for each target account
-- Mapped organizational structure, identified security team members
-- Analyzed current security stack for competitive displacement opportunities
-- Identified regulatory deadlines driving urgency
-
-### Phase 4: Security Review Acceleration
-- Built security review playbook with pre-populated compliance documentation
-- Judge auto-qualified accounts based on security readiness indicators
-- Bard crafted CISO-specific messaging addressing security concerns proactively
-- Created security review automation: pre-filled questionnaires, auto-generated compliance reports
-
-### Phase 5: Multi-Threaded Engagement
-- Identified and engaged multiple stakeholders simultaneously
-- Tailored messaging per role: CISO (risk reduction), IT (integration), Legal (compliance), Procurement (ROI)
-- Used Flow to track stakeholder engagement and progression
-
-## 4. Results (6 Months)
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| Enterprise pipeline | $3M | $8.5M | +183% |
-| Security review cycle | 52 days | 21 days | -60% |
-| Enterprise win rate | 18% | 31% | +72% |
-| Average deal size | $85K ACV | $180K ACV | +112% |
-| Deals in pipeline | 8 | 22 | +175% |
-| CISO meeting rate | 12% | 34% | +183% |
-
-## 5. Key Learnings
-
-1. **Security reviews are solvable**: Pre-emptive compliance documentation reduced security review time by 60%.
-2. **Multi-threading is essential**: Enterprise deals with 3+ engaged stakeholders had 4x higher win rate.
-3. **CISO-specific content matters**: Technical, risk-focused content outperformed marketing collateral 3:1.
-4. **Regulatory deadlines create urgency**: Accounts with upcoming compliance deadlines closed 2x faster.
-5. **Competitive intelligence drives displacement**: Knowing the incumbent security stack enabled targeted displacement messaging.
-
-## 6. Replicable Patterns
-
-1. Use Sage for deep security team organizational mapping
-2. Create security review automation package (SOC 2 reports, penetration test summaries, compliance matrices)
-3. Deploy multi-threaded outreach targeting entire buying committee
-4. Track security review milestones explicitly in Flow pipeline
-5. Build compliance deadline triggers into Scout discovery criteria
-""")
-
-write_file("case-studies/manufacturing-digital-transformation.md", """---
-title: "Manufacturing Digital Transformation"
-category: case-study
-grade: A
-last_reviewed: 2026-07-08
-tags: [manufacturing, digital-transformation, iiot, industry-4-0, traditional-industry]
----
-
-# Manufacturing Digital Transformation
-
-## 1. Customer Profile
-
-| Attribute | Value |
-|-----------|-------|
-| Company | IoTConnect (pseudonym) |
-| Industry | Industrial IoT Platform |
-| ARR | $8M |
-| Employees | 120 |
-| Target Market | Manufacturing (500+ employees) |
-| Sales Challenge | Selling digital to traditional buyers |
-
-## 2. Challenge
-
-IoTConnect sold an Industrial IoT platform that helped manufacturers monitor equipment, reduce downtime, and optimize production. However, their sales team struggled with:
-
-- **Traditional buyer mindset**: Manufacturing executives skeptical of cloud-based solutions, preferring "we've always done it this way"
-- **Long education cycle**: Buyers needed 3-6 months to understand digital transformation benefits
-- **Missing industry context**: Generic SaaS messaging didn't resonate with manufacturing pain points
-- **No industry-specific proof**: Lack of manufacturing-specific case studies and ROI models
-- **Complex buying committee**: Operations, IT, Finance, and C-suite all had veto power
-
-## 3. Approach
-
-### Phase 1: Manufacturing ICP Development
-- Atlas built manufacturing-specific ICP with digital maturity scoring
-- Created 4 buyer personas: Plant Manager, VP Operations, CIO/CTO, CFO
-- Developed industry-specific pain point mapping (downtime cost, OEE, maintenance spend)
-
-### Phase 2: Industry-Specific Discovery
-- Scout used manufacturing industry directories + trade show attendee lists
-- Filtered by companies with digital transformation indicators (job postings, tech investments)
-- Identified 150 target manufacturers showing IoT buying signals
-
-### Phase 3: Manufacturing-Specific Research
-- Sage generated ROI models based on industry benchmarks:
-  - Unplanned downtime cost: $10K-250K/hour (depending on plant size)
-  - OEE improvement potential: 10-20%
-  - Maintenance cost reduction: 15-30%
-- Created manufacturing-specific competitive analysis vs legacy SCADA systems
-- Built industry-specific security documentation (OT/IT convergence security)
-
-### Phase 4: Education-First Outreach
-- Bard created manufacturing-specific content sequences:
-  - Day 1: Industry report on IoT ROI in manufacturing
-  - Day 3: Case study of similar-sized manufacturer
-  - Day 7: ROI calculator personalized to their plant
-  - Day 14: Invitation to manufacturing-specific webinar
-- Positioning: "Digital transformation advisor" not "software vendor"
-
-### Phase 5: Consultative Pipeline Management
-- Flow managed long-cycle deals with stage-appropriate actions
-- Automated nurture for early-stage accounts (6+ month horizon)
-- Triggered escalation for accounts showing buying acceleration signals
-
-## 4. Results (9 Months)
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| Manufacturing pipeline | $2.1M | $8.4M | +300% |
-| Qualified leads/month | 4 | 18 | +350% |
-| Win rate | 15% | 32% | +113% |
-| Average deal size | $40K ACV | $95K ACV | +138% |
-| Sales cycle | 9 months | 5.5 months | -39% |
-| Demo-to-close rate | 20% | 48% | +140% |
-
-## 5. Key Learnings
-
-1. **Industry-specific content is mandatory**: Generic SaaS content got 2% reply rate; manufacturing-specific content got 15%.
-2. **ROI quantification closes deals**: Personalized ROI calculators based on plant-specific data were the #1 conversion driver.
-3. **Education beats selling**: Manufacturers needed 3-4 educational touchpoints before being open to a sales conversation.
-4. **Digital maturity scoring works**: Companies with any digital initiative (even a website redesign) were 3x more receptive.
-5. **Trusted advisor positioning wins**: Sales reps positioned as industry consultants outperformed product-pitch reps by 4x.
-
-## 6. Replicable Patterns
-
-1. Use industry-specific knowledge base content from Sage for education-first sequences
-2. Build industry-specific ROI calculators that use prospect's actual operating data
-3. Map digital maturity signals to prioritize receptive accounts
-4. Create multi-month nurture tracks for digitally immature accounts
-5. Deploy manufacturing-specific compliance documentation (ISA/IEC 62443)
-""")
-
-write_file("case-studies/healthtech-hipaa-compliant-outreach.md", """---
-title: "HealthTech HIPAA-Compliant Outreach"
-category: case-study
-grade: A
-last_reviewed: 2026-07-08
-tags: [healthtech, hipaa, compliance, healthcare, regulated, phi]
----
-
-# HealthTech HIPAA-Compliant Outreach
-
-## 1. Customer Profile
-
-| Attribute | Value |
-|-----------|-------|
-| Company | MedSync (pseudonym) |
-| Industry | HealthTech - Clinical Data Platform |
-| ARR | $4M |
-| Employees | 65 |
-| Target Market | Hospital Systems, Health Networks |
-| Compliance Need | HIPAA, HITECH, 21st Century Cures Act |
-
-## 2. Challenge
-
-MedSync needed to prospect into healthcare organizations while maintaining strict HIPAA compliance:
-
-- **PHI risk in prospecting**: Even company names of healthcare orgs could be considered PHI in certain contexts
-- **Restricted data sources**: Cannot use standard enrichment tools for healthcare contacts
-- **BAA requirement**: Business Associate Agreements needed before any data exchange
-- **Conservative buyers**: Hospital IT and compliance teams extremely risk-averse
-- **Long procurement cycles**: 12-18 month sales cycles with multiple compliance gates
-
-## 3. Approach
-
-### Phase 1: Compliance-First ICP Definition
-- Atlas defined healthcare-specific ICP with compliance-safe criteria
-- Created de-identified prospecting criteria (employee count, bed count, EHR system)
-- Mapped compliance requirements per target type (hospital, health network, ACO)
-
-### Phase 2: Compliant Discovery
-- Scout used only HIPAA-compliant data sources (NPPES, CMS public data)
-- Avoided scraping healthcare provider directories that might contain PHI
-- Filtered by publicly available institutional data (bed count, EHR vendor, teaching status)
-
-### Phase 3: Compliant Enrichment
-- Forge enriched using only non-PHI data sources
-- De-identified any data that could link to patient information
-- Generated BAA templates for pre-qualification stage
-- Created compliance documentation packages per target type
-
-### Phase 4: Trust-Building Outreach
-- Bard crafted compliance-first messaging:
-  - Led with security credentials and certifications
-  - Referenced HIPAA compliance proactively
-  - Provided BAA and compliance documentation in first outreach
-  - Avoided any language that implied access to patient data
-- Used healthcare-specific channels (HIMSS events, CHIME network)
-
-### Phase 5: Compliance-Gated Pipeline
-- Flow managed compliance checkpoints as pipeline stages:
-  - Stage 1: Initial Contact (compliance-safe messaging)
-  - Stage 2: NDA Signed (deeper technical discussion allowed)
-  - Stage 3: BAA Executed (data exchange permitted)
-  - Stage 4: Security Review (automated compliance documentation)
-  - Stage 5: Procurement (standard commercial terms)
-
-## 4. Results (12 Months)
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| Pipeline value | $800K | $2.5M | +213% |
-| Hospital meetings/month | 1 | 5 | +400% |
-| Compliance approval rate | 40% | 78% | +95% |
-| Security review pass rate | 55% | 92% | +67% |
-| Average deal size | $30K | $80K | +167% |
-| Sales cycle | 18 months | 11 months | -39% |
-| Zero compliance incidents | 0 | 0 | Maintained |
-
-## 5. Key Learnings
-
-1. **Compliance as competitive advantage**: Proactively providing BAA and compliance docs differentiated MedSync from competitors who couldn't.
-2. **Trust first, sell second**: Healthcare buyers needed 2-3 trust-building interactions before commercial discussions.
-3. **De-identification enables scale**: Using only institutional (non-PHI) data for prospecting allowed 10x more outreach while staying compliant.
-4. **Compliance automation saves time**: Pre-populated security questionnaires reduced review time by 60%.
-5. **Zero incidents is the only acceptable outcome**: Building compliance into every agent step prevented any HIPAA violations.
-
-## 6. Replicable Patterns
-
-1. Build compliance-safe prospecting criteria using only public institutional data
-2. Create pre-populated BAA and security documentation packages
-3. Use compliance-gated pipeline stages (NDA → BAA → Security Review)
-4. Lead outreach with trust signals (certifications, compliance documentation)
-5. Audit all agent actions for PHI exposure in real-time
-""")
-
-write_file("case-studies/fintech-cross-border-expansion.md", """---
-title: "FinTech Cross-Border Expansion"
-category: case-study
-grade: A
-last_reviewed: 2026-07-08
-tags: [fintech, cross-border, international, expansion, multi-region, localization]
----
-
-# FinTech Cross-Border Expansion
-
-## 1. Customer Profile
-
-| Attribute | Value |
-|-----------|-------|
-| Company | PayFlow (pseudonym) |
-| Industry | FinTech - B2B Payment Infrastructure |
-| ARR | $15M (US-focused) |
-| Employees | 200 |
-| Target Markets | UK, Singapore, Australia, UAE, Germany |
-| Regulatory Challenge | FCA, MAS, AUSTRAC, DFSA, BaFin |
-
-## 2. Challenge
-
-PayFlow dominated the US B2B payment market but faced significant barriers to international expansion:
-
-- **Regulatory complexity**: Each country had different financial services regulations
-- **Cultural misalignment**: US-centric messaging didn't resonate in EMEA/APAC markets
-- **No local networks**: SDRs had no connections or context in target regions
-- **Pricing challenges**: Different market economics required adjusted pricing models
-- **Language barriers**: English-only outreach limited penetration in non-English markets
-
-## 3. Approach
-
-### Phase 1: Market Selection & Strategy (Atlas Agent)
-- Atlas analyzed 20 markets using GDP, fintech adoption, regulatory complexity, and competition
-- Prioritized 5 markets: UK (regulatory clarity), Singapore (fintech hub), Australia (English-speaking), UAE (growth market), Germany (largest EU economy)
-- Created go-to-market strategy per market with regulatory compliance requirements
-
-### Phase 2: Regional ICP Adaptation
-- Adapted ICP per region:
-  - UK: FCA-authorized payment institutions, 50-500 employees
-  - Singapore: MAS-regulated entities, tech-forward companies
-  - Australia: AUSTRAC-registered, APAC-focused businesses
-  - UAE: DIFC/ADGM licensed entities, regional headquarters
-  - Germany: BaFin-regulated, Mittelstand companies
-- Scout identified regional prospects using local data sources
-
-### Phase 3: Localized Research & Content
-- Sage generated market-specific research:
-  - Local regulatory requirements and compliance frameworks
-  - Regional competitor landscape
-  - Market-specific pain points (e.g., SEPA compliance in EU, MAS requirements in Singapore)
-  - Local business culture and communication preferences
-
-### Phase 4: Localized Outreach
-- Bard created region-specific sequences:
-  - UK: Formal, compliance-focused messaging
-  - Singapore: Relationship-first, government-initiative-aware
-  - Australia: Direct, no-nonsense, ROI-focused
-  - UAE: Relationship-driven, prestige-aware, in-person meeting emphasis
-  - Germany: Technical depth, data-driven, privacy-conscious
-- Translated key messages (German for DACH market)
-
-### Phase 5: Multi-Region Pipeline Management
-- Flow managed region-specific pipeline stages
-- Echo generated region-specific forecasts
-- Automated regulatory milestone tracking per market
-
-## 4. Results (9 Months)
-
-| Metric | US Baseline | International | Total |
-|--------|-------------|---------------|-------|
-| Pipeline value | $15M | $12M | $27M |
-| Qualified leads/month | 25 | 18 | 43 |
-| Meetings booked | 12 | 8 | 20 |
-| Win rate | 28% | 22% | 25% |
-| Average deal size | $60K | $45K | $53K |
-| Markets entered | 1 | 5 | 6 |
-| Time to first deal (new market) | N/A | 4 months | - |
-
-## 5. Key Learnings
-
-1. **Regulatory compliance is a feature**: Proactively addressing local regulations in outreach increased response rates by 40%.
-2. **Local data sources are essential**: Regional prospect databases outperformed global providers 3:1 for contact accuracy.
-3. **Cultural adaptation > translation**: Simply translating US messaging failed; cultural adaptation of value propositions was necessary.
-4. **Regional champions accelerate**: Hiring one local sales leader per market shortened time-to-first-deal by 50%.
-5. **Patience pays in new markets**: First deals take 3-5 months; pipeline compound effect kicks in after month 6.
-
-## 6. Replicable Patterns
-
-1. Use Atlas for data-driven market selection and prioritization
-2. Build region-specific ICP variants with local regulatory requirements
-3. Adapt outreach tone and content to regional business culture (not just translation)
-4. Track regulatory milestones as pipeline stages in Flow
-5. Start with English-speaking markets for faster initial traction
-""")
-
-write_file("case-studies/edtech-university-selling.md", """---
-title: "EdTech University Selling"
-category: case-study
-grade: A
-last_reviewed: 2026-07-08
-tags: [edtech, higher-education, university, procurement, long-cycle, committee]
----
-
-# EdTech University Selling
-
-## 1. Customer Profile
-
-| Attribute | Value |
-|-----------|-------|
-| Company | LearnPlatform (pseudonym) |
-| Industry | EdTech - Learning Analytics Platform |
-| ARR | $3.5M |
-| Employees | 45 |
-| Target Market | Universities, Community Colleges |
-| Sales Cycle | 12-18 months |
-
-## 2. Challenge
-
-LearnPlatform helped universities measure and improve learning outcomes but faced unique EdTech sales challenges:
-
-- **Extended procurement cycles**: University purchasing required committee approval, budget cycles, and academic calendar alignment
-- **Complex governance**: Department chairs, IT, Provost, procurement, faculty senate all had input
-- **Seasonal buying patterns**: Budget decisions made in spring, purchases in summer/fall
-- **Limited IT budget**: Competing priorities with LMS, SIS, and infrastructure needs
-- **Risk aversion**: Universities slow to adopt new technology; require extensive proof and references
-
-## 3. Approach
-
-### Phase 1: Education-Specific ICP
-- Atlas created higher-education ICP with enrollment-based segmentation
-- Identified key triggers: accreditation reviews, LMS migrations, strategic plan updates
-- Mapped buying committee: CIO, Provost, Faculty Senate IT Committee, Department Chairs
-
-### Phase 2: Academic Calendar-Aligned Discovery
-- Scout identified universities based on:
-  - Public strategic plans mentioning "data-driven" or "learning analytics"
-  - Recent LMS migrations (Canvas, Blackboard)
-  - Upcoming accreditation reviews
-  - Technology budget increases in public financial filings
-- Timed outreach to align with budget planning cycles (February-April for fall implementation)
-
-### Phase 3: Higher-Ed Research
-- Sage generated institution-specific research:
-  - Current LMS and technology stack
-  - Recent strategic plan priorities
-  - Accreditation status and upcoming reviews
-  - Faculty publications mentioning assessment or analytics needs
-  - Peer institution comparisons
-
-### Phase 4: Academic-Tone Outreach
-- Bard crafted education-appropriate sequences:
-  - Referenced institution's strategic plan language
-  - Cited peer institution case studies (never competitors by name)
-  - Used academic-appropriate tone (evidence-based, not salesy)
-  - Offered pilot programs aligned with semester schedules
-  - Connected with existing faculty champions at target institutions
-
-### Phase 5: Committee-Aware Pipeline
-- Flow tracked multi-stakeholder engagement:
-  - CIO: Technical integration and security approval
-  - Provost: Strategic alignment and budget authorization
-  - Faculty Committee: Academic merit and pedagogical value
-  - Procurement: Contract terms and compliance
-- Set milestone-based progression rules requiring stakeholder-by-stakeholder approval
-
-## 4. Results (12 Months)
-
-| Metric | Before | After | Change |
-|--------|--------|-------|--------|
-| University pipeline | $1.5M | $5.2M | +247% |
-| Qualified leads/quarter | 3 | 11 | +267% |
-| Meetings with decision makers | 2/month | 7/month | +250% |
-| Win rate | 12% | 28% | +133% |
-| Average deal size | $25K | $55K | +120% |
-| Pilot-to-close rate | 30% | 65% + |
-| Sales cycle | 16 months | 10 months | -38% |
-
-## 5. Key Learnings
-
-1. **Academic calendar is everything**: Outreach timed to budget planning cycles (Feb-Apr) had 3x higher engagement than summer outreach.
-2. **Faculty champions are the key**: Deals with an internal faculty advocate closed 4x faster than those without.
-3. **Evidence beats features**: Academic buyers responded to peer-reviewed evidence and case studies, not feature lists.
-4. **Pilot programs reduce risk**: Offering semester-aligned pilots addressed the "try before you buy" mentality.
-5. **Strategic plan language is a shortcut**: Referencing the institution's own stated goals in outreach demonstrated alignment and earned responses.
-
-## 6. Replicable Patterns
-
-1. Align all outreach with institutional budget and academic calendars
-2. Use publicly available strategic plans to identify alignment and personalize messaging
-3. Map the full buying committee early (CIO + Provost + Faculty)
-4. Offer semester-aligned pilots with clear success metrics
-5. Build a library of peer institution case studies by institution type (R1, community college, liberal arts)
-""")
-
-print("\n=== All files created! ===")
-print(f"Integration files: 5")
-print(f"Product files: 5")
-print(f"Case study files: 6")
+    return files
+
+# ============================================================
+# 3. Technologies Category (NEW - 10 files)
+# ============================================================
+
+def generate_technologies():
+    files = []
+    
+    techs = [
+        ("crm-systems", "CRM Systems", "crm", "Customer Relationship Management systems are the backbone of B2B sales operations, serving as the system of record for all pipeline, account, and contact data. The CRM landscape is dominated by Salesforce (23% market share), HubSpot (6%), and Microsoft Dynamics (4%), with numerous vertical-specific and regional players. For LeadReach agents, CRM integration is critical — the agents must both read from (to understand current pipeline state) and write to (to log activities and update records) the CRM seamlessly. Key CRM considerations for agent integration include: API rate limits (Salesforce allows 100K API calls/day for Enterprise editions, HubSpot allows 100 requests/10 seconds for Professional), data model differences (Salesforce uses custom objects and fields extensively while HubSpot has a more standardized model), and workflow trigger requirements (agents should trigger CRM automations like assignment rules and notifications when they create or update records). The CRM also serves as the data source for pipeline analytics, forecasting, and rep performance measurement, making data quality in the CRM directly proportional to the accuracy of all downstream analytics and agent decisions."),
+        ("sales-engagement-platforms", "Sales Engagement Platforms", "sales-engagement", "Sales engagement platforms (Outreach, Salesloft, Groove, Reply.io) manage multi-channel outreach sequences at scale. These platforms enable SDR and AE teams to execute personalized outreach cadences across email, phone, social, and SMS channels. For LeadReach agent integration, the key consideration is whether agents should execute outreach directly or orchestrate through these platforms. The hybrid approach — where LeadReach agents determine WHO to contact, WHEN, and with WHAT messaging, then execute through the sales engagement platform — provides the best of both worlds: agent intelligence with enterprise-grade deliverability infrastructure. Key integration points include: sequence enrollment (agents should be able to add prospects to specific sequences), step customization (agents should personalize individual sequence steps), and performance feedback (agents should receive reply and engagement data to refine their targeting and messaging). The sales engagement platform also provides deliverability infrastructure (sender reputation management, bounce handling, throttling) that is essential for high-volume outreach."),
+        ("data-providers", "Data Providers", "data-provider", "B2B data providers supply the contact, company, and intent data that powers prospecting and enrichment workflows. The market segments into: contact data providers (ZoomInfo, Apollo, Lusha, Cognism), firmographic data providers (Dun & Bradstreet, Clearbit, DiscoverOrg), intent data providers (6sense, Bombora, Demandbase), and technographic data providers (BuiltWith, Wappalyzer, HG Insights). For LeadReach agents, multi-source data aggregation is a key differentiator — rather than relying on a single provider, agents should query multiple sources and use confidence scoring to determine the most accurate data point. Key integration considerations include: API rate limits and costs (ZoomInfo costs $0.10-0.50 per contact reveal, Apollo includes reveals in subscription), data freshness (some providers update monthly, others daily or real-time), and coverage breadth vs. depth tradeoffs (ZoomInfo has the broadest US coverage, Cognism has stronger EMEA data, Apollo offers the most cost-effective access). Agents should also leverage free data sources (LinkedIn public profiles, company websites, press releases, SEC filings) to supplement paid provider data."),
+        ("marketing-automation", "Marketing Automation Platforms", "marketing-automation", "Marketing automation platforms (HubSpot, Marketo, Pardot, ActiveCampaign) manage the top-of-funnel lead generation and nurturing workflows that feed the sales pipeline. These platforms handle email marketing, lead scoring, landing pages, form capture, and behavioral tracking. For LeadReach agent integration, marketing automation provides critical signals: lead activity data (email opens, clicks, web visits, content downloads), lead score changes (both demographic fit and behavioral engagement), and campaign attribution (which marketing touchpoints influenced a prospect). The most valuable integration point is the lead-to-SQL handoff — agents should receive real-time notifications when leads hit MQL thresholds, enabling immediate sales follow-up while the prospect is engaged. Key integration patterns include: webhook-based event streaming (HubSpot webhooks, Marketo webhook triggers), batch sync for lead score updates (every 15-30 minutes), and reverse sync (agents writing activity data back to marketing automation for attribution and lead scoring updates)."),
+        ("revenue-intelligence-platforms", "Revenue Intelligence Platforms", "revenue-intelligence", "Revenue intelligence platforms (Gong, Chorus, Clari, Aviso) analyze sales conversations, deals, and pipeline to surface insights and improve forecast accuracy. These platforms capture call recordings, analyze conversation patterns, track deal progression, and identify risk signals. For LeadReach agents, revenue intelligence integration provides two key capabilities: first, agents can access conversation insights (competitive mentions, objection patterns, stakeholder dynamics) to inform their prospecting and messaging recommendations; second, agents can contribute to revenue intelligence by logging their activity data and pipeline impact, creating a more complete picture of all revenue-generating activities across human and AI-driven workflows. Key integration points include: conversation intelligence API access (Gong's API provides transcript data and call insights), deal risk signals (agents should adjust their outreach when risk signals are detected on related deals), and forecast contribution (agent-generated pipeline should be tracked separately in forecast models)."),
+        ("ai-ml-technologies", "AI/ML Technologies for Sales", "ai-ml", "Artificial intelligence and machine learning technologies are transforming B2B sales through predictive analytics, natural language processing, and autonomous agent capabilities. Key AI/ML applications in the sales tech stack include: lead scoring (predictive models that rank leads by conversion probability using historical win/loss data), intent prediction (models that identify accounts showing buying signals before they self-identify), conversation intelligence (NLP models that extract insights from sales calls and emails), and autonomous agents (AI systems that execute prospecting, outreach, and qualification workflows with minimal human oversight). For LeadReach's agent architecture, the key AI/ML technologies include: large language models (LLMs) for natural language generation and understanding in outreach and qualification, embedding models for semantic search across the knowledge base, classification models for lead scoring and ICP matching, and reinforcement learning for optimizing outreach timing and messaging over time. The critical challenge is balancing AI autonomy with human oversight — agents should be able to execute independently within defined guardrails while escalating edge cases and high-value opportunities to human reps."),
+        ("email-infrastructure", "Email Infrastructure", "email-infra", "Email infrastructure encompasses the technical components that enable reliable email delivery at scale: sending domains, IP addresses, authentication protocols, and deliverability monitoring tools. For LeadReach agents executing outreach, email infrastructure is foundational — even the most intelligent agent cannot succeed if its emails land in spam. Key infrastructure components include: dedicated sending domains (agents should send from subdomains like outreach.leadreach.io to protect the primary domain reputation), IP address management (dedicated IPs for high-volume sending with proper warm-up protocols), authentication setup (SPF records authorizing sending IPs, DKIM signatures for email integrity, DMARC policies for domain protection), and deliverability monitoring (tools like Warmbox, Lemwarm, or GlockApps for ongoing inbox placement testing). Best practices for agent-driven outreach infrastructure include: domain rotation (using multiple sending domains to distribute volume), gradual volume ramping (increasing daily send volume by 15-20% per day during warm-up), and engagement-based throttling (reducing volume if bounce or complaint rates exceed thresholds)."),
+        ("analytics-bi-tools", "Analytics & BI Tools", "analytics-bi", "Business intelligence and analytics tools (Tableau, Looker, Power BI, Metabase, ThoughtSpot) transform raw sales and marketing data into actionable insights through dashboards, reports, and ad-hoc analysis. For LeadReach, analytics integration serves two purposes: first, agents should be able to surface insights from the analytics layer (e.g., 'which territories have declining pipeline coverage') to inform their actions; second, agent activity data should flow into the analytics layer so that leadership can measure the ROI of AI-driven prospecting alongside human-driven activities. Key integration patterns include: data warehouse ingestion (agents write activity data to BigQuery/Snowflake/Redshift via ETL pipelines), embedded analytics (embedding agent performance dashboards within the LeadReach UI), and alert integration (agents receive notifications when analytics detect patterns requiring action, such as a territory falling below pipeline coverage thresholds). The analytics layer also enables the feedback loop that improves agent performance over time — by measuring which agent actions lead to pipeline and revenue, the agent learning algorithms can optimize their strategies."),
+        ("communication-platforms", "Communication Platforms", "communication", "Communication platforms (Slack, Microsoft Teams, Zoom, Google Meet) are where B2B sales conversations happen. For LeadReach agents, integration with communication platforms enables two key workflows: first, agents can participate in internal communication channels to share insights, flag opportunities, and coordinate with human team members; second, agents can schedule and prepare for prospect conversations by accessing meeting context, participant information, and conversation history. Key integration points include: Slack/Teams bot integration (agents post notifications about high-priority leads, trigger events, and pipeline alerts), calendar integration (agents schedule meetings on behalf of reps, prepare briefing documents), and meeting preparation (agents compile prospect research, competitive intelligence, and talking points before scheduled calls). The communication platform also serves as the human-in-the-loop interface — reps can review and approve agent actions, provide feedback, and override recommendations through chat-based interactions."),
+        ("security-compliance-tools", "Security & Compliance Tools", "security-compliance", "Security and compliance tools (OneTrust, TrustArc, Vanta, Drata) manage data privacy, consent, and regulatory compliance across the sales tech stack. For LeadReach agents, compliance integration is non-negotiable — agents must respect consent preferences, data retention policies, and regional regulations in every action they take. Key integration requirements include: consent management (agents check consent status before executing outreach, honoring opt-outs and consent withdrawal immediately), data processing agreements (agents operate within the boundaries of DPA requirements for each data source they access), and audit trails (every agent action is logged with sufficient detail for compliance auditing — what data was accessed, what action was taken, what was the legal basis). The compliance layer also constrains agent behavior: agents should not store personal data longer than retention policies allow, should not contact individuals on suppression lists, and should flag potential compliance risks (e.g., contacting government employees, healthcare professionals subject to additional regulations) for human review."),
+    ]
+
+    for slug, title, tech_type, content in techs:
+        body = f"# {title}\n\n{content}\n\n## Integration Architecture\n\nLeadReach agents integrate with {title.lower()} through API-based connectors that support both read and write operations. The integration layer handles authentication, rate limiting, error handling, and data transformation to ensure seamless agent-to-platform communication.\n\n## Agent Usage Patterns\n\nLeadReach agents leverage {title.lower()} for:\n- Reading contextual data to inform prospecting decisions\n- Writing activity data back to maintain system-of-record integrity\n- Triggering automated workflows based on agent-identified opportunities\n- Receiving real-time signals that adjust agent behavior dynamically\n"
+        files.append(write_md(f"technologies/{slug}.md", {
+            "title": title,
+            "category": "technology",
+            "tech_type": tech_type,
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["technology", tech_type, "integration", "tech-stack"],
+        }, body))
+    
+    return files
+
+# ============================================================
+# 4. Buyer Intelligence (NEW - 8 files)
+# ============================================================
+
+def generate_buyer_intel():
+    files = []
+    
+    buyers = [
+        ("c-suite-buyer-profiles", "C-Suite Buyer Profiles", "C-suite executives (CEO, CFO, CTO, CMO, CRO, CISO) are the ultimate decision-makers for enterprise B2B purchases, though they rarely engage directly until the final approval stage. Each C-suite role evaluates purchases through a different lens: CEOs focus on strategic alignment and competitive advantage, CFOs on ROI and budget impact, CTOs on technical feasibility and integration risk, CMOs on revenue impact and customer experience, CROs on pipeline and quota impact, and CISOs on security posture and compliance risk. Effective engagement with C-suite buyers requires: executive-level messaging that speaks to strategic outcomes rather than product features, concise communication (executives allocate 2-5 minutes to initial outreach review), social proof from peer executives at similar companies, and clear articulation of the business case with quantified ROI. Timing matters significantly — C-suite engagement is most effective during: strategic planning cycles (Q4 for annual planning, Q1 for budget allocation), board preparation periods, and after trigger events such as funding rounds, leadership changes, or competitive announcements. LeadReach agents targeting C-suite buyers should prioritize: identifying the right executive based on the value proposition (not just the highest title), crafting personalized messaging that references specific company context and strategic priorities, and coordinating multi-threaded outreach that engages both the executive and their direct reports simultaneously."),
+        ("vp-director-buyer-profiles", "VP & Director Buyer Profiles", "VP and Director-level buyers are the most common decision-makers and influencers in B2B purchases, as they own team budgets and operational outcomes. VP of Sales evaluates tools based on rep productivity and quota attainment impact, VP of Marketing on lead quality and attribution, VP of Engineering on developer productivity and technical debt, VP of Customer Success on retention and expansion metrics, and VP of Operations on process efficiency and cost reduction. These buyers are practical and outcome-oriented — they want to see specific, measurable impact on their team's KPIs. The typical VP/Director evaluation process involves: identifying a pain point (often surfaced by their team), researching solutions (2-4 weeks), evaluating 3-5 vendors (4-8 weeks), and securing budget approval (2-4 weeks). Key engagement strategies include: demonstrating understanding of their specific operational challenges, providing peer benchmarks and case studies from similar roles, offering proof-of-concept or pilot programs that reduce risk, and equipping them with the internal business case materials they need to secure budget approval. LeadReach agents targeting VP/Director buyers should: reference specific KPIs and challenges relevant to their role, provide quantified impact estimates based on similar customers, and facilitate the buying process by offering templates for internal approval documents."),
+        ("champion-enablement-guide", "Champion Enablement Guide", "A champion is an internal advocate who actively promotes your solution within their organization. Identifying and enabling champions is one of the highest-leverage activities in enterprise sales, as champions influence 60-70% of deal outcomes according to research. Effective champions typically share these characteristics: they personally experience the pain point your solution addresses, they have credibility and influence within their organization (often 1-2 levels below the final decision-maker), they are politically savvy and understand how decisions get made, and they are motivated by both personal gain (career advancement, solving their problem) and organizational benefit. The champion enablement playbook includes: providing them with internal selling materials (ROI calculators, competitive comparison sheets, security documentation), coaching them on how to present the solution to different stakeholders (framing value differently for CFO vs. CTO vs. end users), keeping them informed of competitive moves and new capabilities, and making them look good by delivering early wins and visible results. LeadReach agents should identify potential champions by analyzing: who engaged most actively with content, who attended multiple meetings, who asked detailed technical or process questions, and who has been at the company long enough to have organizational credibility."),
+        ("buying-committee-dynamics", "Buying Committee Dynamics", "The average B2B purchase involves 6-10 stakeholders in the buying committee, up from 5-6 a decade ago. Understanding committee dynamics is essential for multi-threaded selling strategies. The buying committee typically includes: an economic buyer (controls budget, usually VP+), a technical buyer (evaluates fit with existing architecture, usually Director of Engineering/IT), an end user (daily user of the product, usually IC or team lead), a champion (internal advocate, as described above), and a blocker (someone who opposes the purchase, often due to competing priorities, existing vendor relationships, or perceived risk). Key dynamics to understand include: the formal decision process (who approves, who signs, who vets), the informal influence network (who influences whom, whose opinion carries weight), the competing priorities within the committee (different stakeholders evaluate on different criteria), and the timeline pressures (external deadlines, budget cycles, contractual obligations). Mapping the buying committee early — identifying all stakeholders, their roles, their criteria, and their relationships — increases win rates by 30-40% compared to single-threaded approaches. LeadReach agents should automatically map buying committees by: analyzing email thread participants, identifying additional stakeholders from LinkedIn research, and flagging gaps (no economic buyer engaged, no technical buyer consulted) that create deal risk."),
+        ("buyer-persona-frameworks", "Buyer Persona Frameworks", "Buyer personas are semi-fictional representations of ideal customers based on data and research. Effective personas go beyond demographics to include: goals and motivations (what they're trying to achieve), challenges and pain points (what's preventing achievement), information sources (where they learn about solutions), decision criteria (how they evaluate options), and buying journey stage (awareness, consideration, decision). For B2B sales, personas should be developed at two levels: the organizational persona (company size, industry, tech stack, growth stage, regulatory environment) and the individual persona (role, seniority, technical sophistication, buying authority). The most actionable personas are built from win/loss analysis and customer interviews rather than assumptions — they should be updated quarterly as market conditions and buyer preferences evolve. Each persona should map to specific: messaging frameworks (value propositions, pain point language, proof points), content assets (case studies, ROI calculators, technical documentation), outreach channels (email, LinkedIn, events, communities), and sales plays (land-and-expand, competitive displacement, expansion). LeadReach agents use persona frameworks to: automatically classify prospects into persona segments, personalize outreach messaging based on persona-specific value propositions, and recommend the optimal sales play for each prospect."),
+        ("procurement-process-guide", "Procurement Process Guide", "Understanding the procurement process is critical for enterprise B2B sales, as procurement can either accelerate or kill deals. The typical enterprise procurement workflow includes: needs identification (business case development), vendor evaluation (RFP/RFI or informal evaluation), security and compliance review (questionnaires, certifications, penetration test results), legal review (MSA, DPA, SLA negotiation), pricing negotiation (discount tiers, payment terms), and final approval (signature authority, often requiring multiple signers). The procurement timeline ranges from 2-8 weeks for mid-market deals to 8-20 weeks for enterprise deals. Key strategies for navigating procurement include: engaging procurement early (rather than surprising them at the end), pre-completing security questionnaires using tools like Responsive or Conveyor, providing standard contract templates that reduce legal negotiation time, and understanding the prospect's procurement calendar (many companies have fiscal year-end budget deadlines that accelerate or delay purchases). LeadReach agents should: flag deals approaching procurement stage and prompt reps to engage procurement contacts, provide pre-built security documentation packages, and track procurement milestones to identify stalls that require intervention."),
+        ("b2b-buying-signals", "B2B Buying Signals", "Buying signals are indicators that a prospect is actively researching or considering a purchase. These signals fall into three categories: first-party signals (actions taken on your website or content — demo requests, pricing page visits, documentation deep-dives), second-party signals (data shared through partnerships — intent provider signals, CRM activity data), and third-party signals (observable market events — funding rounds, leadership changes, product launches, job postings for relevant roles). The most predictive buying signals in order of strength: a prospect requesting a demo or trial (85% likely in active buying cycle), multiple stakeholders from the same company engaging with content (70% likely), a company posting job openings for roles that suggest need (60% likely), intent signals showing research on your category (55% likely), and funding events that suggest budget availability (50% likely). Timing is critical — buying signals decay rapidly, with the optimal outreach window being 24-48 hours after signal detection. LeadReach agents should: continuously monitor all three signal categories, prioritize outreach based on signal strength and recency, and craft messaging that references the specific signal observed ('I noticed your team is growing — congrats on the Series B')."),
+        ("stakeholder-mapping-methodology", "Stakeholder Mapping Methodology", "Stakeholder mapping is the systematic process of identifying all individuals who influence or participate in a purchase decision, understanding their roles and motivations, and developing engagement strategies for each. The most effective framework combines power/interest grid analysis (who has decision power vs. who has influence) with relationship mapping (how stakeholders relate to each other). The power/interest grid places stakeholders in four quadrants: high power/high interest (key players — manage closely), high power/low interest (keep satisfied — don't overwhelm but ensure support), low power/high interest (keep informed — they can be champions or internal marketers), and low power/low interest (monitor — minimal engagement needed). Relationship mapping adds a second dimension: understanding reporting structures, peer relationships, and informal influence networks. This reveals: who influences the economic buyer, which stakeholders might block the deal, and which relationships can be leveraged for warm introductions. LeadReach agents should automate initial stakeholder mapping by: extracting participants from email threads and meeting invites, enriching contacts with title and role data from LinkedIn, identifying missing stakeholders by comparing the current map against typical buying committee patterns, and recommending engagement strategies for each stakeholder based on their quadrant position."),
+    ]
+
+    for slug, title, content in buyers:
+        body = f"# {title}\n\n{content}\n\n## Agent Application\n\nLeadReach agents leverage this buyer intelligence to:\n- Automatically identify and classify buyer personas during prospect research\n- Personalize outreach messaging based on buyer role and priorities\n- Map buying committees and flag engagement gaps\n- Time outreach based on buying signal detection and trigger events\n- Enable champions with appropriate internal selling materials\n"
+        files.append(write_md(f"buyer-intel/{slug}.md", {
+            "title": title,
+            "category": "buyer-intel",
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["buyer", "persona", "stakeholder", "buying-committee"],
+        }, body))
+    
+    return files
+
+# ============================================================
+# 5. Vertical Playbooks (NEW - 8 files)
+# ============================================================
+
+def generate_vertical_playbooks():
+    files = []
+    
+    verticals = [
+        ("saas-vertical-playbook", "SaaS Vertical Playbook", "saas", "The SaaS vertical playbook provides specialized prospecting and selling strategies for Software-as-a-Service companies. SaaS prospects share common characteristics: subscription-based revenue models with predictable ARR/MRR, product-led growth motions (for PLG companies) or sales-led motions (for enterprise SaaS), high emphasis on metrics like net revenue retention, CAC payback, and rule of 40, and technology-forward cultures that evaluate tools rigorously. Key SaaS sub-segments to target: PLG companies transitioning to sales-led (need sales tooling), late-stage startups preparing for IPO (need enterprise-grade compliance), and public SaaS companies optimizing efficiency (need analytics and automation). The SaaS buying cycle typically involves: product team evaluation (1-2 weeks), security review (2-4 weeks), procurement/legal (2-4 weeks), and executive approval (1-2 weeks). SaaS companies often have established buying processes and may require SOC 2 compliance, data processing agreements, and integration with their existing tech stack (often including Segment, Stripe, and AWS). Pricing sensitivity is moderate — SaaS companies understand subscription economics and will calculate ROI rigorously, but they also appreciate the value of good tools."),
+        ("fintech-vertical-playbook", "Fintech Vertical Playbook", "fintech", "The fintech vertical playbook addresses the unique requirements of financial technology companies, which combine technology-forward cultures with heavy regulatory requirements. Fintech prospects span multiple sub-segments: payments (Stripe, Square competitors), lending (Klarna, Affirm competitors), banking-as-a-service (Marqeta, Synapse competitors), wealth management (Robinhood, Betterment competitors), and insurance (Lemonade, Hippo competitors). Each sub-segment has distinct regulatory requirements (PCI-DSS for payments, state lending licenses for lending, SEC/FINRA for wealth management) that create both barriers to entry and selling opportunities. Key selling considerations: fintech companies evaluate tools based on compliance capabilities first, then functionality and integration, and finally price; security reviews are extensive and may require 6-12 weeks; and the buying committee typically includes compliance, engineering, and business stakeholders. Trigger events unique to fintech include: regulatory changes (new compliance requirements create tool demand), funding rounds (especially Series B+ when scaling compliance operations), and partnership announcements (new distribution channels requiring additional tooling)."),
+        ("healthtech-vertical-playbook", "Healthtech Vertical Playbook", "healthtech", "The healthtech vertical playbook covers strategies for selling to healthcare technology companies, which operate under strict HIPAA regulations and have complex buying processes involving clinical, technical, and administrative stakeholders. Healthtech sub-segments include: electronic health records (EHR), telehealth platforms, digital therapeutics, clinical trial management, health data analytics, and medical device software. The healthtech buying process is among the longest in B2B (6-12 months typical) due to: HIPAA compliance requirements (business associate agreements, data encryption standards), clinical validation requirements (for products affecting patient care), and multi-stakeholder approval (clinical, IT, compliance, procurement, and often a value analysis committee). Key trigger events include: HIPAA audits or breaches (create urgency for compliance tools), new CMS regulations (change reimbursement models), funding rounds (especially for digital health startups), and hospital system mergers (create integration needs). Outreach to healthtech prospects must demonstrate: HIPAA compliance by design, understanding of clinical workflows, and references from peer healthtech organizations."),
+        ("ecommerce-vertical-playbook", "E-commerce Vertical Playbook", "ecommerce", "The e-commerce vertical playbook addresses selling to online retail and DTC companies, which have unique characteristics: high transaction volumes, seasonal demand patterns (Q4 peak), focus on customer acquisition cost and lifetime value, and technology stacks built around Shopify/Magento/commerce platforms. E-commerce sub-segments include: DTC brands (selling directly to consumers), marketplace sellers (Amazon, eBay), B2B e-commerce (wholesale platforms), and headless commerce (API-first architectures). Key selling considerations: e-commerce companies evaluate tools based on direct revenue impact (can you prove you drive sales?), integration with their commerce platform is non-negotiable, and they often prefer self-serve trials over enterprise sales processes. The buying cycle is shorter than other verticals (2-6 weeks for SMB, 4-8 weeks for enterprise e-commerce) but the bar for proving ROI is higher. Trigger events include: platform migrations (Shopify to headless), international expansion (new market entry requiring localization), and funding rounds (especially for DTC brands scaling customer acquisition)."),
+        ("manufacturing-vertical-playbook", "Manufacturing Vertical Playbook", "manufacturing", "The manufacturing vertical playbook covers strategies for selling to manufacturing companies, which are undergoing digital transformation (Industry 4.0) and represent a large but underpenetrated market for SaaS tools. Manufacturing sub-segments include: discrete manufacturing (automotive, aerospace, electronics), process manufacturing (chemicals, food & beverage, pharmaceuticals), and hybrid manufacturing. Key selling considerations: manufacturing companies are traditionally technology-laggards and may require more education about SaaS benefits; the buying process involves operations, IT, and procurement stakeholders who may have different priorities; and ROI justification often requires quantified impact on production efficiency, quality, or cost reduction. The sales cycle is typically 4-8 months with extensive evaluation periods. Key trigger events include: ERP migrations (common as legacy systems reach end-of-life), supply chain disruptions (create urgency for visibility and automation tools), and digital transformation initiatives (often announced in earnings calls or press releases). Outreach to manufacturing prospects should emphasize: practical operational improvements over technical sophistication, integration with existing ERP/MES systems, and references from similar manufacturers."),
+        ("government-vertical-playbook", "Government & Public Sector Playbook", "government", "The government and public sector playbook addresses selling to federal, state, and local government agencies, which have unique procurement processes, compliance requirements, and budget cycles. Government procurement is characterized by: formal RFP processes (often 3-6 months from RFP to award), set-aside programs for small, women-owned, and minority-owned businesses, security requirements including FedRAMP authorization for cloud services, and budget cycles that create predictable buying windows (government fiscal years vary by entity — federal: Oct 1, most states: July 1). Key selling considerations: government buyers prioritize compliance and security above all other criteria; the sales process requires patience and relationship building over multiple procurement cycles; and contract vehicles (GSA Schedule, SEWP, CIO-SP3) provide pre-approved pathways that reduce procurement complexity. Trigger events include: new administration priorities, publicized security incidents, regulatory mandates, and budget allocations for specific initiatives. Outreach to government prospects must avoid: hard-sell tactics, unsubstantiated claims, and any appearance of impropriety. Instead, focus on: thought leadership, compliance documentation, and demonstrated understanding of their mission and challenges."),
+        ("education-vertical-playbook", "Education Vertical Playbook", "education", "The education vertical playbook covers selling to higher education institutions, K-12 school districts, and edtech companies. Education institutions have unique characteristics: budget cycles aligned to academic years (July-June for most), committee-based decision-making involving faculty, IT, administration, and sometimes students, lengthy evaluation and pilot processes (often 6-12 months), and strict data privacy requirements (FERPA for student data, COPPA for children under 13). Higher education sub-segments include: research universities, liberal arts colleges, community colleges, and online learning platforms. K-12 sub-segments include: large urban districts, suburban districts, rural districts, and charter networks. Key selling considerations: education buyers respond to peer references from similar institutions, they value integrations with existing LMS systems (Canvas, Blackboard, Moodle), and they often require proof of FERPA compliance and data residency guarantees. Trigger events include: enrollment changes (growing institutions need more tools), accreditation reviews (create compliance urgency), technology refresh cycles (often tied to academic calendar), and new federal funding programs (e.g., ESSER funds during COVID). Outreach should emphasize: educational outcomes, ease of adoption for faculty and students, and cost-effectiveness given constrained budgets."),
+        ("nonprofit-vertical-playbook", "Nonprofit & NGO Vertical Playbook", "nonprofit", "The nonprofit vertical playbook addresses selling to charitable organizations, foundations, and NGOs, which have unique budget constraints, governance structures, and impact measurement requirements. Nonprofit sub-segments include: international NGOs (global operations, multiple funding sources), community-based organizations (local focus, government grants), foundations (grant-making, endowment management), and advocacy organizations (policy influence, membership management). Key selling considerations: nonprofits evaluate tools based on mission alignment and impact potential, not just ROI; budgets are often restricted by grant conditions (requiring specific allocation of funds); and the decision process involves board-level approval for significant purchases. Nonprofit technology discounts (typically 50-80% off commercial pricing through programs like TechSoup, Google for Nonprofits, and Microsoft nonprofit offers) are standard and expected. Trigger events include: new grant awards (create budget for tool purchases), leadership transitions (new executives bring new technology preferences), and audit findings (create urgency for compliance and reporting tools). Outreach to nonprofit prospects should emphasize: mission impact, affordability including nonprofit pricing, and references from peer organizations in their sub-segment."),
+    ]
+
+    for slug, title, vert_type, content in verticals:
+        body = f"# {title}\n\n{content}\n\n## Agent Playbook Integration\n\nLeadReach agents use vertical playbooks to:\n- Automatically detect prospect industry and apply vertical-specific messaging\n- Reference vertical-specific KPIs and benchmarks in outreach\n- Navigate vertical-specific buying processes and compliance requirements\n- Time outreach based on vertical-specific trigger events and budget cycles\n- Recommend vertical-specific case studies and proof points\n"
+        files.append(write_md(f"vertical-playbooks/{slug}.md", {
+            "title": title,
+            "category": "vertical-playbook",
+            "vertical": vert_type,
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["vertical", vert_type, "playbook", "industry-specific"],
+        }, body))
+    
+    return files
+
+# ============================================================
+# 6. Sales Operations (NEW - 8 files)
+# ============================================================
+
+def generate_sales_ops():
+    files = []
+    
+    ops = [
+        ("territory-planning-guide", "Territory Planning Guide", "Territory planning is the strategic allocation of accounts and geographic regions to sales representatives to maximize coverage and minimize overlap. Effective territory planning balances four factors: market potential (total addressable accounts by segment), rep capacity (number of accounts a rep can effectively manage), historical performance (which territories have produced the most revenue), and equity (fair distribution of opportunity across the team). Modern territory planning uses data-driven scoring models that assign each account a potential score based on firmographics (company size, industry, technology stack), intent signals (buying activity), and relationship signals (existing engagement, referrals). The most common territory models include: geographic territories (simple but may create unequal opportunity), named-account territories (best for enterprise with concentrated accounts), industry-vertical territories (enables deep domain expertise), and hybrid models (combining elements based on go-to-market strategy). Territory planning should be reviewed quarterly and rebalanced annually, as market conditions, rep performance, and company strategy evolve. LeadReach agents support territory planning by: scoring accounts for potential, identifying whitespace territories with high potential but low coverage, and recommending territory adjustments based on pipeline data."),
+        ("compensation-plan-design", "Compensation Plan Design", "Sales compensation design aligns rep incentives with company objectives through structured commission and bonus plans. The fundamental principle is that compensation drives behavior — reps optimize for how they're paid, not what leadership hopes they'll do. Effective compensation plans share these characteristics: 50-60% of total on-target earnings (OTE) comes from base salary, 40-50% from variable compensation; quota is set at a level where 60-65% of reps can achieve it; accelerators kick in above 100% attainment (e.g., 1.5x commission rate at 100-125%, 2x at 125-150%, 3x above 150%); and the plan is simple enough that reps can calculate their earnings for any given outcome without a spreadsheet. Common compensation structures include: straight commission (high risk, high reward — rare in B2B), base + commission (most common, 50/50 split), base + commission + bonus (adds MBO or quarterly bonus components), and tiered commission (increasing rates at higher attainment levels). Compensation plan changes should be made annually, not mid-year, to maintain rep trust. LeadReach agents can help sales ops teams model compensation scenarios by: projecting pipeline under different territory assignments, calculating commission expense at various attainment levels, and identifying reps at risk of missing quota who may need territory adjustments."),
+        ("sales-process-optimization", "Sales Process Optimization", "Sales process optimization is the continuous improvement of the defined stages, activities, and exit criteria that govern how deals progress from lead to close. A well-defined sales process increases win rates by 15-25% and reduces ramp time by 30-40% compared to organizations without a formal process. The key elements of an optimized sales process include: clearly defined stages (6-8 stages for enterprise, 3-5 for SMB), specific exit criteria for each stage (verifiable evidence required to advance), required activities at each stage (discovery call, demo, proposal, etc.), and defined handoff points between roles (SDR to AE, AE to CS). Process optimization should be data-driven: analyze historical win/loss data to identify which activities and milestones correlate most strongly with wins, then build the process around those success patterns. Common optimization opportunities include: reducing time-in-stage for bottleneck stages, implementing mandatory next-step documentation at each stage, and standardizing the qualification criteria to prevent unqualified deals from consuming AE time. LeadReach agents enforce process compliance by: flagging deals missing stage-appropriate activities, prompting reps for next-step documentation, and automatically advancing deals when exit criteria are met."),
+        ("crm-data-governance", "CRM Data Governance", "CRM data governance establishes the policies, processes, and tools that ensure data quality, consistency, and compliance across the CRM system. Poor CRM data quality costs organizations 15-25% of rep productivity through: incorrect contact data leading to wasted outreach, duplicate records creating conflicting activity histories, missing fields preventing accurate lead scoring and routing, and stale data causing reps to pursue prospects who have changed roles or companies. A comprehensive data governance framework includes: data standards (naming conventions, required fields, format rules), data entry workflows (validation at point-of-entry, mandatory fields, auto-enrichment), data maintenance processes (deduplication schedules, decay monitoring, enrichment triggers), and data audit procedures (regular completeness and accuracy audits, exception reporting). The most effective data governance programs automate enforcement where possible: required fields prevent incomplete records, validation rules catch format errors, deduplication runs automatically, and enrichment fills gaps at point-of-entry. LeadReach agents support data governance by: enriching records with missing data before they enter the pipeline, flagging records that fail quality checks, and maintaining data freshness by updating records when changes are detected."),
+        ("sales-tech-stack-architecture", "Sales Tech Stack Architecture", "Sales tech stack architecture is the strategic design and integration of the tools and platforms that support the end-to-end sales workflow. A well-architected tech stack eliminates data silos, reduces manual work, and provides a single source of truth for pipeline and performance data. The modern B2B sales tech stack includes: CRM (system of record), sales engagement (outreach automation), revenue intelligence (conversation and deal analytics), data provider (contact and company intelligence), intent data (buying signal detection), CPQ (configure-price-quote), and enablement (content and training). Architecture principles include: CRM as the single source of truth (all tools sync to CRM), API-first tool selection (enables custom integrations and automation), data flow unidirectionality where possible (reduces sync conflicts), and consolidation over proliferation (fewer tools with deeper integration beat many point solutions). Common integration patterns: real-time sync (activities, status changes), batch sync (daily enrichment, weekly analytics), and event-driven (webhooks triggering immediate actions). The total cost of the sales tech stack typically ranges from $500-2,000 per rep per month, with enterprise organizations spending $1,500-3,000 per rep per month."),
+        ("revops-framework", "RevOps Framework", "Revenue Operations (RevOps) is the strategic alignment of sales, marketing, and customer success operations under a unified function that drives predictable revenue growth. The RevOps framework encompasses: data and analytics (unified metrics, dashboards, and forecasting), process and workflow (standardized handoffs, SLAs, and automation), technology and tools (integrated tech stack with single source of truth), and enablement and training (consistent methodologies and playbooks across all revenue teams). Organizations that implement RevOps report 15-25% improvement in forecast accuracy, 10-20% increase in pipeline velocity, and 30-40% reduction in GTM inefficiency (duplicate work, misaligned handoffs, conflicting data). The RevOps team structure typically includes: a RevOps leader (VP or Director reporting to CRO), operations analysts (data, process, and tools specialists), and cross-functional alignment through regular GTM cadences (weekly pipeline review, monthly business review, quarterly planning). Key RevOps metrics include: pipeline coverage ratio, conversion rates by stage, CAC by channel, NRR, and forecast accuracy. LeadReach agents integrate into the RevOps framework by: providing real-time pipeline and activity data, automating cross-functional handoffs, and surfacing insights that improve forecast accuracy and pipeline health."),
+        ("sales-forecasting-methods", "Sales Forecasting Methods", "Sales forecasting is the process of predicting future revenue based on pipeline data, historical patterns, and market signals. The four primary forecasting methods include: intuitive forecasting (rep-level judgment — least accurate, 60-70% accuracy), historical forecasting (past performance extrapolation — moderate accuracy, 70-80%), pipeline-weighted forecasting (probability-weighted pipeline value — good accuracy, 80-85%), and AI-driven forecasting (machine learning models — highest accuracy, 85-95%). The pipeline-weighted method applies probability weights based on stage: discovery 10-20%, qualification 20-30%, demo/evaluation 30-50%, proposal 50-70%, negotiation 70-85%, verbal commit 85-95%. AI-driven forecasting improves on this by incorporating: deal velocity patterns, rep historical accuracy, seasonal trends, and external signals. Forecasting best practices include: weekly inspection cadence (review every deal above 30% probability), close date integrity (require evidence to maintain close dates), and separate forecasts for commit, best-case, and pipeline categories. The most common forecasting mistakes include: anchoring to quota (adjusting forecasts to match targets), recency bias (overweighting recent wins/losses), and ignoring deal age (stale deals are unlikely to close)."),
+        ("sales-analytics-dashboards", "Sales Analytics & Dashboards", "Sales analytics and dashboards transform raw pipeline and activity data into visual insights that drive decision-making at every level of the organization. Effective dashboard design follows the principle: right data, right person, right time, right action. Dashboard tiers include: executive dashboards ( ARR/MRR trends, NRR, CAC payback, forecast vs. actual — updated weekly), management dashboards (pipeline coverage, rep performance, stage conversion — updated daily), and rep dashboards (personal pipeline, activity metrics, quota progress — real-time). The most common dashboard mistakes include: metric overload (too many KPIs dilute focus), vanity metrics (activity without outcome correlation), and lack of actionability (data without clear next steps). Each dashboard metric should answer: what does this measure, what is the benchmark, what action should I take if it's off-track, and who is responsible. Key dashboard design principles include: progressive disclosure (summary first, drill-down on demand), exception-based highlighting (draw attention to metrics outside normal ranges), and comparison context (vs. target, vs. prior period, vs. benchmark). LeadReach agents contribute analytics data by: logging their activity and pipeline impact, tracking agent-specific performance metrics, and surfacing insights from their knowledge base queries and prospect interactions."),
+    ]
+
+    for slug, title, content in ops:
+        body = f"# {title}\n\n{content}\n\n## Agent Operations Integration\n\nLeadReach agents support {title.lower()} by:\n- Providing real-time data inputs for planning and analytics\n- Automating process compliance and data governance tasks\n- Generating insights that improve forecasting accuracy\n- Reducing manual operational overhead through intelligent automation\n"
+        files.append(write_md(f"sales-ops/{slug}.md", {
+            "title": title,
+            "category": "sales-ops",
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["sales-ops", "operations", "enablement", "process"],
+        }, body))
+    
+    return files
+
+# ============================================================
+# 7. Additional files in existing thin categories
+# ============================================================
+
+def generate_existing_category_gaps():
+    files = []
+    
+    # Templates (7 -> 10)
+    extra_templates = [
+        ("roi-calculator-templates", "ROI Calculator Templates", "roi-calculator", "ROI calculator templates provide pre-built frameworks for quantifying the business impact of LeadReach for prospects across different segments and use cases. Each calculator includes: input variables (current state metrics), assumptions (industry benchmarks), and output projections (expected improvement). Key calculator templates include: Pipeline Velocity Calculator (measures impact of improved prospecting on pipeline speed and volume), Cost-per-Pipeline-Dollar Calculator (compares LeadReach cost to pipeline value generated), Rep Productivity Calculator (quantifies time savings from AI-driven prospecting), and Compliance Risk Calculator (estimates cost of non-compliance avoided through LeadReach governance). Each calculator should be customizable by segment (SMB, mid-market, enterprise) and include conservative, moderate, and aggressive scenarios. The calculators serve dual purposes: they help prospects build internal business cases, and they provide LeadReach agents with quantified value propositions for outreach personalization."),
+        ("discovery-call-templates", "Discovery Call Templates", "discovery-call", "Discovery call templates provide structured frameworks for the initial sales conversation, ensuring consistent qualification while maintaining conversational flexibility. Each template includes: opening framework (rapport building and agenda setting), discovery questions organized by category (current state, pain points, desired outcomes, decision process), qualification criteria mapping (connecting answers to MEDDIC/BANT framework), and next-step proposal (suggesting appropriate next action based on qualification level). Templates are customized by segment: SMB discovery (15-20 minutes, focused on pain and budget), mid-market discovery (30-45 minutes, adds stakeholder mapping and competitive context), and enterprise discovery (45-60 minutes, includes organizational dynamics and procurement process exploration). The most effective discovery templates balance structure with adaptability — they provide a framework but allow reps to follow conversational threads while ensuring all critical information is captured. LeadReach agents use discovery templates to: prepare pre-call research briefs, generate personalized discovery questions based on prospect context, and score qualification based on discovery call outcomes."),
+    ]
+    
+    for slug, title, tmpl_type, content in extra_templates:
+        body = f"# {title}\n\n{content}\n\n## Template Structure\n\nEach template includes:\n- Pre-built framework with customizable variables\n- Segment-specific variants (SMB, mid-market, enterprise)\n- Integration with LeadReach agent workflows\n- Version tracking and improvement history\n"
+        files.append(write_md(f"templates/{slug}.md", {
+            "title": title,
+            "category": "template",
+            "template_type": tmpl_type,
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["template", tmpl_type, "framework"],
+        }, body))
+    
+    # Datasets (6 -> 9)
+    extra_datasets = [
+        ("firmographic-data-standards", "Firmographic Data Standards", "firmographic", "Firmographic data standards define the structured attributes used to classify and segment business organizations. Core firmographic dimensions include: company size (employee count ranges: 1-10, 11-50, 51-200, 201-500, 501-1000, 1001-5000, 5001-10000, 10000+), revenue range (under $1M, $1-10M, $10-50M, $50-100M, $100-500M, $500M-1B, $1B+), industry classification (SIC, NAICS, and custom LeadReach taxonomy mapping), geographic footprint (headquarters country, operating countries, regional presence), and organizational structure (public/private, subsidiary/parent, number of locations). Advanced firmographic attributes include: technology stack (identified via technographic signals), growth indicators (hiring velocity, funding history, revenue trajectory), and buying propensity models (predictive scores based on firmographic patterns). Data quality standards require: 95%+ completeness for core attributes, 90%+ accuracy verified quarterly, and real-time enrichment triggers for records missing key attributes. LeadReach agents use firmographic standards to: classify prospects into ICP segments, apply segment-specific outreach strategies, and enrich incomplete records via multi-source data aggregation."),
+        ("intent-signal-taxonomy", "Intent Signal Taxonomy", "intent-signals", "The intent signal taxonomy classifies the various indicators that a prospect is actively researching or considering a purchase. Signals are categorized by source type: first-party intent (direct engagement with LeadReach digital properties — website visits, content downloads, demo requests, pricing page views), second-party intent (data from partner networks — publisher networks showing research behavior, community activity, review site engagement), and third-party intent (observable market events — funding rounds, M&A activity, leadership changes, job postings, product launches). Signal strength is scored on a 1-100 scale based on: recency (signals within 7 days score 80-100, 7-30 days score 50-79, 30-90 days score 20-49, 90+ days score below 20), specificity (category-specific research scores higher than general research), and corroboration (multiple signals from the same account increase the score). The taxonomy maps signal types to buying journey stages: awareness signals (general category research, content consumption), consideration signals (vendor comparison, pricing research, demo requests), and decision signals (contract review indicators, procurement activity, security questionnaire requests). LeadReach agents use the intent signal taxonomy to: prioritize outreach based on signal strength and recency, craft messaging that references the specific intent signal, and time outreach within the optimal window after signal detection."),
+    ]
+    
+    for slug, title, ds_type, content in extra_datasets:
+        body = f"# {title}\n\n{content}\n\n## Data Schema\n\nThe dataset follows standardized schemas compatible with LeadReach agent workflows and external data provider integrations.\n\n## Update Cadence\n\n- Real-time: intent signals, trigger events\n- Daily: contact and company enrichment\n- Weekly: firmographic refreshes\n- Monthly: benchmark updates and coverage audits\n"
+        files.append(write_md(f"datasets/{slug}.md", {
+            "title": title,
+            "category": "dataset",
+            "dataset_type": ds_type,
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["dataset", ds_type, "data-standards", "taxonomy"],
+        }, body))
+    
+    # Product (11 -> 13)
+    extra_product = [
+        ("api-rate-limits-documentation", "API Rate Limits & Documentation", "Comprehensive documentation of LeadReach API rate limits, authentication methods, and integration endpoints. The LeadReach API follows RESTful conventions with JSON request/response formats. Authentication uses OAuth 2.0 with API key fallback for server-to-server integrations. Rate limits are enforced per organization: Standard tier (1,000 requests/hour), Professional tier (5,000 requests/hour), Enterprise tier (20,000 requests/hour), with burst capacity of 2x the hourly limit for 60-second windows. Key API endpoints include: Prospects (CRUD operations on prospect records), Outreach (trigger and manage outreach sequences), Knowledge (query the knowledge base), Agents (configure and monitor agent behavior), Analytics (retrieve pipeline and activity data), and Webhooks (register for real-time event notifications). The API supports pagination (cursor-based, 100 records per page), filtering (by date range, status, segment), and field selection (reduce response payload by specifying needed fields). All API responses include rate limit headers (X-RateLimit-Limit, X-RateLimit-Remaining, X-RateLimit-Reset) for client-side throttling. Webhook events fire for: prospect status changes, outreach engagement (open, click, reply), pipeline stage transitions, and agent action completions. The API is versioned (currently v2) with a 12-month deprecation window for breaking changes."),
+        ("agent-configuration-guide", "Agent Configuration Guide", "Detailed guide for configuring each of LeadReach's 8 AI agents to match organizational requirements and GTM strategy. Configuration operates at three levels: organization defaults (apply to all agents), agent-specific settings (override defaults per agent), and scenario-specific rules (override per use case). Each agent has configurable parameters including: operating hours (when the agent is active), action limits (max activities per hour/day), approval requirements (which actions need human approval), escalation rules (conditions that trigger human escalation), and knowledge domain weights (which knowledge categories the agent prioritizes). Agent-specific configurations: Atlas (ICP definition weights, territory scoring model, whitespace detection thresholds), Scout (prospect discovery sources, qualification criteria, enrichment depth), Forge (enrichment providers, data confidence thresholds, update frequency), Sage (research depth, competitive analysis scope, signal detection sensitivity), Judge (qualification framework, scoring weights, advancement criteria), Bard (outreach channels, personalization level, cadence templates), Flow (pipeline stage definitions, exit criteria, velocity targets), and Echo (gap report frequency, quality thresholds, notification rules). Configuration changes are versioned and can be rolled back, with audit logs tracking all changes and their impact on agent performance."),
+    ]
+    
+    for slug, title, content in extra_product:
+        body = f"# {title}\n\n{content}\n"
+        files.append(write_md(f"product/{slug}.md", {
+            "title": title,
+            "category": "product",
+            "grade": "B",
+            "last_reviewed": TODAY,
+            "tags": ["product", "api", "configuration", "documentation"],
+        }, body))
+    
+    return files
+
+# ============================================================
+# Main Execution
+# ============================================================
+
+def main():
+    all_files = []
+    
+    print("Generating KPIs...")
+    all_files.extend(generate_kpis())
+    
+    print("Generating Competitive Intelligence...")
+    all_files.extend(generate_competitive_intel())
+    
+    print("Generating Technologies...")
+    all_files.extend(generate_technologies())
+    
+    print("Generating Buyer Intelligence...")
+    all_files.extend(generate_buyer_intel())
+    
+    print("Generating Vertical Playbooks...")
+    all_files.extend(generate_vertical_playbooks())
+    
+    print("Generating Sales Operations...")
+    all_files.extend(generate_sales_ops())
+    
+    print("Generating existing category gaps...")
+    all_files.extend(generate_existing_category_gaps())
+    
+    print(f"\nTotal files generated: {len(all_files)}")
+    for f in sorted(all_files):
+        print(f"  ✓ {f}")
+    
+    return all_files
+
+if __name__ == "__main__":
+    main()

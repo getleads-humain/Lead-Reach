@@ -5,7 +5,7 @@
  * knowledge/gap-reports/YYYY-MM-gap-report.md.
  *
  * The report identifies:
- *   1. Coverage gaps — industries / regions / playbooks / domains / agents / methodologies / integrations / case-studies / product not covered
+ *   1. Coverage gaps — industries / regions / playbooks / domains / agents / methodologies / integrations / case-studies / product / kpis / competitive-intel / technologies / buyer-intel / vertical-playbooks / sales-ops not covered
  *   2. Quality gaps — existing docs with grade C or D
  *   3. Usage gaps — docs not referenced by any agent in last 30 days (placeholder; future: query agent-memory)
  *   4. Freshness gaps — docs not reviewed in 180+ days
@@ -119,7 +119,8 @@ const EXPECTED_PRODUCT = [
   'onboarding-quickstart', 'release-notes',
   'ai-agent-orchestration', 'lead-scoring-engine',
   'outreach-automation', 'analytics-dashboard',
-  'enterprise-security',
+  'enterprise-security', 'api-rate-limits-documentation',
+  'agent-configuration-guide',
 ];
 
 const EXPECTED_COMPLIANCE = [
@@ -132,11 +133,55 @@ const EXPECTED_TEMPLATES = [
   'prompt-schemas', 'email-sequence-templates', 'icp-scoring-templates',
   'outreach-cadence-templates', 'qualification-framework-templates',
   'objection-handling-templates', 'report-templates',
+  'roi-calculator-templates', 'discovery-call-templates',
 ];
 
 const EXPECTED_DATASETS = [
   'few-shot-examples', 'b2b-contact-attributes', 'industry-classification-codes',
   'technographic-signals', 'buying-intent-signals', 'kpi-benchmarks',
+  'firmographic-data-standards', 'intent-signal-taxonomy',
+];
+
+const EXPECTED_KPIS = [
+  'pipeline-kpis', 'revenue-kpis', 'activity-kpis', 'efficiency-kpis',
+  'customer-kpis', 'marketing-kpis', 'sales-enablement-kpis', 'data-quality-kpis',
+  'outreach-kpis', 'sdr-kpis', 'forecasting-kpis', 'expansion-kpis',
+];
+
+const EXPECTED_COMPETITIVE_INTEL = [
+  'zoominfo-competitive-profile', 'apollo-competitive-profile',
+  'lusha-competitive-profile', 'outreach-competitive-profile',
+  'salesloft-competitive-profile', 'gong-competitive-profile',
+  '6sense-competitive-profile', 'clearbit-competitive-profile',
+  'demandbase-competitive-profile', 'hunter-competitive-profile',
+];
+
+const EXPECTED_TECHNOLOGIES = [
+  'crm-systems', 'sales-engagement-platforms', 'data-providers',
+  'marketing-automation', 'revenue-intelligence-platforms',
+  'ai-ml-technologies', 'email-infrastructure', 'analytics-bi-tools',
+  'communication-platforms', 'security-compliance-tools',
+];
+
+const EXPECTED_BUYER_INTEL = [
+  'c-suite-buyer-profiles', 'vp-director-buyer-profiles',
+  'champion-enablement-guide', 'buying-committee-dynamics',
+  'buyer-persona-frameworks', 'procurement-process-guide',
+  'b2b-buying-signals', 'stakeholder-mapping-methodology',
+];
+
+const EXPECTED_VERTICAL_PLAYBOOKS = [
+  'saas-vertical-playbook', 'fintech-vertical-playbook',
+  'healthtech-vertical-playbook', 'ecommerce-vertical-playbook',
+  'manufacturing-vertical-playbook', 'government-vertical-playbook',
+  'education-vertical-playbook', 'nonprofit-vertical-playbook',
+];
+
+const EXPECTED_SALES_OPS = [
+  'territory-planning-guide', 'compensation-plan-design',
+  'sales-process-optimization', 'crm-data-governance',
+  'sales-tech-stack-architecture', 'revops-framework',
+  'sales-forecasting-methods', 'sales-analytics-dashboards',
 ];
 
 // ============================================================
@@ -166,6 +211,12 @@ export interface GapReportResult {
     complianceMissing: string[];
     templatesMissing: string[];
     datasetsMissing: string[];
+    kpisMissing: string[];
+    competitiveIntelMissing: string[];
+    technologiesMissing: string[];
+    buyerIntelMissing: string[];
+    verticalPlaybooksMissing: string[];
+    salesOpsMissing: string[];
   };
   qualityGaps: Array<{ path: string; title: string; grade: string; issue: string; recommendedAction: string }>;
   usageGaps: Array<{ path: string; title: string; lastReferenced: string; recommendation: string }>;
@@ -231,6 +282,24 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   const coveredDatasets = new Set(
     files.filter(f => f.category === 'dataset').map(f => path.basename(f.path, '.md'))
   );
+  const coveredKpis = new Set(
+    files.filter(f => f.category === 'kpi').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredCompetitiveIntel = new Set(
+    files.filter(f => f.category === 'competitive-intel').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredTechnologies = new Set(
+    files.filter(f => f.category === 'technology').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredBuyerIntel = new Set(
+    files.filter(f => f.category === 'buyer-intel').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredVerticalPlaybooks = new Set(
+    files.filter(f => f.category === 'vertical-playbook').map(f => path.basename(f.path, '.md'))
+  );
+  const coveredSalesOps = new Set(
+    files.filter(f => f.category === 'sales-ops').map(f => path.basename(f.path, '.md'))
+  );
 
   const industriesMissing = EXPECTED_INDUSTRIES.filter(i => !coveredIndustries.has(i));
   const regionsMissing = EXPECTED_REGIONS.filter(r => !coveredRegions.has(r));
@@ -244,6 +313,12 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   const complianceMissing = EXPECTED_COMPLIANCE.filter(c => !coveredCompliance.has(c));
   const templatesMissing = EXPECTED_TEMPLATES.filter(t => !coveredTemplates.has(t));
   const datasetsMissing = EXPECTED_DATASETS.filter(d => !coveredDatasets.has(d));
+  const kpisMissing = EXPECTED_KPIS.filter(k => !coveredKpis.has(k));
+  const competitiveIntelMissing = EXPECTED_COMPETITIVE_INTEL.filter(c => !coveredCompetitiveIntel.has(c));
+  const technologiesMissing = EXPECTED_TECHNOLOGIES.filter(t => !coveredTechnologies.has(t));
+  const buyerIntelMissing = EXPECTED_BUYER_INTEL.filter(b => !coveredBuyerIntel.has(b));
+  const verticalPlaybooksMissing = EXPECTED_VERTICAL_PLAYBOOKS.filter(v => !coveredVerticalPlaybooks.has(v));
+  const salesOpsMissing = EXPECTED_SALES_OPS.filter(s => !coveredSalesOps.has(s));
 
   // ============================================================
   // 2. Quality Gaps (Grade C or D)
@@ -352,6 +427,24 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
   for (const prod of productMissing.slice(0, 2)) {
     newDocsToAuthor.push(`knowledge/product/${prod}.md — missing product documentation`);
   }
+  for (const so of salesOpsMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/sales-ops/${so}.md — missing sales operations guide`);
+  }
+  for (const ki of kpisMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/kpis/${ki}.md — missing KPI reference`);
+  }
+  for (const ci of competitiveIntelMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/competitive-intel/${ci}.md — missing competitive profile`);
+  }
+  for (const tech of technologiesMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/technologies/${tech}.md — missing technology guide`);
+  }
+  for (const bi of buyerIntelMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/buyer-intel/${bi}.md — missing buyer intelligence doc`);
+  }
+  for (const vp of verticalPlaybooksMissing.slice(0, 2)) {
+    newDocsToAuthor.push(`knowledge/vertical-playbooks/${vp}.md — missing vertical playbook`);
+  }
 
   const existingDocsToRefresh: string[] = [];
   for (const gap of qualityGaps) {
@@ -370,6 +463,8 @@ export function generateGapReport(opts: { outputDir?: string; now?: Date } = {})
     domainsMissing, agentsMissing, methodologiesMissing,
     integrationsMissing, caseStudiesMissing, productMissing,
     complianceMissing, templatesMissing, datasetsMissing,
+    kpisMissing, competitiveIntelMissing, technologiesMissing,
+    buyerIntelMissing, verticalPlaybooksMissing, salesOpsMissing,
   };
 
   const markdown = composeMarkdown({
@@ -416,6 +511,9 @@ function composeMarkdown(input: {
     methodologiesMissing: string[]; integrationsMissing: string[];
     caseStudiesMissing: string[]; productMissing: string[];
     complianceMissing: string[]; templatesMissing: string[]; datasetsMissing: string[];
+    kpisMissing: string[]; competitiveIntelMissing: string[];
+    technologiesMissing: string[]; buyerIntelMissing: string[];
+    verticalPlaybooksMissing: string[]; salesOpsMissing: string[];
   };
   qualityGaps: GapReportResult['qualityGaps'];
   usageGaps: GapReportResult['usageGaps'];
@@ -431,6 +529,9 @@ function composeMarkdown(input: {
     coverageGaps.integrationsMissing.length + coverageGaps.caseStudiesMissing.length +
     coverageGaps.productMissing.length + coverageGaps.complianceMissing.length +
     coverageGaps.templatesMissing.length + coverageGaps.datasetsMissing.length +
+    coverageGaps.kpisMissing.length + coverageGaps.competitiveIntelMissing.length +
+    coverageGaps.technologiesMissing.length + coverageGaps.buyerIntelMissing.length +
+    coverageGaps.verticalPlaybooksMissing.length + coverageGaps.salesOpsMissing.length +
     qualityGaps.length + freshnessGaps.length;
 
   return `---
@@ -448,7 +549,7 @@ total_gaps: ${totalGaps}
 
 ## 1. Executive Summary
 
-The knowledge base currently contains **${stats.totalDocs} documents** across ${Object.keys(stats.byCategory).length} categories, indexed into ${stats.totalChunks} retrievable chunks. This report identifies **${totalGaps} gaps** requiring attention: ${coverageGaps.industriesMissing.length} missing industries, ${coverageGaps.regionsMissing.length} missing regions, ${coverageGaps.playbooksMissing.length} missing playbooks, ${coverageGaps.domainsMissing.length} missing domain docs, ${coverageGaps.methodologiesMissing.length} missing methodologies, ${coverageGaps.integrationsMissing.length} missing integrations, ${coverageGaps.caseStudiesMissing.length} missing case studies, ${coverageGaps.productMissing.length} missing product docs, ${qualityGaps.length} quality gaps, and ${freshnessGaps.length} freshness gaps.
+The knowledge base currently contains **${stats.totalDocs} documents** across ${Object.keys(stats.byCategory).length} categories, indexed into ${stats.totalChunks} retrievable chunks. This report identifies **${totalGaps} gaps** requiring attention: ${coverageGaps.industriesMissing.length} missing industries, ${coverageGaps.regionsMissing.length} missing regions, ${coverageGaps.playbooksMissing.length} missing playbooks, ${coverageGaps.domainsMissing.length} missing domain docs, ${coverageGaps.methodologiesMissing.length} missing methodologies, ${coverageGaps.integrationsMissing.length} missing integrations, ${coverageGaps.caseStudiesMissing.length} missing case studies, ${coverageGaps.productMissing.length} missing product docs, ${coverageGaps.kpisMissing.length} missing KPIs, ${coverageGaps.competitiveIntelMissing.length} missing competitive profiles, ${coverageGaps.technologiesMissing.length} missing technology guides, ${coverageGaps.buyerIntelMissing.length} missing buyer intel docs, ${coverageGaps.verticalPlaybooksMissing.length} missing vertical playbooks, ${coverageGaps.salesOpsMissing.length} missing sales ops docs, ${qualityGaps.length} quality gaps, and ${freshnessGaps.length} freshness gaps.
 
 **Priority actions this month:**
 ${recommendations.newDocsToAuthor.slice(0, 5).map(r => `- ${r}`).join('\n') || '- No new docs urgently required this month.'}
@@ -508,6 +609,42 @@ ${coverageGaps.caseStudiesMissing.length > 0
 ${coverageGaps.productMissing.length > 0
     ? coverageGaps.productMissing.map(p => `- \`${p}\``).join('\n')
     : '_All expected product docs are covered._'}
+
+### 2.10 KPIs Not Covered (${coverageGaps.kpisMissing.length})
+
+${coverageGaps.kpisMissing.length > 0
+    ? coverageGaps.kpisMissing.map(k => `- \`${k}\``).join('\n')
+    : '_All expected KPI docs are covered._'}
+
+### 2.11 Competitive Intelligence Not Covered (${coverageGaps.competitiveIntelMissing.length})
+
+${coverageGaps.competitiveIntelMissing.length > 0
+    ? coverageGaps.competitiveIntelMissing.map(c => `- \`${c}\``).join('\n')
+    : '_All expected competitive intel docs are covered._'}
+
+### 2.12 Technologies Not Covered (${coverageGaps.technologiesMissing.length})
+
+${coverageGaps.technologiesMissing.length > 0
+    ? coverageGaps.technologiesMissing.map(t => `- \`${t}\``).join('\n')
+    : '_All expected technology docs are covered._'}
+
+### 2.13 Buyer Intelligence Not Covered (${coverageGaps.buyerIntelMissing.length})
+
+${coverageGaps.buyerIntelMissing.length > 0
+    ? coverageGaps.buyerIntelMissing.map(b => `- \`${b}\``).join('\n')
+    : '_All expected buyer intel docs are covered._'}
+
+### 2.14 Vertical Playbooks Not Covered (${coverageGaps.verticalPlaybooksMissing.length})
+
+${coverageGaps.verticalPlaybooksMissing.length > 0
+    ? coverageGaps.verticalPlaybooksMissing.map(v => `- \`${v}\``).join('\n')
+    : '_All expected vertical playbook docs are covered._'}
+
+### 2.15 Sales Operations Not Covered (${coverageGaps.salesOpsMissing.length})
+
+${coverageGaps.salesOpsMissing.length > 0
+    ? coverageGaps.salesOpsMissing.map(s => `- \`${s}\``).join('\n')
+    : '_All expected sales ops docs are covered._'}
 
 ## 3. Quality Gaps (${qualityGaps.length})
 
@@ -576,7 +713,7 @@ ${recommendations.existingDocsToRefresh.length > 0
 
 This report was generated by the Echo agent using the following methodology:
 
-1. **Coverage gaps**: Compared existing docs against the EXPECTED_INDUSTRIES, EXPECTED_REGIONS, EXPECTED_PLAYBOOKS, EXPECTED_DOMAINS, EXPECTED_AGENTS, EXPECTED_METHODOLOGIES, EXPECTED_INTEGRATIONS, EXPECTED_CASE_STUDIES, and EXPECTED_PRODUCT baseline lists (defined in \`src/lib/knowledge/gap-report.ts\`).
+1. **Coverage gaps**: Compared existing docs against the EXPECTED_INDUSTRIES, EXPECTED_REGIONS, EXPECTED_PLAYBOOKS, EXPECTED_DOMAINS, EXPECTED_AGENTS, EXPECTED_METHODOLOGIES, EXPECTED_INTEGRATIONS, EXPECTED_CASE_STUDIES, EXPECTED_PRODUCT, EXPECTED_KPIS, EXPECTED_COMPETITIVE_INTEL, EXPECTED_TECHNOLOGIES, EXPECTED_BUYER_INTEL, EXPECTED_VERTICAL_PLAYBOOKS, and EXPECTED_SALES_OPS baseline lists (defined in \`src/lib/knowledge/gap-report.ts\`).
 2. **Quality gaps**: Identified docs with \`grade: C\` or \`grade: D\` in frontmatter.
 3. **Usage gaps**: Identified docs with no incoming links from other knowledge docs (orphan detection).
 4. **Freshness gaps**: Identified docs with \`last_reviewed\` older than 180 days, or missing entirely.

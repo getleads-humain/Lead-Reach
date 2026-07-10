@@ -58,6 +58,12 @@ import {
   FileCode,
   Microscope,
   Award,
+  Target,
+  Swords,
+  Cpu,
+  Users,
+  Building,
+  Settings,
 } from 'lucide-react';
 import Link from 'next/link';
 import { useTheme } from 'next-themes';
@@ -70,7 +76,7 @@ import { hexToRgba } from '@/lib/utils';
 
 interface KnowledgeFile {
   path: string;
-  category: 'industry' | 'region' | 'playbook' | 'domain' | 'methodology' | 'agent' | 'tool' | 'integration' | 'compliance' | 'case-study' | 'product' | 'template' | 'dataset' | 'training-data' | 'gap-report';
+  category: 'industry' | 'region' | 'playbook' | 'domain' | 'methodology' | 'agent' | 'tool' | 'integration' | 'compliance' | 'case-study' | 'product' | 'template' | 'dataset' | 'training-data' | 'gap-report' | 'kpi' | 'competitive-intel' | 'technology' | 'buyer-intel' | 'vertical-playbook' | 'sales-ops';
   title: string;
   grade?: string;
   lastReviewed?: string;
@@ -127,6 +133,12 @@ interface GapReportResponse {
       complianceMissing: string[];
       templatesMissing: string[];
       datasetsMissing: string[];
+      kpisMissing: string[];
+      competitiveIntelMissing: string[];
+      technologiesMissing: string[];
+      buyerIntelMissing: string[];
+      verticalPlaybooksMissing: string[];
+      salesOpsMissing: string[];
     };
     qualityGaps: Array<{ path: string; title: string; grade: string; issue: string; recommendedAction: string }>;
     usageGaps: Array<{ path: string; title: string; lastReferenced: string; recommendation: string }>;
@@ -140,22 +152,28 @@ interface GapReportResponse {
 // Constants
 // ============================================================
 
-const CATEGORY_META: Record<string, { icon: typeof FileText; label: string; color: string; darkColor: string; gradient: string; bgGlow: string; darkBgGlow: string }> = {
-  industry: { icon: Briefcase, label: 'Industries', color: 'text-blue-600 dark:text-blue-400', darkColor: 'text-blue-600 dark:text-blue-400', gradient: 'from-blue-500 to-cyan-400', bgGlow: 'bg-blue-100 dark:bg-blue-500/20', darkBgGlow: 'bg-blue-500/20' },
-  region: { icon: Globe, label: 'Regions', color: 'text-emerald-600 dark:text-emerald-400', darkColor: 'text-emerald-600 dark:text-emerald-400', gradient: 'from-emerald-500 to-teal-400', bgGlow: 'bg-emerald-100 dark:bg-emerald-500/20', darkBgGlow: 'bg-emerald-500/20' },
-  playbook: { icon: BookOpen, label: 'Playbooks', color: 'text-violet-600 dark:text-violet-400', darkColor: 'text-violet-600 dark:text-violet-400', gradient: 'from-violet-500 to-purple-400', bgGlow: 'bg-violet-100 dark:bg-violet-500/20', darkBgGlow: 'bg-violet-500/20' },
-  domain: { icon: Compass, label: 'Domain Knowledge', color: 'text-sky-600 dark:text-sky-400', darkColor: 'text-sky-400', gradient: 'from-sky-500 to-blue-400', bgGlow: 'bg-sky-100 dark:bg-sky-500/20', darkBgGlow: 'bg-sky-500/20' },
-  methodology: { icon: Microscope, label: 'Methodologies', color: 'text-amber-600 dark:text-amber-400', darkColor: 'text-amber-400', gradient: 'from-amber-500 to-yellow-400', bgGlow: 'bg-amber-100 dark:bg-amber-500/20', darkBgGlow: 'bg-amber-500/20' },
-  agent: { icon: Bot, label: 'Agents', color: 'text-indigo-600 dark:text-indigo-400', darkColor: 'text-indigo-400', gradient: 'from-indigo-500 to-violet-400', bgGlow: 'bg-indigo-100 dark:bg-indigo-500/20', darkBgGlow: 'bg-indigo-500/20' },
+const CATEGORY_META: Record<string, { icon: typeof FileText; label: string; color: string; darkColor: string; gradient: string; bgGlow: string; darkBgGlow: string; subCategories?: string[] }> = {
+  industry: { icon: Briefcase, label: 'Industries', color: 'text-blue-600 dark:text-blue-400', darkColor: 'text-blue-600 dark:text-blue-400', gradient: 'from-blue-500 to-cyan-400', bgGlow: 'bg-blue-100 dark:bg-blue-500/20', darkBgGlow: 'bg-blue-500/20', subCategories: ['SaaS', 'Fintech', 'Healthtech', 'E-commerce', 'Manufacturing', 'Dev Tools', 'Cybersecurity', 'AI/ML', 'Legal', 'Education', 'Energy', 'Government', 'Nonprofit', 'Insurance', 'Telecom'] },
+  region: { icon: Globe, label: 'Regions', color: 'text-emerald-600 dark:text-emerald-400', darkColor: 'text-emerald-600 dark:text-emerald-400', gradient: 'from-emerald-500 to-teal-400', bgGlow: 'bg-emerald-100 dark:bg-emerald-500/20', darkBgGlow: 'bg-emerald-500/20', subCategories: ['North America', 'Europe & GDPR', 'APAC', 'LATAM', 'MENA', 'Africa', 'Nordics', 'DACH'] },
+  playbook: { icon: BookOpen, label: 'Playbooks', color: 'text-violet-600 dark:text-violet-400', darkColor: 'text-violet-600 dark:text-violet-400', gradient: 'from-violet-500 to-purple-400', bgGlow: 'bg-violet-100 dark:bg-violet-500/20', darkBgGlow: 'bg-violet-500/20', subCategories: ['Outbound', 'Inbound', 'Expansion', 'Competitive', 'Events', 'Partner', 'Renewal'] },
+  domain: { icon: Compass, label: 'Domain Knowledge', color: 'text-sky-600 dark:text-sky-400', darkColor: 'text-sky-400', gradient: 'from-sky-500 to-blue-400', bgGlow: 'bg-sky-100 dark:bg-sky-500/20', darkBgGlow: 'bg-sky-500/20', subCategories: ['Lead Generation', 'Data Enrichment', 'ICP Design', 'Qualification', 'Outreach', 'Pipeline Mgmt', 'Revenue Ops', 'Competitive Intel', 'Social Selling'] },
+  methodology: { icon: Microscope, label: 'Methodologies', color: 'text-amber-600 dark:text-amber-400', darkColor: 'text-amber-400', gradient: 'from-amber-500 to-yellow-400', bgGlow: 'bg-amber-100 dark:bg-amber-500/20', darkBgGlow: 'bg-amber-500/20', subCategories: ['MEDDIC/MEDDPICC', 'Challenger Sale', 'SPIN Selling', 'Sandler', 'Value Selling', 'Consultative', 'Inbound'] },
+  agent: { icon: Bot, label: 'Agents', color: 'text-indigo-600 dark:text-indigo-400', darkColor: 'text-indigo-400', gradient: 'from-indigo-500 to-violet-400', bgGlow: 'bg-indigo-100 dark:bg-indigo-500/20', darkBgGlow: 'bg-indigo-500/20', subCategories: ['Atlas', 'Scout', 'Forge', 'Sage', 'Judge', 'Bard', 'Flow', 'Echo'] },
   tool: { icon: Wrench, label: 'Agent Tools', color: 'text-orange-600 dark:text-orange-400', darkColor: 'text-orange-400', gradient: 'from-orange-500 to-amber-400', bgGlow: 'bg-orange-100 dark:bg-orange-500/20', darkBgGlow: 'bg-orange-500/20' },
-  integration: { icon: Plug, label: 'Integrations', color: 'text-cyan-600 dark:text-cyan-400', darkColor: 'text-cyan-400', gradient: 'from-cyan-500 to-teal-400', bgGlow: 'bg-cyan-100 dark:bg-cyan-500/20', darkBgGlow: 'bg-cyan-500/20' },
-  compliance: { icon: Shield, label: 'Compliance', color: 'text-rose-600 dark:text-rose-400', darkColor: 'text-rose-400', gradient: 'from-rose-500 to-red-400', bgGlow: 'bg-rose-100 dark:bg-rose-500/20', darkBgGlow: 'bg-rose-500/20' },
-  'case-study': { icon: Award, label: 'Case Studies', color: 'text-yellow-600 dark:text-yellow-400', darkColor: 'text-yellow-400', gradient: 'from-yellow-500 to-amber-400', bgGlow: 'bg-yellow-100 dark:bg-yellow-500/20', darkBgGlow: 'bg-yellow-500/20' },
-  product: { icon: Package, label: 'Product', color: 'text-slate-600 dark:text-slate-300', darkColor: 'text-slate-300', gradient: 'from-slate-500 to-zinc-400', bgGlow: 'bg-slate-100 dark:bg-slate-500/20', darkBgGlow: 'bg-slate-500/20' },
-  template: { icon: FileCode, label: 'Templates', color: 'text-teal-600 dark:text-teal-400', darkColor: 'text-teal-400', gradient: 'from-teal-500 to-emerald-400', bgGlow: 'bg-teal-100 dark:bg-teal-500/20', darkBgGlow: 'bg-teal-500/20' },
-  dataset: { icon: Database, label: 'Datasets', color: 'text-fuchsia-600 dark:text-fuchsia-400', darkColor: 'text-fuchsia-400', gradient: 'from-fuchsia-500 to-pink-400', bgGlow: 'bg-fuchsia-100 dark:bg-fuchsia-500/20', darkBgGlow: 'bg-fuchsia-500/20' },
-  'training-data': { icon: GraduationCap, label: 'Training Data', color: 'text-pink-600 dark:text-pink-400', darkColor: 'text-pink-400', gradient: 'from-pink-500 to-rose-400', bgGlow: 'bg-pink-100 dark:bg-pink-500/20', darkBgGlow: 'bg-pink-500/20' },
+  integration: { icon: Plug, label: 'Integrations', color: 'text-cyan-600 dark:text-cyan-400', darkColor: 'text-cyan-400', gradient: 'from-cyan-500 to-teal-400', bgGlow: 'bg-cyan-100 dark:bg-cyan-500/20', darkBgGlow: 'bg-cyan-500/20', subCategories: ['CRM', 'Email', 'Calendar', 'Data Providers', 'Webhooks', 'Salesforce', 'HubSpot', 'Slack/Teams'] },
+  compliance: { icon: Shield, label: 'Compliance', color: 'text-rose-600 dark:text-rose-400', darkColor: 'text-rose-400', gradient: 'from-rose-500 to-red-400', bgGlow: 'bg-rose-100 dark:bg-rose-500/20', darkBgGlow: 'bg-rose-500/20', subCategories: ['GDPR', 'CCPA/CPRA', 'CAN-SPAM/CASL', 'AI Ethics', 'SOC2/ISO27001', 'Export Controls'] },
+  'case-study': { icon: Award, label: 'Case Studies', color: 'text-yellow-600 dark:text-yellow-400', darkColor: 'text-yellow-400', gradient: 'from-yellow-500 to-amber-400', bgGlow: 'bg-yellow-100 dark:bg-yellow-500/20', darkBgGlow: 'bg-yellow-500/20', subCategories: ['SaaS', 'Fintech', 'E-commerce', 'Healthtech', 'Manufacturing', 'Enterprise'] },
+  product: { icon: Package, label: 'Product', color: 'text-slate-600 dark:text-slate-300', darkColor: 'text-slate-300', gradient: 'from-slate-500 to-zinc-400', bgGlow: 'bg-slate-100 dark:bg-slate-500/20', darkBgGlow: 'bg-slate-500/20', subCategories: ['Platform', 'Agent Pipeline', 'Security', 'Pricing', 'API', 'Analytics'] },
+  template: { icon: FileCode, label: 'Templates', color: 'text-teal-600 dark:text-teal-400', darkColor: 'text-teal-400', gradient: 'from-teal-500 to-emerald-400', bgGlow: 'bg-teal-100 dark:bg-teal-500/20', darkBgGlow: 'bg-teal-500/20', subCategories: ['Prompts', 'Email Sequences', 'ICP Scoring', 'Cadences', 'Qualification', 'Objections', 'ROI Calculators', 'Discovery'] },
+  dataset: { icon: Database, label: 'Datasets', color: 'text-fuchsia-600 dark:text-fuchsia-400', darkColor: 'text-fuchsia-400', gradient: 'from-fuchsia-500 to-pink-400', bgGlow: 'bg-fuchsia-100 dark:bg-fuchsia-500/20', darkBgGlow: 'bg-fuchsia-500/20', subCategories: ['Few-Shot', 'Contact Attributes', 'Industry Codes', 'Technographics', 'Intent Signals', 'KPI Benchmarks', 'Firmographics'] },
+  'training-data': { icon: GraduationCap, label: 'Training Data', color: 'text-pink-600 dark:text-pink-400', darkColor: 'text-pink-400', gradient: 'from-pink-500 to-rose-400', bgGlow: 'bg-pink-100 dark:bg-pink-500/20', darkBgGlow: 'bg-pink-500/20', subCategories: ['Atlas', 'Scout', 'Forge', 'Sage', 'Judge', 'Bard', 'Flow', 'Echo'] },
   'gap-report': { icon: AlertTriangle, label: 'Gap Reports', color: 'text-red-600 dark:text-red-400', darkColor: 'text-red-600 dark:text-red-400', gradient: 'from-red-500 to-orange-400', bgGlow: 'bg-red-100 dark:bg-red-500/20', darkBgGlow: 'bg-red-500/20' },
+  kpi: { icon: Target, label: 'KPIs', color: 'text-lime-600 dark:text-lime-400', darkColor: 'text-lime-400', gradient: 'from-lime-500 to-green-400', bgGlow: 'bg-lime-100 dark:bg-lime-500/20', darkBgGlow: 'bg-lime-500/20', subCategories: ['Pipeline', 'Revenue', 'Activity', 'Efficiency', 'Customer', 'Marketing', 'Enablement', 'Data Quality', 'Outreach', 'SDR', 'Forecasting', 'Expansion'] },
+  'competitive-intel': { icon: Swords, label: 'Competitive Intel', color: 'text-red-700 dark:text-red-300', darkColor: 'text-red-300', gradient: 'from-red-600 to-rose-500', bgGlow: 'bg-red-100 dark:bg-red-500/20', darkBgGlow: 'bg-red-500/20', subCategories: ['ZoomInfo', 'Apollo', 'Lusha', 'Outreach', 'Salesloft', 'Gong', '6sense', 'Clearbit', 'Demandbase', 'Hunter'] },
+  technology: { icon: Cpu, label: 'Technologies', color: 'text-purple-600 dark:text-purple-400', darkColor: 'text-purple-400', gradient: 'from-purple-500 to-violet-400', bgGlow: 'bg-purple-100 dark:bg-purple-500/20', darkBgGlow: 'bg-purple-500/20', subCategories: ['CRM', 'Sales Engagement', 'Data Providers', 'Marketing Automation', 'Revenue Intel', 'AI/ML', 'Email Infra', 'Analytics/BI', 'Communication', 'Security'] },
+  'buyer-intel': { icon: Users, label: 'Buyer Intel', color: 'text-orange-700 dark:text-orange-300', darkColor: 'text-orange-300', gradient: 'from-orange-600 to-amber-500', bgGlow: 'bg-orange-100 dark:bg-orange-500/20', darkBgGlow: 'bg-orange-500/20', subCategories: ['C-Suite Profiles', 'VP/Director Profiles', 'Champions', 'Buying Committees', 'Personas', 'Procurement', 'Buying Signals', 'Stakeholders'] },
+  'vertical-playbook': { icon: Building, label: 'Vertical Playbooks', color: 'text-cyan-700 dark:text-cyan-300', darkColor: 'text-cyan-300', gradient: 'from-cyan-600 to-teal-500', bgGlow: 'bg-cyan-100 dark:bg-cyan-500/20', darkBgGlow: 'bg-cyan-500/20', subCategories: ['SaaS', 'Fintech', 'Healthtech', 'E-commerce', 'Manufacturing', 'Government', 'Education', 'Nonprofit'] },
+  'sales-ops': { icon: Settings, label: 'Sales Operations', color: 'text-zinc-600 dark:text-zinc-300', darkColor: 'text-zinc-300', gradient: 'from-zinc-500 to-slate-400', bgGlow: 'bg-zinc-100 dark:bg-zinc-500/20', darkBgGlow: 'bg-zinc-500/20', subCategories: ['Territory Planning', 'Compensation', 'Process Optimization', 'Data Governance', 'Tech Stack', 'RevOps', 'Forecasting', 'Analytics'] },
 };
 
 const GRADE_STYLES: Record<string, { bg: string; text: string; border: string; glow: string }> = {
@@ -444,7 +462,7 @@ export default function KnowledgeAdminPage() {
                   <h3 className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">Categories</h3>
                   <span className="text-[10px] text-muted-foreground/60">{Object.keys(CATEGORY_META).length} categories · {files.length} docs</span>
                 </div>
-                <ScrollArea className="h-[340px]">
+                <ScrollArea className="h-[520px]">
                 <div className="p-2 space-y-0.5">
                   {Object.entries(CATEGORY_META).map(([cat, meta]) => {
                     const Icon = meta.icon;
@@ -487,6 +505,16 @@ export default function KnowledgeAdminPage() {
                   </h3>
                   <span className="text-[10px] text-muted-foreground/60">{(filesByCategory[activeCategory] || []).length} files</span>
                 </div>
+                {/* Sub-categories chips */}
+                {CATEGORY_META[activeCategory]?.subCategories && CATEGORY_META[activeCategory].subCategories!.length > 0 && (
+                  <div className="px-3 py-2 border-b border-border/30 dark:border-white/5 flex flex-wrap gap-1">
+                    {CATEGORY_META[activeCategory].subCategories!.map((sub) => (
+                      <span key={sub} className="text-[9px] px-2 py-0.5 bg-secondary/30 dark:bg-white/5 text-muted-foreground rounded-full border border-border/30 dark:border-white/5 hover:bg-secondary/50 transition-colors cursor-default">
+                        {sub}
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="p-2">
                   {loadingList ? (
                     <div className="flex items-center justify-center py-12">
@@ -910,18 +938,25 @@ export default function KnowledgeAdminPage() {
               <div className="p-5">
                 {gapReport?.result && (
                   <>
-                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 mb-6">
-                      <GapStat label="Industries Missing" value={gapReport.result.coverageGaps.industriesMissing?.length || 0} color="text-blue-600 dark:text-blue-400" bg="bg-blue-100 dark:bg-blue-500/5" border="border-blue-300 dark:border-blue-500/10" />
-                      <GapStat label="Regions Missing" value={gapReport.result.coverageGaps.regionsMissing?.length || 0} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-100 dark:bg-emerald-500/5" border="border-emerald-300 dark:border-emerald-500/10" />
-                      <GapStat label="Playbooks Missing" value={gapReport.result.coverageGaps.playbooksMissing?.length || 0} color="text-violet-600 dark:text-violet-400" bg="bg-violet-100 dark:bg-violet-500/5" border="border-violet-300 dark:border-violet-500/10" />
-                      <GapStat label="Domains Missing" value={gapReport.result.coverageGaps.domainsMissing?.length || 0} color="text-sky-600 dark:text-sky-400" bg="bg-sky-100 dark:bg-sky-500/5" border="border-sky-300 dark:border-sky-500/10" />
-                      <GapStat label="Agents Missing" value={gapReport.result.coverageGaps.agentsMissing?.length || 0} color="text-indigo-600 dark:text-indigo-400" bg="bg-indigo-100 dark:bg-indigo-500/5" border="border-indigo-300 dark:border-indigo-500/10" />
-                      <GapStat label="Methodologies Missing" value={gapReport.result.coverageGaps.methodologiesMissing?.length || 0} color="text-amber-600 dark:text-amber-400" bg="bg-amber-100 dark:bg-amber-500/5" border="border-amber-300 dark:border-amber-500/10" />
-                      <GapStat label="Integrations Missing" value={gapReport.result.coverageGaps.integrationsMissing?.length || 0} color="text-cyan-600 dark:text-cyan-400" bg="bg-cyan-100 dark:bg-cyan-500/5" border="border-cyan-300 dark:border-cyan-500/10" />
-                      <GapStat label="Case Studies Missing" value={gapReport.result.coverageGaps.caseStudiesMissing?.length || 0} color="text-yellow-600 dark:text-yellow-400" bg="bg-yellow-100 dark:bg-yellow-500/5" border="border-yellow-300 dark:border-yellow-500/10" />
-                      <GapStat label="Product Missing" value={gapReport.result.coverageGaps.productMissing?.length || 0} color="text-slate-600 dark:text-slate-300" bg="bg-slate-100 dark:bg-slate-500/5" border="border-slate-300 dark:border-slate-500/10" />
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
+                      <GapStat label="Industries" value={gapReport.result.coverageGaps.industriesMissing?.length || 0} color="text-blue-600 dark:text-blue-400" bg="bg-blue-100 dark:bg-blue-500/5" border="border-blue-300 dark:border-blue-500/10" />
+                      <GapStat label="Regions" value={gapReport.result.coverageGaps.regionsMissing?.length || 0} color="text-emerald-600 dark:text-emerald-400" bg="bg-emerald-100 dark:bg-emerald-500/5" border="border-emerald-300 dark:border-emerald-500/10" />
+                      <GapStat label="Playbooks" value={gapReport.result.coverageGaps.playbooksMissing?.length || 0} color="text-violet-600 dark:text-violet-400" bg="bg-violet-100 dark:bg-violet-500/5" border="border-violet-300 dark:border-violet-500/10" />
+                      <GapStat label="Domains" value={gapReport.result.coverageGaps.domainsMissing?.length || 0} color="text-sky-600 dark:text-sky-400" bg="bg-sky-100 dark:bg-sky-500/5" border="border-sky-300 dark:border-sky-500/10" />
+                      <GapStat label="Agents" value={gapReport.result.coverageGaps.agentsMissing?.length || 0} color="text-indigo-600 dark:text-indigo-400" bg="bg-indigo-100 dark:bg-indigo-500/5" border="border-indigo-300 dark:border-indigo-500/10" />
+                      <GapStat label="Methodologies" value={gapReport.result.coverageGaps.methodologiesMissing?.length || 0} color="text-amber-600 dark:text-amber-400" bg="bg-amber-100 dark:bg-amber-500/5" border="border-amber-300 dark:border-amber-500/10" />
+                      <GapStat label="Integrations" value={gapReport.result.coverageGaps.integrationsMissing?.length || 0} color="text-cyan-600 dark:text-cyan-400" bg="bg-cyan-100 dark:bg-cyan-500/5" border="border-cyan-300 dark:border-cyan-500/10" />
+                      <GapStat label="Case Studies" value={gapReport.result.coverageGaps.caseStudiesMissing?.length || 0} color="text-yellow-600 dark:text-yellow-400" bg="bg-yellow-100 dark:bg-yellow-500/5" border="border-yellow-300 dark:border-yellow-500/10" />
+                      <GapStat label="Product" value={gapReport.result.coverageGaps.productMissing?.length || 0} color="text-slate-600 dark:text-slate-300" bg="bg-slate-100 dark:bg-slate-500/5" border="border-slate-300 dark:border-slate-500/10" />
+                      <GapStat label="KPIs" value={gapReport.result.coverageGaps.kpisMissing?.length || 0} color="text-lime-600 dark:text-lime-400" bg="bg-lime-100 dark:bg-lime-500/5" border="border-lime-300 dark:border-lime-500/10" />
+                      <GapStat label="Competitive" value={gapReport.result.coverageGaps.competitiveIntelMissing?.length || 0} color="text-red-700 dark:text-red-300" bg="bg-red-100 dark:bg-red-500/5" border="border-red-300 dark:border-red-500/10" />
+                      <GapStat label="Technologies" value={gapReport.result.coverageGaps.technologiesMissing?.length || 0} color="text-purple-600 dark:text-purple-400" bg="bg-purple-100 dark:bg-purple-500/5" border="border-purple-300 dark:border-purple-500/10" />
+                      <GapStat label="Buyer Intel" value={gapReport.result.coverageGaps.buyerIntelMissing?.length || 0} color="text-orange-700 dark:text-orange-300" bg="bg-orange-100 dark:bg-orange-500/5" border="border-orange-300 dark:border-orange-500/10" />
+                      <GapStat label="Verticals" value={gapReport.result.coverageGaps.verticalPlaybooksMissing?.length || 0} color="text-cyan-700 dark:text-cyan-300" bg="bg-cyan-100 dark:bg-cyan-500/5" border="border-cyan-300 dark:border-cyan-500/10" />
+                      <GapStat label="Sales Ops" value={gapReport.result.coverageGaps.salesOpsMissing?.length || 0} color="text-zinc-600 dark:text-zinc-300" bg="bg-zinc-100 dark:bg-zinc-500/5" border="border-zinc-300 dark:border-zinc-500/10" />
                       <GapStat label="Quality Gaps" value={gapReport.result.qualityGaps.length} color="text-amber-600 dark:text-amber-400" bg="bg-amber-100 dark:bg-amber-500/5" border="border-amber-300 dark:border-amber-500/10" />
                       <GapStat label="Freshness Gaps" value={gapReport.result.freshnessGaps.length} color="text-red-600 dark:text-red-400" bg="bg-red-100 dark:bg-red-500/5" border="border-red-300 dark:border-red-500/10" />
+                      <GapStat label="Total Gaps" value={(gapReport.result.coverageGaps.industriesMissing?.length || 0) + (gapReport.result.coverageGaps.regionsMissing?.length || 0) + (gapReport.result.coverageGaps.playbooksMissing?.length || 0) + (gapReport.result.qualityGaps.length) + (gapReport.result.freshnessGaps.length)} color="text-foreground" bg="bg-secondary/30 dark:bg-white/5" border="border-border dark:border-white/10" />
                     </div>
 
                     {gapReport.result.recommendations && (

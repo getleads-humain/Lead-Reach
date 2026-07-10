@@ -24,7 +24,7 @@ import * as path from 'path';
 export interface KnowledgeChunk {
   id: string;
   filePath: string;            // relative path from /knowledge
-  category: 'industry' | 'region' | 'playbook' | 'domain' | 'methodology' | 'agent' | 'tool' | 'integration' | 'compliance' | 'case-study' | 'product' | 'template' | 'dataset' | 'training-data' | 'gap-report';
+  category: 'industry' | 'region' | 'playbook' | 'domain' | 'methodology' | 'agent' | 'tool' | 'integration' | 'compliance' | 'case-study' | 'product' | 'template' | 'dataset' | 'training-data' | 'gap-report' | 'kpi' | 'competitive-intel' | 'technology' | 'buyer-intel' | 'vertical-playbook' | 'sales-ops';
   title: string;
   section?: string;            // for markdown sections
   content: string;
@@ -269,6 +269,12 @@ function deriveCategory(relPath: string): KnowledgeChunk['category'] {
   if (relPath.startsWith('methodologies/')) return 'methodology';
   if (relPath.startsWith('integrations/')) return 'integration';
   if (relPath.startsWith('case-studies/')) return 'case-study';
+  if (relPath.startsWith('kpis/')) return 'kpi';
+  if (relPath.startsWith('competitive-intel/')) return 'competitive-intel';
+  if (relPath.startsWith('technologies/')) return 'technology';
+  if (relPath.startsWith('buyer-intel/')) return 'buyer-intel';
+  if (relPath.startsWith('vertical-playbooks/')) return 'vertical-playbook';
+  if (relPath.startsWith('sales-ops/')) return 'sales-ops';
   if (relPath.startsWith('product/')) return 'product';
   // Fallback: try to guess from path prefix
   const topDir = relPath.split('/')[0];
@@ -288,6 +294,12 @@ function deriveCategory(relPath: string): KnowledgeChunk['category'] {
     'integrations': 'integration',
     'case-studies': 'case-study',
     'product': 'product',
+    'kpis': 'kpi',
+    'competitive-intel': 'competitive-intel',
+    'technologies': 'technology',
+    'buyer-intel': 'buyer-intel',
+    'vertical-playbooks': 'vertical-playbook',
+    'sales-ops': 'sales-ops',
   };
   return knownDirs[topDir] || 'domain';
 }
