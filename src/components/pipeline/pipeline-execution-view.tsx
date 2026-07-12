@@ -30,6 +30,7 @@ import {
   Activity,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
+import { useTheme } from 'next-themes';
 import { safeFetchJSON } from '@/lib/utils';
 import type { LeadTier } from '@/lib/types';
 import { TIER_COLORS } from '@/lib/types';
@@ -437,7 +438,7 @@ export function PipelineExecutionView() {
         <div className="flex items-center gap-2">
           {isIdle && (
             <Button
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2"
               onClick={handleStartPipeline}
             >
               <Zap className="h-4 w-4" />
@@ -786,7 +787,8 @@ export function PipelineExecutionView() {
                         <div key={idx} className="flex items-start gap-2 text-xs">
                           <div
                             className="shrink-0 mt-1 h-2 w-2 rounded-full"
-                            style={{ backgroundColor: stage?.color || '#6b7280' }}
+                            // Fallback #6b7280 is too light in dark mode; use a darker gray
+                            style={{ backgroundColor: stage?.color || (typeof window !== 'undefined' && document.documentElement.classList.contains('dark') ? '#9ca3af' : '#6b7280') }}
                           />
                           <div className="flex-1 min-w-0">
                             <span className="text-foreground/80">{entry.message}</span>

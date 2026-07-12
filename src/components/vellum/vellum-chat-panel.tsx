@@ -212,7 +212,7 @@ function ChatInput({ onSend, disabled }: { onSend: (content: string) => void; di
         type="submit"
         size="sm"
         disabled={disabled || !value.trim()}
-        className="h-9 px-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold disabled:opacity-30"
+        className="h-9 px-3 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold disabled:opacity-30"
       >
         <Send className="h-3.5 w-3.5" />
       </Button>

@@ -194,7 +194,7 @@ const CHANNELS = [
 const TIER_COLORS: Record<string, string> = {
   'Zero Config': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   'Needs Key': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  'Needs Setup': 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  'Needs Setup': 'bg-gray-500/10 text-gray-400 dark:text-gray-500 border-gray-500/20',
   'Expanding': 'bg-violet-500/10 text-violet-400 border-violet-500/20',
 };
 
@@ -431,7 +431,7 @@ export default function AgentPage() {
               </p>
               <div className="mt-6">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
                     Deploy AI Workforce
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

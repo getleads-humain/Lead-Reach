@@ -242,7 +242,7 @@ function getStatusColor(status: string): string {
     case 'TEMPORARILY CLOSED':
       return 'bg-red-500/10 text-red-400 border-red-500/20';
     case 'PERMANENTLY CLOSED':
-      return 'bg-gray-500/10 text-gray-400 border-gray-500/20';
+      return 'bg-gray-500/10 text-gray-400 dark:text-gray-500 border-gray-500/20';
     default:
       return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
   }
@@ -574,7 +574,7 @@ function BusinessResultCard({
         <div className="flex items-center gap-2 mb-2">
           <Button
             size="sm"
-            className="h-7 text-[10px] bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-1.5 transition-all"
+            className="h-7 text-[10px] bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-1.5 transition-all"
             onClick={() => onAddToLeads(entry)}
             disabled={isAddingLead}
           >
@@ -1141,7 +1141,7 @@ export function GoogleMapsSearch() {
             <Button
               onClick={() => handleSearch()}
               disabled={isSearching || !query.trim()}
-              className="h-10 px-6 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-black font-semibold gap-2 shadow-lg shadow-emerald-500/20 transition-all duration-200 disabled:opacity-50"
+              className="h-10 px-6 bg-gradient-to-r from-emerald-500 to-emerald-600 hover:from-emerald-400 hover:to-emerald-500 text-emerald-950 font-semibold gap-2 shadow-lg shadow-emerald-500/20 transition-all duration-200 disabled:opacity-50"
             >
               {isSearching ? (
                 <>

@@ -35,6 +35,18 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { safeFetchJSON } from '@/lib/utils';
+
+const accentColorMap: Record<string, string> = {
+  emerald: 'text-emerald-400',
+  cyan: 'text-cyan-400',
+  amber: 'text-amber-400',
+  red: 'text-red-400',
+  blue: 'text-blue-400',
+  violet: 'text-violet-400',
+  green: 'text-green-400',
+  orange: 'text-orange-400',
+  pink: 'text-pink-400',
+};
 import { useAppStore } from '@/lib/store';
 import { STAGE_LABELS, type LeadStage } from '@/lib/types';
 
@@ -58,7 +70,7 @@ interface PersonLead {
 }
 
 const statusStyles: Record<string, string> = {
-  new: 'bg-slate-500/10 text-slate-400 border-slate-500/20',
+  new: 'bg-slate-500/10 text-slate-400 dark:text-slate-500 border-slate-500/20',
   enriched: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
   qualified: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   contacted: 'bg-blue-500/10 text-blue-400 border-blue-500/20',
@@ -188,7 +200,7 @@ export function PeopleView() {
             <Card key={stat.title} className="card-premium border-border/30">
               <CardContent className="p-4">
                 <div className="flex items-center justify-between mb-2">
-                  <Icon className={cn('h-4 w-4', `text-${stat.accent}-400`)} />
+                  <Icon className={cn('h-4 w-4', accentColorMap[stat.accent] || 'text-emerald-400')} />
                   <Badge variant="outline" className="text-[9px] border-border/20 text-muted-foreground/50">
                     <ArrowUpRight className="h-2.5 w-2.5 mr-0.5" />
                     {stat.change}

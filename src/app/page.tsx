@@ -7,7 +7,6 @@ import { SplineBackground } from '@/components/spline-background';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { hexToRgba } from '@/lib/utils';
 import {
   Zap,
   Search,
@@ -52,36 +51,48 @@ const FEATURES = [
     title: 'Multi-Channel Research',
     description: 'AI agents research leads across 17+ channels including LinkedIn, Twitter, GitHub, Reddit, YouTube, and the open web simultaneously.',
     color: '#10B981',
+    bgClass: 'bg-emerald-500/10',
+    textClass: 'text-emerald-400',
   },
   {
     icon: Database,
     title: 'Data Enrichment',
     description: 'Automatically enrich lead profiles with firmographics, contact details, social presence, and technographic data from multiple sources.',
     color: '#3B82F6',
+    bgClass: 'bg-blue-500/10',
+    textClass: 'text-blue-400',
   },
   {
     icon: Target,
     title: 'Lead Scoring',
     description: 'Intelligent scoring engine evaluates leads against your ideal customer profile, prioritizing high-conversion opportunities.',
     color: '#F59E0B',
+    bgClass: 'bg-amber-500/10',
+    textClass: 'text-amber-400',
   },
   {
     icon: Mail,
     title: 'AI Outreach',
     description: 'Craft hyper-personalized outreach messages and multi-step sequences that adapt based on engagement signals and responses.',
     color: '#EC4899',
+    bgClass: 'bg-pink-500/10',
+    textClass: 'text-pink-400',
   },
   {
     icon: GitBranch,
     title: 'Pipeline Management',
     description: 'Automated pipeline tracking with intelligent stage transitions, follow-up scheduling, and nurture campaign orchestration.',
     color: '#6366F1',
+    bgClass: 'bg-indigo-500/10',
+    textClass: 'text-indigo-400',
   },
   {
     icon: BarChart3,
     title: 'Analytics & Reports',
     description: 'Real-time dashboards and AI-generated reports with actionable insights on campaign performance, agent efficiency, and ROI.',
     color: '#EF4444',
+    bgClass: 'bg-red-500/10',
+    textClass: 'text-red-400',
   },
 ];
 
@@ -186,14 +197,14 @@ const TESTIMONIALS = [
 ];
 
 const AGENT_PREVIEW = [
-  { icon: Brain, name: 'Orchestrator', desc: 'Coordinates all agents', color: '#8B5CF6' },
-  { icon: Search, name: 'Prospect Discovery', desc: 'Finds leads across 17+ channels', color: '#10B981' },
-  { icon: Database, name: 'Data Enrichment', desc: 'Enriches with firmographics & contacts', color: '#3B82F6' },
-  { icon: Globe, name: 'Web Research', desc: 'Deep research on companies & markets', color: '#06B6D4' },
-  { icon: Target, name: 'Lead Qualification', desc: 'Scores & qualifies by ICP criteria', color: '#F59E0B' },
-  { icon: Mail, name: 'Outreach Composer', desc: 'Crafts personalized messages', color: '#EC4899' },
-  { icon: GitBranch, name: 'Pipeline Manager', desc: 'Manages stages & follow-ups', color: '#6366F1' },
-  { icon: BarChart3, name: 'Report Generator', desc: 'Generates analytics & insights', color: '#EF4444' },
+  { icon: Brain, name: 'Orchestrator', desc: 'Coordinates all agents', color: '#8B5CF6', bgClass: 'bg-violet-500/10', textClass: 'text-violet-400' },
+  { icon: Search, name: 'Prospect Discovery', desc: 'Finds leads across 17+ channels', color: '#10B981', bgClass: 'bg-emerald-500/10', textClass: 'text-emerald-400' },
+  { icon: Database, name: 'Data Enrichment', desc: 'Enriches with firmographics & contacts', color: '#3B82F6', bgClass: 'bg-blue-500/10', textClass: 'text-blue-400' },
+  { icon: Globe, name: 'Web Research', desc: 'Deep research on companies & markets', color: '#06B6D4', bgClass: 'bg-cyan-500/10', textClass: 'text-cyan-400' },
+  { icon: Target, name: 'Lead Qualification', desc: 'Scores & qualifies by ICP criteria', color: '#F59E0B', bgClass: 'bg-amber-500/10', textClass: 'text-amber-400' },
+  { icon: Mail, name: 'Outreach Composer', desc: 'Crafts personalized messages', color: '#EC4899', bgClass: 'bg-pink-500/10', textClass: 'text-pink-400' },
+  { icon: GitBranch, name: 'Pipeline Manager', desc: 'Manages stages & follow-ups', color: '#6366F1', bgClass: 'bg-indigo-500/10', textClass: 'text-indigo-400' },
+  { icon: BarChart3, name: 'Report Generator', desc: 'Generates analytics & insights', color: '#EF4444', bgClass: 'bg-red-500/10', textClass: 'text-red-400' },
 ];
 
 export default function LandingPage() {
@@ -229,7 +240,7 @@ export default function LandingPage() {
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/app">
-                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-8 h-12">
+                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
                   Start Free Trial
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -299,6 +310,8 @@ export default function LandingPage() {
                 title: 'Define Your ICP',
                 description: 'Tell us your ideal customer profile — industry, company size, location, tech stack, and buying signals. Our agents use this as their North Star.',
                 color: '#10B981',
+                bgClass: 'bg-emerald-500/10',
+                textClass: 'text-emerald-400',
               },
               {
                 step: '02',
@@ -306,6 +319,8 @@ export default function LandingPage() {
                 title: 'AI Agents Research & Enrich',
                 description: '8 specialized agents collaborate to discover prospects across 17+ channels, enrich their profiles with real-time data, and score them against your criteria.',
                 color: '#8B5CF6',
+                bgClass: 'bg-violet-500/10',
+                textClass: 'text-violet-400',
               },
               {
                 step: '03',
@@ -313,6 +328,8 @@ export default function LandingPage() {
                 title: 'Qualified Leads Delivered',
                 description: 'Hot leads arrive in your pipeline with personalized outreach already composed. You review, approve, and watch meetings book themselves.',
                 color: '#F59E0B',
+                bgClass: 'bg-amber-500/10',
+                textClass: 'text-amber-400',
               },
             ].map((item, i) => (
               <div key={i} className="relative group">
@@ -321,8 +338,7 @@ export default function LandingPage() {
                     <div className="flex items-center gap-4 mb-4">
                       <div className="text-3xl font-bold text-muted-foreground/20">{item.step}</div>
                       <div
-                        className="rounded-lg p-2.5"
-                        style={{ backgroundColor: hexToRgba(item.color, 0.07), color: item.color }}
+                        className={`rounded-lg p-2.5 ${item.bgClass} ${item.textClass}`}
                       >
                         <item.icon className="h-6 w-6" />
                       </div>
@@ -439,13 +455,13 @@ export default function LandingPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { title: 'Human-like Scheduling', desc: 'AI guides prospects to book naturally through conversation. No awkward forms or links — just smooth, intelligent dialogue that feels genuinely personal.', icon: MessageSquareHeart, color: '#10B981' },
-              { title: 'Real-time Calendar Sync', desc: 'Knows your availability and confirms instantly. Your AI setter checks your calendar in real-time and proposes slots that work for both parties.', icon: CalendarCheck, color: '#3B82F6' },
-              { title: 'Zero Friction Booking', desc: 'From "interested" to "booked" in one conversation. No redirects, no scheduling pages, no abandoned bookings. Just seamless appointment setting.', icon: Zap, color: '#F59E0B' },
+              { title: 'Human-like Scheduling', desc: 'AI guides prospects to book naturally through conversation. No awkward forms or links — just smooth, intelligent dialogue that feels genuinely personal.', icon: MessageSquareHeart, bgClass: 'bg-emerald-500/10', textClass: 'text-emerald-400' },
+              { title: 'Real-time Calendar Sync', desc: 'Knows your availability and confirms instantly. Your AI setter checks your calendar in real-time and proposes slots that work for both parties.', icon: CalendarCheck, bgClass: 'bg-blue-500/10', textClass: 'text-blue-400' },
+              { title: 'Zero Friction Booking', desc: 'From "interested" to "booked" in one conversation. No redirects, no scheduling pages, no abandoned bookings. Just seamless appointment setting.', icon: Zap, bgClass: 'bg-amber-500/10', textClass: 'text-amber-400' },
             ].map((item, i) => (
               <Card key={i} className="card-premium border-border/30 bg-card/50">
                 <CardContent className="p-6">
-                  <div className="rounded-lg p-2.5 inline-flex mb-4" style={{ backgroundColor: hexToRgba(item.color, 0.07), color: item.color }}>
+                  <div className={`rounded-lg p-2.5 inline-flex mb-4 ${item.bgClass} ${item.textClass}`}>
                     <item.icon className="h-5 w-5" />
                   </div>
                   <h3 className="text-base font-semibold text-foreground mb-2">{item.title}</h3>
@@ -552,8 +568,7 @@ export default function LandingPage() {
               <Card key={i} className="card-premium border-border/30 bg-card/50 group">
                 <CardContent className="p-6">
                   <div
-                    className="rounded-lg p-2.5 inline-flex mb-4"
-                    style={{ backgroundColor: hexToRgba(feature.color, 0.07), color: feature.color }}
+                    className={`rounded-lg p-2.5 inline-flex mb-4 ${feature.bgClass} ${feature.textClass}`}
                   >
                     <feature.icon className="h-5 w-5" />
                   </div>
@@ -587,8 +602,7 @@ export default function LandingPage() {
               <Card key={agent.name} className="card-premium border-border/30 bg-card/50 text-center group">
                 <CardContent className="p-4 lg:p-6">
                   <div
-                    className="rounded-xl p-3 inline-flex mx-auto mb-3"
-                    style={{ backgroundColor: hexToRgba(agent.color, 0.07), color: agent.color }}
+                    className={`rounded-xl p-3 inline-flex mx-auto mb-3 ${agent.bgClass} ${agent.textClass}`}
                   >
                     <agent.icon className="h-6 w-6" />
                   </div>
@@ -638,8 +652,8 @@ export default function LandingPage() {
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <Badge className={`border-0 font-semibold ${
                       tier.badge === 'Lifetime Deal'
-                        ? 'bg-amber-500 text-black'
-                        : 'bg-emerald-500 text-black'
+                        ? 'bg-amber-500 text-amber-950'
+                        : 'bg-emerald-500 text-emerald-950'
                     }`}>
                       {tier.badge}
                     </Badge>
@@ -666,7 +680,7 @@ export default function LandingPage() {
                     <Button
                       className={`w-full font-semibold transition-all duration-200 ${
                         tier.highlighted
-                          ? 'bg-emerald-500 hover:bg-emerald-400 text-black glow-emerald-sm'
+                          ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 glow-emerald-sm'
                           : 'bg-secondary hover:bg-secondary/80 text-foreground'
                       }`}
                     >
@@ -741,7 +755,7 @@ export default function LandingPage() {
               </p>
               <div className="mt-8">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-10 h-12">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-10 h-12">
                     Start Free Trial
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

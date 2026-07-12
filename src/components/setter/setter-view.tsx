@@ -148,7 +148,7 @@ export function SetterView() {
         </div>
         <Button
           onClick={() => setCreateOpen(true)}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2"
+          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2"
         >
           <Plus className="h-4 w-4" />
           Create Setter
@@ -420,7 +420,7 @@ export function SetterView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateOpen(false)} className="border-border/40">Cancel</Button>
-            <Button className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2" disabled={!formName.trim()}>
+            <Button className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2" disabled={!formName.trim()}>
               <Zap className="h-4 w-4" />
               Create Setter
             </Button>

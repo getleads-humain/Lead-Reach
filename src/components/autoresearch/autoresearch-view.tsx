@@ -231,7 +231,7 @@ function getStatusBadge(status: string) {
 
 function getStrategyBadge(strategy: string) {
   const config = STRATEGY_CONFIG[strategy];
-  if (!config) return { label: strategy, color: 'text-gray-600', bgColor: 'bg-gray-500/10 border-gray-500/20' };
+  if (!config) return { label: strategy, color: 'text-gray-600 dark:text-gray-400', bgColor: 'bg-gray-500/10 border-gray-500/20' };
   return config;
 }
 

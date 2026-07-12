@@ -187,7 +187,7 @@ export function EmailEngagementView() {
       case 'bounced': return <AlertTriangle className="h-3.5 w-3.5 text-red-400" />;
       case 'sent': return <Send className="h-3.5 w-3.5 text-blue-400" />;
       case 'delivered': return <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />;
-      default: return <Mail className="h-3.5 w-3.5 text-gray-400" />;
+      default: return <Mail className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />;
     }
   };
 
@@ -231,7 +231,7 @@ export function EmailEngagementView() {
         </div>
         <Button
           onClick={() => setTemplateDialogOpen(true)}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
+          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all duration-200"
         >
           <Plus className="h-4 w-4" />
           New Template
@@ -561,7 +561,7 @@ export function EmailEngagementView() {
             <Button
               onClick={handleGenerateTemplate}
               disabled={!templateCategory || generating}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all"
             >
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Generate

@@ -202,7 +202,7 @@ export function UpgradePrompt({
           </div>
 
           <Button
-            className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm gap-1"
+            className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm gap-1"
             disabled={checkoutLoading}
             onClick={() => handleCheckout(recommendedPlan.id, billingCycle)}
           >

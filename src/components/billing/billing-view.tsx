@@ -144,9 +144,9 @@ const GRADE_STYLES: Record<string, { border: string; bg: string; text: string; g
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   past_due: 'bg-red-500/10 text-red-400 border-red-500/20',
-  cancelled: 'bg-gray-500/10 text-gray-400 border-gray-500/20',
+  cancelled: 'bg-gray-500/10 text-gray-400 dark:text-gray-500 border-gray-500/20',
   pending_restart: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  expired: 'bg-gray-500/10 text-gray-500 border-gray-500/20',
+  expired: 'bg-gray-500/10 text-gray-500 dark:text-gray-400 border-gray-500/20',
 };
 
 const EVENT_ICONS: Record<string, React.ElementType> = {
@@ -311,7 +311,7 @@ function PricingCard({ plan, onSelect }: { plan: BillingPlan; onSelect: (plan: B
         <Button
           className={`w-full font-semibold gap-2 text-xs ${
             plan.highlight
-              ? 'bg-emerald-500 hover:bg-emerald-400 text-black'
+              ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950'
               : 'bg-secondary/30 hover:bg-secondary/50 text-foreground border border-border/30'
           }`}
           onClick={() => onSelect(plan)}
@@ -874,7 +874,7 @@ export function BillingView() {
                       <p className="text-xs text-muted-foreground text-center max-w-md">
                         Choose a plan from the Pricing tab to create your first subscription and start using HumAIn Spark.
                       </p>
-                      <Button className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 text-xs" onClick={() => setActiveTab('pricing')}>
+                      <Button className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 text-xs" onClick={() => setActiveTab('pricing')}>
                         <Sparkles className="h-3.5 w-3.5" /> View Plans
                       </Button>
                     </div>

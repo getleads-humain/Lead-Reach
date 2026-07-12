@@ -362,7 +362,7 @@ function BusinessCardGrid({
           <Button
             onClick={onConvertToLead}
             disabled={isConverting}
-            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-1.5 transition-all text-xs h-8"
+            className="flex-1 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-1.5 transition-all text-xs h-8"
           >
             {isConverting ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -474,7 +474,7 @@ function BusinessRowList({
         <Button
           onClick={onConvertToLead}
           disabled={isConverting}
-          className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-1 text-[10px] h-7 px-2.5"
+          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-1 text-[10px] h-7 px-2.5"
         >
           {isConverting ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
           Lead
@@ -1732,7 +1732,7 @@ export function MapsDiscoveryView() {
               <Button
                 onClick={handleSearch}
                 disabled={isLoading}
-                className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all"
               >
                 {isLoading ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1929,7 +1929,7 @@ export function MapsDiscoveryView() {
             <Button
               onClick={handleBulkAddToLeads}
               size="sm"
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-1.5 text-xs h-8"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-1.5 text-xs h-8"
             >
               <Plus className="h-3 w-3" />
               Add {selectedIds.size} to Leads

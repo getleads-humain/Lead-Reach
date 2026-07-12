@@ -240,8 +240,8 @@ export default function ApiDocsPage() {
                 {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
               </button>
             </div>
-            <div className="rounded-xl border border-border/30 bg-[#0d1117] p-6 overflow-x-auto">
-              <pre className="text-sm text-gray-300 leading-relaxed">
+            <div className="rounded-xl border border-border/30 bg-secondary/50 dark:bg-[#0d1117] p-6 overflow-x-auto">
+              <pre className="text-sm text-gray-300 dark:text-gray-400 leading-relaxed">
                 <code>{CODE_EXAMPLES[activeTab]}</code>
               </pre>
             </div>
@@ -329,7 +329,7 @@ export default function ApiDocsPage() {
               </p>
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <Link href="/docs">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
                     Full Documentation
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

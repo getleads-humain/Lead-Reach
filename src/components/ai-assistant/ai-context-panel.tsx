@@ -181,7 +181,7 @@ export function AIContextPanel({
             size="icon"
             onClick={handleSend}
             disabled={!input.trim() || isLoading}
-            className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black shrink-0"
+            className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-emerald-950 shrink-0"
           >
             {isLoading ? (
               <Loader2 className="h-3.5 w-3.5 animate-spin" />

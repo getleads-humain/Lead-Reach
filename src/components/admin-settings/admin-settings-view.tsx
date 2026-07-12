@@ -142,7 +142,7 @@ export function AdminSettingsView() {
                         pref.enabled ? 'bg-emerald-500' : 'bg-secondary/50'
                       )}>
                         <div className={cn(
-                          'absolute top-0.5 h-4 w-4 rounded-full bg-white shadow-sm transition-all',
+                          'absolute top-0.5 h-4 w-4 rounded-full bg-white dark:bg-gray-200 shadow-sm transition-all',
                           pref.enabled ? 'right-0.5' : 'left-0.5'
                         )} />
                       </div>

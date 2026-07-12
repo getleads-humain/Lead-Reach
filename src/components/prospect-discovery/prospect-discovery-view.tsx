@@ -858,7 +858,7 @@ function ProspectDataCard({ prospect, messageId, converted, leadId, onConvert, o
               </Button>
             </div>
           ) : (
-            <Button onClick={() => onConvert(messageId, prospect)} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all text-xs h-8">
+            <Button onClick={() => onConvert(messageId, prospect)} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all text-xs h-8">
               <Plus className="h-3.5 w-3.5" />Add to Leads
             </Button>
           )}
@@ -1857,7 +1857,7 @@ export function ProspectDiscoveryView() {
               </div>
               <Button onClick={() => handleSendMessage()}
                 disabled={!query.trim() || isSearching}
-                className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all h-11 px-6"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all h-11 px-6"
               >
                 {isSearching ? <><Loader2 className="h-4 w-4 animate-spin" />Working...</> : <><Send className="h-4 w-4" />Send</>}
               </Button>

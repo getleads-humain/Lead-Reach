@@ -82,7 +82,7 @@ interface ContentStrategy {
 
 const tierConfig: Record<number, { label: string; icon: React.ElementType; color: string; bg: string; border: string }> = {
   1: { label: 'Tier 1', icon: Crown, color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20' },
-  2: { label: 'Tier 2', icon: Medal, color: 'text-gray-300', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
+  2: { label: 'Tier 2', icon: Medal, color: 'text-gray-300 dark:text-gray-500', bg: 'bg-gray-500/10', border: 'border-gray-500/20' },
   3: { label: 'Tier 3', icon: Award, color: 'text-orange-400', bg: 'bg-orange-500/10', border: 'border-orange-500/20' },
 };
 
@@ -271,7 +271,7 @@ export function AbmView() {
           <div className="flex justify-end">
             <Button
               onClick={() => setCreateListDialogOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
             >
               <Plus className="h-4 w-4" /> Create List
             </Button>
@@ -331,7 +331,7 @@ export function AbmView() {
                 <CardContent className="pt-0">
                   <div className="flex items-center gap-3 text-[10px] text-muted-foreground">
                     <span className="flex items-center gap-1"><Crown className="h-3 w-3 text-amber-400" />{list.tier1Count || 0}</span>
-                    <span className="flex items-center gap-1"><Medal className="h-3 w-3 text-gray-300" />{list.tier2Count || 0}</span>
+                    <span className="flex items-center gap-1"><Medal className="h-3 w-3 text-gray-300 dark:text-gray-500" />{list.tier2Count || 0}</span>
                     <span className="flex items-center gap-1"><Award className="h-3 w-3 text-orange-400" />{list.tier3Count || 0}</span>
                   </div>
                 </CardContent>
@@ -362,7 +362,7 @@ export function AbmView() {
                         {config.label}
                       </Badge>
                       <div className="flex items-center gap-1">
-                        <Signal className={`h-3 w-3 ${account.intentScore > 70 ? 'text-emerald-400' : account.intentScore > 40 ? 'text-amber-400' : 'text-gray-400'}`} />
+                        <Signal className={`h-3 w-3 ${account.intentScore > 70 ? 'text-emerald-400' : account.intentScore > 40 ? 'text-amber-400' : 'text-gray-400 dark:text-gray-500'}`} />
                         <span className="text-[10px] font-medium text-foreground/80">{account.intentScore}</span>
                       </div>
                     </div>
@@ -385,7 +385,7 @@ export function AbmView() {
                     <div className="space-y-1">
                       <div className="flex justify-between text-[10px]">
                         <span className="text-muted-foreground">Intent Score</span>
-                        <span className={`font-medium ${account.intentScore > 70 ? 'text-emerald-400' : account.intentScore > 40 ? 'text-amber-400' : 'text-gray-400'}`}>
+                        <span className={`font-medium ${account.intentScore > 70 ? 'text-emerald-400' : account.intentScore > 40 ? 'text-amber-400' : 'text-gray-400 dark:text-gray-500'}`}>
                           {account.intentScore}%
                         </span>
                       </div>
@@ -425,7 +425,7 @@ export function AbmView() {
                   }`}>
                     <Zap className={`h-3.5 w-3.5 ${
                       signal.intensity > 80 ? 'text-emerald-400' :
-                      signal.intensity > 60 ? 'text-amber-400' : 'text-gray-400'
+                      signal.intensity > 60 ? 'text-amber-400' : 'text-gray-400 dark:text-gray-500'
                     }`} />
                   </div>
                   <div className="flex-1 min-w-0">
@@ -436,7 +436,7 @@ export function AbmView() {
                         className={`text-[10px] shrink-0 ${
                           signal.intensity > 80 ? 'border-emerald-500/20 text-emerald-400 bg-emerald-500/5' :
                           signal.intensity > 60 ? 'border-amber-500/20 text-amber-400 bg-amber-500/5' :
-                          'border-gray-500/20 text-gray-400 bg-gray-500/5'
+                          'border-gray-500/20 text-gray-400 dark:text-gray-500 bg-gray-500/5'
                         }`}
                       >
                         {signal.intensity}% intensity
@@ -546,7 +546,7 @@ export function AbmView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateListDialogOpen(false)} className="border-border/40">Cancel</Button>
-            <Button onClick={handleCreateList} disabled={!listName || !listCriteria || creating} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all">
+            <Button onClick={handleCreateList} disabled={!listName || !listCriteria || creating} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all">
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Create
             </Button>

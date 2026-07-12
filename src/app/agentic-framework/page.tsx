@@ -613,7 +613,7 @@ export default function AgenticFrameworkPage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
               href="/app"
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-black hover:bg-emerald-400 transition-colors"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-emerald-950 dark:text-white hover:bg-emerald-400 transition-colors"
             >
               Launch Platform
             </a>

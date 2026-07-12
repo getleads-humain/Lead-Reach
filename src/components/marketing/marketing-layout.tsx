@@ -65,7 +65,7 @@ export function MarketingLayout({ children }: { children: React.ReactNode }) {
             {/* CTA + Mobile Menu */}
             <div className="flex items-center gap-3">
               <Link href="/app">
-                <Button className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all duration-200 glow-emerald-sm">
+                <Button className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold transition-all duration-200 glow-emerald-sm">
                   Launch Platform
                 </Button>
               </Link>

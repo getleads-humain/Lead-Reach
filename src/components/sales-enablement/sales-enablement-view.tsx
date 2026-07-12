@@ -304,7 +304,7 @@ export function SalesEnablementView() {
           <div className="flex justify-end">
             <Button
               onClick={() => setPlaybookDialogOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
             >
               <Plus className="h-4 w-4" /> Generate Playbook
             </Button>
@@ -369,7 +369,7 @@ export function SalesEnablementView() {
           <div className="flex justify-end">
             <Button
               onClick={() => setBattleCardDialogOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
             >
               <Plus className="h-4 w-4" /> Generate Battle Card
             </Button>
@@ -429,7 +429,7 @@ export function SalesEnablementView() {
           <div className="flex justify-end">
             <Button
               onClick={() => setProposalDialogOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all duration-200"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
             >
               <Plus className="h-4 w-4" /> Generate Proposal
             </Button>
@@ -562,7 +562,7 @@ export function SalesEnablementView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setPlaybookDialogOpen(false)} className="border-border/40">Cancel</Button>
-            <Button onClick={handleGeneratePlaybook} disabled={!playbookIndustry || generating} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all">
+            <Button onClick={handleGeneratePlaybook} disabled={!playbookIndustry || generating} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all">
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Generate
             </Button>
@@ -602,7 +602,7 @@ export function SalesEnablementView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setBattleCardDialogOpen(false)} className="border-border/40">Cancel</Button>
-            <Button onClick={handleGenerateBattleCard} disabled={!competitorName || generating} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all">
+            <Button onClick={handleGenerateBattleCard} disabled={!competitorName || generating} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all">
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Generate
             </Button>
@@ -643,7 +643,7 @@ export function SalesEnablementView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setProposalDialogOpen(false)} className="border-border/40">Cancel</Button>
-            <Button onClick={handleGenerateProposal} disabled={!proposalLeadData || generating} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all">
+            <Button onClick={handleGenerateProposal} disabled={!proposalLeadData || generating} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all">
               {generating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               Generate
             </Button>

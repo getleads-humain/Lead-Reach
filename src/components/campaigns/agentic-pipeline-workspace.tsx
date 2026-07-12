@@ -335,7 +335,7 @@ function AgentDetailsPanel({ agents, pipelineLog }: {
             {/* Agent Header - Clickable */}
             <button
               onClick={() => setExpandedAgent(isExpanded ? null : key)}
-              className="w-full flex items-center gap-2.5 p-2.5 text-left hover:bg-white/[0.02] transition-colors"
+              className="w-full flex items-center gap-2.5 p-2.5 text-left hover:bg-white/[0.02] dark:hover:bg-white/[0.04] transition-colors"
             >
               <div className={`flex items-center justify-center w-7 h-7 rounded-md ${isActive ? colors.bg : 'bg-zinc-700/30'}`}>
                 <Icon className={`h-3.5 w-3.5 ${isActive || status === 'completed' ? colors.text : 'text-zinc-500'}`} />
@@ -490,7 +490,7 @@ function EventRow({ entry }: { entry: PipelineLogEntry }) {
   const eventLabel = getEventLabel(entry.data);
 
   return (
-    <div className="flex items-start gap-1.5 py-0.5 px-1 rounded hover:bg-white/[0.02] group">
+    <div className="flex items-start gap-1.5 py-0.5 px-1 rounded hover:bg-white/[0.02] dark:hover:bg-white/[0.04] group">
       <span className="text-zinc-600 shrink-0 tabular-nums">{new Date(entry.timestamp).toLocaleTimeString()}</span>
       <span className={`shrink-0 font-medium ${eventColor}`}>{entry.type.padEnd(18)}</span>
       <span className="text-zinc-300 truncate">{eventLabel}</span>

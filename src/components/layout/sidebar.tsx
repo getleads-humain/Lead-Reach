@@ -27,6 +27,9 @@ import {
   Crown,
   Sparkles,
   Brain,
+  Sun,
+  Moon,
+  Monitor,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -34,6 +37,8 @@ import { Badge } from '@/components/ui/badge';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import Link from 'next/link';
 import { getPlanById } from '@/lib/plans';
+import { useTheme } from 'next-themes';
+import { useEffect, useState } from 'react';
 
 interface NavItem {
   view: ViewType;
@@ -66,8 +71,24 @@ export function Sidebar() {
   const { activeView, setActiveView, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
   const { profile } = useAuth();
   const { canAccess, currentPlanId, isFreePlan } = usePlanAccess();
+  const { theme, setTheme, resolvedTheme } = useTheme();
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => setMounted(true), []);
 
   const currentPlan = getPlanById(currentPlanId);
+
+  const cycleTheme = () => {
+    if (resolvedTheme === 'dark') {
+      setTheme('light');
+    } else if (resolvedTheme === 'light') {
+      setTheme('system');
+    } else {
+      setTheme('dark');
+    }
+  };
+
+  const themeIcon = resolvedTheme === 'dark' ? Moon : resolvedTheme === 'light' ? Sun : Monitor;
 
   const handleNavClick = (item: NavItem) => {
     if (canAccess(item.view as any)) {
@@ -87,7 +108,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center border-b border-sidebar-border px-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald-sm">
-            <Zap className="h-4 w-4 text-black" />
+            <Zap className="h-4 w-4 text-emerald-950" />
           </div>
           {!sidebarCollapsed && (
             <span className="text-sm font-bold tracking-tight">
@@ -281,8 +302,52 @@ export function Sidebar() {
         </div>
       )}
 
-      {/* Collapse Toggle */}
-      <div className="border-t border-sidebar-border p-2">
+      {/* Collapse Toggle + Theme Toggle */}
+      <div className="border-t border-sidebar-border p-2 space-y-1">
+        {/* Theme Toggle */}
+        {mounted && (
+          sidebarCollapsed ? (
+            <Tooltip delayDuration={0}>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full justify-center text-sidebar-foreground/50 hover:text-sidebar-foreground hover:bg-sidebar-accent"
+                  onClick={cycleTheme}
+                >
+                  {React.createElement(themeIcon, { className: 'h-4 w-4' })}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="right" className="bg-popover border-border">
+                {resolvedTheme === 'dark' ? 'Dark' : resolvedTheme === 'light' ? 'Light' : 'System'} mode
+              </TooltipContent>
+            </Tooltip>
+          ) : (
+            <div className="flex items-center gap-1 px-1">
+              {(['light', 'dark', 'system'] as const).map((mode) => {
+                const modeIcon = mode === 'light' ? Sun : mode === 'dark' ? Moon : Monitor;
+                const isActive = theme === mode;
+                return (
+                  <button
+                    key={mode}
+                    onClick={() => setTheme(mode)}
+                    className={cn(
+                      'flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium transition-all duration-200 flex-1 justify-center',
+                      isActive
+                        ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20 shadow-sm'
+                        : 'text-sidebar-foreground/40 hover:text-sidebar-foreground/70 hover:bg-sidebar-accent/50'
+                    )}
+                  >
+                    {React.createElement(modeIcon, { className: 'h-3 w-3' })}
+                    {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                  </button>
+                );
+              })}
+            </div>
+          )
+        )}
+
+        {/* Collapse Toggle */}
         <Button
           variant="ghost"
           size="sm"

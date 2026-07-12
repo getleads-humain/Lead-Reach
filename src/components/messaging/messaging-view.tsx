@@ -112,7 +112,7 @@ export function MessagingView() {
             Every channel connected. SMS, WhatsApp, Instagram, and Facebook Messenger in one place.
           </p>
         </div>
-        <Button onClick={() => setComposeOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2">
+        <Button onClick={() => setComposeOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2">
           <Plus className="h-4 w-4" />
           Send Message
         </Button>
@@ -126,7 +126,7 @@ export function MessagingView() {
             <Card key={channel.id} className="card-premium border-border/30 relative overflow-hidden">
               <div className="absolute top-0 left-0 right-0 h-0.5" style={{ backgroundColor: channel.color }} />
               <CardContent className="p-4 text-center">
-                <div className="rounded-lg p-2 inline-flex mx-auto mb-2" style={{ backgroundColor: hexToRgba(channel.color, 0.07), color: channel.color }}>
+                <div className="rounded-lg p-2 inline-flex mx-auto mb-2" style={{ backgroundColor: hexToRgba(channel.color, 0.1), color: channel.color }}>
                   <Icon className="h-5 w-5" />
                 </div>
                 <h3 className="text-sm font-semibold text-foreground/90">{channel.name}</h3>
@@ -259,7 +259,7 @@ export function MessagingView() {
                 const Icon = ch.icon;
                 return (
                   <Button key={ch.id} variant={selectedChannel === ch.id ? 'default' : 'outline'} size="sm"
-                    className={`gap-1.5 text-xs ${selectedChannel === ch.id ? 'bg-emerald-500 text-black hover:bg-emerald-400' : 'border-border/40 text-muted-foreground'}`}
+                    className={`gap-1.5 text-xs ${selectedChannel === ch.id ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400' : 'border-border/40 text-muted-foreground'}`}
                     onClick={() => setSelectedChannel(ch.id)}>
                     <Icon className="h-3.5 w-3.5" />
                     {ch.name}
@@ -280,7 +280,7 @@ export function MessagingView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setComposeOpen(false)} className="border-border/40">Cancel</Button>
-            <Button className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2" disabled={!message.trim()}>
+            <Button className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2" disabled={!message.trim()}>
               <Send className="h-4 w-4" />
               Send
             </Button>

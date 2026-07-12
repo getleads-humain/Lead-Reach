@@ -56,7 +56,7 @@ export default function GlobalError({
           <div className="flex items-center gap-3">
             <button
               onClick={reset}
-              className="rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 py-2.5 text-sm font-semibold text-black transition-all hover:opacity-90 active:scale-95"
+              className="rounded-lg bg-gradient-to-r from-emerald-500 to-cyan-500 px-6 py-2.5 text-sm font-semibold text-emerald-950 transition-all hover:opacity-90 active:scale-95"
             >
               Try Again
             </button>

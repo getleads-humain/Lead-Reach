@@ -349,7 +349,7 @@ function AddMemoryForm({ onAdd }: { onAdd: (memory: MemoryNode) => void }) {
         ))}
       </div>
       <div className="flex items-center gap-2">
-        <Button type="submit" size="sm" className="h-7 text-[10px] bg-emerald-500 hover:bg-emerald-400 text-black font-semibold">
+        <Button type="submit" size="sm" className="h-7 text-[10px] bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold">
           Add
         </Button>
         <Button type="button" variant="ghost" size="sm" className="h-7 text-[10px] text-muted-foreground/50" onClick={() => setIsOpen(false)}>

@@ -631,7 +631,7 @@ export function DataQualityView() {
             <Button
               onClick={handleAutoMerge}
               disabled={autoMerging || duplicates.filter(d => d.canAutoMerge).length === 0}
-              className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-2 transition-all"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all"
             >
               {autoMerging ? <Loader2 className="h-4 w-4 animate-spin" /> : <Merge className="h-4 w-4" />}
               Auto-Merge Safe ({duplicates.filter(d => d.canAutoMerge).length})

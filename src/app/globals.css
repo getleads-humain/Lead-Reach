@@ -97,74 +97,80 @@
   --sidebar-ring: oklch(0.55 0.18 165);
 }
 
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Full-scale premium dark theme
+   ─────────────────────────────────────────────────────────────
+   True deep-black backgrounds with high-contrast text.
+   All tokens tuned for WCAG AA compliance on dark surfaces.
+   ───────────────────────────────────────────────────────────── */
+
 .dark {
-  /* Dark mode — pitch black premium theme
-   * Override @theme inline --color-* variables for dark mode */
-  --color-background: oklch(0.03 0.005 270);
-  --color-foreground: oklch(0.97 0 0);
-  --color-card: oklch(0.06 0.005 270);
-  --color-card-foreground: oklch(0.97 0 0);
-  --color-popover: oklch(0.06 0.005 270);
-  --color-popover-foreground: oklch(0.97 0 0);
-  --color-primary: oklch(0.75 0.18 165);
-  --color-primary-foreground: oklch(0.03 0 0);
-  --color-secondary: oklch(0.10 0.008 270);
-  --color-secondary-foreground: oklch(0.90 0 0);
-  --color-muted: oklch(0.10 0.008 270);
-  --color-muted-foreground: oklch(0.60 0 0);
-  --color-accent: oklch(0.10 0.008 270);
-  --color-accent-foreground: oklch(0.90 0 0);
-  --color-destructive: oklch(0.65 0.22 25);
-  --color-destructive-foreground: oklch(0.97 0 0);
-  --color-border: oklch(0.18 0.01 270);
-  --color-input: oklch(0.14 0.01 270);
-  --color-ring: oklch(0.75 0.18 165);
+  /* --color-* overrides (Tailwind v4 native) */
+  --color-background: oklch(0.13 0.005 270);         /* Deep dark base — not pure black, slightly elevated */
+  --color-foreground: oklch(0.95 0.005 270);          /* Bright white text — high contrast on dark */
+  --color-card: oklch(0.16 0.006 270);                 /* Card surfaces — slightly lighter than bg */
+  --color-card-foreground: oklch(0.95 0.005 270);      /* Card text — bright */
+  --color-popover: oklch(0.16 0.006 270);              /* Popover surfaces */
+  --color-popover-foreground: oklch(0.95 0.005 270);   /* Popover text */
+  --color-primary: oklch(0.75 0.18 165);               /* Emerald accent — vibrant on dark */
+  --color-primary-foreground: oklch(0.13 0.005 270);   /* Dark text on primary bg */
+  --color-secondary: oklch(0.20 0.008 270);            /* Secondary surface — visible elevation */
+  --color-secondary-foreground: oklch(0.90 0.005 270); /* Secondary text */
+  --color-muted: oklch(0.20 0.008 270);                /* Muted surface — same as secondary for consistency */
+  --color-muted-foreground: oklch(0.65 0.008 270);     /* Muted text — clearly visible on dark */
+  --color-accent: oklch(0.20 0.008 270);               /* Accent surface */
+  --color-accent-foreground: oklch(0.90 0.005 270);    /* Accent text */
+  --color-destructive: oklch(0.65 0.22 25);            /* Destructive — red accent */
+  --color-destructive-foreground: oklch(0.95 0.005 270);/* Destructive text */
+  --color-border: oklch(0.25 0.01 270);                /* Borders — clearly visible on dark */
+  --color-input: oklch(0.22 0.01 270);                 /* Input surfaces — slightly visible */
+  --color-ring: oklch(0.75 0.18 165);                  /* Focus rings — emerald accent */
   --color-chart-1: oklch(0.75 0.18 165);
   --color-chart-2: oklch(0.70 0.16 255);
   --color-chart-3: oklch(0.75 0.16 300);
   --color-chart-4: oklch(0.80 0.14 85);
   --color-chart-5: oklch(0.70 0.20 25);
-  --color-sidebar: oklch(0.04 0.006 270);
-  --color-sidebar-foreground: oklch(0.90 0 0);
+  --color-sidebar: oklch(0.14 0.006 270);              /* Sidebar — slightly darker than bg */
+  --color-sidebar-foreground: oklch(0.88 0.005 270);   /* Sidebar text — bright */
   --color-sidebar-primary: oklch(0.75 0.18 165);
-  --color-sidebar-primary-foreground: oklch(0.03 0 0);
-  --color-sidebar-accent: oklch(0.10 0.008 270);
-  --color-sidebar-accent-foreground: oklch(0.90 0 0);
-  --color-sidebar-border: oklch(0.14 0.01 270);
+  --color-sidebar-primary-foreground: oklch(0.13 0.005 270);
+  --color-sidebar-accent: oklch(0.20 0.008 270);
+  --color-sidebar-accent-foreground: oklch(0.88 0.005 270);
+  --color-sidebar-border: oklch(0.22 0.01 270);
   --color-sidebar-ring: oklch(0.75 0.18 165);
 
   /* Legacy variable overrides for dark mode */
-  --background: oklch(0.03 0.005 270);
-  --foreground: oklch(0.97 0 0);
-  --card: oklch(0.06 0.005 270);
-  --card-foreground: oklch(0.97 0 0);
-  --popover: oklch(0.06 0.005 270);
-  --popover-foreground: oklch(0.97 0 0);
+  --background: oklch(0.13 0.005 270);
+  --foreground: oklch(0.95 0.005 270);
+  --card: oklch(0.16 0.006 270);
+  --card-foreground: oklch(0.95 0.005 270);
+  --popover: oklch(0.16 0.006 270);
+  --popover-foreground: oklch(0.95 0.005 270);
   --primary: oklch(0.75 0.18 165);
-  --primary-foreground: oklch(0.03 0 0);
-  --secondary: oklch(0.10 0.008 270);
-  --secondary-foreground: oklch(0.90 0 0);
-  --muted: oklch(0.10 0.008 270);
-  --muted-foreground: oklch(0.60 0 0);
-  --accent: oklch(0.10 0.008 270);
-  --accent-foreground: oklch(0.90 0 0);
+  --primary-foreground: oklch(0.13 0.005 270);
+  --secondary: oklch(0.20 0.008 270);
+  --secondary-foreground: oklch(0.90 0.005 270);
+  --muted: oklch(0.20 0.008 270);
+  --muted-foreground: oklch(0.65 0.008 270);
+  --accent: oklch(0.20 0.008 270);
+  --accent-foreground: oklch(0.90 0.005 270);
   --destructive: oklch(0.65 0.22 25);
-  --destructive-foreground: oklch(0.97 0 0);
-  --border: oklch(0.18 0.01 270);
-  --input: oklch(0.14 0.01 270);
+  --destructive-foreground: oklch(0.95 0.005 270);
+  --border: oklch(0.25 0.01 270);
+  --input: oklch(0.22 0.01 270);
   --ring: oklch(0.75 0.18 165);
   --chart-1: oklch(0.75 0.18 165);
   --chart-2: oklch(0.70 0.16 255);
   --chart-3: oklch(0.75 0.16 300);
   --chart-4: oklch(0.80 0.14 85);
   --chart-5: oklch(0.70 0.20 25);
-  --sidebar: oklch(0.04 0.006 270);
-  --sidebar-foreground: oklch(0.90 0 0);
+  --sidebar: oklch(0.14 0.006 270);
+  --sidebar-foreground: oklch(0.88 0.005 270);
   --sidebar-primary: oklch(0.75 0.18 165);
-  --sidebar-primary-foreground: oklch(0.03 0 0);
-  --sidebar-accent: oklch(0.10 0.008 270);
-  --sidebar-accent-foreground: oklch(0.90 0 0);
-  --sidebar-border: oklch(0.14 0.01 270);
+  --sidebar-primary-foreground: oklch(0.13 0.005 270);
+  --sidebar-accent: oklch(0.20 0.008 270);
+  --sidebar-accent-foreground: oklch(0.88 0.005 270);
+  --sidebar-border: oklch(0.22 0.01 270);
   --sidebar-ring: oklch(0.75 0.18 165);
 }
 
@@ -192,86 +198,87 @@
 
 .dark {
   /* bg-card with opacity */
-  .bg-card\/50 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 50%, transparent); }
-  .bg-card\/60 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 60%, transparent); }
-  .bg-card\/80 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 80%, transparent); }
-  .bg-card\/90 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 90%, transparent); }
+  .bg-card\/50 { background-color: color-mix(in oklab, oklch(0.16 0.006 270) 50%, transparent); }
+  .bg-card\/60 { background-color: color-mix(in oklab, oklch(0.16 0.006 270) 60%, transparent); }
+  .bg-card\/80 { background-color: color-mix(in oklab, oklch(0.16 0.006 270) 80%, transparent); }
+  .bg-card\/90 { background-color: color-mix(in oklab, oklch(0.16 0.006 270) 90%, transparent); }
 
   /* bg-secondary with opacity */
-  .bg-secondary\/5  { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 5%, transparent); }
-  .bg-secondary\/8  { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 8%, transparent); }
-  .bg-secondary\/10 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 10%, transparent); }
-  .bg-secondary\/20 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 20%, transparent); }
-  .bg-secondary\/30 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 30%, transparent); }
-  .bg-secondary\/40 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 40%, transparent); }
-  .bg-secondary\/50 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
-  .bg-secondary\/60 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 60%, transparent); }
+  .bg-secondary\/5  { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 5%, transparent); }
+  .bg-secondary\/8  { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 8%, transparent); }
+  .bg-secondary\/10 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 10%, transparent); }
+  .bg-secondary\/20 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 20%, transparent); }
+  .bg-secondary\/30 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 30%, transparent); }
+  .bg-secondary\/40 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 40%, transparent); }
+  .bg-secondary\/50 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 50%, transparent); }
+  .bg-secondary\/60 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 60%, transparent); }
+  .bg-secondary\/90 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 90%, transparent); }
 
   /* bg-muted with opacity */
-  .bg-muted\/30 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 30%, transparent); }
-  .bg-muted\/50 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
+  .bg-muted\/30 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 30%, transparent); }
+  .bg-muted\/50 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 50%, transparent); }
 
   /* bg-background with opacity */
-  .bg-background\/50 { background-color: color-mix(in oklab, oklch(0.03 0.005 270) 50%, transparent); }
-  .bg-background\/80 { background-color: color-mix(in oklab, oklch(0.03 0.005 270) 80%, transparent); }
+  .bg-background\/50 { background-color: color-mix(in oklab, oklch(0.13 0.005 270) 50%, transparent); }
+  .bg-background\/80 { background-color: color-mix(in oklab, oklch(0.13 0.005 270) 80%, transparent); }
 
   /* bg-primary with opacity */
   .bg-primary\/10 { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 10%, transparent); }
   .bg-primary\/20 { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 20%, transparent); }
 
   /* bg-input with opacity */
-  .bg-input\/30 { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 30%, transparent); }
-  .bg-input\/50 { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 50%, transparent); }
-  .bg-input\/80 { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 80%, transparent); }
+  .bg-input\/30 { background-color: color-mix(in oklab, oklch(0.22 0.01 270) 30%, transparent); }
+  .bg-input\/50 { background-color: color-mix(in oklab, oklch(0.22 0.01 270) 50%, transparent); }
+  .bg-input\/80 { background-color: color-mix(in oklab, oklch(0.22 0.01 270) 80%, transparent); }
 
   /* bg-destructive with opacity */
   .bg-destructive\/20 { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 20%, transparent); }
   .bg-destructive\/60 { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 60%, transparent); }
 
   /* border-border with opacity */
-  .border-border\/5  { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 5%, transparent); }
-  .border-border\/10 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 10%, transparent); }
-  .border-border\/15 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 15%, transparent); }
-  .border-border\/20 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 20%, transparent); }
-  .border-border\/25 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 25%, transparent); }
-  .border-border\/30 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 30%, transparent); }
-  .border-border\/40 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 40%, transparent); }
-  .border-border\/50 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 50%, transparent); }
-  .border-border\/60 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 60%, transparent); }
+  .border-border\/5  { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 5%, transparent); }
+  .border-border\/10 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 10%, transparent); }
+  .border-border\/15 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 15%, transparent); }
+  .border-border\/20 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 20%, transparent); }
+  .border-border\/25 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 25%, transparent); }
+  .border-border\/30 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 30%, transparent); }
+  .border-border\/40 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 40%, transparent); }
+  .border-border\/50 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 50%, transparent); }
+  .border-border\/60 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 60%, transparent); }
 
   /* text-foreground with opacity */
-  .text-foreground\/10 { color: color-mix(in oklab, oklch(0.97 0 0) 10%, transparent); }
-  .text-foreground\/20 { color: color-mix(in oklab, oklch(0.97 0 0) 20%, transparent); }
-  .text-foreground\/30 { color: color-mix(in oklab, oklch(0.97 0 0) 30%, transparent); }
-  .text-foreground\/40 { color: color-mix(in oklab, oklch(0.97 0 0) 40%, transparent); }
-  .text-foreground\/50 { color: color-mix(in oklab, oklch(0.97 0 0) 50%, transparent); }
-  .text-foreground\/60 { color: color-mix(in oklab, oklch(0.97 0 0) 60%, transparent); }
-  .text-foreground\/70 { color: color-mix(in oklab, oklch(0.97 0 0) 70%, transparent); }
-  .text-foreground\/80 { color: color-mix(in oklab, oklch(0.97 0 0) 80%, transparent); }
-  .text-foreground\/90 { color: color-mix(in oklab, oklch(0.97 0 0) 90%, transparent); }
+  .text-foreground\/10 { color: color-mix(in oklab, oklch(0.95 0.005 270) 10%, transparent); }
+  .text-foreground\/20 { color: color-mix(in oklab, oklch(0.95 0.005 270) 20%, transparent); }
+  .text-foreground\/30 { color: color-mix(in oklab, oklch(0.95 0.005 270) 30%, transparent); }
+  .text-foreground\/40 { color: color-mix(in oklab, oklch(0.95 0.005 270) 40%, transparent); }
+  .text-foreground\/50 { color: color-mix(in oklab, oklch(0.95 0.005 270) 50%, transparent); }
+  .text-foreground\/60 { color: color-mix(in oklab, oklch(0.95 0.005 270) 60%, transparent); }
+  .text-foreground\/70 { color: color-mix(in oklab, oklch(0.95 0.005 270) 70%, transparent); }
+  .text-foreground\/80 { color: color-mix(in oklab, oklch(0.95 0.005 270) 80%, transparent); }
+  .text-foreground\/90 { color: color-mix(in oklab, oklch(0.95 0.005 270) 90%, transparent); }
 
   /* text-muted-foreground with opacity */
-  .text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.60 0 0) 40%, transparent); }
-  .text-muted-foreground\/50 { color: color-mix(in oklab, oklch(0.60 0 0) 50%, transparent); }
-  .text-muted-foreground\/60 { color: color-mix(in oklab, oklch(0.60 0 0) 60%, transparent); }
-  .text-muted-foreground\/70 { color: color-mix(in oklab, oklch(0.60 0 0) 70%, transparent); }
-  .text-muted-foreground\/80 { color: color-mix(in oklab, oklch(0.60 0 0) 80%, transparent); }
+  .text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.65 0.008 270) 40%, transparent); }
+  .text-muted-foreground\/50 { color: color-mix(in oklab, oklch(0.65 0.008 270) 50%, transparent); }
+  .text-muted-foreground\/60 { color: color-mix(in oklab, oklch(0.65 0.008 270) 60%, transparent); }
+  .text-muted-foreground\/70 { color: color-mix(in oklab, oklch(0.65 0.008 270) 70%, transparent); }
+  .text-muted-foreground\/80 { color: color-mix(in oklab, oklch(0.65 0.008 270) 80%, transparent); }
 
   /* ring-ring with opacity */
   .ring-ring\/50 { --tw-ring-color: color-mix(in oklab, oklch(0.75 0.18 165) 50%, transparent); }
 
   /* bg-popover with opacity */
-  .bg-popover\/50 { background-color: color-mix(in oklab, oklch(0.06 0.005 270) 50%, transparent); }
+  .bg-popover\/50 { background-color: color-mix(in oklab, oklch(0.16 0.006 270) 50%, transparent); }
 
   /* bg-accent with opacity */
-  .bg-accent\/50 { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
-  .hover\:bg-accent\/50:hover { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 50%, transparent); }
+  .bg-accent\/50 { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 50%, transparent); }
+  .hover\:bg-accent\/50:hover { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 50%, transparent); }
 
   /* hover variants */
   .hover\:bg-primary\/90:hover { background-color: color-mix(in oklab, oklch(0.75 0.18 165) 90%, transparent); }
-  .hover\:bg-secondary\/90:hover { background-color: color-mix(in oklab, oklch(0.10 0.008 270) 90%, transparent); }
+  .hover\:bg-secondary\/90:hover { background-color: color-mix(in oklab, oklch(0.20 0.008 270) 90%, transparent); }
   .hover\:bg-destructive\/90:hover { background-color: color-mix(in oklab, oklch(0.65 0.22 25) 90%, transparent); }
-  .hover\:bg-input\/50:hover { background-color: color-mix(in oklab, oklch(0.14 0.01 270) 50%, transparent); }
+  .hover\:bg-input\/50:hover { background-color: color-mix(in oklab, oklch(0.22 0.01 270) 50%, transparent); }
 
   /* focus variants */
   .focus-visible\:ring-ring\/50:focus-visible { --tw-ring-color: color-mix(in oklab, oklch(0.75 0.18 165) 50%, transparent); }
@@ -280,10 +287,10 @@
   .outline-ring\/50 { outline-color: color-mix(in oklab, oklch(0.75 0.18 165) 50%, transparent); }
 
   /* border-muted */
-  .border-muted\/40 { border-color: color-mix(in oklab, oklch(0.10 0.008 270) 40%, transparent); }
+  .border-muted\/40 { border-color: color-mix(in oklab, oklch(0.20 0.008 270) 40%, transparent); }
 
   /* text-foreground/50 for placeholders */
-  .text-foreground\/50 { color: color-mix(in oklab, oklch(0.97 0 0) 50%, transparent); }
+  .text-foreground\/50 { color: color-mix(in oklab, oklch(0.95 0.005 270) 50%, transparent); }
 
   /* text-destructive with opacity */
   .text-destructive\/90 { color: color-mix(in oklab, oklch(0.65 0.22 25) 90%, transparent); }
@@ -300,8 +307,80 @@
   .ring-destructive\/40 { --tw-ring-color: color-mix(in oklab, oklch(0.65 0.22 25) 40%, transparent); }
 
   /* stroke-border/50 and border-border/50 for charts */
-  .stroke-border\/50 { stroke: color-mix(in oklab, oklch(0.18 0.01 270) 50%, transparent); }
-  .border-border\/50 { border-color: color-mix(in oklab, oklch(0.18 0.01 270) 50%, transparent); }
+  .stroke-border\/50 { stroke: color-mix(in oklab, oklch(0.25 0.01 270) 50%, transparent); }
+  .border-border\/50 { border-color: color-mix(in oklab, oklch(0.25 0.01 270) 50%, transparent); }
+
+  /* ─────────────────────────────────────────────────────────────
+     DARK MODE — Global overrides for hardcoded Tailwind colors
+     ─────────────────────────────────────────────────────────────
+     These fix components that use raw Tailwind colors (text-gray-400, 
+     bg-slate-500, etc.) without dark: variants, making them visible 
+     on dark backgrounds.
+     ───────────────────────────────────────────────────────────── */
+
+  /* Gray scale — make text visible on dark bg */
+  .text-gray-300 { color: oklch(0.75 0.005 270); }
+  .text-gray-400 { color: oklch(0.65 0.005 270); }
+  .text-gray-500 { color: oklch(0.55 0.005 270); }
+  .text-gray-600 { color: oklch(0.70 0.005 270); }
+
+  /* Gray backgrounds — elevated surfaces on dark */
+  .bg-gray-500\/5  { background-color: color-mix(in oklab, oklch(0.40 0.005 270) 8%, transparent); }
+  .bg-gray-500\/10 { background-color: color-mix(in oklab, oklch(0.40 0.005 270) 15%, transparent); }
+  .bg-gray-500\/20 { background-color: color-mix(in oklab, oklch(0.40 0.005 270) 25%, transparent); }
+  .bg-slate-500    { background-color: oklch(0.40 0.005 270); }
+  .bg-slate-500\/10{ background-color: color-mix(in oklab, oklch(0.40 0.005 270) 15%, transparent); }
+
+  /* Gray borders — visible on dark */
+  .border-gray-500\/20 { border-color: color-mix(in oklab, oklch(0.45 0.005 270) 30%, transparent); }
+  .border-gray-500\/30 { border-color: color-mix(in oklab, oklch(0.45 0.005 270) 40%, transparent); }
+
+  /* Slate text — visible on dark */
+  .text-slate-300 { color: oklch(0.75 0.005 270); }
+  .text-slate-400 { color: oklch(0.65 0.005 270); }
+  .text-slate-500 { color: oklch(0.55 0.005 270); }
+  .bg-slate-400   { background-color: oklch(0.65 0.005 270); }
+
+  /* -600 shade colors — too dark on dark bg, boost to -400 equivalents */
+  .text-emerald-600 { color: oklch(0.75 0.18 165); }
+  .text-cyan-600    { color: oklch(0.75 0.14 200); }
+  .text-amber-600   { color: oklch(0.78 0.14 85); }
+  .text-red-600     { color: oklch(0.65 0.22 25); }
+  .text-blue-600    { color: oklch(0.70 0.16 255); }
+  .text-violet-600  { color: oklch(0.70 0.16 300); }
+  .text-indigo-600  { color: oklch(0.68 0.16 280); }
+  .text-pink-600    { color: oklch(0.70 0.18 350); }
+  .text-orange-600  { color: oklch(0.75 0.16 60); }
+  .text-green-600   { color: oklch(0.72 0.18 145); }
+  .text-purple-600  { color: oklch(0.68 0.16 300); }
+  .text-teal-600    { color: oklch(0.72 0.12 180); }
+  .text-rose-600    { color: oklch(0.65 0.20 15); }
+  .text-yellow-600  { color: oklch(0.80 0.16 90); }
+
+  /* -700 shade colors — even darker, boost more */
+  .text-emerald-700 { color: oklch(0.68 0.16 165); }
+  .bg-emerald-700   { background-color: oklch(0.55 0.16 165); }
+
+  /* text-black — legacy dark mode hack, no longer needed after replacing with text-emerald-950/text-amber-950 */
+  /* .text-black { color: oklch(0.20 0.005 270); } */
+  /* .bg-emerald-500 .text-black, .bg-emerald-400 .text-black, .bg-amber-500 .text-black,
+     .bg-emerald-500:hover .text-black, .bg-emerald-400:hover .text-black { color: oklch(0.13 0.005 270); } */
+  /* border-black spinner fix — replaced with border-emerald-950 in components */
+  /* .border-black\/30 { border-color: color-mix(in oklab, oklch(0.95 0.005 270) 30%, transparent); }
+     .border-t-black   { border-top-color: oklch(0.95 0.005 270); } */
+
+  /* bg-white with low opacity — adapt for dark */
+  .bg-white\/20 { background-color: color-mix(in oklab, oklch(0.95 0.005 270) 8%, transparent); }
+  .bg-white\/30 { background-color: color-mix(in oklab, oklch(0.95 0.005 270) 10%, transparent); }
+  .hover\:bg-white\/\[0\.02\]:hover { background-color: color-mix(in oklab, oklch(0.95 0.005 270) 4%, transparent); }
+
+  /* Hardcoded code block backgrounds — always-dark blocks need light-mode variant */
+  .bg-\[\#0d1117\] { background-color: oklch(0.20 0.008 270); }
+
+  /* Slate-50 / slate-100 light backgrounds — adapt for dark */
+  .from-slate-50  { --tw-gradient-from: oklch(0.16 0.006 270); }
+  .via-white       { --tw-gradient-via: oklch(0.14 0.006 270); }
+  .to-slate-100   { --tw-gradient-to: oklch(0.18 0.008 270); }
 }
 
 /* Premium scrollbar */
@@ -324,11 +403,11 @@
 }
 
 .dark ::-webkit-scrollbar-thumb {
-  background: oklch(0.4 0.01 270 / 30%);
+  background: oklch(0.45 0.01 270 / 40%);
 }
 
 .dark ::-webkit-scrollbar-thumb:hover {
-  background: oklch(0.5 0.01 270 / 50%);
+  background: oklch(0.55 0.01 270 / 60%);
 }
 
 /* Premium selection */
@@ -339,7 +418,7 @@
 
 .dark ::selection {
   background: oklch(0.75 0.18 165 / 30%);
-  color: oklch(0.97 0 0);
+  color: oklch(0.95 0.005 270);
 }
 
 /* Premium glow utility classes */
@@ -349,8 +428,8 @@
 }
 
 .dark .glow-emerald {
-  box-shadow: 0 0 20px oklch(0.75 0.18 165 / 15%),
-              0 0 40px oklch(0.75 0.18 165 / 5%);
+  box-shadow: 0 0 20px oklch(0.75 0.18 165 / 20%),
+              0 0 40px oklch(0.75 0.18 165 / 8%);
 }
 
 .glow-emerald-sm {
@@ -359,8 +438,8 @@
 }
 
 .dark .glow-emerald-sm {
-  box-shadow: 0 0 10px oklch(0.75 0.18 165 / 12%),
-              0 0 20px oklch(0.75 0.18 165 / 4%);
+  box-shadow: 0 0 10px oklch(0.75 0.18 165 / 15%),
+              0 0 20px oklch(0.75 0.18 165 / 6%);
 }
 
 .glow-border {
@@ -368,7 +447,7 @@
 }
 
 .dark .glow-border {
-  border-color: oklch(0.75 0.18 165 / 20%);
+  border-color: oklch(0.75 0.18 165 / 30%);
 }
 
 .glass {
@@ -378,7 +457,9 @@
 }
 
 .dark .glass {
-  background: oklch(0.06 0.005 270 / 80%);
+  background: oklch(0.16 0.006 270 / 85%);
+  backdrop-filter: blur(20px) saturate(1.2);
+  -webkit-backdrop-filter: blur(20px) saturate(1.2);
 }
 
 .glass-subtle {
@@ -388,7 +469,9 @@
 }
 
 .dark .glass-subtle {
-  background: oklch(0.06 0.005 270 / 60%);
+  background: oklch(0.16 0.006 270 / 70%);
+  backdrop-filter: blur(12px) saturate(1.1);
+  -webkit-backdrop-filter: blur(12px) saturate(1.1);
 }
 
 /* Premium gradient text */
@@ -419,9 +502,9 @@
 }
 
 .dark .card-premium:hover {
-  border-color: oklch(0.75 0.18 165 / 25%);
-  box-shadow: 0 0 30px oklch(0.75 0.18 165 / 8%),
-              0 8px 32px oklch(0 0 0 / 40%);
+  border-color: oklch(0.75 0.18 165 / 30%);
+  box-shadow: 0 0 30px oklch(0.75 0.18 165 / 10%),
+              0 8px 32px oklch(0 0 0 / 50%);
 }
 
 /* Subtle noise texture for depth */
@@ -438,6 +521,10 @@
   z-index: -1;
 }
 
+.dark .noise-bg::before {
+  opacity: 0.025;
+}
+
 /* Premium focus ring */
 *:focus-visible {
   outline: 1px solid oklch(0.55 0.18 165 / 50%);
@@ -446,7 +533,7 @@
 }
 
 .dark *:focus-visible {
-  outline: 1px solid oklch(0.75 0.18 165 / 50%);
+  outline: 1px solid oklch(0.75 0.18 165 / 60%);
 }
 
 /* ============================================================
@@ -457,6 +544,10 @@
   opacity: 0.3;
   pointer-events: auto;
   transition: opacity 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.dark .spline-bg-container {
+  opacity: 0.15;
 }
 
 spline-viewer {
@@ -513,7 +604,7 @@ spline-viewer canvas {
 }
 
 .dark .streaming-cursor::after {
-  color: oklch(0.75 0.18 165 / 60%);
+  color: oklch(0.75 0.18 165 / 80%);
 }
 
 @keyframes streaming-blink {
@@ -546,8 +637,8 @@ spline-viewer canvas {
 }
 
 .dark .markdown-content code.inline-code {
-  background: oklch(0.3 0.01 270 / 40%);
-  color: oklch(0.80 0.15 165 / 90%);
+  background: oklch(0.25 0.01 270 / 60%);
+  color: oklch(0.80 0.15 165 / 95%);
 }
 
 .markdown-content .code-block pre {
@@ -588,5 +679,39 @@ spline-viewer canvas {
 }
 
 .dark .markdown-content hr {
-  border-top-color: oklch(0.4 0.01 270 / 60%);
+  border-top-color: oklch(0.35 0.01 270 / 60%);
+}
+
+/* ============================================================
+   DARK MODE — Additional component-level overrides
+   ============================================================ */
+
+/* Ensure dialog/modal content is properly dark */
+.dark [data-radix-popper-content-wrapper] > div {
+  background: oklch(0.16 0.006 270);
+  border-color: oklch(0.25 0.01 270);
+}
+
+/* Fix inline style color backgrounds for dark mode */
+.dark [style*="background-color: rgba"] {
+  opacity: 1;
+}
+
+/* Ensure table headers visible in dark */
+.dark th {
+  color: oklch(0.88 0.005 270);
+}
+
+/* Fix placeholder text in dark mode */
+.dark ::placeholder {
+  color: oklch(0.50 0.005 270 / 80%);
+}
+
+/* Fix auto-filled input backgrounds in dark */
+.dark input:-webkit-autofill,
+.dark input:-webkit-autofill:hover,
+.dark input:-webkit-autofill:focus {
+  -webkit-text-fill-color: oklch(0.95 0.005 270);
+  -webkit-box-shadow: 0 0 0px 1000px oklch(0.20 0.008 270) inset;
+  transition: background-color 5000s ease-in-out 0s;
 }

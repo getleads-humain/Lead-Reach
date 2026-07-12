@@ -253,7 +253,7 @@ const ACTION_TYPE_CONFIG: Record<ActionType, { icon: typeof UserSearch; label: s
   custom: {
     icon: FileText,
     label: 'Custom Action',
-    color: 'text-gray-400',
+    color: 'text-gray-400 dark:text-gray-500',
     stages: ['Analyze & Plan', 'Execute Strategy', 'Review & Refine'],
   },
 };

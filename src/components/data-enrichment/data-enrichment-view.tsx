@@ -334,7 +334,7 @@ export function DataEnrichmentView() {
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-muted-foreground">Enriched</div>
-              <div className="text-2xl font-bold text-emerald-600">{stats.enrichedLeads}</div>
+              <div className="text-2xl font-bold text-emerald-600 dark:text-emerald-400">{stats.enrichedLeads}</div>
               <div className="text-xs text-muted-foreground">{stats.enrichmentRate}% rate</div>
             </CardContent>
           </Card>
@@ -347,7 +347,7 @@ export function DataEnrichmentView() {
           <Card>
             <CardContent className="p-4">
               <div className="text-sm text-muted-foreground">Enriched (7d)</div>
-              <div className="text-2xl font-bold text-cyan-600">{stats.recentEnriched}</div>
+              <div className="text-2xl font-bold text-cyan-600 dark:text-cyan-400">{stats.recentEnriched}</div>
             </CardContent>
           </Card>
         </div>
@@ -679,7 +679,7 @@ export function DataEnrichmentView() {
                       <div key={field} className="space-y-1">
                         <div className="flex items-center justify-between text-sm">
                           <span className="font-medium">{FRIENDLY_NAMES[field] || field}</span>
-                          <span className={`${coverage >= 70 ? 'text-emerald-600' : coverage >= 40 ? 'text-amber-600' : 'text-red-600'}`}>
+                          <span className={`${coverage >= 70 ? 'text-emerald-600 dark:text-emerald-400' : coverage >= 40 ? 'text-amber-600 dark:text-amber-400' : 'text-red-600 dark:text-red-400'}`}>
                             {coverage}%
                           </span>
                         </div>

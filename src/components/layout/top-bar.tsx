@@ -130,7 +130,7 @@ export function TopBar() {
           <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <Badge className="absolute -right-1 -top-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-emerald-500 text-black border-0 font-bold">
+              <Badge className="absolute -right-1 -top-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-emerald-500 text-emerald-950 border-0 font-bold">
                 {unreadCount}
               </Badge>
             )}
@@ -159,10 +159,10 @@ export function TopBar() {
               <Button
                 onClick={handleAiSubmit}
                 disabled={aiLoading || !aiQuery.trim()}
-                className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold transition-all duration-200"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold transition-all duration-200"
               >
                 {aiLoading ? (
-                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-black/30 border-t-black" />
+                  <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-950/30 border-t-emerald-950" />
                 ) : (
                   <Send className="h-4 w-4" />
                 )}

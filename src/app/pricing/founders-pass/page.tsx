@@ -64,7 +64,7 @@ export default function FoundersPassPlanPage() {
           </p>
           <div className="flex items-center justify-center gap-3">
             <Link href="/app">
-              <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-black font-semibold text-base px-8 h-12">
+              <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold text-base px-8 h-12">
                 Get Lifetime Access
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
@@ -299,7 +299,7 @@ export default function FoundersPassPlanPage() {
                 This is a limited-time offer. Once it&apos;s gone, it&apos;s gone forever.
               </p>
               <Link href="/app">
-                <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-black font-semibold text-base px-8 h-12">
+                <Button size="lg" className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold text-base px-8 h-12">
                   Get Lifetime Access — $2,497
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

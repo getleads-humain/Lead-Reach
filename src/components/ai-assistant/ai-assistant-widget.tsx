@@ -364,7 +364,7 @@ function ICPSummaryCard({ icp, onSave }: { icp: ICPData; onSave?: () => void }) 
       {onSave && (
         <Button
           size="sm"
-          className="w-full h-7 text-[11px] bg-amber-500 hover:bg-amber-400 text-black"
+          className="w-full h-7 text-[11px] bg-amber-500 hover:bg-amber-400 text-amber-950"
           onClick={onSave}
         >
           <Save className="h-3 w-3 mr-1" />
@@ -451,7 +451,7 @@ function SaveTargetButton({
         'h-7 text-[10px] gap-1.5 transition-all',
         isSaved
           ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30'
-          : 'bg-emerald-500 hover:bg-emerald-400 text-black'
+          : 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950'
       )}
       disabled={isSaving || isSaved}
       onClick={() => !isSaved && onSave(saveTarget)}

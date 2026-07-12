@@ -103,7 +103,7 @@ export function DashboardView() {
 
       const stageOrder: LeadStage[] = ['new', 'enriched', 'qualified', 'contacted', 'engaged', 'negotiating', 'closed_won', 'closed_lost', 'nurture'];
       const stageColors: Record<string, string> = {
-        new: 'bg-slate-500', enriched: 'bg-cyan-400', qualified: 'bg-emerald-400',
+        new: 'bg-slate-500 dark:bg-slate-400', enriched: 'bg-cyan-400', qualified: 'bg-emerald-400',
         contacted: 'bg-blue-400', engaged: 'bg-violet-400', negotiating: 'bg-amber-400',
         closed_won: 'bg-emerald-500', closed_lost: 'bg-red-400', nurture: 'bg-orange-400',
       };
@@ -395,7 +395,7 @@ User question: ${msg}`,
               size="icon"
               onClick={handleAIChat}
               disabled={!aiChatInput.trim() || aiIsLoading}
-              className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-black shrink-0"
+              className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-emerald-950 shrink-0"
             >
               {aiIsLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />

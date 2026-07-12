@@ -106,7 +106,7 @@ export function BookingView() {
         ].map((item, i) => (
           <Card key={i} className="card-premium border-border/30 bg-card/50">
             <CardContent className="p-5">
-              <div className="rounded-lg p-2.5 inline-flex mb-3" style={{ backgroundColor: hexToRgba(item.color, 0.07), color: item.color }}>
+              <div className="rounded-lg p-2.5 inline-flex mb-3" style={{ backgroundColor: hexToRgba(item.color, 0.15), color: item.color }}>
                 <item.icon className="h-5 w-5" />
               </div>
               <h3 className="text-sm font-semibold text-foreground mb-1.5">{item.title}</h3>
@@ -245,7 +245,7 @@ export function BookingView() {
             <div className="flex gap-1.5">
               {(['all', 'today', 'upcoming'] as const).map((f) => (
                 <Button key={f} variant={filter === f ? 'default' : 'ghost'} size="sm"
-                  className={`text-[10px] h-7 ${filter === f ? 'bg-emerald-500 text-black hover:bg-emerald-400' : 'text-muted-foreground'}`}
+                  className={`text-[10px] h-7 ${filter === f ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400' : 'text-muted-foreground'}`}
                   onClick={() => setFilter(f)}>
                   {f.charAt(0).toUpperCase() + f.slice(1)}
                 </Button>

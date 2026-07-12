@@ -124,7 +124,7 @@ function SkillCard({ skill, onToggle, onExpand, isExpanded }: {
                 className={`w-full h-7 text-[10px] font-semibold ${
                   skill.isActive
                     ? 'bg-red-500/10 text-red-400 hover:bg-red-500/20 border border-red-500/20'
-                    : 'bg-emerald-500 hover:bg-emerald-400 text-black'
+                    : 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white'
                 }`}
                 onClick={(e) => { e.stopPropagation(); onToggle(); }}
               >

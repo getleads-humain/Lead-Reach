@@ -62,7 +62,7 @@ export default function CommandPlanPage() {
           <p className="text-sm text-emerald-400 mb-8">Or $3,990/year (save 17% — just $332/mo)</p>
           <div className="flex items-center justify-center gap-3">
             <Link href="/app">
-              <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-8 h-12">
+              <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
                 Start 14-Day Free Trial
                 <ChevronRight className="ml-2 h-4 w-4" />
               </Button>
@@ -312,7 +312,7 @@ export default function CommandPlanPage() {
                 Start your 14-day free trial today. Full access. No credit card required.
               </p>
               <Link href="/app">
-                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-8 h-12">
+                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
                   Start Free Trial
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

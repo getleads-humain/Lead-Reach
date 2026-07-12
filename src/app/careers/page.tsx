@@ -148,7 +148,7 @@ export default function CareersPage() {
             </p>
             <div className="mt-6 flex flex-wrap gap-3">
               <a href="#open-positions">
-                <Button className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm">
+                <Button className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
                   View Open Positions
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -325,7 +325,7 @@ export default function CareersPage() {
               </p>
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <a href="mailto:careers@leadreach.ai">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
                     Send Your Resume
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

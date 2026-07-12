@@ -57,7 +57,7 @@ export default function LaunchpadPlanPage() {
             <span className="text-lg text-muted-foreground">/month</span>
           </div>
           <Link href="/app">
-            <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-8 h-12">
+            <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
               Get Started Free
               <ChevronRight className="ml-2 h-4 w-4" />
             </Button>
@@ -203,7 +203,7 @@ export default function LaunchpadPlanPage() {
                   <p className="text-sm text-muted-foreground mb-1">Starting at</p>
                   <p className="text-3xl font-bold text-foreground">$149<span className="text-sm font-normal text-muted-foreground">/mo</span></p>
                   <Link href="/pricing/scout">
-                    <Button className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-black font-semibold gap-1">
+                    <Button className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-1">
                       Explore Scout
                       <ChevronRight className="h-3 w-3" />
                     </Button>
@@ -268,7 +268,7 @@ export default function LaunchpadPlanPage() {
                 No credit card. No time limit. No catch. Just AI-powered lead generation.
               </p>
               <Link href="/app">
-                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald text-base px-8 h-12">
+                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
                   Get Started Free
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

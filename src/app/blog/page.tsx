@@ -85,7 +85,7 @@ export default function BlogPage() {
                   onClick={() => setActiveCategory(cat)}
                   className={
                     activeCategory === cat
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-black font-semibold'
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold'
                       : 'border-border/40 text-muted-foreground hover:text-foreground hover:border-emerald-500/20'
                   }
                 >
@@ -212,7 +212,7 @@ export default function BlogPage() {
                       />
                       <Button
                         onClick={() => { if (email.includes('@')) setSubscribed(true); }}
-                        className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-semibold text-sm"
+                        className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold text-sm"
                       >
                         Subscribe
                         <ArrowRight className="ml-1 h-3 w-3" />
@@ -268,7 +268,7 @@ export default function BlogPage() {
               </p>
               <div className="mt-6">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-black font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
                     Start Free Trial
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

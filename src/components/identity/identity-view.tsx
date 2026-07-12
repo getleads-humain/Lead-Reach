@@ -211,7 +211,7 @@ export function IdentityView() {
             <div className="flex-shrink-0">
               <Avatar className="h-20 w-20 ring-2 ring-emerald-500/30 ring-offset-2 ring-offset-background">
                 <AvatarImage src={userProfile.avatarUrl} alt={userProfile.fullName} />
-                <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-cyan-500 text-black text-xl font-bold">
+                <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-cyan-500 text-emerald-950 text-xl font-bold">
                   {getInitials(userProfile.fullName)}
                 </AvatarFallback>
               </Avatar>
@@ -335,7 +335,7 @@ export function IdentityView() {
                   <div className="relative group">
                     <Avatar className="h-24 w-24 ring-2 ring-border/50 ring-offset-2 ring-offset-background">
                       <AvatarImage src={userProfile.avatarUrl} alt={userProfile.fullName} />
-                      <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-cyan-500 text-black text-2xl font-bold">
+                      <AvatarFallback className="bg-gradient-to-br from-emerald-500 to-cyan-500 text-emerald-950 text-2xl font-bold">
                         {getInitials(userProfile.fullName)}
                       </AvatarFallback>
                     </Avatar>
@@ -650,7 +650,7 @@ export function IdentityView() {
                   <DialogTrigger asChild>
                     <Button
                       size="sm"
-                      className="gap-2 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-black font-semibold"
+                      className="gap-2 bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-emerald-950 font-semibold"
                     >
                       <Plus className="h-4 w-4" />
                       Add Item
@@ -722,7 +722,7 @@ export function IdentityView() {
                       <Button
                         onClick={handleAddPortfolioItem}
                         disabled={!newItem.title}
-                        className="w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-black font-semibold"
+                        className="w-full bg-gradient-to-r from-cyan-500 to-emerald-500 hover:from-cyan-400 hover:to-emerald-400 text-emerald-950 font-semibold"
                       >
                         Add to Portfolio
                       </Button>
@@ -869,10 +869,10 @@ export function IdentityView() {
           disabled={saveState === 'saving'}
           className={`gap-2 font-semibold transition-all duration-300 ${
             saveState === 'saved'
-              ? 'bg-emerald-500 text-black'
+              ? 'bg-emerald-500 text-emerald-950'
               : saveState === 'error'
               ? 'bg-red-500/80 text-white'
-              : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-black'
+              : 'bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-400 hover:to-cyan-400 text-emerald-950'
           }`}
         >
           {saveState === 'saving' ? (

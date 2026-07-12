@@ -226,7 +226,7 @@ function AddServerForm({ onAdd }: { onAdd: (server: MCPServerType) => void }) {
         className="h-7 text-xs bg-secondary/20 border-border/30 placeholder:text-muted-foreground/30"
       />
       <div className="flex gap-2">
-        <Button type="submit" size="sm" className="h-6 text-[9px] bg-emerald-500 hover:bg-emerald-400 text-black font-semibold">Connect</Button>
+        <Button type="submit" size="sm" className="h-6 text-[9px] bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold">Connect</Button>
         <Button type="button" variant="ghost" size="sm" className="h-6 text-[9px] text-muted-foreground/50" onClick={() => setIsOpen(false)}>Cancel</Button>
       </div>
     </motion.form>

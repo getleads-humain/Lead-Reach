@@ -313,7 +313,7 @@ export function AgentsView() {
                         className={`text-[9px] px-1.5 py-0.5 rounded ${
                           activeChannels.includes(ch)
                             ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                            : 'bg-gray-500/10 text-gray-500 border border-gray-500/20'
+                            : 'bg-gray-500/10 text-gray-500 dark:text-gray-400 border border-gray-500/20'
                         }`}
                       >
                         {ch}
@@ -327,7 +327,7 @@ export function AgentsView() {
 
                 {agentChannels.length === 0 && (
                   <div className="mt-2 flex items-center gap-1.5">
-                    <WifiOff className="h-3 w-3 text-gray-500/60" />
+                    <WifiOff className="h-3 w-3 text-gray-500/60 dark:text-gray-400/70" />
                     <span className="text-[9px] text-muted-foreground">DB-only agent</span>
                   </div>
                 )}
