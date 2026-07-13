@@ -202,7 +202,7 @@ export default function FAQPage() {
                   onClick={() => setActiveCategory(cat)}
                   className={
                     activeCategory === cat
-                      ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-1.5'
+                      ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-1.5'
                       : 'border-border/40 text-muted-foreground hover:text-foreground hover:border-emerald-500/20 gap-1.5'
                   }
                 >
@@ -252,7 +252,7 @@ export default function FAQPage() {
               </p>
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                     Start Free Trial
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

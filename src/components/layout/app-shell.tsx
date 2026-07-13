@@ -37,7 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <TooltipProvider>
-      <div className="min-h-screen bg-background noise-bg">
+      <div className="min-h-screen bg-background noise-bg dark:bg-[oklch(0.065_0.003_270)]">
         <Sidebar />
         <div
           className={cn(

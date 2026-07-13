@@ -620,7 +620,7 @@ export function CampaignDetailView() {
             <Button
               onClick={runPipeline}
               disabled={pipelineRunning}
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2"
             >
               {totalLeads > 0 ? (
                 <>
@@ -752,7 +752,7 @@ export function CampaignDetailView() {
               </div>
               <Button
                 onClick={runPipeline}
-                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 mt-2"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 mt-2"
               >
                 <Play className="h-4 w-4" />
                 Run Discovery Pipeline

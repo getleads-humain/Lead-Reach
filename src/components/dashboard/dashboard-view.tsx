@@ -395,7 +395,7 @@ User question: ${msg}`,
               size="icon"
               onClick={handleAIChat}
               disabled={!aiChatInput.trim() || aiIsLoading}
-              className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-emerald-950 shrink-0"
+              className="h-[32px] w-[32px] rounded-lg bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white shrink-0"
             >
               {aiIsLoading ? (
                 <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -579,44 +579,48 @@ function StatCard({
   trend: string;
   accent: string;
 }) {
-  const accentStyles: Record<string, { icon: string; glow: string; text: string; bg: string }> = {
+  const accentStyles: Record<string, { icon: string; glow: string; text: string; bg: string; border: string }> = {
     emerald: {
-      icon: 'text-emerald-400',
-      glow: 'from-emerald-500/8 to-emerald-500/2',
-      text: 'text-emerald-400',
-      bg: 'bg-emerald-500/10',
+      icon: 'text-emerald-400 dark:text-emerald-400',
+      glow: 'from-emerald-500/8 to-emerald-500/2 dark:from-emerald-500/12 dark:to-emerald-500/4',
+      text: 'text-emerald-400 dark:text-emerald-400',
+      bg: 'bg-emerald-500/10 dark:bg-emerald-500/15',
+      border: 'border-emerald-500/20 dark:border-emerald-500/15',
     },
     cyan: {
-      icon: 'text-cyan-400',
-      glow: 'from-cyan-500/8 to-cyan-500/2',
-      text: 'text-cyan-400',
-      bg: 'bg-cyan-500/10',
+      icon: 'text-cyan-400 dark:text-cyan-400',
+      glow: 'from-cyan-500/8 to-cyan-500/2 dark:from-cyan-500/12 dark:to-cyan-500/4',
+      text: 'text-cyan-400 dark:text-cyan-400',
+      bg: 'bg-cyan-500/10 dark:bg-cyan-500/15',
+      border: 'border-cyan-500/20 dark:border-cyan-500/15',
     },
     amber: {
-      icon: 'text-amber-400',
-      glow: 'from-amber-500/8 to-amber-500/2',
-      text: 'text-amber-400',
-      bg: 'bg-amber-500/10',
+      icon: 'text-amber-400 dark:text-amber-400',
+      glow: 'from-amber-500/8 to-amber-500/2 dark:from-amber-500/12 dark:to-amber-500/4',
+      text: 'text-amber-400 dark:text-amber-400',
+      bg: 'bg-amber-500/10 dark:bg-amber-500/15',
+      border: 'border-amber-500/20 dark:border-amber-500/15',
     },
     violet: {
-      icon: 'text-violet-400',
-      glow: 'from-violet-500/8 to-violet-500/2',
-      text: 'text-violet-400',
-      bg: 'bg-violet-500/10',
+      icon: 'text-violet-400 dark:text-violet-400',
+      glow: 'from-violet-500/8 to-violet-500/2 dark:from-violet-500/12 dark:to-violet-500/4',
+      text: 'text-violet-400 dark:text-violet-400',
+      bg: 'bg-violet-500/10 dark:bg-violet-500/15',
+      border: 'border-violet-500/20 dark:border-violet-500/15',
     },
   };
 
   const style = accentStyles[accent] || accentStyles.emerald;
 
   return (
-    <Card className={`card-premium border-border/30 bg-gradient-to-br ${style.glow}`}>
+    <Card className={`card-premium border-border/30 ${style.border} bg-gradient-to-br ${style.glow}`}>
       <CardContent className="p-5">
         <div className="flex items-center justify-between">
           <div>
             <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
               {title}
             </p>
-            <p className="mt-1.5 text-2xl font-bold text-foreground/95">{value}</p>
+            <p className="mt-1.5 text-2xl font-bold text-foreground">{value}</p>
           </div>
           <div className={`rounded-lg p-2.5 ${style.bg}`}>
             <Icon className={`h-5 w-5 ${style.icon}`} />

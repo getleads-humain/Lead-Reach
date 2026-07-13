@@ -175,3 +175,37 @@ Stage Summary:
 - Protected pages (/settings, /portal) correctly return 307 redirect
 - All knowledge APIs working: stats (284 docs, 21 categories), list (284 files), search, gap-report
 - Knowledge base fully operational: 284 files, 2933 chunks across 21 categories
+---
+Task ID: dark-mode-overhaul
+Agent: Super Z (Main)
+Task: Fix dark mode across entire platform - pitch-black backgrounds with eye-catching colors
+
+Work Log:
+- Analyzed VLM screenshot showing dashboard with light backgrounds in dark mode
+- Identified core issues: cards with light backgrounds, sidebar not dark, text visibility problems
+- Overhauled globals.css dark mode tokens from oklch(0.13) to oklch(0.065) for pitch-black backgrounds
+- Updated card tokens from oklch(0.16) to oklch(0.10) for near-black card surfaces
+- Updated sidebar tokens from oklch(0.14) to oklch(0.075) for near-black sidebar
+- Boosted accent colors: emerald primary from oklch(0.75) to oklch(0.78) with higher chroma (0.20)
+- Added 50+ new dark mode class overrides for white/gray/slate/zinc backgrounds, borders, and text
+- Added comprehensive gradient overrides (from-white, from-slate-50, via-white, to-slate-100)
+- Added dark mode shadow system (shadow-sm, shadow, shadow-md, shadow-lg)
+- Added dark mode component overrides for tooltips, skeletons, progress bars, dropdowns, table cells
+- Fixed glass utility for dark mode (oklch(0.085/90%) instead of oklch(0.16/85%))
+- Enhanced glow effects for dark mode (3x intensity with triple box-shadow layers)
+- Fixed dashboard StatCard with dark-aware accent gradients and borders
+- Fixed 7 text-zinc-600 instances in agentic-pipeline-workspace.tsx
+- Fixed text-gray-500 dark variant in agents-view.tsx
+- Fixed 57 component-level dark:text-white additions across 24 view components
+- Fixed 61 page-level dark:text-white additions across 28 page files
+- Fixed sidebar with dark shadow and explicit dark:text-white on Zap icon
+- Fixed top-bar with dark:border-border/30 variant
+- Fixed app-shell with explicit dark:bg-[oklch(0.065)] pitch-black background
+- Build verification: npx next build succeeded with no errors
+
+Stage Summary:
+- globals.css completely rewritten with pitch-black dark mode (oklch 0.065-0.10 backgrounds)
+- 118+ component-level dark:text-white fixes applied across 52+ files
+- All text-emerald-950 and text-amber-950 instances now have dark:text-white variants
+- CSS-level overrides catch remaining instances not fixed at component level
+- Build passes successfully

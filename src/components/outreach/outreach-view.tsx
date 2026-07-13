@@ -271,7 +271,7 @@ export function OutreachView() {
         </div>
         <Button
           onClick={handleOpenCompose}
-          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
+          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all duration-200"
         >
           <Plus className="h-4 w-4" />
           Compose Message
@@ -287,7 +287,7 @@ export function OutreachView() {
             size="sm"
             className={`text-xs transition-all duration-200 ${
               statusFilter === s
-                ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400 font-semibold'
+                ? 'bg-emerald-500 text-emerald-950 dark:text-white hover:bg-emerald-400 font-semibold'
                 : 'border-border/40 text-muted-foreground hover:text-foreground hover:border-emerald-500/20'
             }`}
             onClick={() => setStatusFilter(s)}
@@ -542,7 +542,7 @@ export function OutreachView() {
             <Button
               onClick={handleSend}
               disabled={!selectedLeadId || !body.trim() || composing}
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all"
             >
               {composing ? (
                 <Loader2 className="h-4 w-4 animate-spin" />

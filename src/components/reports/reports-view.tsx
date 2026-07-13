@@ -302,7 +302,7 @@ Keep it professional, data-driven, and under 200 words.`,
           </Button>
           <Button
             onClick={() => setExportOpen(true)}
-            className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
+            className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all duration-200"
           >
             <Download className="h-4 w-4" />
             Export Data
@@ -628,7 +628,7 @@ Keep it professional, data-driven, and under 200 words.`,
             <Button
               onClick={handleExport}
               disabled={exporting}
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all"
             >
               {exporting ? (
                 <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-950/30 border-t-emerald-950" />

@@ -220,7 +220,7 @@ export default function ContactPage() {
                         placeholder="Tell us how we can help..."
                       />
                     </div>
-                    <Button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                    <Button type="submit" className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                       <Send className="mr-2 h-4 w-4" />
                       Send Message
                     </Button>
@@ -305,7 +305,7 @@ export default function ContactPage() {
               </p>
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <a href="mailto:sales@leadreach.ai?subject=Demo Request">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                     Request a Demo
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

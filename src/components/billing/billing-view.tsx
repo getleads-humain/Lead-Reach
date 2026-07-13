@@ -311,7 +311,7 @@ function PricingCard({ plan, onSelect }: { plan: BillingPlan; onSelect: (plan: B
         <Button
           className={`w-full font-semibold gap-2 text-xs ${
             plan.highlight
-              ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950'
+              ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white'
               : 'bg-secondary/30 hover:bg-secondary/50 text-foreground border border-border/30'
           }`}
           onClick={() => onSelect(plan)}
@@ -874,7 +874,7 @@ export function BillingView() {
                       <p className="text-xs text-muted-foreground text-center max-w-md">
                         Choose a plan from the Pricing tab to create your first subscription and start using HumAIn Spark.
                       </p>
-                      <Button className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 text-xs" onClick={() => setActiveTab('pricing')}>
+                      <Button className="mt-3 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 text-xs" onClick={() => setActiveTab('pricing')}>
                         <Sparkles className="h-3.5 w-3.5" /> View Plans
                       </Button>
                     </div>

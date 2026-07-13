@@ -543,7 +543,7 @@ function SaveTargetButton({
           'h-7 text-[10px] gap-1.5 transition-all',
           isSaved
             ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/30'
-            : 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950'
+            : 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white'
         )}
         disabled={isSaving || isSaved}
         onClick={() => !isSaved && onSave(saveTarget)}
@@ -813,7 +813,7 @@ function MessageBubble({
                 <Button size="sm" variant="ghost" className="h-7 text-xs" onClick={handleEditCancel}>
                   Cancel
                 </Button>
-                <Button size="sm" className="h-7 text-xs bg-emerald-500 hover:bg-emerald-400 text-emerald-950" onClick={handleEditSave}>
+                <Button size="sm" className="h-7 text-xs bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white" onClick={handleEditSave}>
                   <Check className="h-3 w-3 mr-1" /> Save
                 </Button>
               </div>

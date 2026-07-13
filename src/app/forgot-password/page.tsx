@@ -45,7 +45,7 @@ export default function ForgotPasswordPage() {
                 Check your inbox and follow the instructions.
               </p>
               <Link href="/login">
-                <Button className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                <Button className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                   Back to Sign In
                 </Button>
               </Link>
@@ -64,7 +64,7 @@ export default function ForgotPasswordPage() {
         <div className="text-center mb-8">
           <Link href="/" className="inline-flex items-center gap-2.5">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald-sm">
-              <Zap className="h-5 w-5 text-emerald-950" />
+              <Zap className="h-5 w-5 text-emerald-950 dark:text-white" />
             </div>
             <span className="text-xl font-bold tracking-tight">
               LeadReach <span className="text-gradient">AI</span>
@@ -106,7 +106,7 @@ export default function ForgotPasswordPage() {
 
               <Button
                 type="submit"
-                className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm transition-all duration-200"
+                className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm transition-all duration-200"
                 disabled={loading}
               >
                 {loading ? (

@@ -324,7 +324,7 @@ export default function AboutPage() {
                 </p>
               </div>
               <Link href="/careers">
-                <Button className="mt-6 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                <Button className="mt-6 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                   <Rocket className="mr-2 h-4 w-4" />
                   Join Our Team
                 </Button>
@@ -349,7 +349,7 @@ export default function AboutPage() {
               </p>
               <div className="mt-6 flex flex-col sm:flex-row items-center justify-center gap-3">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                     Start Free Trial
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

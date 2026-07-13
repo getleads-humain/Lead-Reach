@@ -423,7 +423,7 @@ function SettingsContentInner() {
                   <Button
                     onClick={handleSaveProfile}
                     disabled={saving}
-                    className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm"
+                    className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm"
                   >
                     {saving ? (
                       <Loader2 className="h-4 w-4 animate-spin mr-2" />
@@ -510,7 +510,7 @@ function SettingsContentInner() {
                 <Button
                   onClick={handleSaveProfile}
                   disabled={saving}
-                  className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm"
+                  className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm"
                 >
                   {saving ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Save className="h-4 w-4 mr-2" />}
                   Save Company Details
@@ -717,7 +717,7 @@ function SettingsContentInner() {
                         {/* Popular badge */}
                         {plan.badge && (
                           <div className="absolute -top-2.5 left-1/2 -translate-x-1/2">
-                            <Badge className="bg-emerald-500 text-emerald-950 border-0 text-[10px] font-bold px-2">
+                            <Badge className="bg-emerald-500 text-emerald-950 dark:text-white border-0 text-[10px] font-bold px-2">
                               {plan.badge}
                             </Badge>
                           </div>
@@ -800,7 +800,7 @@ function SettingsContentInner() {
                           <Button
                             className={`w-full font-semibold gap-1 ${
                               plan.highlight
-                                ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 glow-emerald-sm'
+                                ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white glow-emerald-sm'
                                 : 'bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30'
                             }`}
                             disabled={isLoading}

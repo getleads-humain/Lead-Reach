@@ -465,7 +465,7 @@ export function CampaignsView() {
         </div>
         <Button
           onClick={() => setCreateOpen(true)}
-          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
+          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all duration-200"
         >
           <Plus className="h-4 w-4" />
           New Campaign
@@ -492,7 +492,7 @@ export function CampaignsView() {
             Create your first campaign — the agent pipeline will automatically discover and qualify leads
           </p>
           <Button
-            className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold transition-all"
+            className="mt-4 bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold transition-all"
             onClick={() => setCreateOpen(true)}
           >
             <Plus className="h-4 w-4 mr-2" />
@@ -870,7 +870,7 @@ export function CampaignsView() {
             <Button
               onClick={handleCreate}
               disabled={!formName.trim() || formCreating}
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold transition-all gap-2"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold transition-all gap-2"
             >
               {formCreating ? (
                 <>
@@ -1049,7 +1049,7 @@ export function CampaignsView() {
                   View Leads
                 </Button>
                 <Button
-                  className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2"
+                  className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2"
                   onClick={() => {
                     handleRunPipeline(detailCampaign.id, detailCampaign.name);
                     setDetailCampaign(null);

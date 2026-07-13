@@ -78,7 +78,7 @@ function ScrollToTopButton() {
   return (
     <button
       onClick={scrollToTop}
-      className="fixed bottom-8 right-8 z-50 p-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 shadow-lg hover:shadow-emerald-500/20 transition-all duration-200 animate-in fade-in slide-in-from-bottom-4"
+      className="fixed bottom-8 right-8 z-50 p-3 rounded-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white shadow-lg hover:shadow-emerald-500/20 transition-all duration-200 animate-in fade-in slide-in-from-bottom-4"
       aria-label="Scroll to top"
     >
       <ChevronUp className="h-5 w-5" />
@@ -419,7 +419,7 @@ export function BlogPostContent({ post, relatedPosts, otherPosts, categoryColors
                       AI agents that discover, qualify, and engage leads on autopilot.
                     </p>
                     <Link href="/app">
-                      <Button size="sm" className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold text-xs">
+                      <Button size="sm" className="w-full bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold text-xs">
                         Start Free Trial
                         <ArrowRight className="ml-1 h-3 w-3" />
                       </Button>
@@ -564,7 +564,7 @@ export function BlogPostContent({ post, relatedPosts, otherPosts, categoryColors
               </p>
               <div className="mt-6">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                     Start Free Trial
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>
@@ -599,7 +599,7 @@ export function BlogPostContent({ post, relatedPosts, otherPosts, categoryColors
               />
               <Button
                 onClick={() => { if (email.includes('@')) setSubscribed(true); }}
-                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold"
               >
                 Subscribe
               </Button>

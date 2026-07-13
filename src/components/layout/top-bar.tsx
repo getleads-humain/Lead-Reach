@@ -72,7 +72,7 @@ export function TopBar() {
 
   return (
     <>
-      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/50 glass px-4">
+      <header className="sticky top-0 z-30 flex h-14 items-center justify-between border-b border-border/50 glass px-4 dark:border-border/30">
         <div className="flex items-center gap-3">
           <h2 className="text-xs font-medium text-muted-foreground uppercase tracking-widest">
             Agentic Lead Generation
@@ -130,7 +130,7 @@ export function TopBar() {
           <Button variant="ghost" size="icon" className="relative text-muted-foreground hover:text-foreground">
             <Bell className="h-4 w-4" />
             {unreadCount > 0 && (
-              <Badge className="absolute -right-1 -top-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-emerald-500 text-emerald-950 border-0 font-bold">
+              <Badge className="absolute -right-1 -top-1 h-4 w-4 rounded-full p-0 text-[10px] flex items-center justify-center bg-emerald-500 text-emerald-950 dark:text-white border-0 font-bold">
                 {unreadCount}
               </Badge>
             )}
@@ -159,7 +159,7 @@ export function TopBar() {
               <Button
                 onClick={handleAiSubmit}
                 disabled={aiLoading || !aiQuery.trim()}
-                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold transition-all duration-200"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold transition-all duration-200"
               >
                 {aiLoading ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-950/30 border-t-emerald-950" />

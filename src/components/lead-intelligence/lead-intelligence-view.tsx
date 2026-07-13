@@ -347,7 +347,7 @@ export function LeadIntelligenceView() {
           <TabsTrigger value="alerts" className="data-[state=active]:bg-emerald-500/10 data-[state=active]:text-emerald-400">
             <Bell className="h-3.5 w-3.5 mr-1.5" />Alerts
             {activeAlerts.length > 0 && (
-              <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-emerald-950">
+              <span className="ml-1 flex h-4 w-4 items-center justify-center rounded-full bg-emerald-500 text-[9px] font-bold text-emerald-950 dark:text-white">
                 {activeAlerts.length}
               </span>
             )}
@@ -469,7 +469,7 @@ export function LeadIntelligenceView() {
             <Button
               onClick={handleApplyDecay}
               disabled={applyingDecay}
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all"
             >
               {applyingDecay ? <Loader2 className="h-4 w-4 animate-spin" /> : <TrendingDown className="h-4 w-4" />}
               Apply Decay Now

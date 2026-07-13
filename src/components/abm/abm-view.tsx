@@ -271,7 +271,7 @@ export function AbmView() {
           <div className="flex justify-end">
             <Button
               onClick={() => setCreateListDialogOpen(true)}
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all duration-200"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all duration-200"
             >
               <Plus className="h-4 w-4" /> Create List
             </Button>
@@ -546,7 +546,7 @@ export function AbmView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setCreateListDialogOpen(false)} className="border-border/40">Cancel</Button>
-            <Button onClick={handleCreateList} disabled={!listName || !listCriteria || creating} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all">
+            <Button onClick={handleCreateList} disabled={!listName || !listCriteria || creating} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all">
               {creating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
               Create
             </Button>

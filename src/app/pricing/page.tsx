@@ -258,7 +258,7 @@ function PricingContent() {
                 {plan.badge && (
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <Badge className={`border-0 font-bold px-3 ${
-                      isLifetimeTier ? 'bg-amber-500 text-amber-950' : 'bg-emerald-500 text-emerald-950'
+                      isLifetimeTier ? 'bg-amber-500 text-amber-950 dark:text-white' : 'bg-emerald-500 text-emerald-950 dark:text-white'
                     }`}>
                       {plan.badge}
                     </Badge>
@@ -367,7 +367,7 @@ function PricingContent() {
                   ) : isLifetimeTier ? (
                     <Button
                       className={`w-full font-semibold gap-1 ${
-                        'bg-amber-500 hover:bg-amber-400 text-amber-950 glow-emerald-sm'
+                        'bg-amber-500 hover:bg-amber-400 text-amber-950 dark:text-white glow-emerald-sm'
                       }`}
                       disabled={isLoading}
                       onClick={(e) => {
@@ -389,7 +389,7 @@ function PricingContent() {
                     <Button
                       className={`w-full font-semibold gap-1 ${
                         plan.highlight
-                          ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 glow-emerald-sm'
+                          ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white glow-emerald-sm'
                           : 'bg-secondary/50 hover:bg-secondary/70 text-foreground border border-border/30'
                       }`}
                       disabled={isLoading}
@@ -554,7 +554,7 @@ function PricingContent() {
                 Start your 14-day free trial today. No credit card required.
               </p>
               <Link href="/app">
-                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
+                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald text-base px-8 h-12">
                   Start Free Trial
                   <ChevronRight className="ml-2 h-4 w-4" />
                 </Button>

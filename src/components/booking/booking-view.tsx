@@ -245,7 +245,7 @@ export function BookingView() {
             <div className="flex gap-1.5">
               {(['all', 'today', 'upcoming'] as const).map((f) => (
                 <Button key={f} variant={filter === f ? 'default' : 'ghost'} size="sm"
-                  className={`text-[10px] h-7 ${filter === f ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400' : 'text-muted-foreground'}`}
+                  className={`text-[10px] h-7 ${filter === f ? 'bg-emerald-500 text-emerald-950 dark:text-white hover:bg-emerald-400' : 'text-muted-foreground'}`}
                   onClick={() => setFilter(f)}>
                   {f.charAt(0).toUpperCase() + f.slice(1)}
                 </Button>

@@ -240,7 +240,7 @@ export default function LandingPage() {
 
             <div className="mt-10 flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/app">
-                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-8 h-12">
+                <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald text-base px-8 h-12">
                   Start Free Trial
                   <ArrowRight className="ml-2 h-4 w-4" />
                 </Button>
@@ -652,8 +652,8 @@ export default function LandingPage() {
                   <div className="absolute -top-3 left-1/2 -translate-x-1/2">
                     <Badge className={`border-0 font-semibold ${
                       tier.badge === 'Lifetime Deal'
-                        ? 'bg-amber-500 text-amber-950'
-                        : 'bg-emerald-500 text-emerald-950'
+                        ? 'bg-amber-500 text-amber-950 dark:text-white'
+                        : 'bg-emerald-500 text-emerald-950 dark:text-white'
                     }`}>
                       {tier.badge}
                     </Badge>
@@ -680,7 +680,7 @@ export default function LandingPage() {
                     <Button
                       className={`w-full font-semibold transition-all duration-200 ${
                         tier.highlighted
-                          ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 glow-emerald-sm'
+                          ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white glow-emerald-sm'
                           : 'bg-secondary hover:bg-secondary/80 text-foreground'
                       }`}
                     >
@@ -755,7 +755,7 @@ export default function LandingPage() {
               </p>
               <div className="mt-8">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald text-base px-10 h-12">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald text-base px-10 h-12">
                     Start Free Trial
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

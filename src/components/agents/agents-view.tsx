@@ -493,7 +493,7 @@ export function AgentsView() {
                         : channel.status === 'warn'
                         ? 'border-amber-500/20 text-amber-400 bg-amber-500/5'
                         : channel.status === 'off'
-                        ? 'border-gray-500/20 text-gray-500 bg-gray-500/5'
+                        ? 'border-gray-500/20 text-gray-500 dark:text-gray-400 bg-gray-500/5'
                         : 'border-red-500/20 text-red-400 bg-red-500/5'
                     }`}
                   >

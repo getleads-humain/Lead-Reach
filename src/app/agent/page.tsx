@@ -431,7 +431,7 @@ export default function AgentPage() {
               </p>
               <div className="mt-6">
                 <Link href="/app">
-                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm">
+                  <Button size="lg" className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm">
                     Deploy AI Workforce
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Button>

@@ -438,7 +438,7 @@ export function PipelineExecutionView() {
         <div className="flex items-center gap-2">
           {isIdle && (
             <Button
-              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2"
+              className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2"
               onClick={handleStartPipeline}
             >
               <Zap className="h-4 w-4" />

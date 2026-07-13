@@ -112,7 +112,7 @@ export function MessagingView() {
             Every channel connected. SMS, WhatsApp, Instagram, and Facebook Messenger in one place.
           </p>
         </div>
-        <Button onClick={() => setComposeOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2">
+        <Button onClick={() => setComposeOpen(true)} className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2">
           <Plus className="h-4 w-4" />
           Send Message
         </Button>
@@ -259,7 +259,7 @@ export function MessagingView() {
                 const Icon = ch.icon;
                 return (
                   <Button key={ch.id} variant={selectedChannel === ch.id ? 'default' : 'outline'} size="sm"
-                    className={`gap-1.5 text-xs ${selectedChannel === ch.id ? 'bg-emerald-500 text-emerald-950 hover:bg-emerald-400' : 'border-border/40 text-muted-foreground'}`}
+                    className={`gap-1.5 text-xs ${selectedChannel === ch.id ? 'bg-emerald-500 text-emerald-950 dark:text-white hover:bg-emerald-400' : 'border-border/40 text-muted-foreground'}`}
                     onClick={() => setSelectedChannel(ch.id)}>
                     <Icon className="h-3.5 w-3.5" />
                     {ch.name}
@@ -280,7 +280,7 @@ export function MessagingView() {
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setComposeOpen(false)} className="border-border/40">Cancel</Button>
-            <Button className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2" disabled={!message.trim()}>
+            <Button className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2" disabled={!message.trim()}>
               <Send className="h-4 w-4" />
               Send
             </Button>

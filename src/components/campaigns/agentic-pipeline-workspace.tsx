@@ -173,14 +173,14 @@ function PipelineArchitecture({ agents, pipelineRunning, pipelinePhase, overallP
             {pipelinePhase === 'discovery' && <Radio className="h-2.5 w-2.5 animate-pulse" />}
             Phase 1: Discovery
           </div>
-          <ArrowRight className="h-3 w-3 text-zinc-600" />
+          <ArrowRight className="h-3 w-3 text-zinc-400 dark:text-zinc-400" />
           <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium ${
             pipelinePhase === 'enrichment' || pipelinePhase === 'executing' ? 'bg-cyan-500/15 text-cyan-400 border border-cyan-500/30' : 'bg-zinc-500/10 text-zinc-500'
           }`}>
             {(pipelinePhase === 'enrichment' || pipelinePhase === 'executing') && <Radio className="h-2.5 w-2.5 animate-pulse" />}
             Phase 2: Enrichment
           </div>
-          <ArrowRight className="h-3 w-3 text-zinc-600" />
+          <ArrowRight className="h-3 w-3 text-zinc-400 dark:text-zinc-400" />
           <div className={`flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium ${
             pipelinePhase === 'complete' ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30' : 'bg-zinc-500/10 text-zinc-500'
           }`}>
@@ -265,7 +265,7 @@ function PipelineArchitecture({ agents, pipelineRunning, pipelinePhase, overallP
                 {/* Flow Arrow (between agents) */}
                 {idx < 7 && (
                   <div className="hidden lg:flex absolute -right-2.5 top-1/2 -translate-y-1/2 z-20">
-                    <ArrowRight className={`h-3 w-3 ${isDone ? 'text-emerald-500/50' : 'text-zinc-600'}`} />
+                    <ArrowRight className={`h-3 w-3 ${isDone ? 'text-emerald-500/50' : 'text-zinc-400 dark:text-zinc-400'}`} />
                   </div>
                 )}
               </motion.div>
@@ -491,7 +491,7 @@ function EventRow({ entry }: { entry: PipelineLogEntry }) {
 
   return (
     <div className="flex items-start gap-1.5 py-0.5 px-1 rounded hover:bg-white/[0.02] dark:hover:bg-white/[0.04] group">
-      <span className="text-zinc-600 shrink-0 tabular-nums">{new Date(entry.timestamp).toLocaleTimeString()}</span>
+      <span className="text-zinc-400 dark:text-zinc-400 shrink-0 tabular-nums">{new Date(entry.timestamp).toLocaleTimeString()}</span>
       <span className={`shrink-0 font-medium ${eventColor}`}>{entry.type.padEnd(18)}</span>
       <span className="text-zinc-300 truncate">{eventLabel}</span>
     </div>
@@ -584,7 +584,7 @@ function LeadTrackerPanel({ liveLeads, currentEnrichmentIdx, enrichmentTotal }: 
                         <div className={`w-full h-1 rounded-full ${
                           isCompleted ? 'bg-emerald-500' : isCurrent ? 'bg-cyan-500/50 animate-pulse' : 'bg-zinc-700/40'
                         }`} />
-                        <span className={`text-[7px] ${isCompleted ? 'text-emerald-400' : isCurrent ? 'text-cyan-400' : 'text-zinc-600'}`}>
+                        <span className={`text-[7px] ${isCompleted ? 'text-emerald-400' : isCurrent ? 'text-cyan-400' : 'text-zinc-400 dark:text-zinc-400'}`}>
                           {stage}
                         </span>
                       </div>
@@ -633,14 +633,14 @@ function AgentCommsPanel({ commLog }: { commLog: CommMessage[] }) {
               {/* Header: From → To */}
               <div className="flex items-center gap-1.5 mb-1">
                 <span className={`text-[9px] font-semibold ${fromColors.text}`}>{msg.from}</span>
-                <ArrowRight className="h-2.5 w-2.5 text-zinc-600" />
+                <ArrowRight className="h-2.5 w-2.5 text-zinc-400 dark:text-zinc-400" />
                 <span className={`text-[9px] font-semibold ${isBroadcast ? 'text-zinc-300' : toColors.text}`}>
                   {isBroadcast ? 'ALL' : msg.to}
                 </span>
                 <Badge variant="outline" className="text-[7px] px-1 py-0 border-zinc-600/30 text-zinc-500">
                   {msg.type}
                 </Badge>
-                <span className="text-[8px] text-zinc-600 ml-auto">
+                <span className="text-[8px] text-zinc-400 dark:text-zinc-400 ml-auto">
                   {new Date(msg.timestamp).toLocaleTimeString()}
                 </span>
               </div>

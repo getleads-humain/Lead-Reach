@@ -398,7 +398,7 @@ export default function CulturePage() {
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
             <a
               href="/agentic-framework"
-              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-emerald-950 hover:bg-emerald-400 transition-colors"
+              className="inline-flex items-center gap-2 rounded-lg bg-emerald-500 px-6 py-3 text-sm font-semibold text-emerald-950 dark:text-white hover:bg-emerald-400 transition-colors"
             >
               Explore Our Agentic Framework
             </a>

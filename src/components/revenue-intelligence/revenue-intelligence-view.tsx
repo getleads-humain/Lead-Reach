@@ -449,7 +449,7 @@ export function RevenueIntelligenceView() {
               <Button
                 onClick={handleForecast}
                 disabled={forecasting}
-                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 transition-all"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 transition-all"
               >
                 {forecasting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
                 Generate Forecast

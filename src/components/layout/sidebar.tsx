@@ -100,7 +100,7 @@ export function Sidebar() {
   return (
     <aside
       className={cn(
-        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 hidden md:flex',
+        'fixed left-0 top-0 z-40 flex h-screen flex-col border-r border-sidebar-border bg-sidebar transition-all duration-300 hidden md:flex dark:shadow-[1px_0_25px_rgba(0,0,0,0.5)]',
         sidebarCollapsed ? 'w-16' : 'w-60'
       )}
     >
@@ -108,7 +108,7 @@ export function Sidebar() {
       <div className="flex h-14 items-center border-b border-sidebar-border px-3">
         <div className="flex items-center gap-2.5">
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald-sm">
-            <Zap className="h-4 w-4 text-emerald-950" />
+            <Zap className="h-4 w-4 text-emerald-950 dark:text-white" />
           </div>
           {!sidebarCollapsed && (
             <span className="text-sm font-bold tracking-tight">

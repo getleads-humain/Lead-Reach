@@ -480,7 +480,7 @@ function ICPDetailView({ profile, onBack, onDelete }: {
       {/* Quick Actions */}
       <div className="flex flex-wrap gap-2">
         <Button
-          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 text-xs"
+          className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 text-xs"
           onClick={() => setActiveView('prospect-discovery')}
         >
           <Sparkles className="h-3.5 w-3.5" /> Refine with AI
@@ -782,7 +782,7 @@ export function ICPView() {
           </p>
         </div>
         <Button
-          className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold gap-2 text-xs"
+          className="bg-amber-500 hover:bg-amber-400 text-amber-950 dark:text-white font-semibold gap-2 text-xs"
           onClick={handleStartBuilder}
         >
           <Plus className="h-3.5 w-3.5" /> Build New ICP
@@ -889,7 +889,7 @@ export function ICPView() {
                   })()}
                   {builderICP && (
                     <Button
-                      className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold gap-2 text-xs h-8"
+                      className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold gap-2 text-xs h-8"
                       onClick={() => handleSaveICP(builderICP)}
                     >
                       <CheckCircle2 className="h-3.5 w-3.5" /> Save ICP
@@ -1083,7 +1083,7 @@ export function ICPView() {
                   <Button
                     onClick={() => handleSendBuilderMessage()}
                     disabled={isBuilding || !chatInput.trim()}
-                    className="bg-amber-500 hover:bg-amber-400 text-amber-950 gap-2 text-xs h-9"
+                    className="bg-amber-500 hover:bg-amber-400 text-amber-950 dark:text-white gap-2 text-xs h-9"
                   >
                     {isBuilding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
                   </Button>
@@ -1142,7 +1142,7 @@ export function ICPView() {
                   })}
                 </div>
                 <Button
-                  className="bg-amber-500 hover:bg-amber-400 text-amber-950 font-semibold gap-2"
+                  className="bg-amber-500 hover:bg-amber-400 text-amber-950 dark:text-white font-semibold gap-2"
                   onClick={handleStartBuilder}
                 >
                   <Sparkles className="h-4 w-4" /> Build Your First ICP

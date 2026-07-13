@@ -199,7 +199,7 @@ export default function OnboardingPage() {
       <div className="min-h-screen flex items-center justify-center bg-background noise-bg">
         <div className="flex flex-col items-center gap-4">
           <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald animate-pulse">
-            <Zap className="h-6 w-6 text-emerald-950" />
+            <Zap className="h-6 w-6 text-emerald-950 dark:text-white" />
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
@@ -220,7 +220,7 @@ export default function OnboardingPage() {
         <div className="text-center mb-8">
           <div className="inline-flex items-center gap-2.5 mb-4">
             <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-emerald-400 to-cyan-500 glow-emerald-sm">
-              <Zap className="h-5 w-5 text-emerald-950" />
+              <Zap className="h-5 w-5 text-emerald-950 dark:text-white" />
             </div>
             <span className="text-xl font-bold tracking-tight">
               LeadReach <span className="text-gradient">AI</span>
@@ -241,7 +241,7 @@ export default function OnboardingPage() {
                 <div key={s.id} className="flex items-center gap-2">
                   <div className={`flex h-8 w-8 items-center justify-center rounded-full border-2 transition-all duration-300 ${
                     isComplete
-                      ? 'bg-emerald-500 border-emerald-500 text-emerald-950'
+                      ? 'bg-emerald-500 border-emerald-500 text-emerald-950 dark:text-white'
                       : isActive
                       ? 'border-emerald-500 text-emerald-400 bg-emerald-500/10'
                       : 'border-border text-muted-foreground'
@@ -463,7 +463,7 @@ export default function OnboardingPage() {
               <Button
                 onClick={handleNext}
                 disabled={loading}
-                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 font-semibold glow-emerald-sm transition-all duration-200 min-w-[120px]"
+                className="bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold glow-emerald-sm transition-all duration-200 min-w-[120px]"
               >
                 {loading ? (
                   <div className="h-4 w-4 animate-spin rounded-full border-2 border-emerald-950/30 border-t-emerald-950" />
