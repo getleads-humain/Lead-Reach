@@ -302,7 +302,7 @@ export function AbmView() {
                       <div className="h-1.5 rounded-full bg-secondary/40 overflow-hidden">
                         <div
                           className={`h-full rounded-full ${
-                            tier === 1 ? 'bg-amber-400' : tier === 2 ? 'bg-gray-300' : 'bg-orange-400'
+                            tier === 1 ? 'bg-amber-400' : tier === 2 ? 'bg-gray-300 dark:bg-gray-500' : 'bg-orange-400'
                           }`}
                           style={{ width: `${targetAccounts.length > 0 ? (tierCounts[tier as keyof typeof tierCounts] / targetAccounts.length) * 100 : 0}%` }}
                         />

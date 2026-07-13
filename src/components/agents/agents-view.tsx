@@ -289,7 +289,7 @@ export function AgentsView() {
                           ? 'bg-emerald-400'
                           : status === 'error'
                           ? 'bg-red-400'
-                          : 'bg-gray-600'
+                          : 'bg-gray-600 dark:bg-gray-500'
                       }`}
                     />
                     <span className="text-[10px] capitalize text-muted-foreground">

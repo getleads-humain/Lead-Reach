@@ -806,7 +806,7 @@ export function AutoresearchView() {
                       {currentJob.baselineScore > 0 && (
                         <Progress
                           value={currentJob.baselineScore * 100}
-                          className="h-1.5 [&>div]:bg-gray-400"
+                          className="h-1.5 [&>div]:bg-gray-400 dark:[&>div]:bg-gray-500"
                         />
                       )}
                     </div>
@@ -1277,7 +1277,7 @@ export function AutoresearchView() {
                       {currentJob.baselineScore > 0 && (
                         <div className="pt-2 border-t">
                           <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                            <div className="w-3 h-0.5 bg-gray-400 inline-block" />
+                            <div className="w-3 h-0.5 bg-gray-400 dark:bg-gray-500 inline-block" />
                             Baseline: {formatScore(currentJob.baselineScore)}
                           </div>
                         </div>

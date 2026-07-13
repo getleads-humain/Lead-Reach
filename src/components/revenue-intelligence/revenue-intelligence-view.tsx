@@ -82,7 +82,7 @@ const defaultDashboard: RevenueDashboard = {
 };
 
 const stageColors: Record<string, string> = {
-  new: 'bg-slate-400',
+  new: 'bg-slate-400 dark:bg-slate-500',
   enriched: 'bg-cyan-400',
   qualified: 'bg-emerald-400',
   contacted: 'bg-blue-400',

@@ -240,7 +240,7 @@ export default function ApiDocsPage() {
                 {copied ? <CheckCircle2 className="h-4 w-4 text-emerald-400" /> : <Copy className="h-4 w-4" />}
               </button>
             </div>
-            <div className="rounded-xl border border-border/30 bg-secondary/50 dark:bg-[#0d1117] p-6 overflow-x-auto">
+            <div className="rounded-xl border border-border/30 bg-secondary/50 dark:bg-[#0a0d12] p-6 overflow-x-auto">
               <pre className="text-sm text-gray-300 dark:text-gray-400 leading-relaxed">
                 <code>{CODE_EXAMPLES[activeTab]}</code>
               </pre>

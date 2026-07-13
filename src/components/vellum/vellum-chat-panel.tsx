@@ -127,7 +127,7 @@ function ChatMessage({ message }: { message: VellumChatMessage }) {
             isUser
               ? 'bg-emerald-500/15 border border-emerald-500/20 text-foreground/90'
               : isSystem
-              ? 'bg-amber-500/10 border border-amber-500/20 text-amber-200/80 text-center text-xs italic'
+              ? 'bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-200/80 text-center text-xs italic'
               : 'bg-secondary/30 border border-border/20 text-foreground/85'
           }`}
         >

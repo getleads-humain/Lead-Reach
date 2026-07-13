@@ -162,7 +162,7 @@ function markdownToHtml(markdown: string): string {
         const langLabel = lang ? `<div class="flex items-center justify-between px-3 py-1 border-b border-border/20 bg-secondary/10 rounded-t-lg"><span class="text-[10px] font-mono text-muted-foreground/60">${escapeHtml(lang)}</span></div>` : '';
         const codeContent = escapeHtml(codeBlockContent.join('\n'));
         output.push(
-          `<div class="code-block my-3 rounded-lg border border-border/25 bg-secondary/50 dark:bg-[#0d1117] overflow-hidden">${langLabel}<pre class="p-3 overflow-x-auto text-[13px] leading-relaxed"><code class="text-foreground/80 dark:text-emerald-300/90 font-mono">${codeContent}</code></pre></div>`
+          `<div class="code-block my-3 rounded-lg border border-border/25 bg-secondary/50 dark:bg-[#0a0d12] overflow-hidden">${langLabel}<pre class="p-3 overflow-x-auto text-[13px] leading-relaxed"><code class="text-foreground/80 dark:text-emerald-300/90 font-mono">${codeContent}</code></pre></div>`
         );
         inCodeBlock = false;
         codeBlockContent = [];
@@ -329,7 +329,7 @@ function markdownToHtml(markdown: string): string {
   if (inCodeBlock) {
     const codeContent = escapeHtml(codeBlockContent.join('\n'));
     output.push(
-      `<div class="code-block my-3 rounded-lg border border-border/25 bg-secondary/50 dark:bg-[#0d1117] overflow-hidden"><pre class="p-3 overflow-x-auto text-[13px] leading-relaxed"><code class="text-foreground/80 dark:text-emerald-300/90 font-mono">${codeContent}</code></pre></div>`
+      `<div class="code-block my-3 rounded-lg border border-border/25 bg-secondary/50 dark:bg-[#0a0d12] overflow-hidden"><pre class="p-3 overflow-x-auto text-[13px] leading-relaxed"><code class="text-foreground/80 dark:text-emerald-300/90 font-mono">${codeContent}</code></pre></div>`
     );
   }
   closeList();
