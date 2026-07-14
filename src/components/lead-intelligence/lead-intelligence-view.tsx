@@ -79,7 +79,7 @@ const severityConfig: Record<string, { color: string; bg: string; border: string
   critical: { color: 'text-red-400', bg: 'bg-red-500/10', border: 'border-red-500/20', icon: AlertTriangle },
   high: { color: 'text-amber-400', bg: 'bg-amber-500/10', border: 'border-amber-500/20', icon: BellRing },
   medium: { color: 'text-cyan-400', bg: 'bg-cyan-500/10', border: 'border-cyan-500/20', icon: Bell },
-  low: { color: 'text-gray-400 dark:text-gray-500', bg: 'bg-gray-500/10 dark:bg-gray-500/20', border: 'border-gray-500/20', icon: Eye },
+  low: { color: 'text-gray-400 dark:text-gray-300', bg: 'bg-gray-500/10 dark:bg-gray-500/20', border: 'border-gray-500/20', icon: Eye },
 };
 
 const eventTypeConfig: Record<string, { color: string; icon: React.ElementType }> = {
@@ -367,7 +367,7 @@ export function LeadIntelligenceView() {
               </CardHeader>
               <CardContent className="space-y-2 max-h-96 overflow-y-auto">
                 {events.map((event, index) => {
-                  const config = eventTypeConfig[event.eventType] || { color: 'text-gray-400 dark:text-gray-500', icon: Activity };
+                  const config = eventTypeConfig[event.eventType] || { color: 'text-gray-400 dark:text-gray-300', icon: Activity };
                   const EventIcon = config.icon;
                   return (
                     <div key={event.id} className="flex items-start gap-3 relative">
@@ -409,7 +409,7 @@ export function LeadIntelligenceView() {
                   { label: 'High', value: engagementLevels.high, color: 'bg-emerald-400', textColor: 'text-emerald-400' },
                   { label: 'Medium', value: engagementLevels.medium, color: 'bg-cyan-400', textColor: 'text-cyan-400' },
                   { label: 'Low', value: engagementLevels.low, color: 'bg-amber-400', textColor: 'text-amber-400' },
-                  { label: 'None', value: engagementLevels.none, color: 'bg-gray-400 dark:bg-gray-500', textColor: 'text-gray-400 dark:text-gray-500' },
+                  { label: 'None', value: engagementLevels.none, color: 'bg-gray-400 dark:bg-gray-300', textColor: 'text-gray-400 dark:text-gray-300' },
                 ].map((level) => (
                   <div key={level.label} className="space-y-1.5">
                     <div className="flex items-center justify-between text-xs">

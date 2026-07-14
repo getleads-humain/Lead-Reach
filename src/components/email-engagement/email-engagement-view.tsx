@@ -187,7 +187,7 @@ export function EmailEngagementView() {
       case 'bounced': return <AlertTriangle className="h-3.5 w-3.5 text-red-400" />;
       case 'sent': return <Send className="h-3.5 w-3.5 text-blue-400" />;
       case 'delivered': return <CheckCircle2 className="h-3.5 w-3.5 text-cyan-400" />;
-      default: return <Mail className="h-3.5 w-3.5 text-gray-400 dark:text-gray-500" />;
+      default: return <Mail className="h-3.5 w-3.5 text-gray-400 dark:text-gray-300" />;
     }
   };
 

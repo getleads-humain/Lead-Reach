@@ -194,7 +194,7 @@ const CHANNELS = [
 const TIER_COLORS: Record<string, string> = {
   'Zero Config': 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   'Needs Key': 'bg-amber-500/10 text-amber-400 border-amber-500/20',
-  'Needs Setup': 'bg-gray-500/10 text-gray-400 dark:text-gray-500 border-gray-500/20',
+  'Needs Setup': 'bg-gray-500/10 text-gray-400 dark:text-gray-300 border-gray-500/20',
   'Expanding': 'bg-violet-500/10 text-violet-400 border-violet-500/20',
 };
 

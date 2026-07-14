@@ -242,7 +242,7 @@ function getStatusColor(status: string): string {
     case 'TEMPORARILY CLOSED':
       return 'bg-red-500/10 text-red-400 border-red-500/20';
     case 'PERMANENTLY CLOSED':
-      return 'bg-gray-500/10 text-gray-400 dark:text-gray-500 border-gray-500/20';
+      return 'bg-gray-500/10 text-gray-400 dark:text-gray-300 border-gray-500/20';
     default:
       return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
   }

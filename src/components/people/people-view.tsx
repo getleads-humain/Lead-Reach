@@ -70,7 +70,7 @@ interface PersonLead {
 }
 
 const statusStyles: Record<string, string> = {
-  new: 'bg-slate-500/10 text-slate-400 dark:text-slate-500 border-slate-500/20',
+  new: 'bg-slate-500/10 text-slate-400 dark:text-slate-300 border-slate-500/20',
   enriched: 'bg-cyan-500/10 text-cyan-400 border-cyan-500/20',
   qualified: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   contacted: 'bg-blue-500/10 text-blue-400 border-blue-500/20',

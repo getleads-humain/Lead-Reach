@@ -144,7 +144,7 @@ const GRADE_STYLES: Record<string, { border: string; bg: string; text: string; g
 const STATUS_STYLES: Record<string, string> = {
   active: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20',
   past_due: 'bg-red-500/10 text-red-400 border-red-500/20',
-  cancelled: 'bg-gray-500/10 text-gray-400 dark:text-gray-500 border-gray-500/20',
+  cancelled: 'bg-gray-500/10 text-gray-400 dark:text-gray-300 border-gray-500/20',
   pending_restart: 'bg-amber-500/10 text-amber-400 border-amber-500/20',
   expired: 'bg-gray-500/10 text-gray-500 dark:text-gray-400 border-gray-500/20',
 };

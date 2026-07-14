@@ -118,7 +118,7 @@
   --color-secondary: oklch(0.10 0.006 270);            /* Secondary surface — barely elevated */
   --color-secondary-foreground: oklch(0.92 0.005 270); /* Secondary text */
   --color-muted: oklch(0.10 0.006 270);                /* Muted surface — same as secondary */
-  --color-muted-foreground: oklch(0.62 0.008 270);     /* Muted text — clearly readable on black */
+  --color-muted-foreground: oklch(0.68 0.010 270);     /* Muted text — readable on pitch black */
   --color-accent: oklch(0.10 0.006 270);               /* Accent surface */
   --color-accent-foreground: oklch(0.92 0.005 270);    /* Accent text */
   --color-destructive: oklch(0.70 0.25 25);            /* Destructive — vivid red */
@@ -152,7 +152,7 @@
   --secondary: oklch(0.10 0.006 270);
   --secondary-foreground: oklch(0.92 0.005 270);
   --muted: oklch(0.10 0.006 270);
-  --muted-foreground: oklch(0.62 0.008 270);
+  --muted-foreground: oklch(0.68 0.010 270);
   --accent: oklch(0.10 0.006 270);
   --accent-foreground: oklch(0.92 0.005 270);
   --destructive: oklch(0.70 0.25 25);
@@ -262,11 +262,11 @@
   .text-foreground\/95 { color: color-mix(in oklab, oklch(0.96 0.004 270) 95%, transparent); }
 
   /* ── text-muted-foreground with opacity ── */
-  .text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.62 0.008 270) 40%, transparent); }
-  .text-muted-foreground\/50 { color: color-mix(in oklab, oklch(0.62 0.008 270) 50%, transparent); }
-  .text-muted-foreground\/60 { color: color-mix(in oklab, oklch(0.62 0.008 270) 60%, transparent); }
-  .text-muted-foreground\/70 { color: color-mix(in oklab, oklch(0.62 0.008 270) 70%, transparent); }
-  .text-muted-foreground\/80 { color: color-mix(in oklab, oklch(0.62 0.008 270) 80%, transparent); }
+  .text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.68 0.010 270) 40%, transparent); }
+  .text-muted-foreground\/50 { color: color-mix(in oklab, oklch(0.68 0.010 270) 50%, transparent); }
+  .text-muted-foreground\/60 { color: color-mix(in oklab, oklch(0.68 0.010 270) 60%, transparent); }
+  .text-muted-foreground\/70 { color: color-mix(in oklab, oklch(0.68 0.010 270) 70%, transparent); }
+  .text-muted-foreground\/80 { color: color-mix(in oklab, oklch(0.68 0.010 270) 80%, transparent); }
 
   /* ── ring-ring with opacity ── */
   .ring-ring\/50 { --tw-ring-color: color-mix(in oklab, oklch(0.80 0.22 165) 50%, transparent); }
@@ -327,7 +327,7 @@
   .text-gray-200 { color: oklch(0.82 0.005 270); }
   .text-gray-300 { color: oklch(0.75 0.005 270); }
   .text-gray-400 { color: oklch(0.65 0.005 270); }
-  .text-gray-500 { color: oklch(0.55 0.005 270); }
+  .text-gray-500 { color: oklch(0.65 0.005 270); }
   .text-gray-600 { color: oklch(0.72 0.005 270); }
   .text-gray-700 { color: oklch(0.55 0.005 270); }
   .text-gray-800 { color: oklch(0.45 0.005 270); }
@@ -355,7 +355,7 @@
   .text-slate-200 { color: oklch(0.82 0.005 270); }
   .text-slate-300 { color: oklch(0.75 0.005 270); }
   .text-slate-400 { color: oklch(0.65 0.005 270); }
-  .text-slate-500 { color: oklch(0.55 0.005 270); }
+  .text-slate-500 { color: oklch(0.65 0.005 270); }
   .text-slate-600 { color: oklch(0.72 0.005 270); }
   .text-slate-700 { color: oklch(0.55 0.005 270); }
   .text-slate-800 { color: oklch(0.45 0.005 270); }
@@ -371,7 +371,7 @@
   .text-zinc-200 { color: oklch(0.82 0.005 270); }
   .text-zinc-300 { color: oklch(0.75 0.005 270); }
   .text-zinc-400 { color: oklch(0.65 0.005 270); }
-  .text-zinc-500 { color: oklch(0.55 0.005 270); }
+  .text-zinc-500 { color: oklch(0.65 0.005 270); }
   .text-zinc-600 { color: oklch(0.72 0.005 270); }
   .text-zinc-700 { color: oklch(0.55 0.005 270); }
   .text-zinc-800 { color: oklch(0.45 0.005 270); }
@@ -1183,4 +1183,143 @@ spline-viewer canvas {
 
 .dark .shadow-lg {
   box-shadow: 0 10px 15px -3px oklch(0 0 0 / 50%), 0 4px 6px -4px oklch(0 0 0 / 50%);
+}
+
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Low-Opacity Text Color Visibility Fixes
+   ─────────────────────────────────────────────────────────────
+   On pitch-black backgrounds (oklch 0.02), low-opacity text is
+   invisible. These overrides boost minimum opacity to readable
+   levels while preserving the intended visual hierarchy.
+   ───────────────────────────────────────────────────────────── */
+
+/* text-muted-foreground/20 → boost to /55 (was invisible at ~12% lightness) */
+.dark .text-muted-foreground\/20 { color: color-mix(in oklab, oklch(0.68 0.010 270) 55%, transparent); }
+
+/* text-muted-foreground/30 → boost to /60 (was invisible at ~18% lightness) */
+.dark .text-muted-foreground\/30 { color: color-mix(in oklab, oklch(0.68 0.010 270) 60%, transparent); }
+
+/* text-muted-foreground/40 → boost to /65 (was very dim at ~25% lightness) */
+.dark .text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.68 0.010 270) 65%, transparent); }
+
+/* text-muted-foreground/50 → boost to /70 (was dim at ~31% lightness) */
+.dark .text-muted-foreground\/50 { color: color-mix(in oklab, oklch(0.68 0.010 270) 70%, transparent); }
+
+/* text-muted-foreground/60 → boost to /75 */
+.dark .text-muted-foreground\/60 { color: color-mix(in oklab, oklch(0.68 0.010 270) 75%, transparent); }
+
+/* text-muted-foreground/70 → boost to /80 */
+.dark .text-muted-foreground\/70 { color: color-mix(in oklab, oklch(0.68 0.010 270) 80%, transparent); }
+
+/* text-foreground/10 → boost to /45 (was invisible) */
+.dark .text-foreground\/10 { color: color-mix(in oklab, oklch(0.96 0.004 270) 45%, transparent); }
+
+/* text-foreground/20 → boost to /50 (was invisible) */
+.dark .text-foreground\/20 { color: color-mix(in oklab, oklch(0.96 0.004 270) 50%, transparent); }
+
+/* text-foreground/30 → boost to /55 */
+.dark .text-foreground\/30 { color: color-mix(in oklab, oklch(0.96 0.004 270) 55%, transparent); }
+
+/* text-foreground/40 → boost to /60 */
+.dark .text-foreground\/40 { color: color-mix(in oklab, oklch(0.96 0.004 270) 60%, transparent); }
+
+/* text-foreground/50 → boost to /65 */
+.dark .text-foreground\/50 { color: color-mix(in oklab, oklch(0.96 0.004 270) 65%, transparent); }
+
+/* text-foreground/60 → boost to /75 */
+.dark .text-foreground\/60 { color: color-mix(in oklab, oklch(0.96 0.004 270) 75%, transparent); }
+
+/* text-foreground/70 → boost to /80 */
+.dark .text-foreground\/70 { color: color-mix(in oklab, oklch(0.96 0.004 270) 80%, transparent); }
+
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Boost muted-foreground base value for readability
+   ─────────────────────────────────────────────────────────────
+   The base muted-foreground was oklch(0.62) — too dim for
+   small/secondary text on pure black. Boosted to 0.68.
+   ───────────────────────────────────────────────────────────── */
+
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Low-Opacity Background Visibility Fixes
+   ─────────────────────────────────────────────────────────────
+   bg-emerald-500/5 and similar are invisible on pitch black.
+   These boost minimums for visible card/badge containers.
+   ───────────────────────────────────────────────────────────── */
+
+/* bg-foreground/5 → boost to /12 */
+.dark .bg-foreground\/5 { background-color: color-mix(in oklab, oklch(0.96 0.004 270) 12%, transparent); }
+
+/* bg-foreground/10 → boost to /15 */
+.dark .bg-foreground\/10 { background-color: color-mix(in oklab, oklch(0.96 0.004 270) 15%, transparent); }
+
+/* bg-foreground/15 → boost to /18 */
+.dark .bg-foreground\/15 { background-color: color-mix(in oklab, oklch(0.96 0.004 270) 18%, transparent); }
+
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Gray shade text visibility fixes for pitch black
+   ─────────────────────────────────────────────────────────────
+   text-gray-500 standalone (without dark: variant) is barely
+   visible at oklch(0.55). These CSS overrides ensure all
+   gray-family text colors are readable on pitch black.
+   ───────────────────────────────────────────────────────────── */
+
+/* Boost text-muted-foreground base color for better readability */
+.dark .text-muted-foreground { color: oklch(0.68 0.010 270); }
+
+/* ─────────────────────────────────────────────────────────────
+   DARK MODE — Fix reversed dark: variants
+   ─────────────────────────────────────────────────────────────
+   Some components use dark:text-gray-500 which is DARKER than
+   the light-mode text-gray-400, making text less visible in
+   dark mode. These overrides correct the pattern.
+   ───────────────────────────────────────────────────────────── */
+
+/* Ensure dark:text-gray-500 is boosted (it's too dark on pitch black) */
+.dark .dark\:text-gray-500 { color: oklch(0.70 0.005 270); }
+
+/* Ensure dark:text-slate-500 is boosted */
+.dark .dark\:text-slate-500 { color: oklch(0.70 0.005 270); }
+
+/* Ensure dark:text-zinc-500 is boosted */
+.dark .dark\:text-zinc-500 { color: oklch(0.70 0.005 270); }
+
+/* ── Fix specific component text patterns ── */
+
+/* Fix small text in badges and stat labels */
+.dark .text-\[8px\],
+.dark .text-\[9px\],
+.dark .text-\[10px\] {
+  color: oklch(0.82 0.006 270);
+}
+
+/* Fix small muted text - ensure minimum brightness */
+.dark .text-xs.text-muted-foreground {
+  color: oklch(0.68 0.010 270);
+}
+
+/* Fix the disabled button text pattern */
+.dark .text-foreground\/20.cursor-not-allowed {
+  color: color-mix(in oklab, oklch(0.96 0.004 270) 50%, transparent);
+}
+
+/* Fix separator characters that are often invisible */
+.dark .text-muted-foreground\/30,
+.dark .text-muted-foreground\/20 {
+  color: color-mix(in oklab, oklch(0.68 0.010 270) 55%, transparent);
+}
+
+/* ── Fix placeholder text boost ── */
+.dark ::placeholder {
+  color: oklch(0.48 0.005 270 / 90%);
+}
+
+/* ── Fix SVG icons in dark mode ── */
+.dark svg.text-muted-foreground\/20 { color: color-mix(in oklab, oklch(0.68 0.010 270) 55%, transparent); }
+.dark svg.text-muted-foreground\/30 { color: color-mix(in oklab, oklch(0.68 0.010 270) 60%, transparent); }
+.dark svg.text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.68 0.010 270) 65%, transparent); }
+
+/* ── Fix empty state icons (always too dim in dark) ── */
+.dark .text-muted-foreground\\/20,
+.dark .text-muted-foreground\\/30 {
+  color: color-mix(in oklab, oklch(0.68 0.010 270) 60%, transparent);
 }
