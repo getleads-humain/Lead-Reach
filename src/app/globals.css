@@ -186,6 +186,34 @@
     @apply bg-background text-foreground;
     overflow-x: hidden;
   }
+  /* ── Dark mode safety net: ensure inherited text is always bright ── */
+  .dark body,
+  .dark #root,
+  .dark #__next,
+  .dark [role="main"],
+  .dark main {
+    color: oklch(0.96 0.004 270);
+  }
+  /* Ensure p, span, div, li, h1-h6 inherit bright text unless explicitly set */
+  .dark p,
+  .dark span:not([class*="text-"]),
+  .dark div:not([class*="text-"]),
+  .dark li:not([class*="text-"]),
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6,
+  .dark td:not([class*="text-"]),
+  .dark th:not([class*="text-"]),
+  .dark label:not([class*="text-"]),
+  .dark a:not([class*="text-"]) {
+    color: oklch(0.96 0.004 270);
+  }
+  .dark h1, .dark h2, .dark h3 {
+    color: oklch(0.96 0.004 270) !important;
+  }
+  .dark h4, .dark h5, .dark h6 {
+    color: oklch(0.92 0.005 270);
+  }
+  /* Ensure text-white stays bright in dark (it's already white) */
+  .dark .text-white { color: oklch(0.96 0.004 270); }
 }
 
 /* ─────────────────────────────────────────────────────────────
@@ -323,15 +351,18 @@
      ───────────────────────────────────────────────────────────── */
 
   /* ── Gray scale — vivid text on pitch black ── */
-  .text-gray-100 { color: oklch(0.92 0.004 270); }
-  .text-gray-200 { color: oklch(0.82 0.005 270); }
-  .text-gray-300 { color: oklch(0.75 0.005 270); }
-  .text-gray-400 { color: oklch(0.65 0.005 270); }
-  .text-gray-500 { color: oklch(0.65 0.005 270); }
-  .text-gray-600 { color: oklch(0.72 0.005 270); }
-  .text-gray-700 { color: oklch(0.55 0.005 270); }
-  .text-gray-800 { color: oklch(0.45 0.005 270); }
-  .text-gray-900 { color: oklch(0.96 0.004 270); }
+  /* Inverted hierarchy: what was dark in light mode is now bright in dark mode */
+  .text-gray-50   { color: oklch(0.96 0.004 270); }
+  .text-gray-100  { color: oklch(0.94 0.004 270); }
+  .text-gray-200  { color: oklch(0.88 0.005 270); }
+  .text-gray-300  { color: oklch(0.80 0.005 270); }
+  .text-gray-400  { color: oklch(0.70 0.005 270); }
+  .text-gray-500  { color: oklch(0.68 0.005 270); }
+  .text-gray-600  { color: oklch(0.72 0.005 270); }
+  .text-gray-700  { color: oklch(0.80 0.006 270); }
+  .text-gray-800  { color: oklch(0.88 0.006 270); }
+  .text-gray-900  { color: oklch(0.96 0.004 270); }
+  .text-black     { color: oklch(0.96 0.004 270); }
 
   /* ── Gray backgrounds — subtle elevation on pitch black ── */
   .bg-gray-50    { background-color: oklch(0.08 0.005 270); }
@@ -351,15 +382,40 @@
   .border-gray-500\/30 { border-color: color-mix(in oklab, oklch(0.55 0.005 270) 35%, transparent); }
 
   /* ── Slate text — vibrant on pitch black ── */
-  .text-slate-100 { color: oklch(0.92 0.004 270); }
-  .text-slate-200 { color: oklch(0.82 0.005 270); }
-  .text-slate-300 { color: oklch(0.75 0.005 270); }
-  .text-slate-400 { color: oklch(0.65 0.005 270); }
-  .text-slate-500 { color: oklch(0.65 0.005 270); }
+  .text-slate-50  { color: oklch(0.96 0.004 270); }
+  .text-slate-100 { color: oklch(0.94 0.004 270); }
+  .text-slate-200 { color: oklch(0.88 0.005 270); }
+  .text-slate-300 { color: oklch(0.80 0.005 270); }
+  .text-slate-400 { color: oklch(0.70 0.005 270); }
+  .text-slate-500 { color: oklch(0.68 0.005 270); }
   .text-slate-600 { color: oklch(0.72 0.005 270); }
-  .text-slate-700 { color: oklch(0.55 0.005 270); }
-  .text-slate-800 { color: oklch(0.45 0.005 270); }
+  .text-slate-700 { color: oklch(0.80 0.006 270); }
+  .text-slate-800 { color: oklch(0.88 0.006 270); }
   .text-slate-900 { color: oklch(0.96 0.004 270); }
+
+  /* ── Neutral text — vibrant on pitch black ── */
+  .text-neutral-50  { color: oklch(0.96 0.004 270); }
+  .text-neutral-100 { color: oklch(0.94 0.004 270); }
+  .text-neutral-200 { color: oklch(0.88 0.005 270); }
+  .text-neutral-300 { color: oklch(0.80 0.005 270); }
+  .text-neutral-400 { color: oklch(0.70 0.005 270); }
+  .text-neutral-500 { color: oklch(0.68 0.005 270); }
+  .text-neutral-600 { color: oklch(0.72 0.005 270); }
+  .text-neutral-700 { color: oklch(0.80 0.006 270); }
+  .text-neutral-800 { color: oklch(0.88 0.006 270); }
+  .text-neutral-900 { color: oklch(0.96 0.004 270); }
+
+  /* ── Stone text — vibrant on pitch black ── */
+  .text-stone-50  { color: oklch(0.96 0.004 270); }
+  .text-stone-100 { color: oklch(0.94 0.004 270); }
+  .text-stone-200 { color: oklch(0.88 0.005 270); }
+  .text-stone-300 { color: oklch(0.80 0.005 270); }
+  .text-stone-400 { color: oklch(0.70 0.005 270); }
+  .text-stone-500 { color: oklch(0.68 0.005 270); }
+  .text-stone-600 { color: oklch(0.72 0.005 270); }
+  .text-stone-700 { color: oklch(0.80 0.006 270); }
+  .text-stone-800 { color: oklch(0.88 0.006 270); }
+  .text-stone-900 { color: oklch(0.96 0.004 270); }
   .bg-slate-400   { background-color: oklch(0.65 0.005 270); }
   .bg-slate-50    { background-color: oklch(0.08 0.005 270); }
   .bg-slate-100   { background-color: oklch(0.08 0.005 270); }
@@ -367,14 +423,15 @@
   .border-slate-300 { border-color: oklch(0.20 0.008 270); }
 
   /* ── Zinc scale ── */
-  .text-zinc-100 { color: oklch(0.92 0.004 270); }
-  .text-zinc-200 { color: oklch(0.82 0.005 270); }
-  .text-zinc-300 { color: oklch(0.75 0.005 270); }
-  .text-zinc-400 { color: oklch(0.65 0.005 270); }
-  .text-zinc-500 { color: oklch(0.65 0.005 270); }
+  .text-zinc-50  { color: oklch(0.96 0.004 270); }
+  .text-zinc-100 { color: oklch(0.94 0.004 270); }
+  .text-zinc-200 { color: oklch(0.88 0.005 270); }
+  .text-zinc-300 { color: oklch(0.80 0.005 270); }
+  .text-zinc-400 { color: oklch(0.70 0.005 270); }
+  .text-zinc-500 { color: oklch(0.68 0.005 270); }
   .text-zinc-600 { color: oklch(0.72 0.005 270); }
-  .text-zinc-700 { color: oklch(0.55 0.005 270); }
-  .text-zinc-800 { color: oklch(0.45 0.005 270); }
+  .text-zinc-700 { color: oklch(0.80 0.006 270); }
+  .text-zinc-800 { color: oklch(0.88 0.006 270); }
   .text-zinc-900 { color: oklch(0.96 0.004 270); }
   .bg-zinc-50    { background-color: oklch(0.08 0.005 270); }
   .bg-zinc-100   { background-color: oklch(0.08 0.005 270); }
@@ -416,16 +473,57 @@
   .text-lime-600    { color: oklch(0.80 0.20 125); }
   .text-sky-600     { color: oklch(0.75 0.16 220); }
 
-  /* ── -700 shade colors — boost even more ── */
-  .text-emerald-700 { color: oklch(0.75 0.20 165); }
-  .text-cyan-700    { color: oklch(0.75 0.16 200); }
-  .text-amber-700   { color: oklch(0.78 0.16 85); }
-  .text-red-700     { color: oklch(0.65 0.24 25); }
-  .text-blue-700    { color: oklch(0.68 0.18 255); }
-  .text-violet-700  { color: oklch(0.68 0.18 300); }
-  .text-indigo-700  { color: oklch(0.65 0.16 280); }
-  .text-pink-700    { color: oklch(0.68 0.20 350); }
-  .text-orange-700  { color: oklch(0.75 0.18 60); }
+  /* ── -700 shade colors — boost for visibility on pitch black ── */
+  .text-emerald-700 { color: oklch(0.80 0.22 165); }
+  .text-cyan-700    { color: oklch(0.80 0.18 200); }
+  .text-amber-700   { color: oklch(0.84 0.18 85); }
+  .text-red-700     { color: oklch(0.72 0.26 25); }
+  .text-blue-700    { color: oklch(0.78 0.20 255); }
+  .text-violet-700  { color: oklch(0.78 0.22 300); }
+  .text-indigo-700  { color: oklch(0.75 0.18 280); }
+  .text-pink-700    { color: oklch(0.78 0.24 350); }
+  .text-orange-700  { color: oklch(0.82 0.20 60); }
+  .text-green-700   { color: oklch(0.80 0.22 145); }
+  .text-purple-700  { color: oklch(0.75 0.20 300); }
+  .text-teal-700    { color: oklch(0.80 0.16 180); }
+  .text-rose-700    { color: oklch(0.72 0.26 15); }
+  .text-yellow-700  { color: oklch(0.86 0.20 90); }
+  .text-sky-700     { color: oklch(0.78 0.16 220); }
+  .text-fuchsia-700 { color: oklch(0.78 0.24 330); }
+  .text-lime-700    { color: oklch(0.82 0.20 125); }
+
+  /* ── -800 shade colors — extreme boost (these were near-black in light) ── */
+  .text-emerald-800 { color: oklch(0.88 0.20 165); }
+  .text-cyan-800    { color: oklch(0.88 0.16 200); }
+  .text-amber-800   { color: oklch(0.90 0.16 85); }
+  .text-red-800     { color: oklch(0.80 0.26 25); }
+  .text-blue-800    { color: oklch(0.85 0.18 255); }
+  .text-violet-800  { color: oklch(0.85 0.18 300); }
+  .text-indigo-800  { color: oklch(0.82 0.16 280); }
+  .text-pink-800    { color: oklch(0.85 0.20 350); }
+  .text-orange-800  { color: oklch(0.88 0.18 60); }
+  .text-green-800   { color: oklch(0.88 0.20 145); }
+  .text-purple-800  { color: oklch(0.85 0.18 300); }
+  .text-teal-800    { color: oklch(0.88 0.14 180); }
+  .text-rose-800    { color: oklch(0.80 0.24 15); }
+  .text-yellow-800  { color: oklch(0.92 0.16 90); }
+  .text-sky-800     { color: oklch(0.85 0.14 220); }
+
+  /* ── -900 shade colors — near-black in light → near-white in dark ── */
+  .text-red-900     { color: oklch(0.96 0.004 270); }
+  .text-emerald-900 { color: oklch(0.96 0.004 270); }
+  .text-blue-900    { color: oklch(0.96 0.004 270); }
+  .text-amber-900   { color: oklch(0.96 0.004 270); }
+  .text-violet-900  { color: oklch(0.96 0.004 270); }
+  .text-orange-900  { color: oklch(0.96 0.004 270); }
+  .text-green-900   { color: oklch(0.96 0.004 270); }
+  .text-purple-900  { color: oklch(0.96 0.004 270); }
+  .text-teal-900    { color: oklch(0.96 0.004 270); }
+  .text-pink-900    { color: oklch(0.96 0.004 270); }
+  .text-indigo-900  { color: oklch(0.96 0.004 270); }
+
+  /* ── -500 shade text — already vibrant enough on pitch black ── */
+  .text-sky-500     { color: oklch(0.80 0.16 220); }
   .bg-emerald-700   { background-color: oklch(0.55 0.18 165); }
   .bg-emerald-500   { background-color: oklch(0.75 0.22 165); }
   .bg-emerald-400   { background-color: oklch(0.80 0.24 165); }
