@@ -1417,7 +1417,7 @@ spline-viewer canvas {
 .dark svg.text-muted-foreground\/40 { color: color-mix(in oklab, oklch(0.68 0.010 270) 65%, transparent); }
 
 /* ── Fix empty state icons (always too dim in dark) ── */
-.dark .text-muted-foreground\\/20,
-.dark .text-muted-foreground\\/30 {
+.dark .text-muted-foreground\/20,
+.dark .text-muted-foreground\/30 {
   color: color-mix(in oklab, oklch(0.68 0.010 270) 60%, transparent);
 }

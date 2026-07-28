@@ -209,3 +209,32 @@ Stage Summary:
 - All text-emerald-950 and text-amber-950 instances now have dark:text-white variants
 - CSS-level overrides catch remaining instances not fixed at component level
 - Build passes successfully
+---
+Task ID: 2
+Agent: Super Z
+Task: Fix preview not loading + fix dark mode text invisibility
+
+Work Log:
+- Identified build error: both middleware.ts and proxy.ts existed, Next.js 16 requires only proxy.ts
+- Removed src/middleware.ts — build now succeeds
+- Fixed CSS parsing error: double-escaped `\\/` in selector `.dark .text-muted-foreground\\/20` — changed to single escape `\/`
+- Comprehensive dark mode text visibility overhaul:
+  - Boosted text-gray/slate/zinc/neutral/stone-700 from oklch(0.55) → oklch(0.80)
+  - Boosted text-gray/slate/zinc/neutral/stone-800 from oklch(0.45) → oklch(0.88)
+  - Added text-black override → oklch(0.96) (near-white in dark mode)
+  - Added full neutral and stone series overrides (were missing entirely)
+  - Added -800 and -900 shade overrides for all accent colors
+  - Added -700 shade overrides for all accent colors (boosted significantly)
+  - Added text-sky-500 override
+  - Added safety net inheritance rules in @layer base for dark mode (h1-h6, p, div, span, li, td, th, label, a)
+  - Added text-white override → oklch(0.96)
+- Fixed instrumentation.ts to be Edge Runtime compatible (moved all Node.js imports inside register() guard with dynamic imports)
+- Restored next.config.ts with output: "standalone"
+- Final build passes successfully
+
+Stage Summary:
+- Build error fixed (middleware.ts removed)
+- CSS parsing error fixed (double-escaped backslash)
+- Dark mode text invisibility comprehensively addressed with inverted color hierarchy
+- Server-side instrumentation made Edge Runtime compatible
+- Production build succeeds
