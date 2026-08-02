@@ -1,7 +1,7 @@
 export type ViewType = 'dashboard' | 'campaigns' | 'campaign-detail' | 'leads' | 'agents' | 'outreach' | 'reports' | 'setter' | 'booking' | 'messaging' | 'analytics' | 'data-enrichment' | 'prospect-discovery' | 'identity' | 'icp' | 'ai-assistant' | 'knowledge';
 
 export type CampaignStatus = 'active' | 'paused' | 'completed' | 'archived';
-export type LeadTier = 'hot' | 'warm' | 'cold' | 'unqualified';
+export type LeadTier = 'super_hot' | 'hot' | 'warm' | 'cold' | 'unqualified';
 export type LeadStage = 'new' | 'enriched' | 'qualified' | 'contacted' | 'engaged' | 'negotiating' | 'closed_won' | 'closed_lost' | 'nurture';
 export type OutreachChannel = 'email' | 'linkedin' | 'phone';
 export type OutreachType = 'cold_email' | 'warm_intro' | 'connection_request' | 'follow_up_1' | 'follow_up_2' | 'break_up';
@@ -123,6 +123,7 @@ export const STAGE_LABELS: Record<LeadStage, string> = {
 };
 
 export const TIER_COLORS: Record<LeadTier, string> = {
+  super_hot: 'bg-gradient-to-r from-red-500/15 to-orange-500/15 text-red-500 border-red-500/30',
   hot: 'bg-red-500/10 text-red-600 border-red-500/20',
   warm: 'bg-amber-500/10 text-amber-600 border-amber-500/20',
   cold: 'bg-blue-500/10 text-blue-600 border-blue-500/20',

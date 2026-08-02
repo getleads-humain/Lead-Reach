@@ -180,7 +180,7 @@ interface ActionItem {
 // Panel Tab & Enrichment Types
 // ============================================================
 
-type PanelTab = 'overview' | 'enrich' | 'agent';
+type PanelTab = 'overview' | 'enrich' | 'live' | 'agent';
 
 interface EnrichmentTask {
   id: string;
@@ -449,6 +449,27 @@ export function LeadsView() {
 
   // Panel tab state
   const [activePanelTab, setActivePanelTab] = useState<PanelTab>('overview');
+
+  // Live Enrichment state
+  const [liveEnrichRunning, setLiveEnrichRunning] = useState(false);
+  const [liveEnrichSteps, setLiveEnrichSteps] = useState<Array<{
+    step: string; phase: number; label: string; status: string;
+    result?: string; fieldsUpdated?: string[]; scoreImpact?: { dimension: string; before: number; after: number };
+    data?: Record<string, unknown>;
+  }>>([]);
+  const [liveEnrichResult, setLiveEnrichResult] = useState<{
+    tierUpgrade?: {
+      previousTier: string; newTier: string; previousScore: number; newScore: number;
+      upgradeReason: string; upgradePath: string[]; confidence: number;
+      remainingGaps: string[]; recommendedActions: string[];
+    };
+    pipelineHealth?: {
+      dataCompletenessBefore: number; dataCompletenessAfter: number;
+      fieldsEnriched: number; scoreImprovement: number;
+      tierUpgradeAchieved: boolean; pipelineEfficiency: number;
+    };
+  } | null>(null);
+  const [pipelineHealthData, setPipelineHealthData] = useState<Record<string, unknown> | null>(null);
 
   // Enrichment tasks state
   const [enrichmentTasks, setEnrichmentTasks] = useState<EnrichmentTask[]>([
@@ -1539,6 +1560,7 @@ ${agentInput.trim()}`;
             </SelectTrigger>
             <SelectContent className="bg-popover border-border/60">
               <SelectItem value="all">All Tiers</SelectItem>
+              <SelectItem value="super_hot">Super Hot</SelectItem>
               <SelectItem value="hot">Hot</SelectItem>
               <SelectItem value="warm">Warm</SelectItem>
               <SelectItem value="cold">Cold</SelectItem>
@@ -1752,6 +1774,7 @@ ${agentInput.trim()}`;
                 {([
                   { key: 'overview' as PanelTab, label: 'Overview', icon: Layers },
                   { key: 'enrich' as PanelTab, label: 'Enrich', icon: Wand2 },
+                  { key: 'live' as PanelTab, label: 'Live Enrich', icon: Zap },
                   { key: 'agent' as PanelTab, label: 'Agent', icon: Bot },
                 ]).map(tab => (
                   <button
@@ -1763,6 +1786,8 @@ ${agentInput.trim()}`;
                           ? 'bg-blue-500/15 text-blue-400 shadow-sm shadow-blue-500/10'
                           : tab.key === 'enrich'
                           ? 'bg-violet-500/15 text-violet-400 shadow-sm shadow-violet-500/10'
+                          : tab.key === 'live'
+                          ? 'bg-gradient-to-r from-orange-500/15 to-red-500/15 text-orange-400 shadow-sm shadow-orange-500/10'
                           : 'bg-emerald-500/15 text-emerald-400 shadow-sm shadow-emerald-500/10'
                         : 'text-muted-foreground hover:text-foreground/70 hover:bg-secondary/30'
                     )}
@@ -1776,6 +1801,14 @@ ${agentInput.trim()}`;
                     {tab.key === 'enrich' && enrichmentTasks.filter(t => t.status === 'completed').length > 0 && (
                       <span className="ml-0.5 bg-violet-500/20 text-violet-400 px-1 rounded text-[9px]">
                         {enrichmentTasks.filter(t => t.status === 'completed').length}
+                      </span>
+                    )}
+                    {tab.key === 'live' && liveEnrichRunning && (
+                      <Loader2 className="h-3 w-3 animate-spin text-orange-400" />
+                    )}
+                    {tab.key === 'live' && liveEnrichResult && !liveEnrichRunning && (
+                      <span className="ml-0.5 bg-emerald-500/20 text-emerald-400 px-1 rounded text-[9px]">
+                        {liveEnrichResult.tierUpgrade?.newTier === 'super_hot' ? 'HOT!' : 'Done'}
                       </span>
                     )}
                     {tab.key === 'agent' && agentMessages.length > 0 && (
@@ -2217,6 +2250,435 @@ ${agentInput.trim()}`;
                     {totalEnrichments > 0 && (
                       <div className="pt-3 border-t border-border/15">
                         {renderEnrichmentPanel()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* ═══════════════════════════════════════════ */}
+                {/* TAB: LIVE ENRICH                           */}
+                {/* ═══════════════════════════════════════════ */}
+                {activePanelTab === 'live' && (
+                  <div className="p-5 space-y-4">
+                    {/* Live Enrich Hero Card */}
+                    <div className="rounded-xl border border-gradient-from-orange-500/20 to-red-500/20 bg-gradient-to-br from-orange-500/8 via-card to-red-500/5 p-4">
+                      <div className="flex items-center justify-between mb-3">
+                        <div className="flex items-center gap-2.5">
+                          <div className="relative flex h-9 w-9 items-center justify-center rounded-lg bg-gradient-to-br from-orange-500/20 to-red-500/20 ring-1 ring-orange-500/20">
+                            <Zap className="h-4 w-4 text-orange-400" />
+                            {liveEnrichRunning && (
+                              <span className="absolute -top-0.5 -right-0.5 flex h-2.5 w-2.5">
+                                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-orange-400 opacity-75" />
+                                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-orange-500" />
+                              </span>
+                            )}
+                          </div>
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground/90">Live Enrich Pipeline</h4>
+                            <p className="text-[10px] text-muted-foreground">
+                              {liveEnrichRunning ? 'Agents working live...' : '5-phase enrichment → Super Hot'}
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          size="sm"
+                          className="h-8 gap-1.5 text-[11px] bg-gradient-to-r from-orange-500/20 to-red-500/20 text-orange-400 hover:from-orange-500/30 hover:to-red-500/30 border border-orange-500/25"
+                          onClick={runLiveEnrich}
+                          disabled={liveEnrichRunning}
+                        >
+                          {liveEnrichRunning ? (
+                            <>
+                              <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                              Enriching...
+                            </>
+                          ) : (
+                            <>
+                              <Rocket className="h-3.5 w-3.5" />
+                              Run Live Enrich
+                            </>
+                          )}
+                        </Button>
+                      </div>
+
+                      {/* Tier Upgrade Visualization */}
+                      {selectedLead && (
+                        <div className="mb-3">
+                          <div className="flex items-center gap-1.5 mb-1.5">
+                            <span className="text-[10px] text-muted-foreground">Current:</span>
+                            <Badge variant="outline" className={`text-[9px] ${TIER_COLORS[selectedLead.leadTier as LeadTier] || ''}`}>
+                              {selectedLead.leadTier}
+                            </Badge>
+                            <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+                            <span className="text-[10px] text-muted-foreground">Target:</span>
+                            <Badge variant="outline" className="text-[9px] bg-gradient-to-r from-red-500/15 to-orange-500/15 text-red-500 border-red-500/30">
+                              super_hot
+                            </Badge>
+                          </div>
+                          {/* Tier Progress Bar */}
+                          <div className="flex items-center gap-1">
+                            {['unqualified', 'cold', 'warm', 'hot', 'super_hot'].map((tier, idx) => {
+                              const thresholds = [0, 25, 45, 70, 88];
+                              const currentIdx = ['unqualified', 'cold', 'warm', 'hot', 'super_hot'].indexOf(selectedLead.leadTier);
+                              const isReached = idx <= currentIdx;
+                              const isCurrent = tier === selectedLead.leadTier;
+                              const isTarget = tier === 'super_hot';
+                              return (
+                                <div key={tier} className="flex-1 flex flex-col items-center gap-0.5">
+                                  <div className={cn(
+                                    'h-1.5 w-full rounded-full transition-all duration-500',
+                                    isReached
+                                      ? isTarget
+                                        ? 'bg-gradient-to-r from-orange-400 to-red-400'
+                                        : isCurrent
+                                        ? 'bg-blue-400'
+                                        : 'bg-emerald-400/60'
+                                      : 'bg-secondary/30'
+                                  )} />
+                                  <span className={cn(
+                                    'text-[8px] font-medium',
+                                    isCurrent ? 'text-foreground/80' : isReached ? 'text-muted-foreground/60' : 'text-muted-foreground/30'
+                                  )}>
+                                    {tier === 'super_hot' ? 'SUPER' : tier.slice(0, 4)}
+                                  </span>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Pipeline Health Quick Stats */}
+                      {liveEnrichResult?.pipelineHealth && (
+                        <div className="grid grid-cols-3 gap-2 mt-3">
+                          <div className="rounded-lg bg-secondary/15 p-2 text-center">
+                            <div className="text-lg font-bold text-emerald-400">+{liveEnrichResult.pipelineHealth.scoreImprovement}</div>
+                            <div className="text-[9px] text-muted-foreground">Score Boost</div>
+                          </div>
+                          <div className="rounded-lg bg-secondary/15 p-2 text-center">
+                            <div className="text-lg font-bold text-blue-400">{liveEnrichResult.pipelineHealth.fieldsEnriched}</div>
+                            <div className="text-[9px] text-muted-foreground">Fields Enriched</div>
+                          </div>
+                          <div className="rounded-lg bg-secondary/15 p-2 text-center">
+                            <div className="text-lg font-bold text-violet-400">{liveEnrichResult.pipelineHealth.pipelineEfficiency}%</div>
+                            <div className="text-[9px] text-muted-foreground">Pipeline Efficiency</div>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Live Pipeline Steps */}
+                    {liveEnrichSteps.length > 0 && (
+                      <div className="space-y-2">
+                        <h5 className="text-xs font-semibold text-foreground/80 flex items-center gap-1.5">
+                          <Cpu className="h-3.5 w-3.5 text-orange-400" />
+                          Pipeline Progress
+                        </h5>
+                        {liveEnrichSteps.map((step, idx) => {
+                          const isCompleted = step.status === 'completed';
+                          const isRunning = step.status === 'running';
+                          const isFailed = step.status === 'failed';
+                          const phaseColors = [
+                            'from-blue-500/15 to-cyan-500/15 border-blue-500/20',
+                            'from-violet-500/15 to-purple-500/15 border-violet-500/20',
+                            'from-emerald-500/15 to-green-500/15 border-emerald-500/20',
+                            'from-orange-500/15 to-amber-500/15 border-orange-500/20',
+                            'from-rose-500/15 to-pink-500/15 border-rose-500/20',
+                          ];
+                          const phaseIcons = [Database, Shield, Gauge, Rocket, MessageSquare];
+                          const PhaseIcon = phaseIcons[idx] || Database;
+
+                          return (
+                            <div
+                              key={step.step}
+                              className={cn(
+                                'rounded-xl border p-3.5 transition-all duration-300',
+                                isCompleted
+                                  ? `bg-gradient-to-r ${phaseColors[idx] || phaseColors[0]}`
+                                  : isRunning
+                                  ? 'border-orange-500/25 bg-orange-500/5 shadow-sm shadow-orange-500/5'
+                                  : isFailed
+                                  ? 'border-red-500/20 bg-red-500/5'
+                                  : 'border-border/15 bg-secondary/5'
+                              )}
+                            >
+                              <div className="flex items-start gap-3">
+                                <div className={cn(
+                                  'flex h-8 w-8 items-center justify-center rounded-lg shrink-0',
+                                  isCompleted
+                                    ? `bg-gradient-to-r ${phaseColors[idx] || phaseColors[0]}`
+                                    : isRunning
+                                    ? 'bg-orange-500/15 ring-1 ring-orange-500/20'
+                                    : 'bg-secondary/20'
+                                )}>
+                                  {isRunning ? (
+                                    <Loader2 className="h-4 w-4 text-orange-400 animate-spin" />
+                                  ) : isCompleted ? (
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-400" />
+                                  ) : isFailed ? (
+                                    <AlertCircle className="h-4 w-4 text-red-400" />
+                                  ) : (
+                                    <PhaseIcon className="h-4 w-4 text-muted-foreground/60" />
+                                  )}
+                                </div>
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-[10px] text-muted-foreground/60 font-medium">Phase {step.phase}</span>
+                                    <span className={cn(
+                                      'text-sm font-semibold',
+                                      isCompleted ? 'text-foreground/90' : 'text-foreground/70'
+                                    )}>
+                                      {step.label}
+                                    </span>
+                                    {isCompleted && (
+                                      <Badge variant="outline" className="text-[8px] border-emerald-500/20 text-emerald-400 bg-emerald-500/10 h-4">
+                                        Done
+                                      </Badge>
+                                    )}
+                                  </div>
+                                  {step.result && (
+                                    <p className="text-[11px] text-muted-foreground/80 leading-relaxed">{step.result}</p>
+                                  )}
+                                  {step.fieldsUpdated && step.fieldsUpdated.length > 0 && (
+                                    <div className="mt-1.5 flex flex-wrap gap-1">
+                                      {step.fieldsUpdated.map(field => (
+                                        <span key={field} className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded text-[9px] bg-blue-500/10 text-blue-400 border border-blue-500/15">
+                                          {field}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                  {step.scoreImpact && step.scoreImpact.after !== step.scoreImpact.before && (
+                                    <div className="mt-1.5 flex items-center gap-1.5">
+                                      <TrendingUp className="h-3 w-3 text-emerald-400" />
+                                      <span className="text-[10px] text-emerald-400 font-medium">
+                                        {step.scoreImpact.before} → {step.scoreImpact.after} (+{step.scoreImpact.after - step.scoreImpact.before})
+                                      </span>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {/* Tier Upgrade Result */}
+                    {liveEnrichResult?.tierUpgrade && (
+                      <div className={cn(
+                        'rounded-xl border p-4',
+                        liveEnrichResult.tierUpgrade.newTier === 'super_hot'
+                          ? 'border-orange-500/25 bg-gradient-to-br from-orange-500/8 via-card to-red-500/5'
+                          : liveEnrichResult.tierUpgrade.previousTier !== liveEnrichResult.tierUpgrade.newTier
+                          ? 'border-emerald-500/20 bg-emerald-500/5'
+                          : 'border-border/20 bg-secondary/5'
+                      )}>
+                        <div className="flex items-center gap-2.5 mb-3">
+                          {liveEnrichResult.tierUpgrade.newTier === 'super_hot' ? (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-gradient-to-br from-orange-500/20 to-red-500/20 ring-1 ring-orange-500/25">
+                              <Zap className="h-5 w-5 text-orange-400" />
+                            </div>
+                          ) : (
+                            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-emerald-500/15 ring-1 ring-emerald-500/20">
+                              <TrendingUp className="h-5 w-5 text-emerald-400" />
+                            </div>
+                          )}
+                          <div>
+                            <h4 className="text-sm font-semibold text-foreground/90">
+                              {liveEnrichResult.tierUpgrade.newTier === 'super_hot'
+                                ? 'Super Hot Achieved!'
+                                : liveEnrichResult.tierUpgrade.previousTier !== liveEnrichResult.tierUpgrade.newTier
+                                ? 'Tier Upgraded!'
+                                : 'Tier Analysis Complete'}
+                            </h4>
+                            <p className="text-[10px] text-muted-foreground">
+                              {liveEnrichResult.tierUpgrade.upgradeReason}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Before/After Comparison */}
+                        <div className="grid grid-cols-2 gap-3 mb-3">
+                          <div className="rounded-lg bg-secondary/15 p-2.5 text-center">
+                            <div className="text-[9px] text-muted-foreground mb-1">Before</div>
+                            <Badge variant="outline" className={`text-[10px] ${TIER_COLORS[liveEnrichResult.tierUpgrade.previousTier as LeadTier] || ''}`}>
+                              {liveEnrichResult.tierUpgrade.previousTier}
+                            </Badge>
+                            <div className="text-sm font-bold text-foreground/70 mt-1">{liveEnrichResult.tierUpgrade.previousScore}/100</div>
+                          </div>
+                          <div className="rounded-lg bg-secondary/15 p-2.5 text-center">
+                            <div className="text-[9px] text-muted-foreground mb-1">After</div>
+                            <Badge variant="outline" className={`text-[10px] ${TIER_COLORS[liveEnrichResult.tierUpgrade.newTier as LeadTier] || ''}`}>
+                              {liveEnrichResult.tierUpgrade.newTier}
+                            </Badge>
+                            <div className="text-sm font-bold text-foreground/90 mt-1">{liveEnrichResult.tierUpgrade.newScore}/100</div>
+                          </div>
+                        </div>
+
+                        {/* Upgrade Path */}
+                        {liveEnrichResult.tierUpgrade.upgradePath.length > 0 && (
+                          <div className="mb-3">
+                            <div className="text-[10px] text-muted-foreground mb-1.5">Upgrade Path</div>
+                            <div className="flex items-center gap-1 flex-wrap">
+                              {liveEnrichResult.tierUpgrade.upgradePath.map((tier, idx) => (
+                                <React.Fragment key={tier}>
+                                  <Badge variant="outline" className={`text-[9px] ${TIER_COLORS[tier as LeadTier] || ''}`}>
+                                    {tier === 'super_hot' ? 'SUPER HOT' : tier}
+                                  </Badge>
+                                  {idx < liveEnrichResult.tierUpgrade.upgradePath.length - 1 && (
+                                    <ArrowRight className="h-3 w-3 text-muted-foreground/40" />
+                                  )}
+                                </React.Fragment>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Remaining Gaps */}
+                        {liveEnrichResult.tierUpgrade.remainingGaps.length > 0 && (
+                          <div className="mb-3">
+                            <div className="text-[10px] text-muted-foreground mb-1.5">Remaining Gaps to Super Hot</div>
+                            <div className="space-y-1">
+                              {liveEnrichResult.tierUpgrade.remainingGaps.map((gap, idx) => (
+                                <div key={idx} className="flex items-center gap-2 text-[11px] text-foreground/70">
+                                  <Circle className="h-2 w-2 text-amber-400/60 shrink-0" />
+                                  {gap}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Recommended Actions */}
+                        {liveEnrichResult.tierUpgrade.recommendedActions.length > 0 && (
+                          <div>
+                            <div className="text-[10px] text-muted-foreground mb-1.5">Recommended Next Actions</div>
+                            <div className="space-y-1.5">
+                              {liveEnrichResult.tierUpgrade.recommendedActions.slice(0, 5).map((action, idx) => (
+                                <div key={idx} className="flex items-start gap-2 p-2 rounded-lg bg-secondary/10 border border-border/10">
+                                  <div className="flex h-5 w-5 items-center justify-center rounded-full bg-blue-500/10 text-blue-400 text-[9px] font-bold shrink-0 mt-0.5">
+                                    {idx + 1}
+                                  </div>
+                                  <span className="text-[11px] text-foreground/80 leading-relaxed">{action}</span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Confidence Score */}
+                        {liveEnrichResult.tierUpgrade.confidence > 0 && (
+                          <div className="mt-3 pt-3 border-t border-border/15">
+                            <div className="flex items-center justify-between">
+                              <span className="text-[10px] text-muted-foreground">Upgrade Confidence</span>
+                              <span className="text-[11px] font-semibold text-foreground/80">{Math.round(liveEnrichResult.tierUpgrade.confidence * 100)}%</span>
+                            </div>
+                            <div className="mt-1 h-1.5 rounded-full bg-secondary/30 overflow-hidden">
+                              <div
+                                className="h-full rounded-full bg-gradient-to-r from-orange-400 to-red-400 transition-all duration-700"
+                                style={{ width: `${Math.round(liveEnrichResult.tierUpgrade.confidence * 100)}%` }}
+                              />
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Pipeline Health (from API) */}
+                    {pipelineHealthData && (
+                      <div className="rounded-xl border border-border/20 bg-secondary/5 p-4">
+                        <h5 className="text-xs font-semibold text-foreground/80 flex items-center gap-1.5 mb-3">
+                          <Activity className="h-3.5 w-3.5 text-cyan-400" />
+                          Pipeline Health Overview
+                        </h5>
+                        <div className="grid grid-cols-2 gap-2.5">
+                          <div className="rounded-lg bg-secondary/15 p-2.5">
+                            <div className="text-[9px] text-muted-foreground mb-0.5">Total Leads</div>
+                            <div className="text-sm font-bold text-foreground/90">{pipelineHealthData.totalLeads as number || 0}</div>
+                          </div>
+                          <div className="rounded-lg bg-secondary/15 p-2.5">
+                            <div className="text-[9px] text-muted-foreground mb-0.5">Super Hot Rate</div>
+                            <div className="text-sm font-bold text-orange-400">{((pipelineHealthData.superHot as Record<string, number>)?.rate || 0)}%</div>
+                          </div>
+                          <div className="rounded-lg bg-secondary/15 p-2.5">
+                            <div className="text-[9px] text-muted-foreground mb-0.5">Enrichment Rate</div>
+                            <div className="text-sm font-bold text-violet-400">{((pipelineHealthData.enrichment as Record<string, number>)?.enrichedRate || 0)}%</div>
+                          </div>
+                          <div className="rounded-lg bg-secondary/15 p-2.5">
+                            <div className="text-[9px] text-muted-foreground mb-0.5">Pipeline Efficiency</div>
+                            <div className="text-sm font-bold text-emerald-400">{pipelineHealthData.pipelineEfficiency as number || 0}%</div>
+                          </div>
+                        </div>
+
+                        {/* Tier Distribution */}
+                        {(pipelineHealthData.tierDistribution as Record<string, number>) && (
+                          <div className="mt-3 pt-3 border-t border-border/15">
+                            <div className="text-[9px] text-muted-foreground mb-1.5">Tier Distribution</div>
+                            <div className="flex gap-1.5">
+                              {Object.entries(pipelineHealthData.tierDistribution as Record<string, number>).map(([tier, count]) => {
+                                const total = pipelineHealthData.totalLeads as number || 1;
+                                const pct = Math.round((count / total) * 100);
+                                return (
+                                  <div key={tier} className="flex-1 text-center">
+                                    <div className="h-1.5 rounded-full bg-secondary/30 overflow-hidden mb-1">
+                                      <div
+                                        className={cn(
+                                          'h-full rounded-full',
+                                          tier === 'super_hot' ? 'bg-gradient-to-r from-orange-400 to-red-400' :
+                                          tier === 'hot' ? 'bg-red-400' :
+                                          tier === 'warm' ? 'bg-amber-400' :
+                                          tier === 'cold' ? 'bg-blue-400' : 'bg-gray-400'
+                                        )}
+                                        style={{ width: `${pct}%` }}
+                                      />
+                                    </div>
+                                    <div className="text-[8px] text-muted-foreground">{tier === 'super_hot' ? 'SUPER' : tier.slice(0, 4)}</div>
+                                    <div className="text-[9px] font-semibold text-foreground/70">{count}</div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Empty State */}
+                    {!liveEnrichRunning && liveEnrichSteps.length === 0 && (
+                      <div className="flex flex-col items-center justify-center py-8 gap-4">
+                        <div className="relative flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-orange-500/10 to-red-500/10 ring-1 ring-orange-500/15">
+                          <Zap className="h-7 w-7 text-orange-400/60" />
+                        </div>
+                        <div className="text-center space-y-1.5">
+                          <h4 className="text-sm font-semibold text-foreground/80">Live Enrichment Ready</h4>
+                          <p className="text-[11px] text-muted-foreground max-w-[300px]">
+                            Run the 5-phase live enrichment pipeline to enrich this lead, upgrade its tier, and push it toward Super Hot status.
+                          </p>
+                        </div>
+                        <div className="flex flex-wrap justify-center gap-1.5 max-w-[320px]">
+                          {[
+                            { label: 'Data Gathering', icon: Database, color: 'blue' },
+                            { label: 'BANT Analysis', icon: Shield, color: 'violet' },
+                            { label: 'Deep Scoring', icon: Gauge, color: 'emerald' },
+                            { label: 'Tier Upgrade', icon: Rocket, color: 'orange' },
+                            { label: 'Action Synthesis', icon: MessageSquare, color: 'rose' },
+                          ].map((phase, idx) => (
+                            <div
+                              key={idx}
+                              className={cn(
+                                'flex items-center gap-1 px-2 py-1.5 rounded-lg text-[9px] font-medium border',
+                                phase.color === 'blue' ? 'border-blue-500/15 text-blue-400 bg-blue-500/5' :
+                                phase.color === 'violet' ? 'border-violet-500/15 text-violet-400 bg-violet-500/5' :
+                                phase.color === 'emerald' ? 'border-emerald-500/15 text-emerald-400 bg-emerald-500/5' :
+                                phase.color === 'orange' ? 'border-orange-500/15 text-orange-400 bg-orange-500/5' :
+                                'border-rose-500/15 text-rose-400 bg-rose-500/5'
+                              )}
+                            >
+                              <phase.icon style={{ width: 9, height: 9 }} />
+                              P{idx + 1}
+                            </div>
+                          ))}
+                        </div>
                       </div>
                     )}
                   </div>

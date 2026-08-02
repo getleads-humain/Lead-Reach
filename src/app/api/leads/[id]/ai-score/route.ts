@@ -95,7 +95,7 @@ export async function POST(
 
 {
   "overallScore": number (0-100),
-  "tier": "hot" | "warm" | "cold",
+  "tier": "super_hot" | "hot" | "warm" | "cold",
   "confidence": number (0-1),
   "dimensions": {
     "firmographic": { "score": 0-100, "rationale": "1-2 sentences with specific data" },
@@ -154,10 +154,10 @@ Rules:
     }
 
     // Normalize tier
-    const validTiers = new Set(['hot', 'warm', 'cold']);
+    const validTiers = new Set(['super_hot', 'hot', 'warm', 'cold']);
     if (!validTiers.has(scoring.tier || '')) {
       const score = scoring.overallScore ?? 50;
-      scoring.tier = score >= 70 ? 'hot' : score >= 40 ? 'warm' : 'cold';
+      scoring.tier = score >= 88 ? 'super_hot' : score >= 70 ? 'hot' : score >= 40 ? 'warm' : 'cold';
     }
 
     // Optionally persist the updated score/tier
@@ -167,7 +167,7 @@ Rules:
           where: { id: leadId },
           data: {
             leadScore: typeof scoring.overallScore === 'number' ? scoring.overallScore : lead.leadScore,
-            leadTier: scoring.tier as 'hot' | 'warm' | 'cold',
+            leadTier: scoring.tier as 'super_hot' | 'hot' | 'warm' | 'cold',
             stage: lead.stage === 'new' ? 'qualified' : lead.stage,
           },
         });
@@ -188,7 +188,7 @@ Rules:
 
 function getDefaultScoring(snapshot: { currentScore: number | null; currentTier: string | null; company: { industry: string | null; revenueEstimate: string | null; employeeCount: string | null } }) {
   const score = snapshot.currentScore ?? 50;
-  const tier = score >= 70 ? 'hot' : score >= 40 ? 'warm' : 'cold';
+  const tier = score >= 88 ? 'super_hot' : score >= 70 ? 'hot' : score >= 40 ? 'warm' : 'cold';
   return {
     overallScore: score,
     tier,

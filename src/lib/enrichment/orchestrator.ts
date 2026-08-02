@@ -457,7 +457,7 @@ export async function processAIScoring(leadId: string): Promise<EnrichmentStepRe
       nextBestChannel: hasEmail ? 'email' : lead.linkedinUrl ? 'linkedin' : 'email',
       outreachAngle: `Reference ${lead.companyName}'s position in ${inferredIndustry} and offer a quick discovery call.`,
     };
-    heuristicScoring.tier = heuristicScoring.overallScore >= 65 ? 'hot' : heuristicScoring.overallScore >= 40 ? 'warm' : 'cold';
+    heuristicScoring.tier = heuristicScoring.overallScore >= 88 ? 'super_hot' : heuristicScoring.overallScore >= 65 ? 'hot' : heuristicScoring.overallScore >= 40 ? 'warm' : 'cold';
 
     // Try LLM enhancement
     let scoring = heuristicScoring;
@@ -485,7 +485,7 @@ export async function processAIScoring(leadId: string): Promise<EnrichmentStepRe
       if (llmScoring && llmScoring.overallScore && llmScoring.overallScore > 0) {
         scoring = {
           overallScore: Math.max(llmScoring.overallScore, 15),
-          tier: ['hot', 'warm', 'cold'].includes(llmScoring.tier || '') ? llmScoring.tier! : heuristicScoring.tier,
+          tier: ['super_hot', 'hot', 'warm', 'cold'].includes(llmScoring.tier || '') ? llmScoring.tier! : heuristicScoring.tier,
           confidence: llmScoring.confidence || heuristicScoring.confidence,
           dimensions: Object.fromEntries(
             Object.entries(llmScoring.dimensions || {}).map(([key, val]) => [key, { score: Math.max(val.score || 30, 15), rationale: val.rationale || heuristicScoring.dimensions[key as keyof typeof heuristicScoring.dimensions]?.rationale || 'Based on available data.' }])
@@ -509,7 +509,7 @@ export async function processAIScoring(leadId: string): Promise<EnrichmentStepRe
       where: { id: leadId },
       data: {
         leadScore: scoring.overallScore,
-        leadTier: scoring.tier as 'hot' | 'warm' | 'cold',
+        leadTier: scoring.tier as 'super_hot' | 'hot' | 'warm' | 'cold',
         firmographicScore: scoring.dimensions?.firmographic?.score ?? lead.firmographicScore,
         intentScore: Math.max(scoring.dimensions?.behavioral?.score ?? 0, scoring.dimensions?.situational?.score ?? 0),
         reachabilityScore: scoring.dimensions?.technographic?.score ?? lead.reachabilityScore,

@@ -216,7 +216,7 @@ Return JSON with these 5 fields (each 0-100):
         );
 
         // Determine tier
-        const leadTier = leadScore >= 70 ? 'hot' : leadScore >= 40 ? 'warm' : 'cold';
+        const leadTier = leadScore >= 88 ? 'super_hot' : leadScore >= 70 ? 'hot' : leadScore >= 40 ? 'warm' : 'cold';
 
         // Update stage
         let newStage = updatedLead.stage;
@@ -251,7 +251,7 @@ Return JSON with these 5 fields (each 0-100):
           data: {
             dataCompleteness,
             leadScore: dataCompleteness,
-            leadTier: dataCompleteness >= 70 ? 'hot' : dataCompleteness >= 40 ? 'warm' : 'cold',
+            leadTier: dataCompleteness >= 88 ? 'super_hot' : dataCompleteness >= 70 ? 'hot' : dataCompleteness >= 40 ? 'warm' : 'cold',
             enrichedAt: new Date(),
             stage: updatedLead.stage === 'new' ? 'enriched' : updatedLead.stage,
           },
