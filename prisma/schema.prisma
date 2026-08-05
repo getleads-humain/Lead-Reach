@@ -971,3 +971,105 @@ model VellumMcpServer {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ============================================================
+// Custom Connectors — Industry-Grade Integration Management
+// ============================================================
+// Full lifecycle management for external service connectors:
+// CRM, communication, data, marketing, analytics, storage,
+// databases, webhooks, and custom integrations.
+// Supports auth, health monitoring, event tracking, and
+// auto-reconnection with configurable retry policies.
+
+model Connector {
+  id            String   @id @default(cuid())
+
+  // ── Identity & Classification ────────────────────────────────
+  name          String                         // User-given name
+  connectorKey  String                         // Unique key (e.g. "hubspot-crm-prod")
+  type          String                         // crm, communication, data_enrichment, marketing, analytics, storage, database, payment, webhook, custom
+  provider      String                         // hubspot, salesforce, slack, stripe, etc.
+  version       String   @default("1.0.0")     // Connector version
+  description   String?                        // User notes
+  category      String?                        // Sub-category grouping
+  icon          String?                        // Icon identifier or URL
+  color         String?                        // Brand color hex
+  documentationUrl String?                     // Link to docs
+
+  // ── Connection Configuration ─────────────────────────────────
+  authType      String   @default("api_key")   // api_key, oauth2, basic_auth, bearer_token, custom, none
+  endpoint      String?                        // Base URL / endpoint
+  config        String?                        // JSON — non-secret configuration (headers, params, etc.)
+  secrets       String?                        // JSON — encrypted credentials (API keys, tokens, passwords)
+  scopes        String?                        // JSON array — OAuth scopes or permissions requested
+  headers       String?                        // JSON — custom HTTP headers
+
+  // ── Status & Health Monitoring ───────────────────────────────
+  status        String   @default("disconnected") // connected, disconnected, connecting, error, maintenance
+  healthStatus  String   @default("unknown")    // healthy, degraded, unhealthy, unknown
+  healthScore   Float    @default(0)             // 0-100 composite health score
+  lastConnectedAt DateTime?
+  lastTestedAt  DateTime?
+  lastError     String?                         // Last error message
+  errorCount    Int      @default(0)            // Consecutive error count (reset on success)
+  totalRequests Int      @default(0)            // Lifetime request count
+  successCount  Int      @default(0)            // Lifetime success count
+  avgLatencyMs  Float    @default(0)            // Rolling average latency
+
+  // ── Lifecycle & Control ──────────────────────────────────────
+  enabled       Boolean  @default(true)          // User toggle
+  autoReconnect Boolean  @default(true)          // Auto-reconnect on failure
+  maxRetries    Int      @default(3)             // Max retry attempts
+  retryDelayMs  Int      @default(1000)          // Base retry delay (exponential backoff)
+  rateLimitPerMin Int    @default(60)            // Rate limit override
+  timeoutMs     Int      @default(30000)         // Request timeout
+
+  // ── Integration Hooks ────────────────────────────────────────
+  webhookUrl    String?                         // Connector's webhook URL for inbound events
+  webhookSecret String?                         // Webhook verification secret
+  eventSubscriptions String?                    // JSON array — subscribed event types
+  syncSchedule  String?                         // Cron expression for periodic sync
+  lastSyncAt    DateTime?                       // Last successful sync timestamp
+  syncIntervalMs Int?                           // Auto-sync interval in milliseconds
+
+  // ── Data Mapping & Transform ─────────────────────────────────
+  fieldMappings String?                         // JSON — field mapping config (source → target)
+  dataTransform String?                         // JSON — data transformation rules
+  inboundSchema String?                         // JSON — expected inbound data schema
+  outboundSchema String?                        // JSON — expected outbound data schema
+
+  // ── Metadata & Ownership ─────────────────────────────────────
+  tags          String?                         // JSON array — user tags
+  ownerId       String?                         // User who created/owns this connector
+  environment   String   @default("production") // production, staging, development, sandbox
+  priority      String   @default("normal")     // critical, high, normal, low
+  isManaged     Boolean  @default(false)         // Platform-managed (cannot delete)
+  isTemplate    Boolean  @default(false)         // Is this a template connector?
+
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  events        ConnectorEvent[]
+}
+
+model ConnectorEvent {
+  id           String   @id @default(cuid())
+  connectorId  String
+  connector    Connector @relation(fields: [connectorId], references: [id], onDelete: Cascade)
+
+  // ── Event Details ────────────────────────────────────────────
+  eventType    String                         // connect, disconnect, test, sync, error, webhook, config_change, enable, disable, health_check, rate_limit, auth_refresh
+  severity     String   @default("info")      // debug, info, warn, error, critical
+  message      String                         // Human-readable description
+  details      String?                        // JSON — structured event data
+  errorCode    String?                        // Error code if applicable
+  source       String   @default("system")    // system, user, agent, connector, webhook
+
+  // ── Request Context ──────────────────────────────────────────
+  requestId    String?                        // Correlation ID
+  durationMs   Int?                           // Duration in milliseconds
+  statusCode   Int?                           // HTTP status code if applicable
+  ipAddress    String?                        // Source IP if applicable
+
+  createdAt    DateTime @default(now())
+}

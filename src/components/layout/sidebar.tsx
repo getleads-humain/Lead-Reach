@@ -30,6 +30,7 @@ import {
   Sun,
   Moon,
   Monitor,
+  Plug,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
@@ -58,6 +59,7 @@ const navItems: NavItem[] = [
   { view: 'campaigns', label: 'Campaigns', icon: Target, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'leads', label: 'Leads', icon: Users, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'data-enrichment', label: 'Enrichment', icon: Database, minGrade: 'standard', upgradePlanId: 'scout' },
+  { view: 'connectors', label: 'Connectors', icon: Plug, minGrade: 'standard', upgradePlanId: 'scout' },
   { view: 'agents', label: 'Agents', icon: Bot, minGrade: 'professional', upgradePlanId: 'command' },
   { view: 'setter', label: 'AI Setter', icon: Heart, minGrade: 'professional', upgradePlanId: 'command' },
   { view: 'booking', label: 'Bookings', icon: Calendar, minGrade: 'professional', upgradePlanId: 'command' },

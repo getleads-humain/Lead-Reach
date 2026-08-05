@@ -28,6 +28,7 @@ import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-
 import { IdentityView } from '@/components/identity/identity-view';
 import { ICPView } from '@/components/icp/icp-view';
 import { AIAssistantView } from '@/components/ai-assistant/ai-assistant-view';
+import { ConnectorsView } from '@/components/connectors/connectors-view';
 import { useAppStore } from '@/lib/store';
 import { usePlanAccess, type ViewType } from '@/hooks/use-plan-access';
 import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
@@ -166,6 +167,8 @@ export default function AppPage() {
         return <ICPView />;
       case 'ai-assistant':
         return <AIAssistantView />;
+      case 'connectors':
+        return <ConnectorsView />;
       default:
         return <DashboardView />;
     }

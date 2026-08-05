@@ -18,6 +18,7 @@ export type ViewType =
   | 'campaigns'
   | 'leads'
   | 'data-enrichment'
+  | 'connectors'
   | 'agents'
   | 'setter'
   | 'booking'
@@ -59,6 +60,7 @@ const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'e
   'campaigns': 'free',
   'outreach': 'standard',
   'data-enrichment': 'standard',
+  'connectors': 'standard',
   'agents': 'professional',
   'setter': 'professional',
   'booking': 'professional',
