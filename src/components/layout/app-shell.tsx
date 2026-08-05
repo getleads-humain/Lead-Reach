@@ -14,6 +14,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const { sidebarCollapsed } = useAppStore();
   const [seeded, setSeeded] = useState(false);
 
+  // ── FIX: Manually rehydrate Zustand persist store after mount ────
+  // With skipHydration: true in store config, we must call
+  // rehydrate() explicitly to load persisted state from localStorage.
+  useEffect(() => {
+    useAppStore.persist.rehydrate();
+  }, []);
+
   useEffect(() => {
     if (!seeded) {
       // Only seed if no campaigns exist yet (first-time setup)

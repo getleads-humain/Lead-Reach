@@ -8,7 +8,7 @@
  * Redirects already-authenticated users to /app (via middleware).
  */
 
-import React, { useState, useCallback, Suspense } from 'react';
+import React, { useState, useCallback, useEffect, Suspense } from 'react';
 import { useAuth } from '@/components/auth/auth-provider';
 import { useRouter, useSearchParams } from 'next/navigation';
 import Link from 'next/link';
@@ -33,11 +33,16 @@ function LoginForm() {
   // Get redirect URL from query params (set by middleware)
   const redirectTo = searchParams.get('redirect') || '/app';
 
-  // If user is already logged in, redirect (middleware handles this too, but this is a fallback)
-  if (user && !authLoading) {
-    router.push(redirectTo);
-    return null;
-  }
+  // ── FIX: Move redirect into useEffect (was called during render) ──
+  // Previously, router.push() was called during the render body,
+  // which is undefined behavior in React and causes infinite redirect
+  // loops when combined with the proxy's server-side redirects.
+  // Using router.replace() avoids building up history entries.
+  useEffect(() => {
+    if (user && !authLoading) {
+      router.replace(redirectTo);
+    }
+  }, [user, authLoading, redirectTo, router]);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();

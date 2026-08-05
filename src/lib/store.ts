@@ -135,6 +135,13 @@ export const useAppStore = create<AppState>()(
     }),
     {
       name: 'leadreach-store',
+      // ── FIX: Skip hydration to prevent SSR/client mismatch ────────
+      // Without this, server renders with default state while client
+      // immediately rehydrates from localStorage, causing React to
+      // detect a mismatch and re-render (contributing to reload loops).
+      // Rehydration happens manually via useAppStore.persist.rehydrate()
+      // in client components after mount.
+      skipHydration: true,
       // Only persist the userProfile — other state is session-only
       partialize: (state) => ({
         userProfile: state.userProfile,

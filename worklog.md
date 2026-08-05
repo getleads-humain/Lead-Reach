@@ -54,3 +54,25 @@ Stage Summary:
 - Industry-grade features: health scoring, connection testing, event logging, lifecycle management, auto-reconnect, rate limiting, environment/priority classification
 - Full dark mode support via existing Tailwind v4 + oklch system
 - All builds passing, 7 demo connectors seeded for immediate UI testing
+
+---
+Task ID: 2
+Agent: Main Agent (Super Z)
+Task: Fix infinite preview reload loop
+
+Work Log:
+- Identified 6 root causes for the reload loop through deep analysis of auth-provider, login, signup, app, portal, proxy, and store
+- P0 Fix #1: Removed getSession() + onAuthStateChange() double-initialization race in auth-provider.tsx — now uses onAuthStateChange as sole source of truth (Supabase recommended pattern)
+- P0 Fix #2: Moved render-time router.push() in login/page.tsx and signup/page.tsx into useEffect + switched to router.replace() to prevent history buildup
+- P1 Fix #3: Added stableAuthChecked guard to app/page.tsx and portal/page.tsx — 100ms debounce after authLoading resolves to prevent transient user=null during TOKEN_REFRESHED from triggering redirect
+- P1 Fix #4: Added RSC flight data request bypass in proxy.ts — skips auth processing for /_next/data, .rsc, /_next/rsc requests to prevent unnecessary Supabase cookie rotation
+- P2 Fix #5: Added skipHydration: true to Zustand persist store + manual rehydrate() in AppShell to prevent SSR/client hydration mismatch
+- P2 Fix #6: Stabilized ensureProfile callback by reading profile from useRef instead of closure — prevents cascading useEffect re-fires on every profile update
+- Verified clean build with all fixes applied
+
+Stage Summary:
+- All 6 reload loop causes fixed across 7 files
+- P0 fixes eliminate the primary loop mechanism (double auth init + render-time navigation)
+- P1 fixes prevent transient auth state from triggering redirects
+- P2 fixes eliminate hydration mismatch and callback instability
+- Build passes cleanly

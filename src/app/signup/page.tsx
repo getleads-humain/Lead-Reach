@@ -7,7 +7,7 @@
  * After successful signup, redirects to /app (or shows confirmation message).
  */
 
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { useAuth } from '@/components/auth/auth-provider';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -30,11 +30,12 @@ export default function SignUpPage() {
   const [oauthLoading, setOAuthLoading] = useState<string | null>(null);
   const [needsConfirmation, setNeedsConfirmation] = useState(false);
 
-  // If user is already logged in, redirect
-  if (user && !authLoading) {
-    router.push('/app');
-    return null;
-  }
+  // ── FIX: Move redirect into useEffect (was called during render) ──
+  useEffect(() => {
+    if (user && !authLoading) {
+      router.replace('/app');
+    }
+  }, [user, authLoading, router]);
 
   // Show confirmation message if email verification is required
   if (needsConfirmation) {

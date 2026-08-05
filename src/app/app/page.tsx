@@ -8,7 +8,7 @@
  * profile is loaded before rendering the app shell.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/auth-provider';
 import { AppShell } from '@/components/layout/app-shell';
@@ -50,23 +50,43 @@ export default function AppPage() {
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
 
+  // ── FIX: Guard against transient auth state during token refresh ──
+  // Without this, a brief user=null during TOKEN_REFRESHED triggers
+  // the redirect to /login, which creates a reload loop.
+  const [stableAuthChecked, setStableAuthChecked] = useState(false);
+  const authCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     setHydrated(true);
   }, []);
 
-  // Redirect to login if not authenticated
+  // When authLoading finishes, wait a tick to confirm the state is stable
+  // (not mid-refresh) before allowing redirects
   useEffect(() => {
-    if (hydrated && !authLoading && !user) {
-      router.push('/login');
+    if (!authLoading && hydrated) {
+      if (authCheckTimerRef.current) clearTimeout(authCheckTimerRef.current);
+      authCheckTimerRef.current = setTimeout(() => {
+        setStableAuthChecked(true);
+      }, 100);
     }
-  }, [hydrated, authLoading, user, router]);
+    return () => {
+      if (authCheckTimerRef.current) clearTimeout(authCheckTimerRef.current);
+    };
+  }, [authLoading, hydrated]);
 
-  // Redirect to onboarding if not complete
+  // Redirect to login if not authenticated (only after stable check)
   useEffect(() => {
-    if (hydrated && !authLoading && user && profile && !profile.onboarding_complete) {
-      router.push('/onboarding');
+    if (hydrated && stableAuthChecked && !user) {
+      router.replace('/login');
     }
-  }, [hydrated, authLoading, user, profile, router]);
+  }, [hydrated, stableAuthChecked, user, router]);
+
+  // Redirect to onboarding if not complete (only after stable check)
+  useEffect(() => {
+    if (hydrated && stableAuthChecked && user && profile && !profile.onboarding_complete) {
+      router.replace('/onboarding');
+    }
+  }, [hydrated, stableAuthChecked, user, profile, router]);
 
   // Show loading while auth state resolves
   if (authLoading || !hydrated) {

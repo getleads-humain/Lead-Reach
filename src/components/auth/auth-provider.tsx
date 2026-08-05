@@ -10,7 +10,7 @@
  * app still renders (auth features are simply disabled).
  */
 
-import React, { createContext, useContext, useEffect, useState, useCallback } from 'react';
+import React, { createContext, useContext, useEffect, useState, useCallback, useRef } from 'react';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase-browser';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { User, Session } from '@supabase/supabase-js';
@@ -154,6 +154,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
   }, [updateOnboardingCookie]);
 
+  // ── Stable ref for profile to avoid cascading re-renders ─────
+  const profileRef = useRef(profile);
+  profileRef.current = profile;
+
   useEffect(() => {
     // createClient() returns null when Supabase is not configured
     // This is the normal path when env vars are missing — app renders in demo mode
@@ -167,15 +171,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     setSupabaseReady(true);
 
-    supabase.auth.getSession().then(async ({ data: { session: s } }) => {
-      setSession(s);
-      setUser(s?.user ?? null);
-      if (s?.user) {
-        await fetchAndSetProfile(s.user.id);
-      }
-      setLoading(false);
-    });
-
+    // ── FIX: Use onAuthStateChange as the SOLE source of truth ──────
+    // Previously, both getSession() and onAuthStateChange() were called,
+    // causing a race condition where INITIAL_SESSION fires immediately
+    // after subscription, double-initializing auth state and causing
+    // loading to transition to false twice — triggering redirect loops.
+    //
+    // The Supabase-recommended pattern is to rely only on
+    // onAuthStateChange, which fires INITIAL_SESSION on subscribe.
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, s) => {
         setSession(s);
@@ -311,9 +314,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     return { error };
   }, [user, updateOnboardingCookie]);
 
+  // ── FIX: Stabilize ensureProfile by reading profile from ref ───
+  // Previously depended on [user, profile], causing new reference on
+  // every profile update → cascading useEffect re-fires in consumers.
   const ensureProfile = useCallback(async () => {
     if (!user) return { error: 'Not authenticated' };
-    if (profile) return { error: null };
+    if (profileRef.current) return { error: null };
 
     const { error, profile: newProfile } = await serverEnsureProfile(
       user.id,
@@ -324,7 +330,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setProfile(newProfile);
     }
     return { error };
-  }, [user, profile]);
+  }, [user]);
 
   return (
     <AuthContext.Provider value={{

@@ -34,6 +34,20 @@ import { applySecurityHeaders } from '@/lib/security-headers';
 
 export async function proxy(request: NextRequest) {
   try {
+    // ── FIX: Skip proxy for RSC flight data requests ──────────────
+    // These are internal Next.js requests that don't need auth
+    // processing. Running the proxy on them causes unnecessary
+    // Supabase cookie processing that can trigger token rotation.
+    const pathname = request.nextUrl.pathname;
+    if (
+      pathname.startsWith('/_next/data') ||
+      pathname.includes('.rsc') ||
+      pathname.startsWith('/_next/rsc')
+    ) {
+      const host = request.headers.get('host') || undefined;
+      return applySecurityHeaders(NextResponse.next({ request }), host);
+    }
+
     const response = await updateSession(request);
 
     // Pass the request host to security headers for preview detection

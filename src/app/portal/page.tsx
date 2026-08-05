@@ -11,7 +11,7 @@
  * but adds an AuthGuard wrapper and user-specific context.
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/auth-provider';
 import { AppShell } from '@/components/layout/app-shell';
@@ -38,22 +38,38 @@ export default function PortalPage() {
   const router = useRouter();
   const [hydrated, setHydrated] = useState(false);
 
+  // ── FIX: Guard against transient auth state during token refresh ──
+  const [stableAuthChecked, setStableAuthChecked] = useState(false);
+  const authCheckTimerRef = useRef<NodeJS.Timeout | null>(null);
+
   useEffect(() => {
     setHydrated(true);
   }, []);
 
   useEffect(() => {
-    if (hydrated && !authLoading && !user) {
-      router.push('/login');
+    if (!authLoading && hydrated) {
+      if (authCheckTimerRef.current) clearTimeout(authCheckTimerRef.current);
+      authCheckTimerRef.current = setTimeout(() => {
+        setStableAuthChecked(true);
+      }, 100);
     }
-  }, [hydrated, authLoading, user, router]);
+    return () => {
+      if (authCheckTimerRef.current) clearTimeout(authCheckTimerRef.current);
+    };
+  }, [authLoading, hydrated]);
+
+  useEffect(() => {
+    if (hydrated && stableAuthChecked && !user) {
+      router.replace('/login');
+    }
+  }, [hydrated, stableAuthChecked, user, router]);
 
   // Redirect to onboarding if not complete
   useEffect(() => {
-    if (hydrated && !authLoading && user && profile && !profile.onboarding_complete) {
-      router.push('/onboarding');
+    if (hydrated && stableAuthChecked && user && profile && !profile.onboarding_complete) {
+      router.replace('/onboarding');
     }
-  }, [hydrated, authLoading, user, profile, router]);
+  }, [hydrated, stableAuthChecked, user, profile, router]);
 
   // Show loading while auth state resolves
   if (authLoading || !hydrated) {
