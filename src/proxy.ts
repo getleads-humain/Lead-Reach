@@ -12,7 +12,7 @@
  * 1. Refreshes the Supabase auth session cookie on every request
  *    (keeping the JWT fresh without requiring a page reload)
  * 2. Protects authenticated routes — redirects to /login if not signed in
- * 3. Redirects logged-in users away from /login and /signup to /portal
+ * 3. Redirects logged-in users away from /login and /signup to /app
  * 4. Handles the JWKS-based JWT verification dynamically via @supabase/ssr
  * 5. Applies environment-aware security headers to all responses
  *    (relaxed for preview domains, strict for production)

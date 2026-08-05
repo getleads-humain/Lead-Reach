@@ -91,7 +91,6 @@ export async function updateSession(request: NextRequest) {
     '/privacy',
     '/support',
     '/terms',
-    '/platform',
     '/health',             // Health check endpoint
     '/knowledge',          // Knowledge base admin UI (preview-accessible)
   ];
@@ -160,7 +159,7 @@ export async function updateSession(request: NextRequest) {
     const redirectParam = request.nextUrl.searchParams.get('redirect');
     const targetPath = redirectParam && !['/login', '/signup'].includes(redirectParam)
       ? redirectParam
-      : '/portal';
+      : '/app';
     const url = request.nextUrl.clone();
     url.pathname = targetPath;
     url.searchParams.delete('redirect');

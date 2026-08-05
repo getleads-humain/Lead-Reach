@@ -5,7 +5,7 @@
  *
  * When a user signs in with an OAuth provider, Supabase redirects
  * to this route with the auth code in the URL. We exchange the code
- * for a session, then redirect the user to the app.
+ * for a session, then redirect the user to the app (/app).
  *
  * SECURITY: Never calls createServerClient without first validating
  * that env vars are present. Returns a safe redirect if unconfigured.

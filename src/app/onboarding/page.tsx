@@ -178,7 +178,7 @@ export default function OnboardingPage() {
         }
         // Set cookie for middleware
         document.cookie = 'lr_onboarding_done=true; path=/; max-age=' + (60 * 60 * 24 * 365) + '; SameSite=Lax';
-        router.push('/portal');
+        router.push('/app');
       } catch (err: unknown) {
         setError(err instanceof Error ? err.message : 'Failed to complete onboarding. Please try again.');
         setLoading(false);

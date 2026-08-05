@@ -230,7 +230,7 @@ export default function BlogPage() {
                     <Link href="/agent" className="block text-xs text-muted-foreground hover:text-emerald-400 transition-colors">
                       &rarr; Explore AI Agents
                     </Link>
-                    <Link href="/platform" className="block text-xs text-muted-foreground hover:text-emerald-400 transition-colors">
+                    <Link href="/app" className="block text-xs text-muted-foreground hover:text-emerald-400 transition-colors">
                       &rarr; Platform Overview
                     </Link>
                     <Link href="/pricing" className="block text-xs text-muted-foreground hover:text-emerald-400 transition-colors">

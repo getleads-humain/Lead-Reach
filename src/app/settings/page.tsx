@@ -327,10 +327,10 @@ function SettingsContentInner() {
       {/* Header */}
       <header className="sticky top-0 z-30 flex h-14 items-center border-b border-border/50 glass px-4">
         <div className="flex items-center gap-3">
-          <Link href="/portal">
+          <Link href="/app">
             <Button variant="ghost" size="sm" className="gap-2 text-muted-foreground hover:text-foreground">
               <ArrowLeft className="h-4 w-4" />
-              Back to Portal
+              Back to Platform
             </Button>
           </Link>
           <Separator orientation="vertical" className="h-6" />

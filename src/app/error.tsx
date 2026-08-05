@@ -61,7 +61,7 @@ export default function Error({
           Try Again
         </button>
         <button
-          onClick={() => (window.location.href = '/portal')}
+          onClick={() => (window.location.href = '/app')}
           className="rounded-lg border border-border/40 bg-secondary/20 px-5 py-2 text-sm font-medium text-foreground/70 transition-all hover:bg-secondary/30 hover:text-foreground active:scale-95"
         >
           Back to Dashboard
