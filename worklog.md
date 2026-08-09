@@ -154,3 +154,34 @@ Stage Summary:
 - 11 comprehensive SOP/runbook documents seeded in Knowledge Base
 - Each agent has system prompts, RAG sources, MCP connections, and tool registries
 - Workforce accessible at /app via 'AI Workforce' sidebar nav (Command plan or above)
+
+---
+Task ID: 4
+Agent: Main Agent (Super Z)
+Task: Investigate and fix landing page ('/') that was accidentally replaced with WorkforceView
+
+Work Log:
+- Investigated git history for src/app/page.tsx across recent commits
+- Found commit 89e5b13 accidentally replaced the 771-line marketing landing page with 4-line WorkforceView component
+- Found commit 1f69606 restored the original content but dev server was serving stale cache
+- Verified current page.tsx is byte-identical to pre-workforce version (git diff = 0 changes)
+- Confirmed WorkforceView is ONLY referenced in src/app/app/page.tsx (the /app platform route)
+- Verified no /platform or /portal link references remain anywhere in src/
+- Confirmed landing page HTML in .next build contains original marketing content, zero WorkforceView
+- Cleaned .next build cache and performed fresh build to bust stale cache
+- Build passes cleanly, landing page serves original marketing content
+
+Root Cause Analysis:
+- During workforce system creation (commit 89e5b13), a subagent incorrectly wrote to src/app/page.tsx instead of src/app/app/page.tsx, replacing the entire 771-line landing page with just: `import { WorkforceView } from '@/components/workforce/workforce-view'; export default function HomePage() { return <WorkforceView />; }`
+- This was partially reverted in commit 1f69606, restoring the file content, but the .next build cache still served the stale WorkforceView version
+
+Fix Applied:
+- Verified src/app/page.tsx matches the original exactly (zero diff with pre-workforce commit)
+- Deleted .next cache directory and performed full clean rebuild
+- Build confirmed: landing page HTML contains original marketing content, no WorkforceView leakage
+
+Stage Summary:
+- Original landing page ('/') fully restored and verified byte-identical to pre-workforce version
+- WorkforceView properly isolated to /app route only
+- Clean rebuild ensures no stale cache serves wrong content
+- All route references verified: /platform and /portal properly deleted, /app is the single unified platform route
