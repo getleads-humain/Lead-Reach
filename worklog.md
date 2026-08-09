@@ -76,3 +76,81 @@ Stage Summary:
 - P1 fixes prevent transient auth state from triggering redirects
 - P2 fixes eliminate hydration mismatch and callback instability
 - Build passes cleanly
+
+---
+Task ID: 2
+Agent: Main Agent
+Task: Unify platform route to /app and fix preview infinite refresh loop
+
+Work Log:
+- Explored all /app, /platform, /portal route references across the codebase
+- Deleted /platform and /portal route directories (redundant copies of /app)
+- Updated supabase-middleware.ts: removed /platform from public routes, changed logged-in redirect from /portal to /app
+- Fixed onboarding to redirect to /app instead of /portal
+- Fixed error boundaries (error.tsx, app/error.tsx) to point to /app instead of /portal
+- Fixed blog page /platform link and settings /portal link to /app
+- Updated proxy.ts comments for consistency
+- Verified build passes cleanly with no /platform or /portal routes
+- Verified /app route correctly redirects to /login when unauthenticated
+
+Stage Summary:
+- Single unified platform route: /app (all 33+ CTAs already pointed to /app)
+- Deleted /platform (had no auth guard) and /portal (inconsistent destination)
+- All post-login, post-onboarding, error recovery now goes to /app
+- Build passes, preview loop should be resolved
+
+---
+Task ID: 3
+Agent: Main Agent
+Task: Build Full AI Workforce System with 7 Specialized Agents, RAG, MCP, and KB Documentation
+
+Work Log:
+- Added 4 new Prisma models: WorkforceAgent, WorkforceTask, WorkforceSession, WorkforceDocument
+- Ran prisma db push to sync schema with database
+- Created workforce agent definitions (src/lib/workforce/definitions.ts) with 7 agents:
+  1. Senior Full-Stack Engineer (Engineering) - critical priority
+  2. ML Engineer — Agent Orchestration (AI Research) - critical priority
+  3. Product Designer (Product) - high priority
+  4. Enterprise Account Executive (Sales) - high priority
+  5. Customer Success Manager (Customer Success) - high priority
+  6. Content Marketing Lead (Marketing) - normal priority
+  7. DevOps / Platform Engineer (Engineering) - critical priority
+- Created workforce engine (src/lib/workforce/engine.ts) with full CRUD, task management, session management, health monitoring, RAG retrieval, and document management
+- Created workforce index (src/lib/workforce/index.ts) for public API
+- Created 8 API routes under /api/workforce/:
+  - GET/POST /api/workforce (list/seed agents)
+  - GET /api/workforce/health (health overview)
+  - GET/PATCH/DELETE /api/workforce/[id] (single agent CRUD)
+  - GET/POST /api/workforce/[id]/tasks (task management)
+  - POST /api/workforce/[id]/chat (chat with agent)
+  - GET /api/workforce/[id]/sessions (session listing)
+  - GET/POST /api/workforce/[id]/documents (document management)
+  - POST /api/workforce/[id]/health (health recalculation)
+- Created WorkforceView UI component (src/components/workforce/workforce-view.tsx) with:
+  - Overview dashboard with agent cards, health bars, metrics
+  - Agent detail panel with skills, tools, MCP, RAG, expertise, config
+  - Chat interface with session management and AI response
+  - Task queue with filtering and status tracking
+- Integrated into app:
+  - Added 'workforce' to ViewType in types.ts
+  - Added 'workforce' to use-plan-access.ts (professional grade)
+  - Added 'AI Workforce' nav item with Briefcase icon in sidebar
+  - Added WorkforceView to app page router
+  - Added workforce to professional/lifetime/enterprise plan views
+- Seeded 7 workforce agents via seed-workforce.ts
+- Created 11 knowledge base documents (SOPs + Runbooks) via seed-workforce-docs.ts:
+  - Full-Stack Engineer: Feature Dev Lifecycle, Bug Fix/Incident Response, Codebase Architecture Runbook
+  - ML Engineer: Agent Orchestration Pipeline, Prompt Engineering & A/B Testing
+  - Product Designer: Design System & Component Specification
+  - Enterprise AE: Enterprise Sales Cycle (MEDDIC)
+  - Customer Success: Customer Onboarding (30-60-90 Day Plan)
+  - Content Marketing: Content Creation & Editorial Process
+  - DevOps: Incident Response & SRE Practices, Infrastructure & Deployment Runbook
+- Build passes cleanly with all 8 workforce API routes compiled
+
+Stage Summary:
+- 7 autonomous AI workforce agents fully defined with persona, skills, tools, MCP, RAG, permissions
+- Full-stack: DB schema + engine + API routes + UI component + plan integration + navigation
+- 11 comprehensive SOP/runbook documents seeded in Knowledge Base
+- Each agent has system prompts, RAG sources, MCP connections, and tool registries
+- Workforce accessible at /app via 'AI Workforce' sidebar nav (Command plan or above)

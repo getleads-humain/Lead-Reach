@@ -235,7 +235,7 @@ export function getFeatureAccess(planTier: string): {
 
   if (plan.grade === 'professional' || plan.grade === 'lifetime') {
     return {
-      views: [...baseViews, 'campaigns', 'outreach', 'data-enrichment', 'connectors', 'agents', 'setter', 'booking', 'messaging', 'analytics'],
+      views: [...baseViews, 'campaigns', 'outreach', 'data-enrichment', 'connectors', 'agents', 'workforce', 'setter', 'booking', 'messaging', 'analytics'],
       maxCampaigns: plan.maxCampaigns, maxLeads: plan.includedLeads,
       maxAgents: plan.includedAgents, maxSetters: plan.maxSetters,
       maxTeamMembers: plan.includedTeamMembers,
@@ -243,7 +243,7 @@ export function getFeatureAccess(planTier: string): {
   }
 
   return {
-    views: ['dashboard', 'prospect-discovery', 'icp', 'campaigns', 'leads', 'data-enrichment', 'connectors', 'agents', 'setter', 'booking', 'messaging', 'outreach', 'analytics', 'reports'],
+    views: ['dashboard', 'prospect-discovery', 'icp', 'campaigns', 'leads', 'data-enrichment', 'connectors', 'agents', 'workforce', 'setter', 'booking', 'messaging', 'outreach', 'analytics', 'reports'],
     maxCampaigns: -1, maxLeads: -1, maxAgents: -1, maxSetters: -1, maxTeamMembers: -1,
   };
 }

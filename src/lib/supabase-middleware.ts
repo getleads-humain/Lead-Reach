@@ -117,6 +117,7 @@ export async function updateSession(request: NextRequest) {
     '/api/outreach/ai-compose',         // AI outreach composer
     '/api/reports/ai-generate',         // AI report generator
     '/api/knowledge/',                  // Knowledge base API (stats, list, search, doc, gap-report — preview-accessible)
+    '/api/workforce',                   // Workforce agents API (list, health, agent detail, chat, tasks, sessions, documents)
   ];
 
   // Static assets and Next.js internals

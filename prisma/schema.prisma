@@ -1073,3 +1073,158 @@ model ConnectorEvent {
 
   createdAt    DateTime @default(now())
 }
+
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// WORKFORCE AI AGENTS — Autonomous AI Workforce
+// ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+model WorkforceAgent {
+  id          String   @id @default(cuid())
+
+  // ── Identity ────────────────────────────────────────────────────
+  name        String                         // e.g. "Senior Full-Stack Engineer"
+  slug        String   @unique               // e.g. "fullstack-engineer"
+  role        String                         // e.g. "Engineering", "AI Research", "Sales"
+  department  String                         // e.g. "Engineering", "Marketing", "Customer Success"
+  description String                         // Full role description
+  persona     String?                        // JSON — persona traits, tone, expertise
+  avatar      String?                        // Avatar emoji or icon name
+  color       String   @default("#10b981")   // Brand color for UI
+
+  // ── Capabilities ────────────────────────────────────────────────
+  skills      String?                        // JSON array — skill names
+  tools       String?                        // JSON array — available tools (code, search, deploy, etc.)
+  mcpServers  String?                        // JSON array — MCP connection endpoints
+  ragSources  String?                        // JSON array — RAG knowledge source IDs
+  permissions String?                        // JSON array — permission scopes
+  expertise   String?                        // JSON array — areas of deep expertise
+
+  // ── Configuration ───────────────────────────────────────────────
+  model       String   @default("glm-4.6v-flash")  // LLM model
+  temperature Float    @default(0.7)
+  maxTokens   Int      @default(4096)
+  systemPrompt String?                        // Custom system prompt
+  config      String?                        // JSON — additional config
+
+  // ── Status & Health ─────────────────────────────────────────────
+  status      String   @default("active")    // active, idle, busy, paused, error, offboarding
+  health      String   @default("healthy")   // healthy, degraded, unhealthy, critical
+  healthScore Int      @default(100)         // 0-100
+
+  // ── Metrics ─────────────────────────────────────────────────────
+  tasksCompleted    Int      @default(0)
+  tasksInProgress   Int      @default(0)
+  tasksFailed       Int      @default(0)
+  totalTokensUsed   Int      @default(0)
+  avgResponseMs     Int      @default(0)
+  successRate       Float    @default(1.0)
+  uptimeMinutes     Int      @default(0)
+  lastActiveAt      DateTime?
+
+  // ── Work Schedule ───────────────────────────────────────────────
+  scheduleType     String   @default("always_on")  // always_on, scheduled, on_demand
+  scheduleCron     String?                          // Cron expression for scheduled
+  maxConcurrentTasks Int    @default(3)
+  priority         String   @default("normal")     // critical, high, normal, low
+
+  // ── Ownership ───────────────────────────────────────────────────
+  ownerId     String?
+  isManaged   Boolean  @default(true)        // Platform-managed agent
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  tasks       WorkforceTask[]
+  sessions    WorkforceSession[]
+  documents   WorkforceDocument[]
+}
+
+model WorkforceTask {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       WorkforceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // ── Task Details ────────────────────────────────────────────────
+  title       String
+  description String?
+  taskType    String                         // code_review, feature_build, bug_fix, deploy, design, content_create, research, analysis, outreach, support, monitoring, incident_response
+  priority    String   @default("normal")    // critical, high, normal, low
+  status      String   @default("pending")   // pending, assigned, running, completed, failed, cancelled
+
+  // ── Input/Output ────────────────────────────────────────────────
+  input       String?                        // JSON — task input data
+  output      String?                        // JSON — task output/result
+  error       String?                        // Error message if failed
+
+  // ── Execution ───────────────────────────────────────────────────
+  sessionId   String?                        // Associated session ID
+  parentTaskId String?                       // For sub-tasks
+  progress    Int      @default(0)           // 0-100
+  stepsTotal  Int      @default(0)
+  stepsCompleted Int   @default(0)
+  tokensUsed  Int      @default(0)
+  durationMs  Int?                           // Total execution time
+
+  // ── Scheduling ──────────────────────────────────────────────────
+  scheduledAt DateTime?                      // When to execute (for scheduled tasks)
+  startedAt   DateTime?
+  completedAt DateTime?
+  dueDate     DateTime?                      // Deadline
+
+  // ── Context ─────────────────────────────────────────────────────
+  relatedEntityType String?                  // lead, campaign, connector, etc.
+  relatedEntityId   String?                  // ID of related entity
+  tags        String?                        // JSON array — task tags
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}
+
+model WorkforceSession {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       WorkforceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // ── Session Details ─────────────────────────────────────────────
+  purpose     String                         // What this session is for
+  status      String   @default("active")    // active, idle, completed, expired
+
+  // ── Conversation ────────────────────────────────────────────────
+  messages    String?                        // JSON array — chat messages
+  context     String?                        // JSON — session context/state
+  summary     String?                        // AI-generated session summary
+
+  // ── Metrics ─────────────────────────────────────────────────────
+  messageCount  Int      @default(0)
+  tokensUsed    Int      @default(0)
+  tasksCompleted Int     @default(0)
+  tasksFailed    Int     @default(0)
+
+  startedAt   DateTime @default(now())
+  endedAt     DateTime?
+  lastActivityAt DateTime @default(now())
+}
+
+model WorkforceDocument {
+  id          String   @id @default(cuid())
+  agentId     String
+  agent       WorkforceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // ── Document Details ────────────────────────────────────────────
+  title       String
+  category    String                         // sop, runbook, playbook, reference, training, knowledge
+  content     String                         // Full document content (markdown)
+  tags        String?                        // JSON array — document tags
+
+  // ── RAG Integration ─────────────────────────────────────────────
+  sourceType  String   @default("manual")    // manual, auto_generated, scraped, rag_indexed
+  chunkCount  Int      @default(0)
+  embeddingStatus String @default("pending") // pending, indexed, failed
+
+  // ── Versioning ──────────────────────────────────────────────────
+  version     Int      @default(1)
+  isLatest    Boolean  @default(true)
+
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+}

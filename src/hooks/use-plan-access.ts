@@ -20,6 +20,7 @@ export type ViewType =
   | 'data-enrichment'
   | 'connectors'
   | 'agents'
+  | 'workforce'
   | 'setter'
   | 'booking'
   | 'messaging'
@@ -62,6 +63,7 @@ const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'e
   'data-enrichment': 'standard',
   'connectors': 'standard',
   'agents': 'professional',
+  'workforce': 'professional',
   'setter': 'professional',
   'booking': 'professional',
   'messaging': 'professional',
