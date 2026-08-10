@@ -82,6 +82,8 @@ const VIEW_LABELS: Record<ViewType, string> = {
   icp: 'ICP Builder',
   'ai-assistant': 'AI Assistant',
   knowledge: 'Knowledge Base',
+  connectors: 'Connectors',
+  workforce: 'AI Workforce',
 };
 
 const SUGGESTED_PROMPTS = [

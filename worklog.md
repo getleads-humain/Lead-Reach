@@ -221,3 +221,28 @@ Stage Summary:
 - Each agent has their own immersive operating environment for task execution, training, superpowers display
 - Dark theme with glass morphism, glow effects, and agent-specific color accents
 - All interactive elements functional: task creation, chat, config editing, knowledge base search
+
+---
+Task ID: 6
+Agent: Main Agent (Super Z)
+Task: Fix full-stack integration — ensure AI Workforce renders correctly on frontend
+
+Work Log:
+- Discovered database had 0 workforce agents (never seeded)
+- Fixed missing 'connectors' and 'workforce' entries in VIEW_LABELS in ai-assistant-view.tsx and ai-assistant-widget.tsx
+- Fixed type error in engine.ts seedWorkforceAgents() — added explicit Array<{ slug: string; id: string; created: boolean }> type
+- Seeded 7 workforce agents into database via seed-workforce.ts
+- Seeded 11 knowledge base documents via seed-workforce-docs.ts
+- Verified: 7 agents (all active, health 100), 11 documents across all agents
+- Verified complete integration chain: app page → WorkforceView → WorkforceDashboard/AgentWorkspace
+- Verified sidebar has 'AI Workforce' with Briefcase icon at professional grade
+- Verified ViewType includes 'workforce', usePlanAccess grants 'professional' tier
+- Clean rebuild with zero workforce-related TypeScript errors
+- Build passes cleanly
+
+Stage Summary:
+- Root cause: database was empty (agents never seeded after schema was created)
+- Fixed 3 TypeScript errors blocking proper rendering
+- 7 agents + 11 KB documents now persisted in database
+- Full integration chain verified end-to-end
+- AI Workforce Command Center now renders with all 7 agents on the frontend

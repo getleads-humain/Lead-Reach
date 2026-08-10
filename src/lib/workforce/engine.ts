@@ -361,7 +361,7 @@ export async function retrieveContextForAgent(agentSlug: string, query: string):
 
 export async function seedWorkforceAgents() {
   const { ALL_WORKFORCE_AGENTS } = await import('./definitions');
-  const results = [];
+  const results: Array<{ slug: string; id: string; created: boolean }> = [];
 
   for (const def of ALL_WORKFORCE_AGENTS) {
     const agent = await createWorkforceAgentFromDefinition(def);
