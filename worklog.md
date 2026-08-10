@@ -307,3 +307,29 @@ Stage Summary:
 - All borders made more visible: 0.18 chroma 0.008 (was 0.16/0.006)
 - Zero hardcoded hex dark colors remain in workforce components
 - 263+ globals.css replacements + 405 component token replacements = 668+ total changes
+
+---
+Task ID: 8
+Agent: Main Agent
+Task: Fix 'runLiveEnrich is not defined' error and audit Leads workspace
+
+Work Log:
+- Root cause: `runLiveEnrich` function was referenced at line 2286 (onClick handler) but never defined
+- Implemented `runLiveEnrich` callback function (75 lines) following existing `runEnrichmentTask` pattern:
+  - Calls POST /api/leads/[id]/live-enrich with targetTier: 'super_hot' and phases: [1,2,3,4,5]
+  - Sets liveEnrichRunning state for UI feedback
+  - Initializes 5-phase pipeline steps for progressive UI updates
+  - Updates liveEnrichSteps from API response
+  - Stores tierUpgrade and pipelineHealth results
+  - Reloads leads data after enrichment via loadLeads()
+  - Error handling: marks pending/running steps as failed on catch
+- Fixed handleDeleteLead to use safeFetchJSON instead of raw fetch (prevents client-server state mismatch on 4xx/5xx)
+- Added aiScoringError display in UI (was set but never rendered - now shows red error banner)
+- Removed 4 unused imports: Lightbulb, X (lucide-react), Progress, Separator (ui components)
+- Full audit confirmed: all 30+ onClick/onSubmit handlers reference defined functions - no more "is not defined" errors
+
+Stage Summary:
+- runLiveEnrich is now fully implemented with 5-phase live enrichment pipeline
+- Live Enrich tab now works: click "Run Live Enrich" → calls API → shows progressive pipeline steps → displays results
+- All Leads sub-tabs (overview, enrich, live, agent) verified working with zero runtime errors
+- Clean build passes with zero TypeScript errors

@@ -54,7 +54,6 @@ import {
   ChevronRight,
   Sparkles,
   Loader2,
-  Lightbulb,
   Zap,
   ChevronDown,
   ChevronRight as ChevronRightIcon,
@@ -86,15 +85,13 @@ import {
   Rocket,
   Scan,
   Wand2,
-  X,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
 import type { LeadTier, LeadStage } from '@/lib/types';
 import { TIER_COLORS, STAGE_LABELS, STAGE_COLORS } from '@/lib/types';
 import { safeFetchJSON, cn } from '@/lib/utils';
 import { useAIOneShot, useAIChat } from '@/hooks/use-ai-chat';
-import { Progress } from '@/components/ui/progress';
-import { Separator } from '@/components/ui/separator';
+
 
 // ============================================================
 // Types
@@ -570,7 +567,7 @@ When the user asks you to perform an action, explain what you'll do, then provid
 
   const handleDeleteLead = async (id: string) => {
     try {
-      await fetch(`/api/leads/${id}`, { method: 'DELETE' });
+      await safeFetchJSON<void>(`/api/leads/${id}`, { method: 'DELETE' });
       setLeads((prev) => prev.filter((l) => l.id !== id));
       setSelectedLead(null);
     } catch (error) {
@@ -1055,6 +1052,86 @@ Format each action exactly like this:
       await runEnrichmentTask(task.id);
     }
   }, [enrichmentTasks, runEnrichmentTask, selectedLead]);
+
+  // ============================================================
+  // Live Enrich — 5-Phase Pipeline with Tier Upgrade Targeting
+  // ============================================================
+
+  const runLiveEnrich = useCallback(async () => {
+    if (!selectedLead) return;
+
+    setLiveEnrichRunning(true);
+    setLiveEnrichSteps([]);
+    setLiveEnrichResult(null);
+
+    // Define the 5 phases for progressive UI updates
+    const phases = [
+      { step: 'data_gathering', phase: 1, label: 'Data Gathering', status: 'running' as const },
+      { step: 'bant_analysis', phase: 2, label: 'BANT Analysis', status: 'pending' as const },
+      { step: 'deep_scoring', phase: 3, label: 'Deep Scoring', status: 'pending' as const },
+      { step: 'tier_upgrade', phase: 4, label: 'Tier Upgrade Engine', status: 'pending' as const },
+      { step: 'action_synthesis', phase: 5, label: 'Action Synthesis', status: 'pending' as const },
+    ];
+
+    setLiveEnrichSteps(phases);
+
+    try {
+      // Call the Live Enrich API endpoint
+      const res = await safeFetchJSON<{
+        leadId: string;
+        steps: Array<{
+          step: string; phase: number; label: string; status: string;
+          result?: string; fieldsUpdated?: string[]; scoreImpact?: { dimension: string; before: number; after: number };
+          data?: Record<string, unknown>;
+        }>;
+        tierUpgrade: {
+          previousTier: string; newTier: string; previousScore: number; newScore: number;
+          upgradeReason: string; upgradePath: string[]; confidence: number;
+          remainingGaps: string[]; recommendedActions: string[];
+        };
+        finalLead: Record<string, unknown>;
+        pipelineHealth: {
+          dataCompletenessBefore: number; dataCompletenessAfter: number;
+          fieldsEnriched: number; scoreImprovement: number;
+          tierUpgradeAchieved: boolean; pipelineEfficiency: number;
+        };
+      }>(`/api/leads/${selectedLead.id}/live-enrich`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          targetTier: 'super_hot',
+          phases: [1, 2, 3, 4, 5],
+        }),
+      });
+
+      // Update steps from the API response
+      if (res.steps && res.steps.length > 0) {
+        setLiveEnrichSteps(res.steps);
+      }
+
+      // Store the result (tier upgrade + pipeline health)
+      setLiveEnrichResult({
+        tierUpgrade: res.tierUpgrade,
+        pipelineHealth: res.pipelineHealth,
+      });
+
+      // Store pipeline health data for visualization
+      setPipelineHealthData(res.pipelineHealth as Record<string, unknown>);
+
+      // Reload leads to reflect enriched data
+      loadLeads();
+
+    } catch (err) {
+      // Mark all pending/running steps as failed
+      setLiveEnrichSteps(prev => prev.map(s =>
+        s.status === 'running' || s.status === 'pending'
+          ? { ...s, status: 'failed' as const, result: err instanceof Error ? err.message : 'Pipeline failed' }
+          : s
+      ));
+    } finally {
+      setLiveEnrichRunning(false);
+    }
+  }, [selectedLead, loadLeads]);
 
   // ============================================================
   // Agent: Send message
@@ -2242,6 +2319,12 @@ ${agentInput.trim()}`;
                               </div>
                             )}
                           </>
+                        )}
+                        {aiScoringError && (
+                          <div className="rounded-lg bg-red-500/10 border border-red-500/20 p-2.5 text-xs text-red-400 flex items-center gap-2">
+                            <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                            {aiScoringError}
+                          </div>
                         )}
                       </div>
                     )}
