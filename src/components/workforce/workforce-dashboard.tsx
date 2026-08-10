@@ -401,16 +401,16 @@ export function WorkforceDashboard({
   });
 
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* ─── 1. Command Center Header ─── */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0f]/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20">
               <Bot className="h-5 w-5 text-emerald-500" />
             </div>
             <div>
-              <h1 className="text-lg font-bold tracking-tight text-white sm:text-xl">
+              <h1 className="text-lg font-bold tracking-tight text-foreground sm:text-xl">
                 AI Workforce Command Center
               </h1>
               <div
@@ -425,7 +425,7 @@ export function WorkforceDashboard({
 
           <div className="flex items-center gap-2 sm:gap-3">
             {/* Clock */}
-            <div className="hidden items-center gap-1.5 rounded-lg border border-white/10 bg-[#111118] px-3 py-1.5 font-mono text-sm text-emerald-400 sm:flex">
+            <div className="hidden items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm text-emerald-400 sm:flex">
               <Clock className="h-3.5 w-3.5" />
               <span>{clockStr}</span>
             </div>
@@ -442,7 +442,7 @@ export function WorkforceDashboard({
             <Button
               variant="ghost"
               size="sm"
-              className="hidden gap-1.5 text-white/70 hover:bg-white/10 hover:text-white sm:flex"
+              className="hidden gap-1.5 text-foreground/70 hover:bg-secondary hover:text-foreground sm:flex"
             >
               <Stethoscope className="h-3.5 w-3.5" />
               Health Check
@@ -450,7 +450,7 @@ export function WorkforceDashboard({
             <Button
               variant="ghost"
               size="sm"
-              className="hidden gap-1.5 text-white/70 hover:bg-white/10 hover:text-white sm:flex"
+              className="hidden gap-1.5 text-foreground/70 hover:bg-secondary hover:text-foreground sm:flex"
             >
               <Sprout className="h-3.5 w-3.5" />
               Seed Agents
@@ -460,7 +460,7 @@ export function WorkforceDashboard({
             <Button
               variant="ghost"
               size="icon"
-              className="text-white/70 hover:bg-white/10 hover:text-white"
+              className="text-foreground/70 hover:bg-secondary hover:text-foreground"
               onClick={onRefresh}
               disabled={isLoading}
             >
@@ -476,7 +476,7 @@ export function WorkforceDashboard({
         {/* ─── 2. Global Metrics Bar ─── */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
           {/* Total Agents */}
-          <Card className="border-white/10 bg-[#111118] shadow-none">
+          <Card className="border-border bg-card shadow-none">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-emerald-500/15">
@@ -488,10 +488,10 @@ export function WorkforceDashboard({
                 </div>
               </div>
               <div className="mt-3">
-                <p className="text-2xl font-bold text-white">
+                <p className="text-2xl font-bold text-foreground">
                   {metrics.totalAgents}
                 </p>
-                <p className="mt-0.5 text-xs text-white/50">
+                <p className="mt-0.5 text-xs text-foreground/50">
                   {metrics.activeAgents} active / {metrics.totalAgents} total
                 </p>
               </div>
@@ -499,7 +499,7 @@ export function WorkforceDashboard({
           </Card>
 
           {/* Tasks Completed */}
-          <Card className="border-white/10 bg-[#111118] shadow-none">
+          <Card className="border-border bg-card shadow-none">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-blue-500/15">
@@ -511,10 +511,10 @@ export function WorkforceDashboard({
                 </div>
               </div>
               <div className="mt-3">
-                <p className="text-2xl font-bold text-white">
+                <p className="text-2xl font-bold text-foreground">
                   {formatNumber(metrics.totalCompleted)}
                 </p>
-                <p className="mt-0.5 text-xs text-white/50">
+                <p className="mt-0.5 text-xs text-foreground/50">
                   Tasks completed
                 </p>
               </div>
@@ -522,7 +522,7 @@ export function WorkforceDashboard({
           </Card>
 
           {/* Success Rate */}
-          <Card className="border-white/10 bg-[#111118] shadow-none">
+          <Card className="border-border bg-card shadow-none">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-violet-500/15">
@@ -534,10 +534,10 @@ export function WorkforceDashboard({
                 </div>
               </div>
               <div className="mt-3">
-                <p className="text-2xl font-bold text-white">
+                <p className="text-2xl font-bold text-foreground">
                   {metrics.avgSuccessRate.toFixed(1)}%
                 </p>
-                <p className="mt-0.5 text-xs text-white/50">
+                <p className="mt-0.5 text-xs text-foreground/50">
                   Avg success rate
                 </p>
               </div>
@@ -545,7 +545,7 @@ export function WorkforceDashboard({
           </Card>
 
           {/* Total Tokens */}
-          <Card className="border-white/10 bg-[#111118] shadow-none">
+          <Card className="border-border bg-card shadow-none">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-cyan-500/15">
@@ -557,10 +557,10 @@ export function WorkforceDashboard({
                 </div>
               </div>
               <div className="mt-3">
-                <p className="text-2xl font-bold text-white">
+                <p className="text-2xl font-bold text-foreground">
                   {formatTokens(metrics.totalTokens)}
                 </p>
-                <p className="mt-0.5 text-xs text-white/50">
+                <p className="mt-0.5 text-xs text-foreground/50">
                   Total tokens used
                 </p>
               </div>
@@ -568,7 +568,7 @@ export function WorkforceDashboard({
           </Card>
 
           {/* Avg Health */}
-          <Card className="col-span-2 border-white/10 bg-[#111118] shadow-none sm:col-span-1">
+          <Card className="col-span-2 border-border bg-card shadow-none sm:col-span-1">
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-rose-500/15">
@@ -589,13 +589,13 @@ export function WorkforceDashboard({
                 </div>
               </div>
               <div className="mt-3">
-                <p className="text-2xl font-bold text-white">
+                <p className="text-2xl font-bold text-foreground">
                   {metrics.avgHealth.toFixed(0)}
-                  <span className="text-sm font-normal text-white/40">
+                  <span className="text-sm font-normal text-foreground/40">
                     /100
                   </span>
                 </p>
-                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -611,23 +611,23 @@ export function WorkforceDashboard({
 
         {/* ─── 3. Live Orchestration Feed ─── */}
         <section>
-          <Card className="border-white/10 bg-[#111118] shadow-none">
+          <Card className="border-border bg-card shadow-none">
             <CardHeader className="pb-2">
-              <CardTitle className="flex items-center gap-2 text-sm font-semibold text-white/80">
+              <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/80">
                 <Zap className="h-4 w-4 text-amber-400" />
                 Live Orchestration Feed
                 <span className="ml-1 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
-              <ScrollArea className="h-48 w-full rounded-lg border border-white/5 bg-[#0a0a0f]">
+              <ScrollArea className="h-48 w-full rounded-lg border border-border/50 bg-background">
                 <div className="space-y-0.5 p-2">
                   {feedEntries.map((entry) => (
                     <div
                       key={entry.id}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-white/5"
+                      className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/50"
                     >
-                      <span className="shrink-0 font-mono text-[11px] text-white/30">
+                      <span className="shrink-0 font-mono text-[11px] text-foreground/30">
                         {formatFeedTimestamp(entry.timestamp)}
                       </span>
                       <span className="shrink-0 text-base leading-none">
@@ -639,7 +639,7 @@ export function WorkforceDashboard({
                       >
                         {entry.agentName}
                       </span>
-                      <span className="text-xs text-white/40">
+                      <span className="text-xs text-foreground/40">
                         {entry.action}
                       </span>
                       <span className="ml-auto shrink-0">
@@ -674,23 +674,23 @@ export function WorkforceDashboard({
         {/* ─── 4. Agent Grid ─── */}
         <section>
           <div className="mb-3 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-white/80">
+            <h2 className="text-sm font-semibold text-foreground/80">
               Agent Workforce
             </h2>
             <Badge
               variant="secondary"
-              className="border-white/10 bg-white/5 text-white/60"
+              className="border-border bg-secondary/50 text-muted-foreground"
             >
               {agents.length} agents
             </Badge>
           </div>
 
           {agents.length === 0 ? (
-            <Card className="border-white/10 bg-[#111118] shadow-none">
+            <Card className="border-border bg-card shadow-none">
               <CardContent className="flex flex-col items-center justify-center py-16">
-                <Bot className="mb-3 h-10 w-10 text-white/20" />
-                <p className="text-sm text-white/40">No agents deployed</p>
-                <p className="mt-1 text-xs text-white/25">
+                <Bot className="mb-3 h-10 w-10 text-foreground/20" />
+                <p className="text-sm text-foreground/40">No agents deployed</p>
+                <p className="mt-1 text-xs text-foreground/25">
                   Seed your workforce to get started
                 </p>
               </CardContent>
@@ -709,7 +709,7 @@ export function WorkforceDashboard({
                 return (
                   <Card
                     key={agent.id}
-                    className="group relative overflow-hidden border-white/10 bg-[#111118] shadow-none transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
+                    className="group relative overflow-hidden border-border bg-card shadow-none transition-all duration-300 hover:-translate-y-0.5 hover:shadow-lg"
                     style={{
                       boxShadow: `inset 0 1px 0 0 ${agent.color}15, 0 0 0 0 transparent`,
                     }}
@@ -737,7 +737,7 @@ export function WorkforceDashboard({
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
-                            <h3 className="truncate text-sm font-semibold text-white">
+                            <h3 className="truncate text-sm font-semibold text-foreground">
                               {agent.name}
                             </h3>
                             {/* Status dot */}
@@ -754,7 +754,7 @@ export function WorkforceDashboard({
                               />
                             </span>
                           </div>
-                          <p className="mt-0.5 truncate text-xs text-white/50">
+                          <p className="mt-0.5 truncate text-xs text-foreground/50">
                             {agent.role}
                           </p>
                         </div>
@@ -774,7 +774,7 @@ export function WorkforceDashboard({
                         </Badge>
                         <Badge
                           variant="secondary"
-                          className="border-0 bg-white/5 px-2 py-0.5 text-[10px] font-medium capitalize text-white/60"
+                          className="border-0 bg-secondary/50 px-2 py-0.5 text-[10px] font-medium capitalize text-muted-foreground"
                         >
                           {agent.status}
                         </Badge>
@@ -783,7 +783,7 @@ export function WorkforceDashboard({
                       {/* Health bar */}
                       <div className="mt-3">
                         <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-white/40">Health</span>
+                          <span className="text-foreground/40">Health</span>
                           <span
                             className="font-medium"
                             style={{ color: hColor }}
@@ -791,7 +791,7 @@ export function WorkforceDashboard({
                             {agent.healthScore} - {healthLabel(agent.healthScore)}
                           </span>
                         </div>
-                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-white/10">
+                        <div className="mt-1 h-1.5 w-full overflow-hidden rounded-full bg-secondary">
                           <div
                             className="h-full rounded-full transition-all duration-500"
                             style={{
@@ -804,18 +804,18 @@ export function WorkforceDashboard({
 
                       {/* Current task */}
                       {currentTask && (
-                        <div className="mt-3 rounded-lg border border-white/5 bg-[#0a0a0f] p-2.5">
-                          <div className="flex items-center gap-1.5 text-[11px] text-white/50">
+                        <div className="mt-3 rounded-lg border border-border/50 bg-background p-2.5">
+                          <div className="flex items-center gap-1.5 text-[11px] text-foreground/50">
                             <Loader2 className="h-3 w-3 animate-spin text-blue-400" />
                             Current Task
                           </div>
-                          <p className="mt-1 truncate text-xs font-medium text-white/80">
+                          <p className="mt-1 truncate text-xs font-medium text-foreground/80">
                             {currentTask.title}
                           </p>
                           <div className="mt-2">
                             <Progress
                               value={currentTask.progress}
-                              className="h-1 bg-white/10"
+                              className="h-1 bg-secondary"
                             />
                           </div>
                         </div>
@@ -827,24 +827,24 @@ export function WorkforceDashboard({
                           <p className="text-xs font-bold text-emerald-400">
                             {agent.tasksCompleted}
                           </p>
-                          <p className="text-[10px] text-white/40">Done</p>
+                          <p className="text-[10px] text-foreground/40">Done</p>
                         </div>
                         <div className="rounded-md bg-amber-500/10 px-2 py-1.5 text-center">
                           <p className="text-xs font-bold text-amber-400">
                             {agent.tasksInProgress}
                           </p>
-                          <p className="text-[10px] text-white/40">Active</p>
+                          <p className="text-[10px] text-foreground/40">Active</p>
                         </div>
                         <div className="rounded-md bg-red-500/10 px-2 py-1.5 text-center">
                           <p className="text-xs font-bold text-red-400">
                             {agent.tasksFailed}
                           </p>
-                          <p className="text-[10px] text-white/40">Failed</p>
+                          <p className="text-[10px] text-foreground/40">Failed</p>
                         </div>
                       </div>
 
                       {/* Skills / Tools counts */}
-                      <div className="mt-3 flex items-center gap-3 text-[11px] text-white/40">
+                      <div className="mt-3 flex items-center gap-3 text-[11px] text-foreground/40">
                         <span className="inline-flex items-center gap-1">
                           <Shield className="h-3 w-3" />
                           {skillsCount} skills
@@ -861,7 +861,7 @@ export function WorkforceDashboard({
 
                       {/* Open Workspace button */}
                       <Button
-                        className="mt-3 w-full gap-1.5 border-white/10 bg-white/5 text-white/80 hover:bg-white/10 hover:text-white"
+                        className="mt-3 w-full gap-1.5 border-border bg-secondary/50 text-foreground/80 hover:bg-secondary hover:text-foreground"
                         variant="outline"
                         size="sm"
                         onClick={() => onOpenWorkspace(agent)}
@@ -880,24 +880,24 @@ export function WorkforceDashboard({
         {/* ─── 5. Global Task Queue Panel ─── */}
         <section>
           <Collapsible open={taskQueueOpen} onOpenChange={setTaskQueueOpen}>
-            <Card className="border-white/10 bg-[#111118] shadow-none">
+            <Card className="border-border bg-card shadow-none">
               <CollapsibleTrigger asChild>
-                <CardHeader className="cursor-pointer select-none pb-2 transition-colors hover:bg-white/5">
+                <CardHeader className="cursor-pointer select-none pb-2 transition-colors hover:bg-secondary/50">
                   <div className="flex items-center justify-between">
-                    <CardTitle className="flex items-center gap-2 text-sm font-semibold text-white/80">
+                    <CardTitle className="flex items-center gap-2 text-sm font-semibold text-foreground/80">
                       <Activity className="h-4 w-4 text-blue-400" />
                       Global Task Queue
                       <Badge
                         variant="secondary"
-                        className="border-white/10 bg-white/5 text-[10px] text-white/50"
+                        className="border-border bg-secondary/50 text-[10px] text-foreground/50"
                       >
                         {tasks.length}
                       </Badge>
                     </CardTitle>
                     {taskQueueOpen ? (
-                      <ChevronUp className="h-4 w-4 text-white/40" />
+                      <ChevronUp className="h-4 w-4 text-foreground/40" />
                     ) : (
-                      <ChevronDown className="h-4 w-4 text-white/40" />
+                      <ChevronDown className="h-4 w-4 text-foreground/40" />
                     )}
                   </div>
                 </CardHeader>
@@ -907,31 +907,31 @@ export function WorkforceDashboard({
                   <ScrollArea className="h-64 w-full">
                     {tasks.length === 0 ? (
                       <div className="flex flex-col items-center justify-center py-12">
-                        <Circle className="mb-2 h-8 w-8 text-white/15" />
-                        <p className="text-xs text-white/30">
+                        <Circle className="mb-2 h-8 w-8 text-foreground/15" />
+                        <p className="text-xs text-foreground/30">
                           No tasks in queue
                         </p>
                       </div>
                     ) : (
                       <Table>
                         <TableHeader>
-                          <TableRow className="border-white/10 hover:bg-transparent">
-                            <TableHead className="text-[11px] text-white/40">
+                          <TableRow className="border-border hover:bg-transparent">
+                            <TableHead className="text-[11px] text-foreground/40">
                               Task
                             </TableHead>
-                            <TableHead className="text-[11px] text-white/40">
+                            <TableHead className="text-[11px] text-foreground/40">
                               Agent
                             </TableHead>
-                            <TableHead className="text-[11px] text-white/40">
+                            <TableHead className="text-[11px] text-foreground/40">
                               Status
                             </TableHead>
-                            <TableHead className="text-[11px] text-white/40">
+                            <TableHead className="text-[11px] text-foreground/40">
                               Priority
                             </TableHead>
-                            <TableHead className="text-[11px] text-white/40">
+                            <TableHead className="text-[11px] text-foreground/40">
                               Progress
                             </TableHead>
-                            <TableHead className="text-[11px] text-white/40">
+                            <TableHead className="text-[11px] text-foreground/40">
                               Created
                             </TableHead>
                           </TableRow>
@@ -940,19 +940,19 @@ export function WorkforceDashboard({
                           {tasks.slice(0, 20).map((task) => (
                             <TableRow
                               key={task.id}
-                              className="border-white/5"
+                              className="border-border/50"
                             >
-                              <TableCell className="max-w-[200px] truncate text-xs font-medium text-white/80">
+                              <TableCell className="max-w-[200px] truncate text-xs font-medium text-foreground/80">
                                 {task.title}
                               </TableCell>
-                              <TableCell className="text-xs text-white/60">
+                              <TableCell className="text-xs text-muted-foreground">
                                 {task.agent ? (
                                   <span className="inline-flex items-center gap-1.5">
                                     <span>{task.agent.avatar}</span>
                                     <span>{task.agent.name}</span>
                                   </span>
                                 ) : (
-                                  <span className="text-white/30">
+                                  <span className="text-foreground/30">
                                     Unassigned
                                   </span>
                                 )}
@@ -963,18 +963,18 @@ export function WorkforceDashboard({
                               <TableCell>
                                 <PriorityBadge priority={task.priority} />
                               </TableCell>
-                              <TableCell className="text-xs text-white/60">
+                              <TableCell className="text-xs text-muted-foreground">
                                 <div className="flex items-center gap-2">
                                   <Progress
                                     value={task.progress}
-                                    className="h-1 w-16 bg-white/10"
+                                    className="h-1 w-16 bg-secondary"
                                   />
                                   <span className="text-[10px]">
                                     {task.progress}%
                                   </span>
                                 </div>
                               </TableCell>
-                              <TableCell className="text-[11px] text-white/40">
+                              <TableCell className="text-[11px] text-foreground/40">
                                 {relativeTime(task.createdAt)}
                               </TableCell>
                             </TableRow>
@@ -992,13 +992,13 @@ export function WorkforceDashboard({
         {/* ─── 6. Department Breakdown ─── */}
         <section>
           <div className="mb-3">
-            <h2 className="text-sm font-semibold text-white/80">
+            <h2 className="text-sm font-semibold text-foreground/80">
               Department Breakdown
             </h2>
           </div>
           {departments.length === 0 ? (
-            <Card className="border-white/10 bg-[#111118] shadow-none">
-              <CardContent className="py-8 text-center text-xs text-white/30">
+            <Card className="border-border bg-card shadow-none">
+              <CardContent className="py-8 text-center text-xs text-foreground/30">
                 No departments
               </CardContent>
             </Card>
@@ -1007,7 +1007,7 @@ export function WorkforceDashboard({
               {departments.map((dept) => (
                 <Card
                   key={dept.name}
-                  className="border-white/10 bg-[#111118] shadow-none transition-all duration-300 hover:bg-[#1a1a24]"
+                  className="border-border bg-card shadow-none transition-all duration-300 hover:bg-input"
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center gap-2">
@@ -1015,19 +1015,19 @@ export function WorkforceDashboard({
                         className="h-2.5 w-2.5 rounded-full"
                         style={{ backgroundColor: dept.color }}
                       />
-                      <h3 className="text-xs font-semibold text-white/80">
+                      <h3 className="text-xs font-semibold text-foreground/80">
                         {dept.name}
                       </h3>
                     </div>
                     <div className="mt-3 space-y-2">
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-white/40">Agents</span>
-                        <span className="font-medium text-white/70">
+                        <span className="text-foreground/40">Agents</span>
+                        <span className="font-medium text-foreground/70">
                           {dept.agentCount}
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-white/40">Avg Health</span>
+                        <span className="text-foreground/40">Avg Health</span>
                         <span
                           className="font-medium"
                           style={{ color: healthColor(dept.avgHealth) }}
@@ -1036,8 +1036,8 @@ export function WorkforceDashboard({
                         </span>
                       </div>
                       <div className="flex items-center justify-between text-[11px]">
-                        <span className="text-white/40">Total Tasks</span>
-                        <span className="font-medium text-white/70">
+                        <span className="text-foreground/40">Total Tasks</span>
+                        <span className="font-medium text-foreground/70">
                           {formatNumber(dept.totalTasks)}
                         </span>
                       </div>
@@ -1090,7 +1090,7 @@ function TaskStatusBadge({ status }: { status: string }) {
       return (
         <Badge
           variant="secondary"
-          className="border-0 bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/50"
+          className="border-0 bg-secondary px-2 py-0.5 text-[10px] font-medium text-foreground/50"
         >
           pending
         </Badge>
@@ -1099,7 +1099,7 @@ function TaskStatusBadge({ status }: { status: string }) {
       return (
         <Badge
           variant="secondary"
-          className="border-0 bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/50"
+          className="border-0 bg-secondary px-2 py-0.5 text-[10px] font-medium text-foreground/50"
         >
           {status}
         </Badge>
@@ -1141,7 +1141,7 @@ function PriorityBadge({ priority }: { priority: string }) {
       return (
         <Badge
           variant="secondary"
-          className="border-0 bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/50"
+          className="border-0 bg-secondary px-2 py-0.5 text-[10px] font-medium text-foreground/50"
         >
           low
         </Badge>
@@ -1150,7 +1150,7 @@ function PriorityBadge({ priority }: { priority: string }) {
       return (
         <Badge
           variant="secondary"
-          className="border-0 bg-white/10 px-2 py-0.5 text-[10px] font-medium text-white/50"
+          className="border-0 bg-secondary px-2 py-0.5 text-[10px] font-medium text-foreground/50"
         >
           {priority}
         </Badge>

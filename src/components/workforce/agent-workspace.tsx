@@ -229,7 +229,7 @@ function permissionColor(perm: string): string {
   if (lower.includes('write')) return 'bg-amber-500/20 text-amber-400 border-amber-500/30';
   if (lower.includes('read')) return 'bg-sky-500/20 text-sky-400 border-sky-500/30';
   if (lower.includes('manage')) return 'bg-purple-500/20 text-purple-400 border-purple-500/30';
-  return 'bg-white/10 text-white/60 border-white/20';
+  return 'bg-secondary text-muted-foreground border-border';
 }
 
 function priorityBadgeStyle(priority: string): string {
@@ -243,7 +243,7 @@ function priorityBadgeStyle(priority: string): string {
     case 'low':
       return 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30';
     default:
-      return 'bg-white/10 text-white/60 border-white/20';
+      return 'bg-secondary text-muted-foreground border-border';
   }
 }
 
@@ -512,9 +512,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-[#0a0a0f] text-white">
+    <div className="min-h-screen bg-background text-foreground">
       {/* ── Workspace Header ──────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-white/10 bg-[#0a0a0f]/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 py-4">
           {/* Top row: back + avatar + name */}
           <div className="flex items-center gap-4">
@@ -522,7 +522,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
               variant="ghost"
               size="icon"
               onClick={onBack}
-              className="shrink-0 text-white/60 hover:text-white hover:bg-white/10"
+              className="shrink-0 text-muted-foreground hover:text-foreground hover:bg-secondary"
             >
               <ArrowLeft className="size-5" />
             </Button>
@@ -540,7 +540,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
               </div>
               {/* Status dot */}
               <div
-                className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-[#0a0a0f]"
+                className="absolute -bottom-0.5 -right-0.5 size-3.5 rounded-full border-2 border-background"
                 style={{ backgroundColor: statusDotColor(agent.status) }}
               >
                 {agent.status === 'active' && (
@@ -555,9 +555,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             {/* Name + Role */}
             <div className="flex-1 min-w-0">
               <h1 className="text-lg font-bold truncate">{agent.name}</h1>
-              <div className="flex items-center gap-2 text-sm text-white/60">
+              <div className="flex items-center gap-2 text-sm text-muted-foreground">
                 <span>{agent.role}</span>
-                <span className="text-white/30">|</span>
+                <span className="text-foreground/30">|</span>
                 <span>{agent.department}</span>
                 <Badge
                   variant="outline"
@@ -576,7 +576,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             <div className="hidden sm:flex items-center gap-2 shrink-0">
               <Heart className="size-4" style={{ color: healthColor(agent.healthScore) }} />
               <div className="w-24">
-                <div className="h-2 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-2 rounded-full bg-secondary overflow-hidden">
                   <div
                     className="h-full rounded-full transition-all duration-500"
                     style={{
@@ -593,30 +593,30 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
           </div>
 
           {/* Quick stats row */}
-          <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-6 text-xs text-white/50">
+          <div className="mt-3 flex flex-wrap items-center gap-3 sm:gap-6 text-xs text-foreground/50">
             <div className="flex items-center gap-1.5">
               <CheckCircle2 className="size-3.5 text-emerald-400" />
-              <span className="text-white/70 font-medium">{formatNumber(agent.tasksCompleted)}</span>
+              <span className="text-foreground/70 font-medium">{formatNumber(agent.tasksCompleted)}</span>
               <span>Completed</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Loader2 className="size-3.5 text-amber-400" />
-              <span className="text-white/70 font-medium">{agent.tasksInProgress}</span>
+              <span className="text-foreground/70 font-medium">{agent.tasksInProgress}</span>
               <span>In Progress</span>
             </div>
             <div className="flex items-center gap-1.5">
               <TrendingUp className="size-3.5 text-sky-400" />
-              <span className="text-white/70 font-medium">{agent.successRate}%</span>
+              <span className="text-foreground/70 font-medium">{agent.successRate}%</span>
               <span>Success</span>
             </div>
             <div className="flex items-center gap-1.5">
               <Cpu className="size-3.5 text-purple-400" />
-              <span className="text-white/70 font-medium">{formatNumber(agent.totalTokensUsed)}</span>
+              <span className="text-foreground/70 font-medium">{formatNumber(agent.totalTokensUsed)}</span>
               <span>Tokens</span>
             </div>
             <div className="flex items-center gap-1.5 ml-auto">
               <Timer className="size-3.5" />
-              <span className="font-mono text-white/70">{formatUptime(uptime)}</span>
+              <span className="font-mono text-foreground/70">{formatUptime(uptime)}</span>
             </div>
           </div>
 
@@ -651,24 +651,24 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         {activeTab === 'overview' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Agent description */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Bot className="size-4" style={{ color: agent.color }} />
                   About {agent.name}
                 </CardTitle>
               </CardHeader>
               <CardContent>
-                <p className="text-white/60 text-sm leading-relaxed">{agent.description}</p>
+                <p className="text-muted-foreground text-sm leading-relaxed">{agent.description}</p>
               </CardContent>
             </Card>
 
             {/* Persona + Details Grid */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               {/* Persona */}
-              <Card className="bg-[#111118] border-white/10">
+              <Card className="bg-card border-border">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                  <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                     <Brain className="size-4" style={{ color: agent.color }} />
                     Persona
                   </CardTitle>
@@ -681,17 +681,17 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     { label: 'Communication Style', value: 'Concise, actionable, context-aware' },
                   ].map((item) => (
                     <div key={item.label} className="flex items-start gap-3">
-                      <span className="text-xs text-white/40 w-32 shrink-0 pt-0.5">{item.label}</span>
-                      <span className="text-sm text-white/70">{item.value}</span>
+                      <span className="text-xs text-foreground/40 w-32 shrink-0 pt-0.5">{item.label}</span>
+                      <span className="text-sm text-foreground/70">{item.value}</span>
                     </div>
                   ))}
                 </CardContent>
               </Card>
 
               {/* Configuration Details */}
-              <Card className="bg-[#111118] border-white/10">
+              <Card className="bg-card border-border">
                 <CardHeader>
-                  <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                  <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                     <Settings className="size-4" style={{ color: agent.color }} />
                     Configuration
                   </CardTitle>
@@ -707,9 +707,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     { icon: <Zap className="size-3.5" />, label: 'Max Tokens', value: formatNumber(agent.maxTokens) },
                   ].map((item) => (
                     <div key={item.label} className="flex items-center gap-3">
-                      <div className="text-white/40">{item.icon}</div>
-                      <span className="text-xs text-white/40 w-28 shrink-0">{item.label}</span>
-                      <span className="text-sm text-white/70 font-medium">{item.value}</span>
+                      <div className="text-foreground/40">{item.icon}</div>
+                      <span className="text-xs text-foreground/40 w-28 shrink-0">{item.label}</span>
+                      <span className="text-sm text-foreground/70 font-medium">{item.value}</span>
                     </div>
                   ))}
                 </CardContent>
@@ -717,9 +717,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </div>
 
             {/* Success Rate Over Time */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <TrendingUp className="size-4" style={{ color: agent.color }} />
                   Success Rate Over Time
                 </CardTitle>
@@ -737,7 +737,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                           }}
                         />
                       </div>
-                      <span className="text-[10px] text-white/40">
+                      <span className="text-[10px] text-foreground/40">
                         {['6d', '5d', '4d', '3d', '2d', '1d', 'Now'][i]}
                       </span>
                     </div>
@@ -747,14 +747,14 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* Time Active */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Power className="size-5" style={{ color: agent.color }} />
                     <div>
-                      <span className="text-sm text-white/80 font-medium">Active Uptime</span>
-                      <span className="text-xs text-white/40 ml-2">
+                      <span className="text-sm text-foreground/80 font-medium">Active Uptime</span>
+                      <span className="text-xs text-foreground/40 ml-2">
                         Last active: {formatRelativeTime(agent.lastActiveAt)}
                       </span>
                     </div>
@@ -772,12 +772,12 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         {activeTab === 'superpowers' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Skills */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Sparkles className="size-4" style={{ color: agent.color }} />
                   Skills
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {skills.length}
                   </Badge>
                 </CardTitle>
@@ -787,7 +787,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   {skills.map((skill, i) => (
                     <span
                       key={i}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors hover:border-white/30"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors hover:border-border"
                       style={{
                         backgroundColor: `${agent.color}15`,
                         borderColor: `${agent.color}30`,
@@ -799,19 +799,19 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     </span>
                   ))}
                   {skills.length === 0 && (
-                    <span className="text-xs text-white/40">No skills configured</span>
+                    <span className="text-xs text-foreground/40">No skills configured</span>
                   )}
                 </div>
               </CardContent>
             </Card>
 
             {/* Tools */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Wrench className="size-4" style={{ color: agent.color }} />
                   Tools
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {tools.length}
                   </Badge>
                 </CardTitle>
@@ -821,26 +821,26 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   {tools.map((tool, i) => (
                     <div
                       key={i}
-                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-white/10 bg-[#1a1a24] hover:border-white/20 transition-colors"
+                      className="flex items-center gap-2 px-3 py-2 rounded-lg border border-border bg-input hover:border-border transition-colors"
                     >
-                      <Wrench className="size-3.5 text-white/50" />
-                      <span className="text-xs text-white/70 font-medium truncate">{tool}</span>
+                      <Wrench className="size-3.5 text-foreground/50" />
+                      <span className="text-xs text-foreground/70 font-medium truncate">{tool}</span>
                     </div>
                   ))}
                   {tools.length === 0 && (
-                    <span className="text-xs text-white/40">No tools configured</span>
+                    <span className="text-xs text-foreground/40">No tools configured</span>
                   )}
                 </div>
               </CardContent>
             </Card>
 
             {/* MCP Connections */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Server className="size-4" style={{ color: agent.color }} />
                   MCP Connections
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {mcpServers.length}
                   </Badge>
                 </CardTitle>
@@ -850,11 +850,11 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   {mcpServers.map((server, i) => (
                     <div
                       key={i}
-                      className="flex items-center justify-between px-4 py-3 rounded-lg border border-white/10 bg-[#1a1a24]"
+                      className="flex items-center justify-between px-4 py-3 rounded-lg border border-border bg-input"
                     >
                       <div className="flex items-center gap-2">
-                        <Server className="size-4 text-white/50" />
-                        <span className="text-sm text-white/70 font-medium">{server}</span>
+                        <Server className="size-4 text-foreground/50" />
+                        <span className="text-sm text-foreground/70 font-medium">{server}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="size-2 rounded-full bg-emerald-400">
@@ -865,19 +865,19 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     </div>
                   ))}
                   {mcpServers.length === 0 && (
-                    <span className="text-xs text-white/40">No MCP servers configured</span>
+                    <span className="text-xs text-foreground/40">No MCP servers configured</span>
                   )}
                 </div>
               </CardContent>
             </Card>
 
             {/* RAG Sources */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Database className="size-4" style={{ color: agent.color }} />
                   RAG Sources
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {ragSources.length}
                   </Badge>
                 </CardTitle>
@@ -887,11 +887,11 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   {ragSources.map((source, i) => (
                     <div
                       key={i}
-                      className="flex items-center justify-between px-4 py-3 rounded-lg border border-white/10 bg-[#1a1a24]"
+                      className="flex items-center justify-between px-4 py-3 rounded-lg border border-border bg-input"
                     >
                       <div className="flex items-center gap-2">
-                        <Database className="size-4 text-white/50" />
-                        <span className="text-sm text-white/70 font-medium">{source}</span>
+                        <Database className="size-4 text-foreground/50" />
+                        <span className="text-sm text-foreground/70 font-medium">{source}</span>
                       </div>
                       <div className="flex items-center gap-1.5">
                         <div className="size-2 rounded-full bg-emerald-400" />
@@ -900,19 +900,19 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     </div>
                   ))}
                   {ragSources.length === 0 && (
-                    <span className="text-xs text-white/40">No RAG sources configured</span>
+                    <span className="text-xs text-foreground/40">No RAG sources configured</span>
                   )}
                 </div>
               </CardContent>
             </Card>
 
             {/* Permissions */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Shield className="size-4" style={{ color: agent.color }} />
                   Permissions
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {permissions.length}
                   </Badge>
                 </CardTitle>
@@ -929,16 +929,16 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     </span>
                   ))}
                   {permissions.length === 0 && (
-                    <span className="text-xs text-white/40">No permissions configured</span>
+                    <span className="text-xs text-foreground/40">No permissions configured</span>
                   )}
                 </div>
               </CardContent>
             </Card>
 
             {/* Expertise */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Lightbulb className="size-4" style={{ color: agent.color }} />
                   Expertise
                 </CardTitle>
@@ -948,14 +948,14 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   {expertiseList.map((exp, i) => (
                     <span
                       key={i}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-white/5 border border-white/10 text-white/70 hover:border-white/20 transition-colors"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-secondary/50 border border-border text-foreground/70 hover:border-border transition-colors"
                     >
                       <Target className="size-3" />
                       {exp}
                     </span>
                   ))}
                   {expertiseList.length === 0 && (
-                    <span className="text-xs text-white/40">No expertise areas defined</span>
+                    <span className="text-xs text-foreground/40">No expertise areas defined</span>
                   )}
                 </div>
               </CardContent>
@@ -969,15 +969,15 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             {/* Task Stats */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               {[
-                { label: 'Pending', value: pendingCount, icon: <Clock className="size-4 text-white/50" />, color: '#6B7280' },
-                { label: 'Running', value: runningCount, icon: <Loader2 className="size-4 text-white/50 animate-spin" />, color: '#3B82F6' },
+                { label: 'Pending', value: pendingCount, icon: <Clock className="size-4 text-foreground/50" />, color: '#6B7280' },
+                { label: 'Running', value: runningCount, icon: <Loader2 className="size-4 text-foreground/50 animate-spin" />, color: '#3B82F6' },
                 { label: 'Completed Today', value: completedToday, icon: <CheckCircle2 className="size-4 text-emerald-400" />, color: '#10B981' },
                 { label: 'Failed Today', value: failedToday, icon: <XCircle className="size-4 text-red-400" />, color: '#EF4444' },
               ].map((stat) => (
-                <div key={stat.label} className="px-4 py-3 rounded-xl border border-white/10 bg-[#111118]">
+                <div key={stat.label} className="px-4 py-3 rounded-xl border border-border bg-card">
                   <div className="flex items-center gap-2 mb-1">
                     {stat.icon}
-                    <span className="text-xs text-white/40">{stat.label}</span>
+                    <span className="text-xs text-foreground/40">{stat.label}</span>
                   </div>
                   <span className="text-xl font-bold" style={{ color: stat.color }}>{stat.value}</span>
                 </div>
@@ -985,9 +985,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </div>
 
             {/* Create Task Form */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Plus className="size-4" style={{ color: agent.color }} />
                   Create Task
                 </CardTitle>
@@ -995,21 +995,21 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
               <CardContent className="space-y-3">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   <div className="space-y-1">
-                    <Label className="text-xs text-white/50">Title</Label>
+                    <Label className="text-xs text-foreground/50">Title</Label>
                     <Input
                       value={newTaskTitle}
                       onChange={(e) => setNewTaskTitle(e.target.value)}
                       placeholder="Enter task title..."
-                      className="bg-[#1a1a24] border-white/10 text-white text-sm placeholder:text-white/30"
+                      className="bg-input border-border text-foreground text-sm placeholder:text-foreground/30"
                     />
                   </div>
                   <div className="space-y-1">
-                    <Label className="text-xs text-white/50">Priority</Label>
+                    <Label className="text-xs text-foreground/50">Priority</Label>
                     <Select value={newTaskPriority} onValueChange={setNewTaskPriority}>
-                      <SelectTrigger className="bg-[#1a1a24] border-white/10 text-white text-sm">
+                      <SelectTrigger className="bg-input border-border text-foreground text-sm">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-[#111118] border-white/10">
+                      <SelectContent className="bg-card border-border">
                         <SelectItem value="low">Low</SelectItem>
                         <SelectItem value="medium">Medium</SelectItem>
                         <SelectItem value="high">High</SelectItem>
@@ -1019,12 +1019,12 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-white/50">Task Type</Label>
+                  <Label className="text-xs text-foreground/50">Task Type</Label>
                   <Select value={newTaskType} onValueChange={setNewTaskType}>
-                    <SelectTrigger className="bg-[#1a1a24] border-white/10 text-white text-sm">
+                    <SelectTrigger className="bg-input border-border text-foreground text-sm">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#111118] border-white/10">
+                    <SelectContent className="bg-card border-border">
                       {['feature-development', 'bug-fix', 'code-review', 'research', 'analysis', 'documentation', 'outreach', 'campaign', 'deployment', 'monitoring', 'other'].map((type) => (
                         <SelectItem key={type} value={type}>
                           {type.replace(/-/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase())}
@@ -1034,13 +1034,13 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   </Select>
                 </div>
                 <div className="space-y-1">
-                  <Label className="text-xs text-white/50">Description</Label>
+                  <Label className="text-xs text-foreground/50">Description</Label>
                   <Textarea
                     value={newTaskDesc}
                     onChange={(e) => setNewTaskDesc(e.target.value)}
                     placeholder="Describe the task..."
                     rows={2}
-                    className="bg-[#1a1a24] border-white/10 text-white text-sm placeholder:text-white/30 resize-none"
+                    className="bg-input border-border text-foreground text-sm placeholder:text-foreground/30 resize-none"
                   />
                 </div>
                 <Button
@@ -1059,19 +1059,19 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* Active Tasks */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Activity className="size-4" style={{ color: agent.color }} />
                   Active Tasks
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {activeTasks.length}
                   </Badge>
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 {activeTasks.length === 0 ? (
-                  <div className="text-center py-8 text-white/40 text-sm">
+                  <div className="text-center py-8 text-foreground/40 text-sm">
                     No active tasks. Create one above to get started.
                   </div>
                 ) : (
@@ -1079,13 +1079,13 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     {activeTasks.map((task) => (
                       <div
                         key={task.id}
-                        className="p-4 rounded-lg border border-white/10 bg-[#1a1a24] space-y-3"
+                        className="p-4 rounded-lg border border-border bg-input space-y-3"
                       >
                         <div className="flex items-start justify-between gap-2">
                           <div className="min-w-0 flex-1">
-                            <h4 className="text-sm font-medium text-white/90 truncate">{task.title}</h4>
+                            <h4 className="text-sm font-medium text-foreground/90 truncate">{task.title}</h4>
                             <div className="flex items-center gap-2 mt-1">
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-white/20 text-white/50">
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 border-border text-foreground/50">
                                 {task.taskType.replace(/-/g, ' ')}
                               </Badge>
                               <span className={`inline-flex items-center px-2 py-0.5 rounded text-[10px] font-medium border ${priorityBadgeStyle(task.priority)}`}>
@@ -1105,7 +1105,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                             {task.status === 'pending' && (
                               <div className="flex items-center gap-1">
                                 <div className="size-2 rounded-full bg-white/30" />
-                                <span className="text-[10px] text-white/40">Pending</span>
+                                <span className="text-[10px] text-foreground/40">Pending</span>
                               </div>
                             )}
                           </div>
@@ -1113,10 +1113,10 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                         {/* Progress bar */}
                         <div className="space-y-1">
                           <div className="flex justify-between text-[10px]">
-                            <span className="text-white/40">Progress</span>
-                            <span className="text-white/60 font-mono">{Math.round(task.progress)}%</span>
+                            <span className="text-foreground/40">Progress</span>
+                            <span className="text-muted-foreground font-mono">{Math.round(task.progress)}%</span>
                           </div>
-                          <div className="h-1.5 rounded-full bg-white/10 overflow-hidden">
+                          <div className="h-1.5 rounded-full bg-secondary overflow-hidden">
                             <div
                               className="h-full rounded-full transition-all duration-500"
                               style={{
@@ -1128,7 +1128,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                         </div>
                         {/* Meta + Actions */}
                         <div className="flex items-center justify-between">
-                          <span className="text-[10px] text-white/30">
+                          <span className="text-[10px] text-foreground/30">
                             Created {formatRelativeTime(task.createdAt)}
                           </span>
                           <div className="flex items-center gap-1.5">
@@ -1155,7 +1155,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-7 px-2 text-[11px] text-white/50 hover:text-white/70 hover:bg-white/10"
+                              className="h-7 px-2 text-[11px] text-foreground/50 hover:text-foreground/70 hover:bg-secondary"
                             >
                               <Eye className="size-3 mr-1" />
                               View
@@ -1171,29 +1171,29 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
 
             {/* Completed Tasks (collapsible) */}
             <Collapsible open={completedOpen} onOpenChange={setCompletedOpen}>
-              <Card className="bg-[#111118] border-white/10">
+              <Card className="bg-card border-border">
                 <CardHeader>
                   <CollapsibleTrigger asChild>
-                    <CardTitle className="flex items-center gap-2 text-sm text-white/80 cursor-pointer select-none">
+                    <CardTitle className="flex items-center gap-2 text-sm text-foreground/80 cursor-pointer select-none">
                       <CheckCircle2 className="size-4 text-emerald-400" />
                       Completed / Failed
-                      <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                      <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                         {completedTasks.length}
                       </Badge>
-                      <ChevronDown className={`size-4 text-white/40 ml-auto transition-transform ${completedOpen ? 'rotate-180' : ''}`} />
+                      <ChevronDown className={`size-4 text-foreground/40 ml-auto transition-transform ${completedOpen ? 'rotate-180' : ''}`} />
                     </CardTitle>
                   </CollapsibleTrigger>
                 </CardHeader>
                 <CollapsibleContent>
                   <CardContent>
                     {completedTasks.length === 0 ? (
-                      <span className="text-xs text-white/40">No completed tasks yet</span>
+                      <span className="text-xs text-foreground/40">No completed tasks yet</span>
                     ) : (
                       <div className="space-y-2">
                         {completedTasks.map((task) => (
                           <div
                             key={task.id}
-                            className="flex items-center justify-between px-3 py-2 rounded-lg border border-white/5 bg-[#0a0a0f]"
+                            className="flex items-center justify-between px-3 py-2 rounded-lg border border-border/50 bg-background"
                           >
                             <div className="flex items-center gap-2 min-w-0">
                               {task.status === 'completed' ? (
@@ -1201,13 +1201,13 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                               ) : (
                                 <XCircle className="size-3.5 text-red-400 shrink-0" />
                               )}
-                              <span className="text-xs text-white/60 truncate">{task.title}</span>
+                              <span className="text-xs text-muted-foreground truncate">{task.title}</span>
                             </div>
                             <div className="flex items-center gap-2 shrink-0">
                               <span className={`text-[10px] font-medium ${task.status === 'completed' ? 'text-emerald-400' : 'text-red-400'}`}>
                                 {task.status}
                               </span>
-                              <span className="text-[10px] text-white/30">{formatRelativeTime(task.createdAt)}</span>
+                              <span className="text-[10px] text-foreground/30">{formatRelativeTime(task.createdAt)}</span>
                             </div>
                           </div>
                         ))}
@@ -1223,18 +1223,18 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         {/* ── Tab 4: Chat ──────────────────────────────────────────────── */}
         {activeTab === 'chat' && (
           <div className="space-y-4 animate-in fade-in duration-300">
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                  <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                     <MessageSquare className="size-4" style={{ color: agent.color }} />
                     Direct Communication
                   </CardTitle>
                   <div className="flex items-center gap-2">
-                    <Badge variant="outline" className="text-[10px] border-white/20 text-white/40">
+                    <Badge variant="outline" className="text-[10px] border-border text-foreground/40">
                       {agent.model}
                     </Badge>
-                    <Badge variant="outline" className="text-[10px] border-white/20 text-white/40">
+                    <Badge variant="outline" className="text-[10px] border-border text-foreground/40">
                       Session: {sessionId.slice(-6)}
                     </Badge>
                   </div>
@@ -1252,8 +1252,8 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                         <div
                           className={`max-w-[80%] rounded-xl px-4 py-2.5 text-sm ${
                             msg.role === 'user'
-                              ? 'bg-white/10 text-white/90 border border-white/10'
-                              : 'border border-white/5 text-white/80'
+                              ? 'bg-secondary text-foreground/90 border border-border'
+                              : 'border border-border/50 text-foreground/80'
                           }`}
                           style={
                             msg.role === 'agent'
@@ -1270,7 +1270,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                             </div>
                           )}
                           <p className="leading-relaxed">{msg.content}</p>
-                          <span className="text-[10px] text-white/30 mt-1 block">
+                          <span className="text-[10px] text-foreground/30 mt-1 block">
                             {msg.timestamp.toLocaleTimeString()}
                           </span>
                         </div>
@@ -1292,7 +1292,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                       }
                     }}
                     placeholder={`Message ${agent.name}...`}
-                    className="flex-1 bg-[#1a1a24] border-white/10 text-white text-sm placeholder:text-white/30"
+                    className="flex-1 bg-input border-border text-foreground text-sm placeholder:text-foreground/30"
                   />
                   <Button
                     onClick={handleSendMessage}
@@ -1300,23 +1300,23 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     size="icon"
                     style={{ backgroundColor: agent.color }}
                   >
-                    <Send className="size-4 text-white" />
+                    <Send className="size-4 text-foreground" />
                   </Button>
                 </div>
               </CardContent>
             </Card>
 
             {/* System Prompt Preview */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Terminal className="size-4" style={{ color: agent.color }} />
                   System Prompt Preview
                 </CardTitle>
               </CardHeader>
               <CardContent>
                 <ScrollArea className="h-32">
-                  <p className="text-xs text-white/40 font-mono leading-relaxed whitespace-pre-wrap">
+                  <p className="text-xs text-foreground/40 font-mono leading-relaxed whitespace-pre-wrap">
                     {agent.systemPrompt || 'No system prompt configured'}
                   </p>
                 </ScrollArea>
@@ -1329,9 +1329,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         {activeTab === 'config' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Model Configuration */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <Cpu className="size-4" style={{ color: agent.color }} />
                   Model Configuration
                 </CardTitle>
@@ -1339,18 +1339,18 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
               <CardContent className="space-y-5">
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-white/50">Model</Label>
-                    <div className="px-3 py-2 rounded-lg bg-[#1a1a24] border border-white/10 text-sm text-white/70">
+                    <Label className="text-xs text-foreground/50">Model</Label>
+                    <div className="px-3 py-2 rounded-lg bg-input border border-border text-sm text-foreground/70">
                       {agent.model}
                     </div>
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-white/50">Schedule Type</Label>
+                    <Label className="text-xs text-foreground/50">Schedule Type</Label>
                     <Select defaultValue={agent.scheduleType}>
-                      <SelectTrigger className="bg-[#1a1a24] border-white/10 text-white text-sm">
+                      <SelectTrigger className="bg-input border-border text-foreground text-sm">
                         <SelectValue />
                       </SelectTrigger>
-                      <SelectContent className="bg-[#111118] border-white/10">
+                      <SelectContent className="bg-card border-border">
                         <SelectItem value="always_on">Always On</SelectItem>
                         <SelectItem value="scheduled">Scheduled</SelectItem>
                         <SelectItem value="on_demand">On Demand</SelectItem>
@@ -1361,7 +1361,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
 
                 <div className="space-y-1.5">
                   <div className="flex items-center justify-between">
-                    <Label className="text-xs text-white/50">Temperature</Label>
+                    <Label className="text-xs text-foreground/50">Temperature</Label>
                     <span className="text-xs font-mono" style={{ color: agent.color }}>
                       {editTemperature.toFixed(1)}
                     </span>
@@ -1378,20 +1378,20 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
 
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-white/50">Max Tokens</Label>
+                    <Label className="text-xs text-foreground/50">Max Tokens</Label>
                     <Input
                       type="number"
                       value={editMaxTokens}
                       onChange={(e) => setEditMaxTokens(Number(e.target.value))}
-                      className="bg-[#1a1a24] border-white/10 text-white text-sm"
+                      className="bg-input border-border text-foreground text-sm"
                     />
                   </div>
                   <div className="space-y-1.5">
-                    <Label className="text-xs text-white/50">Max Concurrent Tasks</Label>
+                    <Label className="text-xs text-foreground/50">Max Concurrent Tasks</Label>
                     <Input
                       type="number"
                       defaultValue={agent.maxConcurrentTasks}
-                      className="bg-[#1a1a24] border-white/10 text-white text-sm"
+                      className="bg-input border-border text-foreground text-sm"
                     />
                   </div>
                 </div>
@@ -1399,14 +1399,14 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* System Prompt */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                  <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                     <Terminal className="size-4" style={{ color: agent.color }} />
                     System Prompt
                   </CardTitle>
-                  <span className="text-[10px] text-white/30 font-mono">
+                  <span className="text-[10px] text-foreground/30 font-mono">
                     {editSystemPrompt.length} chars
                   </span>
                 </div>
@@ -1416,7 +1416,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                   value={editSystemPrompt}
                   onChange={(e) => { setEditSystemPrompt(e.target.value); setPromptSaved(false); }}
                   rows={8}
-                  className="bg-[#1a1a24] border-white/10 text-white text-xs font-mono placeholder:text-white/30 resize-none"
+                  className="bg-input border-border text-foreground text-xs font-mono placeholder:text-foreground/30 resize-none"
                 />
                 <div className="flex items-center gap-3">
                   <Button
@@ -1438,17 +1438,17 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* Knowledge Base (in training) */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                  <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                     <BookOpen className="size-4" style={{ color: agent.color }} />
                     Knowledge Base
-                    <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                    <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                       {agent._count?.documents ?? 0} docs
                     </Badge>
                   </CardTitle>
-                  <Button size="sm" variant="outline" className="h-7 text-[11px] border-white/10 text-white/60 hover:bg-white/5">
+                  <Button size="sm" variant="outline" className="h-7 text-[11px] border-border text-muted-foreground hover:bg-secondary/50">
                     <Upload className="size-3 mr-1" />
                     Upload
                   </Button>
@@ -1456,23 +1456,23 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
               </CardHeader>
               <CardContent className="space-y-3">
                 <div className="relative">
-                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-white/30" />
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-3.5 text-foreground/30" />
                   <Input
                     value={docSearch}
                     onChange={(e) => setDocSearch(e.target.value)}
                     placeholder="Search documents..."
-                    className="pl-9 bg-[#1a1a24] border-white/10 text-white text-sm placeholder:text-white/30"
+                    className="pl-9 bg-input border-border text-foreground text-sm placeholder:text-foreground/30"
                   />
                 </div>
                 <div className="space-y-2">
                   {documents
                     .filter((d) => docSearch === '' || d.title.toLowerCase().includes(docSearch.toLowerCase()))
                     .map((doc) => (
-                      <div key={doc.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-white/5 bg-[#1a1a24]">
-                        <FileText className="size-4 text-white/40 shrink-0" />
+                      <div key={doc.id} className="flex items-center gap-3 px-3 py-2 rounded-lg border border-border/50 bg-input">
+                        <FileText className="size-4 text-foreground/40 shrink-0" />
                         <div className="min-w-0 flex-1">
-                          <span className="text-xs text-white/70 font-medium truncate block">{doc.title}</span>
-                          <span className="text-[10px] text-white/30">{doc.category}</span>
+                          <span className="text-xs text-foreground/70 font-medium truncate block">{doc.title}</span>
+                          <span className="text-[10px] text-foreground/30">{doc.category}</span>
                         </div>
                       </div>
                     ))}
@@ -1481,14 +1481,14 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* Training Status */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
                     <Rocket className="size-5" style={{ color: agent.color }} />
                     <div>
-                      <span className="text-sm text-white/80 font-medium">Training Status</span>
-                      <span className="text-xs text-white/40 ml-2">
+                      <span className="text-sm text-foreground/80 font-medium">Training Status</span>
+                      <span className="text-xs text-foreground/40 ml-2">
                         {agent.successRate > 80 ? 'Fully trained and operational' : 'Needs performance tuning'}
                       </span>
                     </div>
@@ -1520,10 +1520,10 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                 { label: 'Token Usage', value: formatNumber(agent.totalTokensUsed), icon: <Cpu className="size-4" />, color: '#8B5CF6' },
                 { label: 'Success Rate', value: `${agent.successRate}%`, icon: <TrendingUp className="size-4" />, color: '#10B981' },
               ].map((metric) => (
-                <div key={metric.label} className="px-4 py-3 rounded-xl border border-white/10 bg-[#111118]">
+                <div key={metric.label} className="px-4 py-3 rounded-xl border border-border bg-card">
                   <div className="flex items-center gap-2 mb-1">
                     <div style={{ color: metric.color }}>{metric.icon}</div>
-                    <span className="text-xs text-white/40">{metric.label}</span>
+                    <span className="text-xs text-foreground/40">{metric.label}</span>
                   </div>
                   <span className="text-xl font-bold" style={{ color: metric.color }}>{metric.value}</span>
                 </div>
@@ -1531,9 +1531,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </div>
 
             {/* Tasks Over Time Bar Chart */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <BarChart3 className="size-4" style={{ color: agent.color }} />
                   Tasks Over Time
                 </CardTitle>
@@ -1553,7 +1553,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                             }}
                           />
                         </div>
-                        <span className="text-[9px] text-white/30">{`W${i + 1}`}</span>
+                        <span className="text-[9px] text-foreground/30">{`W${i + 1}`}</span>
                       </div>
                     );
                   })}
@@ -1562,18 +1562,18 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* Live Activity Feed */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
                 <div className="flex items-center justify-between">
-                  <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                  <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                     <Activity className="size-4" style={{ color: agent.color }} />
                     Live Activity Feed
                   </CardTitle>
                   <Select value={activityFilter} onValueChange={setActivityFilter}>
-                    <SelectTrigger className="h-7 w-28 text-[11px] bg-[#1a1a24] border-white/10 text-white/60">
+                    <SelectTrigger className="h-7 w-28 text-[11px] bg-input border-border text-muted-foreground">
                       <SelectValue />
                     </SelectTrigger>
-                    <SelectContent className="bg-[#111118] border-white/10">
+                    <SelectContent className="bg-card border-border">
                       <SelectItem value="all">All</SelectItem>
                       <SelectItem value="task">Tasks</SelectItem>
                       <SelectItem value="tool">Tools</SelectItem>
@@ -1590,9 +1590,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     {filteredActivity.map((entry) => (
                       <div
                         key={entry.id}
-                        className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-white/5 transition-colors"
+                        className="flex items-start gap-3 px-3 py-2 rounded-lg hover:bg-secondary/50 transition-colors"
                       >
-                        <span className="text-[10px] text-white/30 font-mono w-14 shrink-0 pt-0.5">
+                        <span className="text-[10px] text-foreground/30 font-mono w-14 shrink-0 pt-0.5">
                           {entry.timestamp.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' })}
                         </span>
                         <div className="flex items-center gap-1.5 shrink-0">
@@ -1600,10 +1600,10 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                           {entry.result === 'fail' && <XCircle className="size-3 text-red-400" />}
                           {entry.result === 'running' && <Loader2 className="size-3 text-blue-400 animate-spin" />}
                         </div>
-                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/10 text-white/40 shrink-0">
+                        <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-border text-foreground/40 shrink-0">
                           {entry.actionType}
                         </Badge>
-                        <span className="text-xs text-white/60 truncate">{entry.description}</span>
+                        <span className="text-xs text-muted-foreground truncate">{entry.description}</span>
                       </div>
                     ))}
                   </div>
@@ -1612,12 +1612,12 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </Card>
 
             {/* Session History */}
-            <Card className="bg-[#111118] border-white/10">
+            <Card className="bg-card border-border">
               <CardHeader>
-                <CardTitle className="flex items-center gap-2 text-sm text-white/80">
+                <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
                   <MessageCircle className="size-4" style={{ color: agent.color }} />
                   Session History
-                  <Badge variant="outline" className="ml-2 text-[10px] border-white/20 text-white/40">
+                  <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
                     {agent._count?.sessions ?? 0}
                   </Badge>
                 </CardTitle>
@@ -1629,14 +1629,14 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
                     { purpose: 'Bug triage for staging', messages: 8, created: '6h ago', last: '5h ago' },
                     { purpose: 'Onboarding walkthrough', messages: 24, created: '1d ago', last: '1d ago' },
                   ].map((session, i) => (
-                    <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-white/5 bg-[#1a1a24] hover:border-white/10 transition-colors cursor-pointer">
+                    <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg border border-border/50 bg-input hover:border-border transition-colors cursor-pointer">
                       <div className="min-w-0">
-                        <span className="text-xs text-white/70 font-medium block truncate">{session.purpose}</span>
-                        <span className="text-[10px] text-white/30">{session.messages} messages</span>
+                        <span className="text-xs text-foreground/70 font-medium block truncate">{session.purpose}</span>
+                        <span className="text-[10px] text-foreground/30">{session.messages} messages</span>
                       </div>
                       <div className="text-right shrink-0">
-                        <span className="text-[10px] text-white/40 block">Created {session.created}</span>
-                        <span className="text-[10px] text-white/30 block">Last {session.last}</span>
+                        <span className="text-[10px] text-foreground/40 block">Created {session.created}</span>
+                        <span className="text-[10px] text-foreground/30 block">Last {session.last}</span>
                       </div>
                     </div>
                   ))}
@@ -1652,19 +1652,19 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             {/* Search + Filters */}
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-white/30" />
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 size-4 text-foreground/30" />
                 <Input
                   value={knowledgeSearch}
                   onChange={(e) => setKnowledgeSearch(e.target.value)}
                   placeholder="Search knowledge base..."
-                  className="pl-10 bg-[#111118] border-white/10 text-white text-sm placeholder:text-white/30"
+                  className="pl-10 bg-card border-border text-foreground text-sm placeholder:text-foreground/30"
                 />
               </div>
               <Select value={knowledgeCategory} onValueChange={setKnowledgeCategory}>
-                <SelectTrigger className="w-full sm:w-40 bg-[#111118] border-white/10 text-white text-sm">
+                <SelectTrigger className="w-full sm:w-40 bg-card border-border text-foreground text-sm">
                   <SelectValue />
                 </SelectTrigger>
-                <SelectContent className="bg-[#111118] border-white/10">
+                <SelectContent className="bg-card border-border">
                   <SelectItem value="all">All Categories</SelectItem>
                   <SelectItem value="SOP">SOP</SelectItem>
                   <SelectItem value="Runbook">Runbook</SelectItem>
@@ -1686,33 +1686,33 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             {/* Document Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {filteredDocs.map((doc) => (
-                <Card key={doc.id} className="bg-[#111118] border-white/10 hover:border-white/20 transition-colors">
+                <Card key={doc.id} className="bg-card border-border hover:border-border transition-colors">
                   <CardHeader>
                     <div className="flex items-start justify-between gap-2">
                       <div className="flex items-center gap-2">
                         <FileText className="size-4 shrink-0" style={{ color: agent.color }} />
-                        <CardTitle className="text-sm text-white/80 leading-tight">{doc.title}</CardTitle>
+                        <CardTitle className="text-sm text-foreground/80 leading-tight">{doc.title}</CardTitle>
                       </div>
-                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-white/10 text-white/40 shrink-0">
+                      <Badge variant="outline" className="text-[9px] px-1.5 py-0 border-border text-foreground/40 shrink-0">
                         {doc.category}
                       </Badge>
                     </div>
                   </CardHeader>
                   <CardContent className="space-y-3">
-                    <p className="text-xs text-white/40 leading-relaxed line-clamp-3">
+                    <p className="text-xs text-foreground/40 leading-relaxed line-clamp-3">
                       {doc.contentPreview}
                     </p>
                     <div className="flex flex-wrap gap-1">
                       {doc.tags.map((tag) => (
                         <span
                           key={tag}
-                          className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-white/5 text-white/40"
+                          className="inline-flex items-center px-2 py-0.5 rounded text-[10px] bg-secondary/50 text-foreground/40"
                         >
                           {tag}
                         </span>
                       ))}
                     </div>
-                    <div className="flex items-center gap-1 text-[10px] text-white/30">
+                    <div className="flex items-center gap-1 text-[10px] text-foreground/30">
                       <Clock className="size-3" />
                       Updated {formatRelativeTime(doc.lastUpdated)}
                     </div>
@@ -1722,7 +1722,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
             </div>
 
             {filteredDocs.length === 0 && (
-              <div className="text-center py-12 text-white/40 text-sm">
+              <div className="text-center py-12 text-foreground/40 text-sm">
                 No documents found matching your search.
               </div>
             )}

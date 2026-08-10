@@ -275,3 +275,35 @@ Stage Summary:
 - All agents have spec-accurate system prompts with execution protocols and JSON schemas
 - Database fully re-seeded with new structure
 - Dashboard UI updated with new department colors and activity feed
+
+---
+Task ID: 7
+Agent: Main Agent
+Task: Apply Pitch Deep Royal Black dark theme across entire app
+
+Work Log:
+- Defined "Pitch Deep Royal Black" as oklch(0.01 0.006 270) — deepest possible black with subtle royal blue depth
+- Updated globals.css .dark section: 263+ oklch value replacements
+  - Background: oklch(0.02→0.01) deeper, chroma 0.002→0.006 for royal blue tint
+  - Card: oklch(0.07→0.04) subtle lift from pitch black
+  - Popover: oklch(0.08→0.05) slightly above card
+  - Secondary/Muted/Input: oklch(0.10→0.06) elevated surfaces
+  - Sidebar: oklch(0.03→0.015) near-pure-black
+  - Foreground: oklch(0.96→0.97) brighter near-white text
+  - Muted FG: oklch(0.68→0.72) readable secondary text
+  - Border: oklch(0.16→0.18, chroma 0.006→0.008) more visible borders
+  - Component borders: oklch(0.14→0.15, chroma 0.006→0.007) brighter component borders
+  - Updated all opacity modifier overrides, component-level dark fixes, glass surfaces, scrollbars, placeholders
+- Replaced 405 hardcoded hex colors in workforce components with semantic theme tokens:
+  - workforce-dashboard.tsx: 122 replacements (bg-[#0a0a0f]→bg-background, bg-[#111118]→bg-card, etc.)
+  - agent-workspace.tsx: 283 replacements (same pattern)
+  - workforce-view.tsx: 4 replacements (loading/error states)
+- All workforce components now use theme-aware tokens (bg-background, bg-card, bg-input, border-border, text-foreground, text-muted-foreground)
+- Clean build passes with zero workforce-related TypeScript errors
+
+Stage Summary:
+- Pitch Deep Royal Black (oklch 0.01 0.006 270) is now the universal dark theme background
+- All text colors boosted for visibility: foreground 0.97, muted 0.72, secondary 0.94
+- All borders made more visible: 0.18 chroma 0.008 (was 0.16/0.006)
+- Zero hardcoded hex dark colors remain in workforce components
+- 263+ globals.css replacements + 405 component token replacements = 668+ total changes

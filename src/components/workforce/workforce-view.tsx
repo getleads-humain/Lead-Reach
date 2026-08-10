@@ -113,12 +113,12 @@ export function WorkforceView() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-gradient-to-br from-emerald-400 to-cyan-500 animate-pulse shadow-lg shadow-emerald-500/20">
-            <Zap className="h-8 w-8 text-emerald-950 dark:text-white" />
+            <Zap className="h-8 w-8 text-emerald-950 dark:text-foreground" />
           </div>
-          <div className="flex items-center gap-2 text-sm text-white/60">
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Loader2 className="h-4 w-4 animate-spin" />
             Initializing AI Workforce...
           </div>
@@ -131,13 +131,13 @@ export function WorkforceView() {
 
   if (error && agents.length === 0) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-[#0a0a0f]">
+      <div className="min-h-screen flex items-center justify-center bg-background">
         <div className="flex flex-col items-center gap-4 max-w-md text-center">
           <div className="flex h-16 w-16 items-center justify-center rounded-2xl bg-red-500/20">
             <Zap className="h-8 w-8 text-red-400" />
           </div>
-          <h3 className="text-lg font-semibold text-white">Workforce Unavailable</h3>
-          <p className="text-sm text-white/50">{error}</p>
+          <h3 className="text-lg font-semibold text-foreground">Workforce Unavailable</h3>
+          <p className="text-sm text-muted-foreground">{error}</p>
           <button
             onClick={fetchData}
             className="mt-2 rounded-lg bg-emerald-500/20 px-4 py-2 text-sm font-medium text-emerald-400 hover:bg-emerald-500/30 transition-colors"
