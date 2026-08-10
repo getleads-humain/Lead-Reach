@@ -184,12 +184,16 @@ function statusDotColor(status: string): string {
 
 function departmentColor(dept: string): string {
   const colors: Record<string, string> = {
+    Executive: '#F59E0B',
+    Growth: '#10B981',
+    Technology: '#3B82F6',
+    Operations: '#84CC16',
+    // Legacy fallbacks
     Engineering: '#3B82F6',
-    Sales: '#F59E0B',
+    Sales: '#F97316',
     Marketing: '#EC4899',
-    Operations: '#8B5CF6',
     Research: '#06B6D4',
-    Finance: '#10B981',
+    Finance: '#84CC16',
     Support: '#F97316',
   };
   return colors[dept] || '#6B7280';
@@ -203,18 +207,22 @@ function countCommaList(value: string | undefined): number {
 // ─── Simulated Orchestration Feed ──────────────────────────────────────────────
 
 const FEED_ACTIONS = [
-  'executing task',
-  'processing lead',
-  'reviewing code',
-  'writing documentation',
-  'analyzing data',
-  'generating report',
-  'updating knowledge base',
-  'running diagnostics',
-  'syncing MCP server',
-  'processing request',
-  'training model',
-  'deploying pipeline',
+  'optimizing global health factor',
+  'routing task via event ring',
+  'detecting ICP fatigue signals',
+  'generating multi-variant copy',
+  'adjusting bid modifiers',
+  'consolidating lead pipeline',
+  'trapping architectural violations',
+  'submitting code patch diff',
+  'running regression suite',
+  'executing rolling deployment',
+  'scanning for prompt injection',
+  'reconciling unit economics',
+  'auditing GDPR compliance',
+  'monitoring agent alignment drift',
+  'flushing kernel weights',
+  'processing MCP server sync',
 ];
 
 const FEED_STATUSES: Array<'running' | 'completed' | 'failed'> = [
