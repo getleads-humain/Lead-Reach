@@ -42,7 +42,7 @@ interface EnrichmentResult {
   total: number;
   enriched: number;
   failed: number;
-  results: Array<{ leadId: string; companyName: string; fieldsEnriched: string[] }>;
+  results?: Array<{ leadId: string; companyName: string; fieldsEnriched: string[] }>;
 }
 
 interface EnrichmentStats {
@@ -52,7 +52,7 @@ interface EnrichmentStats {
   enrichmentRate: number;
   averageDataCompleteness: number;
   recentEnriched: number;
-  fieldCoverage: Record<string, number>;
+  fieldCoverage?: Record<string, number>;
 }
 
 interface Campaign {
@@ -69,8 +69,8 @@ interface ColumnProfile {
   uniqueCount: number;
   completeness: number;
   sample: string[];
-  topValues: Array<{ value: string; count: number; pct: number }>;
-  distribution: Array<{ bin: string; count: number }>;
+  topValues?: Array<{ value: string; count: number; pct: number }>;
+  distribution?: Array<{ bin: string; count: number }>;
   min?: number;
   max?: number;
   mean?: number;
@@ -92,20 +92,20 @@ interface DataProfile {
   totalRows: number;
   totalColumns: number;
   columns: ColumnProfile[];
-  quality: {
+  quality?: {
     overallCompleteness: number;
     duplicateRows: number;
     outlierColumns: string[];
     highCardinalityColumns: string[];
-    recommendedCharts: RecommendedChart[];
+    recommendedCharts?: RecommendedChart[];
   };
-  correlations: Array<{ colA: string; colB: string; coefficient: number }>;
+  correlations?: Array<{ colA: string; colB: string; coefficient: number }>;
 }
 
 interface AnalyzeResult {
   fileName: string;
   fileSize: number;
-  profile: DataProfile;
+  profile?: DataProfile;
 }
 
 type PipelineStageStatus = 'pending' | 'running' | 'completed' | 'failed';
@@ -457,7 +457,7 @@ export function DataEnrichmentView() {
       setAnalyzeResult(result);
 
       // Update local preview from API if no local data
-      if (result.profile && csvData.length === 0) {
+      if (result.profile?.columns && csvData.length === 0) {
         const headers = result.profile.columns.map(c => c.name);
         setCsvHeaders(headers);
         const map: Record<string, string | null> = {};
@@ -782,7 +782,7 @@ export function DataEnrichmentView() {
                         <CardDescription>
                           {formatFileSize(csvFile.size)}
                           {analyzeResult && (
-                            <> • {analyzeResult.profile.totalRows.toLocaleString()} rows • {analyzeResult.profile.totalColumns} columns</>
+                            <> • {(analyzeResult.profile?.totalRows ?? 0).toLocaleString()} rows • {analyzeResult.profile?.totalColumns ?? 0} columns</>
                           )}
                           {!analyzeResult && !analyzing && csvData.length > 0 && (
                             <> • {csvData.length} rows • {csvHeaders.length} columns</>
@@ -839,12 +839,12 @@ export function DataEnrichmentView() {
                           <Shield className="h-4 w-4 text-emerald-400" />
                           <span className="text-sm text-muted-foreground">Quality Score</span>
                         </div>
-                        <div className={cn('text-3xl font-bold', qualityColor(analyzeResult.profile.quality.overallCompleteness))}>
-                          {analyzeResult.profile.quality.overallCompleteness}%
+                        <div className={cn('text-3xl font-bold', qualityColor(analyzeResult.profile?.quality?.overallCompleteness ?? 0))}>
+                          {analyzeResult.profile?.quality?.overallCompleteness ?? 0}%
                         </div>
                         <Progress
-                          value={analyzeResult.profile.quality.overallCompleteness}
-                          className={cn('h-2 mt-2', qualityBarClass(analyzeResult.profile.quality.overallCompleteness))}
+                          value={analyzeResult.profile?.quality?.overallCompleteness ?? 0}
+                          className={cn('h-2 mt-2', qualityBarClass(analyzeResult.profile?.quality?.overallCompleteness ?? 0))}
                         />
                       </CardContent>
                     </Card>
@@ -855,7 +855,7 @@ export function DataEnrichmentView() {
                           <span className="text-sm text-muted-foreground">Column Types</span>
                         </div>
                         <div className="flex flex-wrap gap-1.5 mt-1">
-                          {[...new Set(analyzeResult.profile.columns.map(c => c.type))].map(type => (
+                          {[...new Set((analyzeResult.profile?.columns ?? []).map(c => c.type))].map(type => (
                             <Badge key={type} variant="outline" className={cn('text-xs', TYPE_COLORS[type] || '')}>
                               {type}
                             </Badge>
@@ -870,10 +870,10 @@ export function DataEnrichmentView() {
                           <span className="text-sm text-muted-foreground">Duplicates</span>
                         </div>
                         <div className="text-3xl font-bold">
-                          {analyzeResult.profile.quality.duplicateRows}
+                          {analyzeResult.profile?.quality?.duplicateRows ?? 0}
                         </div>
                         <p className="text-xs text-muted-foreground mt-1">
-                          {analyzeResult.profile.quality.duplicateRows === 0 ? 'No duplicates found' : 'Duplicate rows detected'}
+                          {(analyzeResult.profile?.quality?.duplicateRows ?? 0) === 0 ? 'No duplicates found' : 'Duplicate rows detected'}
                         </p>
                       </CardContent>
                     </Card>
@@ -901,7 +901,7 @@ export function DataEnrichmentView() {
                             </TableRow>
                           </TableHeader>
                           <TableBody>
-                            {analyzeResult.profile.columns.map((col) => (
+                            {(analyzeResult.profile?.columns ?? []).map((col) => (
                               <TableRow key={col.name}>
                                 <TableCell className="font-medium whitespace-nowrap">{col.name}</TableCell>
                                 <TableCell>
@@ -924,9 +924,9 @@ export function DataEnrichmentView() {
                                       min {col.min.toLocaleString()} · max {col.max.toLocaleString()}
                                       {col.mean !== undefined && <> · μ {col.mean.toLocaleString()}</>}
                                     </span>
-                                  ) : col.topValues.length > 0 ? (
+                                  ) : (col.topValues?.length ?? 0) > 0 ? (
                                     <div className="flex flex-wrap gap-1">
-                                      {col.topValues.slice(0, 3).map(tv => (
+                                      {col.topValues!.slice(0, 3).map(tv => (
                                         <Badge key={tv.value} variant="secondary" className="text-xs">
                                           {tv.value} ({tv.pct}%)
                                         </Badge>
@@ -1197,7 +1197,7 @@ export function DataEnrichmentView() {
                     </div>
                   </div>
 
-                  {enrichResult.results.filter(r => r.fieldsEnriched.length > 0).length > 0 && (
+                  {(enrichResult.results ?? []).filter(r => (r.fieldsEnriched?.length ?? 0) > 0).length > 0 && (
                     <ScrollArea className="max-h-64">
                       <Table>
                         <TableHeader>
@@ -1207,8 +1207,8 @@ export function DataEnrichmentView() {
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {enrichResult.results
-                            .filter(r => r.fieldsEnriched.length > 0)
+                          {(enrichResult.results ?? [])
+                            .filter(r => (r.fieldsEnriched?.length ?? 0) > 0)
                             .map((r) => (
                               <TableRow key={r.leadId}>
                                 <TableCell className="font-medium">{r.companyName}</TableCell>
@@ -1252,7 +1252,7 @@ export function DataEnrichmentView() {
         {/* ============================================================ */}
         <TabsContent value="visualize" className="space-y-4">
           {/* Auto-generated charts from analysis */}
-          {analyzeResult?.profile.quality.recommendedCharts &&
+          {analyzeResult?.profile?.quality?.recommendedCharts &&
           analyzeResult.profile.quality.recommendedCharts.length > 0 ? (
             <>
               <div className="flex items-center justify-between">
@@ -1293,7 +1293,7 @@ export function DataEnrichmentView() {
               </div>
 
               {/* Correlations */}
-              {analyzeResult.profile.correlations && analyzeResult.profile.correlations.length > 0 && (
+              {analyzeResult?.profile?.correlations && analyzeResult.profile.correlations.length > 0 && (
                 <Card>
                   <CardHeader className="pb-3">
                     <CardTitle className="text-base flex items-center gap-2">

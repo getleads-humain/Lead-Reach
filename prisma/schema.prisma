@@ -1228,3 +1228,27 @@ model WorkforceDocument {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 }
+
+// ── Enrichment Job ──────────────────────────────────────────────────────────
+// Tracks CSV/data file enrichment jobs with AI-powered research.
+// Each job stores the original data, enriched data, and pipeline state.
+
+model EnrichmentJob {
+  id              String   @id @default(cuid())
+  fileName        String
+  fileSize        Int      @default(0)
+  originalData    String   // JSON array of original CSV rows
+  enrichedData    String   // JSON array of enriched rows (updated as rows are processed)
+  headers         String   // JSON array of original column headers
+  enrichedHeaders String   // JSON array of headers including new enrichment columns
+  instructions    String?  // User's enrichment instructions
+  status          String   @default("pending") // pending, analyzing, enriching, paused, completed, failed
+  totalRows       Int      @default(0)
+  processedRows   Int      @default(0)
+  currentRow      Int      @default(0)
+  errorMessage    String?
+  chatHistory     String   @default("[]")  // JSON array of chat messages
+  enrichmentPlan  String?  // JSON object with newColumns, strategy, searchQueries
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+}
