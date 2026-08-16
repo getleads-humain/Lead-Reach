@@ -2,9 +2,10 @@
  * Pipeline Worker Script (Deep Search Mode)
  *
  * Runs the full agent pipeline in a separate process.
- * Now uses REAL multi-channel search (discoverBusinesses, exa, LinkedIn,
- * GitHub, Twitter, Reddit, YouTube) instead of hardcoded data.
- * Falls back to hardcoded data ONLY if all search channels fail.
+ * Uses REAL multi-channel search (discoverBusinesses, exa, LinkedIn,
+ * GitHub, Twitter, Reddit, YouTube) with DuckDuckGo as a fallback.
+ * NEVER uses hardcoded/fake data — if all search channels fail,
+ * the campaign is marked as failed with a helpful error message.
  *
  * Usage: bun run src/lib/workers/pipeline-worker.ts <campaignId> <query> [industry] [location]
  */
@@ -22,83 +23,12 @@ import {
   type SearchResult,
 } from '../agent-reach-bridge';
 import { callLLMForJSON } from '../agent-executor';
+import { directDuckDuckGoSearch } from '../direct-search';
 
-// ============================================================
-// Hardcoded company data by industry (ULTIMATE FALLBACK only)
-// ============================================================
-
-const COMPANIES_BY_INDUSTRY: Record<string, Array<Record<string, unknown>>> = {
-  accounting: [
-    { companyName: 'Deloitte', website: 'https://deloitte.com', industry: 'Accounting', subIndustry: 'Big Four', city: 'New York', country: 'USA', phoneMain: '+1-212-436-2000', generalEmail: 'contact@deloitte.com', ceoName: 'Joe Ucuzoglu', keyContactName: 'Michael Bondi', keyContactTitle: 'Managing Partner', employeeCount: '5000+', revenueEstimate: '$65B+', foundingYear: '1845', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/deloitte' },
-    { companyName: 'PwC', website: 'https://pwc.com', industry: 'Accounting', subIndustry: 'Big Four', city: 'New York', country: 'USA', phoneMain: '+1-646-471-3000', generalEmail: 'info@pwc.com', ceoName: 'Bob Moritz', keyContactName: 'Tim Ryan', keyContactTitle: 'Senior Partner', employeeCount: '5000+', revenueEstimate: '$54B+', foundingYear: '1998', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/pwc' },
-    { companyName: 'Ernst & Young', website: 'https://ey.com', industry: 'Accounting', subIndustry: 'Big Four', city: 'New York', country: 'USA', phoneMain: '+1-212-773-3000', generalEmail: 'contact@ey.com', ceoName: 'Carmine Di Sibio', keyContactName: 'Andy Baldwin', keyContactTitle: 'Managing Partner', employeeCount: '5000+', revenueEstimate: '$50B+', foundingYear: '1989', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/ernst-young' },
-    { companyName: 'KPMG', website: 'https://kpmg.com', industry: 'Accounting', subIndustry: 'Big Four', city: 'New York', country: 'USA', phoneMain: '+1-212-758-9700', generalEmail: 'contact@kpmg.com', ceoName: 'Bill Thomas', keyContactName: 'Paul Knopp', keyContactTitle: 'Chairman', employeeCount: '5000+', revenueEstimate: '$35B+', foundingYear: '1987', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/kpmg' },
-    { companyName: 'BDO USA', website: 'https://bdo.com', industry: 'Accounting', subIndustry: 'Mid-Tier', city: 'New York', country: 'USA', phoneMain: '+1-212-885-8000', generalEmail: 'info@bdo.com', ceoName: 'Wayne Berson', keyContactName: 'David B. Newman', keyContactTitle: 'Partner', employeeCount: '201-500', revenueEstimate: '$2.4B+', foundingYear: '1910', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/bdo' },
-    { companyName: 'RSM US', website: 'https://rsmus.com', industry: 'Accounting', subIndustry: 'Mid-Tier', city: 'New York', country: 'USA', phoneMain: '+1-800-274-3978', generalEmail: 'contact@rsmus.com', ceoName: 'Joe Adams', keyContactName: 'Brian V. Stier', keyContactTitle: 'Partner', employeeCount: '201-500', revenueEstimate: '$1.8B+', foundingYear: '1926', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/rsm-us' },
-    { companyName: 'Grant Thornton', website: 'https://grantthornton.com', industry: 'Accounting', subIndustry: 'Mid-Tier', city: 'New York', country: 'USA', phoneMain: '+1-866-421-4211', generalEmail: 'info@us.gt.com', ceoName: 'Brad Preber', keyContactName: 'Mark S. Metzler', keyContactTitle: 'Partner', employeeCount: '201-500', revenueEstimate: '$1.6B+', foundingYear: '1924', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/grant-thornton' },
-    { companyName: 'Crowe', website: 'https://crowe.com', industry: 'Accounting', subIndustry: 'Mid-Tier', city: 'New York', country: 'USA', phoneMain: '+1-212-885-8000', generalEmail: 'info@crowe.com', ceoName: 'Kevin McGrail', keyContactName: 'James B. Powers', keyContactTitle: 'Partner', employeeCount: '201-500', revenueEstimate: '$1.1B+', foundingYear: '1942', ownershipType: 'Partnership', linkedinUrl: 'https://linkedin.com/company/crowe-horwath' },
-  ],
-  technology: [
-    { companyName: 'Google', website: 'https://google.com', industry: 'Technology', subIndustry: 'Internet / Cloud', city: 'New York', country: 'USA', phoneMain: '+1-212-565-0000', generalEmail: 'press@google.com', ceoName: 'Sundar Pichai', keyContactName: 'Thomas Kurian', keyContactTitle: 'CEO Google Cloud', employeeCount: '5000+', revenueEstimate: '$307B+', foundingYear: '1998', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/google' },
-    { companyName: 'Microsoft', website: 'https://microsoft.com', industry: 'Technology', subIndustry: 'Software / Cloud', city: 'New York', country: 'USA', phoneMain: '+1-212-245-2100', generalEmail: 'info@microsoft.com', ceoName: 'Satya Nadella', keyContactName: 'Judson Althoff', keyContactTitle: 'CCO', employeeCount: '5000+', revenueEstimate: '$227B+', foundingYear: '1975', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/microsoft' },
-    { companyName: 'Salesforce', website: 'https://salesforce.com', industry: 'Technology', subIndustry: 'CRM / SaaS', city: 'New York', country: 'USA', phoneMain: '+1-212-620-3000', generalEmail: 'info@salesforce.com', ceoName: 'Marc Benioff', keyContactName: 'Brian Millham', keyContactTitle: 'President & COO', employeeCount: '1001-5000', revenueEstimate: '$34B+', foundingYear: '1999', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/salesforce' },
-    { companyName: 'ServiceNow', website: 'https://servicenow.com', industry: 'Technology', subIndustry: 'Enterprise Software', city: 'New York', country: 'USA', phoneMain: '+1-866-614-1923', generalEmail: 'info@servicenow.com', ceoName: 'Bill McDermott', keyContactName: 'Lara Caimi', keyContactTitle: 'CCO', employeeCount: '1001-5000', revenueEstimate: '$8.9B+', foundingYear: '2004', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/servicenow' },
-    { companyName: 'Datadog', website: 'https://datadoghq.com', industry: 'Technology', subIndustry: 'Monitoring / DevOps', city: 'New York', country: 'USA', phoneMain: '+1-212-677-3450', generalEmail: 'info@datadoghq.com', ceoName: 'Olivier Pomel', keyContactName: 'Mike Cohn', keyContactTitle: 'VP Sales', employeeCount: '501-1000', revenueEstimate: '$2.1B+', foundingYear: '2010', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/datadog' },
-    { companyName: 'MongoDB', website: 'https://mongodb.com', industry: 'Technology', subIndustry: 'Database / NoSQL', city: 'New York', country: 'USA', phoneMain: '+1-212-203-2300', generalEmail: 'info@mongodb.com', ceoName: 'Dev Ittycheria', keyContactName: 'Cedric Pech', keyContactTitle: 'CRO', employeeCount: '501-1000', revenueEstimate: '$1.8B+', foundingYear: '2007', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/mongodb' },
-    { companyName: 'Twilio', website: 'https://twilio.com', industry: 'Technology', subIndustry: 'Cloud Communications', city: 'New York', country: 'USA', phoneMain: '+1-646-876-5678', generalEmail: 'help@twilio.com', ceoName: 'Khozema Shipchandler', keyContactName: 'Jeffrey Kihara', keyContactTitle: 'VP Enterprise', employeeCount: '1001-5000', revenueEstimate: '$4.2B+', foundingYear: '2008', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/twilio-inc' },
-    { companyName: 'Palantir Technologies', website: 'https://palantir.com', industry: 'Technology', subIndustry: 'Data Analytics / AI', city: 'New York', country: 'USA', phoneMain: '+1-212-965-8600', generalEmail: 'info@palantir.com', ceoName: 'Alex Karp', keyContactName: 'Ryan Taylor', keyContactTitle: 'CFO', employeeCount: '501-1000', revenueEstimate: '$2.2B+', foundingYear: '2003', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/palantir' },
-  ],
-  marketing: [
-    { companyName: 'WPP', website: 'https://wpp.com', industry: 'Marketing', subIndustry: 'Holding Company', city: 'New York', country: 'USA', phoneMain: '+1-212-614-7000', generalEmail: 'info@wpp.com', ceoName: 'Mark Read', keyContactName: 'Stephanie Brimacombe', keyContactTitle: 'Global BD Director', employeeCount: '5000+', revenueEstimate: '$14B+', foundingYear: '1985', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/wpp' },
-    { companyName: 'Omnicom Group', website: 'https://omnicomgroup.com', industry: 'Marketing', subIndustry: 'Holding Company', city: 'New York', country: 'USA', phoneMain: '+1-212-880-6200', generalEmail: 'info@omnicomgroup.com', ceoName: 'John Wren', keyContactName: 'Dale Adams', keyContactTitle: 'CEO Omni Commerce', employeeCount: '5000+', revenueEstimate: '$14B+', foundingYear: '1986', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/omnicom-group' },
-    { companyName: 'Publicis Groupe', website: 'https://publicisgroupe.com', industry: 'Marketing', subIndustry: 'Holding Company', city: 'New York', country: 'USA', phoneMain: '+1-212-752-2000', generalEmail: 'info@publicisgroupe.com', ceoName: 'Arthur Sadoun', keyContactName: 'Carla Serrano', keyContactTitle: 'CEO Publicis New York', employeeCount: '5000+', revenueEstimate: '$12B+', foundingYear: '1926', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/publicis-groupe' },
-    { companyName: 'Interpublic Group', website: 'https://interpublic.com', industry: 'Marketing', subIndustry: 'Holding Company', city: 'New York', country: 'USA', phoneMain: '+1-212-704-2000', generalEmail: 'info@interpublic.com', ceoName: 'Philippe Krakowsky', keyContactName: 'Eileen Naughton', keyContactTitle: 'CEO IPG Mediabrands', employeeCount: '5000+', revenueEstimate: '$10B+', foundingYear: '1961', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/interpublic-group' },
-    { companyName: 'Dentsu', website: 'https://dentsu.com', industry: 'Marketing', subIndustry: 'Holding Company', city: 'New York', country: 'USA', phoneMain: '+1-212-536-8300', generalEmail: 'info@dentsu.com', ceoName: 'Hiroshi Igarashi', keyContactName: 'Doug Rozen', keyContactTitle: 'CEO Dentsu Americas', employeeCount: '1001-5000', revenueEstimate: '$8B+', foundingYear: '1901', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/dentsu' },
-    { companyName: 'DDB Worldwide', website: 'https://ddb.com', industry: 'Marketing', subIndustry: 'Creative Agency', city: 'New York', country: 'USA', phoneMain: '+1-212-460-5000', generalEmail: 'info@ddb.com', ceoName: 'Alex Lubar', keyContactName: 'Ari Weiss', keyContactTitle: 'CCO', employeeCount: '501-1000', revenueEstimate: '$600M+', foundingYear: '1949', ownershipType: 'Subsidiary', linkedinUrl: 'https://linkedin.com/company/ddb-worldwide' },
-    { companyName: 'Ogilvy', website: 'https://ogilvy.com', industry: 'Marketing', subIndustry: 'Full-Service Agency', city: 'New York', country: 'USA', phoneMain: '+1-212-633-7600', generalEmail: 'info@ogilvy.com', ceoName: 'Andy Main', keyContactName: 'Liz Taylor', keyContactTitle: 'Global CEO', employeeCount: '1001-5000', revenueEstimate: '$1B+', foundingYear: '1948', ownershipType: 'Subsidiary', linkedinUrl: 'https://linkedin.com/company/ogilvy' },
-    { companyName: 'BBDO Worldwide', website: 'https://bbdo.com', industry: 'Marketing', subIndustry: 'Creative Agency', city: 'New York', country: 'USA', phoneMain: '+1-212-459-5100', generalEmail: 'info@bbdo.com', ceoName: 'Andrew Robertson', keyContactName: 'David Lubars', keyContactTitle: 'CCO', employeeCount: '501-1000', revenueEstimate: '$500M+', foundingYear: '1928', ownershipType: 'Subsidiary', linkedinUrl: 'https://linkedin.com/company/bbdo-worldwide' },
-  ],
-  finance: [
-    { companyName: 'Goldman Sachs', website: 'https://goldmansachs.com', industry: 'Finance', subIndustry: 'Investment Banking', city: 'New York', country: 'USA', phoneMain: '+1-212-902-1000', generalEmail: 'info@gs.com', ceoName: 'David Solomon', keyContactName: 'John Waldron', keyContactTitle: 'President & COO', employeeCount: '5000+', revenueEstimate: '$46B+', foundingYear: '1869', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/goldman-sachs' },
-    { companyName: 'JPMorgan Chase', website: 'https://jpmorgan.com', industry: 'Finance', subIndustry: 'Banking', city: 'New York', country: 'USA', phoneMain: '+1-212-270-6000', generalEmail: 'info@jpmorgan.com', ceoName: 'Jamie Dimon', keyContactName: 'Marianne Lake', keyContactTitle: 'CEO Consumer Banking', employeeCount: '5000+', revenueEstimate: '$155B+', foundingYear: '1871', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/jpmorgan-chase' },
-    { companyName: 'Morgan Stanley', website: 'https://morganstanley.com', industry: 'Finance', subIndustry: 'Investment Banking', city: 'New York', country: 'USA', phoneMain: '+1-212-761-4000', generalEmail: 'info@morganstanley.com', ceoName: 'Ted Pick', keyContactName: 'Andy Saperstein', keyContactTitle: 'President', employeeCount: '5000+', revenueEstimate: '$53B+', foundingYear: '1935', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/morgan-stanley' },
-    { companyName: 'BlackRock', website: 'https://blackrock.com', industry: 'Finance', subIndustry: 'Asset Management', city: 'New York', country: 'USA', phoneMain: '+1-212-810-5300', generalEmail: 'info@blackrock.com', ceoName: 'Larry Fink', keyContactName: 'Rob Goldstein', keyContactTitle: 'COO', employeeCount: '1001-5000', revenueEstimate: '$17B+', foundingYear: '1988', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/blackrock' },
-    { companyName: 'Citigroup', website: 'https://citigroup.com', industry: 'Finance', subIndustry: 'Banking', city: 'New York', country: 'USA', phoneMain: '+1-212-559-1000', generalEmail: 'info@citi.com', ceoName: 'Jane Fraser', keyContactName: 'Peter Babej', keyContactTitle: 'CEO Citi Private Bank', employeeCount: '5000+', revenueEstimate: '$78B+', foundingYear: '1812', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/citigroup' },
-    { companyName: 'Bridgewater Associates', website: 'https://bridgewater.com', industry: 'Finance', subIndustry: 'Hedge Fund', city: 'New York', country: 'USA', phoneMain: '+1-203-563-5100', generalEmail: 'info@bridgewater.com', ceoName: 'Nir Bar Dea', keyContactName: 'Mark Bertolini', keyContactTitle: 'CFO', employeeCount: '501-1000', revenueEstimate: '$5B+', foundingYear: '1975', ownershipType: 'Private', linkedinUrl: 'https://linkedin.com/company/bridgewater-associates' },
-    { companyName: 'Apollo Global Management', website: 'https://apollo.com', industry: 'Finance', subIndustry: 'Private Equity', city: 'New York', country: 'USA', phoneMain: '+1-212-515-3200', generalEmail: 'info@apollo.com', ceoName: 'Marc Rowan', keyContactName: 'Martin Kelly', keyContactTitle: 'CFO', employeeCount: '501-1000', revenueEstimate: '$10B+', foundingYear: '1990', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/apollo-global-management' },
-    { companyName: 'KKR', website: 'https://kkr.com', industry: 'Finance', subIndustry: 'Private Equity', city: 'New York', country: 'USA', phoneMain: '+1-212-230-7700', generalEmail: 'info@kkr.com', ceoName: 'Scott Nuttall', keyContactName: 'Robert Lewin', keyContactTitle: 'CFO', employeeCount: '501-1000', revenueEstimate: '$14B+', foundingYear: '1976', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/kkr' },
-  ],
-  healthcare: [
-    { companyName: 'Pfizer', website: 'https://pfizer.com', industry: 'Healthcare', subIndustry: 'Pharmaceuticals', city: 'New York', country: 'USA', phoneMain: '+1-212-733-2323', generalEmail: 'info@pfizer.com', ceoName: 'Albert Bourla', keyContactName: 'Aamir Malik', keyContactTitle: 'CCO', employeeCount: '5000+', revenueEstimate: '$58B+', foundingYear: '1849', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/pfizer' },
-    { companyName: 'Johnson & Johnson', website: 'https://jnj.com', industry: 'Healthcare', subIndustry: 'Diversified Healthcare', city: 'New York', country: 'USA', phoneMain: '+1-212-873-5500', generalEmail: 'info@jnj.com', ceoName: 'Joaquin Duato', keyContactName: 'Ashley McEvoy', keyContactTitle: 'EVP', employeeCount: '5000+', revenueEstimate: '$85B+', foundingYear: '1886', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/johnson-&-johnson' },
-    { companyName: 'Mount Sinai Health System', website: 'https://mountsinai.org', industry: 'Healthcare', subIndustry: 'Hospital System', city: 'New York', country: 'USA', phoneMain: '+1-212-241-6500', generalEmail: 'info@mountsinai.org', ceoName: 'Brendan Carr', keyContactName: 'David Reich', keyContactTitle: 'President', employeeCount: '5000+', revenueEstimate: '$8B+', foundingYear: '1852', ownershipType: 'Non-profit', linkedinUrl: 'https://linkedin.com/company/mount-sinai-health-system' },
-    { companyName: 'NYU Langone Health', website: 'https://nyulangone.org', industry: 'Healthcare', subIndustry: 'Academic Medical Center', city: 'New York', country: 'USA', phoneMain: '+1-212-263-7300', generalEmail: 'info@nyulangone.org', ceoName: 'Robert Grossman', keyContactName: 'Andrew Brotman', keyContactTitle: 'VP', employeeCount: '5000+', revenueEstimate: '$8B+', foundingYear: '1841', ownershipType: 'Non-profit', linkedinUrl: 'https://linkedin.com/company/nyu-langone-health' },
-    { companyName: 'Oscar Health', website: 'https://oscar.com', industry: 'Healthcare', subIndustry: 'Health Insurance / InsurTech', city: 'New York', country: 'USA', phoneMain: '+1-855-672-2788', generalEmail: 'info@oscar.com', ceoName: 'Mark Bertolini', keyContactName: 'Sara Wajnberg', keyContactTitle: 'CMO', employeeCount: '201-500', revenueEstimate: '$5B+', foundingYear: '2012', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/oscar-health' },
-    { companyName: 'Roivant Sciences', website: 'https://roivant.com', industry: 'Healthcare', subIndustry: 'Biotech', city: 'New York', country: 'USA', phoneMain: '+1-646-770-5488', generalEmail: 'info@roivant.com', ceoName: 'Matt Gline', keyContactName: 'Mayukh Sukhatme', keyContactTitle: 'President', employeeCount: '201-500', revenueEstimate: '$500M+', foundingYear: '2014', ownershipType: 'Public', linkedinUrl: 'https://linkedin.com/company/roivant-sciences' },
-  ],
-};
-
-function getCompaniesForQuery(query: string, industry?: string, location?: string): Array<Record<string, unknown>> {
-  const normalizedIndustry = (industry || query || '').toLowerCase();
-  
-  if (normalizedIndustry.includes('account') || normalizedIndustry.includes('audit') || normalizedIndustry.includes('tax')) {
-    return COMPANIES_BY_INDUSTRY.accounting;
-  }
-  if (normalizedIndustry.includes('tech') || normalizedIndustry.includes('software') || normalizedIndustry.includes('saas') || normalizedIndustry.includes('startup')) {
-    return COMPANIES_BY_INDUSTRY.technology;
-  }
-  if (normalizedIndustry.includes('market') || normalizedIndustry.includes('advertis') || normalizedIndustry.includes('creative') || normalizedIndustry.includes('agency')) {
-    return COMPANIES_BY_INDUSTRY.marketing;
-  }
-  if (normalizedIndustry.includes('financ') || normalizedIndustry.includes('bank') || normalizedIndustry.includes('invest') || normalizedIndustry.includes('fintech')) {
-    return COMPANIES_BY_INDUSTRY.finance;
-  }
-  if (normalizedIndustry.includes('health') || normalizedIndustry.includes('pharma') || normalizedIndustry.includes('biotech') || normalizedIndustry.includes('medical')) {
-    return COMPANIES_BY_INDUSTRY.healthcare;
-  }
-  
-  return COMPANIES_BY_INDUSTRY.technology;
-}
+// NOTE: Hardcoded COMPANIES_BY_INDUSTRY fallback removed.
+// If ALL search channels fail, we mark the campaign as failed
+// with a useful message rather than inserting fake data.
+// Real search is always preferred over fabricated data.
 
 // Simple outreach templates (no LLM needed)
 function generateOutreach(companyName: string, industry: string, contactName: string): { subject: string; body: string } {
@@ -403,7 +333,6 @@ async function main() {
     // First try real multi-channel search
     let companies: Array<Record<string, unknown>> = [];
     let channelsUsed: string[] = [];
-    let usedFallback = false;
 
     try {
       const searchResult = await realMultiChannelSearch(query, industry || '', location || '');
@@ -414,12 +343,51 @@ async function main() {
       console.warn(`[PipelineWorker] Real search failed: ${searchError instanceof Error ? searchError.message.slice(0, 100) : 'Unknown'}`);
     }
 
-    // ULTIMATE FALLBACK: Use hardcoded data ONLY if all search channels failed
+    // FALLBACK: DuckDuckGo direct HTML search (if multi-channel returned nothing)
     if (companies.length === 0) {
-      console.warn('[PipelineWorker] All search channels returned 0 companies, using hardcoded fallback');
-      companies = getCompaniesForQuery(query, industry, location);
-      usedFallback = true;
-      channelsUsed = ['hardcoded_fallback'];
+      console.warn('[PipelineWorker] Multi-channel search returned 0 companies, trying DuckDuckGo fallback');
+      try {
+        const ddgResult = await directDuckDuckGoSearch([query, industry, location].filter(Boolean).join(' '), 20);
+        if (ddgResult.success && ddgResult.data.length > 0) {
+          // Convert DDG results to company-like objects
+          companies = ddgResult.data.map(r => {
+            let companyName = r.title
+              .replace(/\s*[\|\-–—]\s*(Homepage|Official Site|Home|LinkedIn|Facebook|Twitter|Crunchbase).*$/i, '')
+              .trim();
+            if (!companyName) {
+              try { companyName = new URL(r.url).hostname.replace(/^www\./, ''); } catch { companyName = r.title.slice(0, 80); }
+            }
+            return {
+              companyName,
+              website: r.url,
+              industry: industry || null,
+              city: location?.split(',')[0] || null,
+              country: location?.split(',').pop()?.trim() || null,
+              sources: [r.url],
+            };
+          });
+          channelsUsed = ['duckduckgo_fallback'];
+          console.log(`[PipelineWorker] DuckDuckGo fallback found ${companies.length} results`);
+        }
+      } catch (ddgErr) {
+        console.warn(`[PipelineWorker] DuckDuckGo fallback failed: ${ddgErr instanceof Error ? ddgErr.message.slice(0, 100) : 'Unknown'}`);
+      }
+    }
+
+    // If ALL search channels failed, mark campaign as failed with useful message
+    if (companies.length === 0) {
+      const failMsg = `All search channels failed for query: "${query}". Tried: [${channelsUsed.join(', ')}]. Please check your search query and try again.`;
+      console.error(`[PipelineWorker] ${failMsg}`);
+      await db.campaign.update({
+        where: { id: campaignId },
+        data: { status: 'completed' },
+      });
+      await db.agentTask.update({
+        where: { id: discoveryTask.id },
+        data: { status: 'failed', error: failMsg, completedAt: new Date(), progress: 100 },
+      });
+      console.log(`[PipelineWorker] Pipeline aborted: no companies found from any search channel`);
+      process.exit(0);
     }
 
     console.log(`[PipelineWorker] Found ${companies.length} companies (sources: [${channelsUsed.join(', ')}])`);
@@ -447,9 +415,9 @@ async function main() {
             revenueEstimate: (company.revenueEstimate as string) || null,
             foundingYear: (company.foundingYear as string) || null,
             ownershipType: (company.ownershipType as string) || null,
-            sources: JSON.stringify(usedFallback ? ['knowledge_base'] : (company.sources || channelsUsed)),
+            sources: JSON.stringify(company.sources || channelsUsed),
             stage: 'new',
-            dataCompleteness: usedFallback ? 60 : 40,
+            dataCompleteness: 40,
           },
         });
         createdLeads.push(lead.id);
@@ -465,9 +433,9 @@ async function main() {
 
     await db.agentTask.update({
       where: { id: discoveryTask.id },
-      data: { status: 'completed', output: JSON.stringify({ found: companies.length, leadsCreated: createdLeads.length, channels: channelsUsed, usedFallback }), completedAt: new Date(), progress: 100 },
+      data: { status: 'completed', output: JSON.stringify({ found: companies.length, leadsCreated: createdLeads.length, channels: channelsUsed }), completedAt: new Date(), progress: 100 },
     });
-    console.log(`[PipelineWorker] Discovery complete: ${createdLeads.length} leads created (${usedFallback ? 'HARDCODED FALLBACK' : 'REAL SEARCH'})`);
+    console.log(`[PipelineWorker] Discovery complete: ${createdLeads.length} leads created (REAL SEARCH)`);
 
     // Stage 2: Data Enrichment (mark all as enriched with existing data)
     console.log('[PipelineWorker] Stage 2: Enrichment...');

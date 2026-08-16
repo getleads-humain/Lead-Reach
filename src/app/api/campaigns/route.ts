@@ -1,27 +1,11 @@
 import { db } from '@/lib/db';
-import { spawn } from 'child_process';
 import { NextRequest, NextResponse } from 'next/server';
 
-/**
- * Validates that an ID contains only safe characters (UUID format).
- * Prevents command injection in spawned processes.
- */
-function isValidId(id: string): boolean {
-  return /^[a-zA-Z0-9_-]+$/.test(id) && id.length <= 128;
-}
-
-/**
- * Validates that a string argument is safe to pass to a child process.
- * Rejects strings containing shell metacharacters, null bytes, or excessive length.
- * This prevents command injection even though spawn() uses argument arrays.
- */
-function isSafeSpawnArg(value: string, maxLength = 1000): boolean {
-  if (typeof value !== 'string') return false;
-  if (value.length === 0 || value.length > maxLength) return false;
-  // Block null bytes and common shell metacharacters as defense-in-depth
-  if (/[\x00`$\\!;|&<>(){}\[\]#~]/.test(value)) return false;
-  return true;
-}
+// NOTE: spawn-based pipeline worker removed. The SSE stream endpoint
+// (POST /api/campaigns/[id]/stream) is the reliable pipeline path.
+// When autoRun is requested, we use the inline runPipelineInBackground
+// which runs the 8-agent orchestrator in-process instead of spawning
+// a detached child process that can fail silently.
 
 export async function GET(request: NextRequest) {
   try {
@@ -46,81 +30,12 @@ export async function GET(request: NextRequest) {
   }
 }
 
-/**
- * Spawn a pipeline worker as a completely detached child process.
- * Uses `bun run` which handles TypeScript natively.
- * 
- * Key: We use detached mode + unref so the child process is completely
- * independent from the Next.js server. If the server restarts, the
- * pipeline continues running.
- * 
- * Security: Uses spawn with direct argument array (no shell interpolation)
- * to prevent command injection. Input validation is performed on all
- * arguments before spawning.
- */
-function spawnPipelineWorker(campaignId: string, query: string, industry: string, location: string) {
-  console.log(`[Campaigns] Spawning pipeline worker for campaign ${campaignId}`);
-
-  // Validate all inputs to prevent command injection (CodeQL: uncontrolled command line)
-  if (!isValidId(campaignId)) {
-    console.error(`[Campaigns] Invalid campaign ID rejected: ${campaignId.slice(0, 50)}`);
-    return;
-  }
-  if (!isSafeSpawnArg(query, 1000)) {
-    console.error(`[Campaigns] Invalid query rejected for pipeline worker`);
-    return;
-  }
-  if (industry && !isSafeSpawnArg(industry, 200)) {
-    console.error(`[Campaigns] Invalid industry rejected for pipeline worker`);
-    return;
-  }
-  if (location && !isSafeSpawnArg(location, 200)) {
-    console.error(`[Campaigns] Invalid location rejected for pipeline worker`);
-    return;
-  }
-
-  try {
-    // Use spawn with direct argument array (no shell -c) to prevent command injection.
-    // Arguments are passed directly to bun without shell interpretation.
-    const logFile = `/tmp/pipeline-${campaignId}.log`;
-    const child = spawn('bun', [
-      'run',
-      'src/lib/workers/pipeline-worker.ts',
-      campaignId,
-      query,
-      industry || '',
-      location || '',
-    ], {
-      stdio: [
-        'ignore',  // stdin
-        'pipe',    // stdout -> log file
-        'pipe',    // stderr -> log file
-      ],
-      detached: true,
-      env: {
-        ...process.env,
-        DATABASE_URL: 'file:./db/custom.db',
-      },
-      cwd: '/home/z/my-project',
-    });
-
-    // Redirect stdout/stderr to log file
-    const fs = require('fs');
-    const logStream = fs.createWriteStream(logFile, { flags: 'a' });
-    child.stdout?.pipe(logStream);
-    child.stderr?.pipe(logStream);
-
-    child.unref();
-    
-    console.log(`[Campaigns] Pipeline worker launched via bun (PID: ${child.pid})`);
-  } catch (spawnError) {
-    console.error(`[Campaigns] Failed to spawn pipeline worker:`, spawnError);
-  }
-}
+// spawnPipelineWorker removed — replaced by inline runPipelineInBackground
+// and the SSE stream endpoint which are more reliable.
 
 /**
- * Fallback: Run pipeline inline in the background.
- * Only used if spawn fails.
+ * Run pipeline inline in the background (not detached).
+ * Uses the 8-agent orchestrator from agent-executor.
  */
 async function runPipelineInBackground(campaignId: string, query: string, industry: string, location: string): Promise<void> {
   try {
@@ -168,7 +83,7 @@ async function runPipelineInBackground(campaignId: string, query: string, indust
  * POST /api/campaigns
  *
  * Create a new campaign AND optionally auto-start the full agent pipeline.
- * Uses detached child process (bun run) for pipeline execution.
+ * Uses inline pipeline execution (not detached child process).
  */
 export async function POST(request: NextRequest) {
   try {
@@ -204,7 +119,9 @@ export async function POST(request: NextRequest) {
       },
     });
 
-    // If autoRun, spawn the pipeline worker
+    // If autoRun, run the pipeline inline (not detached spawn)
+    // This is more reliable than spawning a child process which can
+    // fail silently. The 8-agent orchestrator runs in-process.
     if (autoRun) {
       const industry = campaign.targetIndustry || '';
       const location = campaign.targetLocation || '';
@@ -220,8 +137,9 @@ export async function POST(request: NextRequest) {
         query = campaign.name;
       }
 
-      // Spawn the worker process (completely detached)
-      spawnPipelineWorker(campaign.id, query, industry, location);
+      // Run inline (not detached) — the SSE stream endpoint is the
+      // PRIMARY path. This is a fallback for programmatic API usage.
+      runPipelineInBackground(campaign.id, query, industry, location);
     }
 
     return NextResponse.json(
@@ -231,7 +149,7 @@ export async function POST(request: NextRequest) {
           started: autoRun,
           status: autoRun ? 'running' : 'not_started',
           message: autoRun
-            ? 'Legacy pipeline started in the background. Poll /api/campaigns/[id]/pipeline-status for progress.'
+            ? 'Pipeline started inline. Open the campaign detail view for live SSE progress via /api/campaigns/[id]/stream.'
             : 'Campaign created. Open the campaign and click "Run Discovery Pipeline" to start the 8-agent pipeline via /api/campaigns/[id]/stream.',
         },
       },

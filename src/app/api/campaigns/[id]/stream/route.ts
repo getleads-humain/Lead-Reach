@@ -25,6 +25,7 @@ import { db } from '@/lib/db';
 import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
 import type { OrchestratorEvent } from '@/lib/prospect-agent/orchestrator-types';
 import { directDuckDuckGoSearch, type SearchResult } from '@/lib/direct-search';
+import { discoverBusinesses } from '@/lib/agent-reach-bridge';
 
 export const maxDuration = 300;
 
@@ -349,13 +350,39 @@ export async function POST(
         message: `Searching the web for: ${discoveryQuery.slice(0, 100)}`,
       });
 
+      // Primary: DuckDuckGo HTML search → Fallback: z-ai-web-dev-sdk web_search via discoverBusinesses
       directDuckDuckGoSearch(discoveryQuery, 10)
         .then(async (searchResponse) => {
           if (aborted) return;
-          const results: SearchResult[] = searchResponse.success ? searchResponse.data : [];
+          let results: SearchResult[] = searchResponse.success ? searchResponse.data : [];
           if (!searchResponse.success) {
             console.warn('[CampaignStream] DuckDuckGo search failed:', searchResponse.error);
-            // Continue with empty results — the pipeline will end gracefully
+
+            // FALLBACK: Try z-ai-web-dev-sdk discoverBusinesses (web_search)
+            send('step_progress', {
+              stepIndex: 0,
+              message: 'DuckDuckGo failed, trying fallback web search…',
+              partialData: { candidateCount: 0 },
+            });
+            try {
+              const fallbackResult = await discoverBusinesses(
+                discoveryQuery,
+                campaign.targetLocation || undefined,
+                campaign.targetIndustry || undefined,
+              );
+              if (fallbackResult.success && Array.isArray(fallbackResult.data) && fallbackResult.data.length > 0) {
+                results = fallbackResult.data.map((r: { title?: string; url?: string; snippet?: string; name?: string; headline?: string }) => ({
+                  title: r.title || r.name || '',
+                  url: r.url || '',
+                  snippet: r.snippet || r.headline || '',
+                }));
+                console.log(`[CampaignStream] Fallback discoverBusinesses found ${results.length} results`);
+              } else {
+                console.warn('[CampaignStream] Fallback discoverBusinesses also returned no results');
+              }
+            } catch (fallbackErr) {
+              console.warn('[CampaignStream] Fallback search failed:', fallbackErr instanceof Error ? fallbackErr.message.slice(0, 100) : 'Unknown');
+            }
           }
           send('step_progress', {
             stepIndex: 0,
@@ -562,10 +589,16 @@ export async function POST(
           }
 
           // ── Done ──
-          await db.campaign.update({
-            where: { id: campaignId },
-            data: { status: 'completed' },
-          });
+          // Always mark campaign as completed even if enrichment partially failed
+          // (leads that DID get discovered are still valid and useful)
+          try {
+            await db.campaign.update({
+              where: { id: campaignId },
+              data: { status: 'completed' },
+            });
+          } catch (dbErr) {
+            console.error('[CampaignStream] Failed to update campaign status on completion:', dbErr);
+          }
 
           send('pipeline_progress', {
             phase: 'complete',
@@ -588,13 +621,22 @@ export async function POST(
             })),
           });
         })
-        .catch((error) => {
+        .catch(async (error) => {
           console.error('[CampaignStream] Discovery phase failed:', error);
           stopThinkingTimer();
           send('error', {
             message: `Discovery failed: ${error instanceof Error ? error.message.slice(0, 200) : 'Unknown error'}`,
             recoverable: true,
           });
+          // Ensure campaign status is set to a terminal state even on error
+          try {
+            await db.campaign.update({
+              where: { id: campaignId },
+              data: { status: 'completed' },
+            });
+          } catch (dbErr) {
+            console.error('[CampaignStream] Failed to update campaign status on error:', dbErr);
+          }
           send('done', {
             campaignId,
             summary: { discovered: 0, enriched: 0, failed: 1, skipped: 0 },

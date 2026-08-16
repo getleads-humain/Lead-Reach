@@ -506,10 +506,13 @@ export function CampaignsView() {
             const isPipelineRunning = pipelineStatus?.pipelineStatus === 'running';
             const isPipelineCompleted = pipelineStatus?.pipelineStatus === 'completed';
             const isPipelineFailed = pipelineStatus?.pipelineStatus === 'failed';
-            const hasLeads = campaign.leadsFound > 0 || (pipelineStatus?.summary?.leadsFound || 0) > 0;
+            // Use _count?.leads (actual Lead row count) as the most reliable source,
+            // fall back to leadsFound / pipelineStatus summary
+            const actualLeadCount = campaign._count?.leads ?? 0;
+            const hasLeads = actualLeadCount > 0 || campaign.leadsFound > 0 || (pipelineStatus?.summary?.leadsFound || 0) > 0;
 
-            // Use pipeline status summary if available, otherwise campaign data
-            const displayFound = pipelineStatus?.summary?.leadsFound ?? campaign.leadsFound;
+            // Use pipeline status summary if available, then _count?.leads, then campaign data
+            const displayFound = pipelineStatus?.summary?.leadsFound ?? actualLeadCount ?? campaign.leadsFound;
             const displayQualified = pipelineStatus?.summary?.leadsQualified ?? campaign.leadsQualified;
             const displayContacted = pipelineStatus?.summary?.leadsContacted ?? campaign.leadsContacted;
 
