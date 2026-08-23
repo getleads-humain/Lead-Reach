@@ -1,6 +1,23 @@
 'use client';
 
-import { useState, useEffect, useRef, useMemo } from 'react';
+/**
+ * LeadReach — Workforce AI Command Center
+ * =========================================
+ * The WorkforceDashboard is the command-center overview of every
+ * platform-managed AI employee. It receives agents, tasks, and a live
+ * orchestration feed from the parent WorkforceView, and emits orchestration
+ * actions (deploy / pause / health-check / seed) back through callbacks.
+ *
+ * Layout (top → bottom):
+ *   1. Sticky command header (below the global TopBar) — title + clock + actions
+ *   2. Global metrics bar — 5 KPIs computed from agent stats
+ *   3. Live Orchestration Feed — real task events pushed by parent + action log
+ *   4. Agent Workforce grid — cards with per-agent stats + workspace button
+ *   5. Global Task Queue — recent tasks table (collapsible)
+ *   6. Department Breakdown — aggregated per-department stats
+ */
+
+import { useState, useEffect, useMemo } from 'react';
 import {
   Card,
   CardContent,
@@ -35,6 +52,7 @@ import {
   Rocket,
   Stethoscope,
   Sprout,
+  Pause,
   ChevronDown,
   ChevronUp,
   ArrowUpRight,
@@ -93,28 +111,39 @@ interface TaskData {
   progress: number;
   createdAt: string;
   agentId: string;
-  agent?: { name: string; avatar: string; color: string; slug: string };
+  agent?: { name: string; avatar: string; color: string; slug: string; department?: string };
 }
-
-interface WorkforceDashboardProps {
-  agents: WorkforceAgentData[];
-  tasks: TaskData[];
-  onOpenWorkspace: (agent: WorkforceAgentData) => void;
-  onRefresh: () => void;
-  isLoading?: boolean;
-}
-
-// ─── Orchestration Feed Types ──────────────────────────────────────────────────
 
 interface FeedEntry {
   id: string;
-  timestamp: Date;
+  timestamp: string; // ISO string
   agentName: string;
   agentAvatar: string;
   agentColor: string;
   department: string;
   action: string;
   status: 'running' | 'completed' | 'failed';
+}
+
+interface ActionLoading {
+  deploy?: boolean;
+  health?: boolean;
+  seed?: boolean;
+  pause?: boolean;
+}
+
+interface WorkforceDashboardProps {
+  agents: WorkforceAgentData[];
+  tasks: TaskData[];
+  feedEntries: FeedEntry[];
+  onOpenWorkspace: (agent: WorkforceAgentData) => void;
+  onRefresh: () => void;
+  onDeployAll: () => void;
+  onPauseAll: () => void;
+  onHealthCheck: () => void;
+  onSeedAgents: () => void;
+  actionLoading: ActionLoading;
+  isLoading?: boolean;
 }
 
 // ─── Utility Functions ─────────────────────────────────────────────────────────
@@ -146,10 +175,12 @@ function relativeTime(dateStr: string | null): string {
   return `${days}d ago`;
 }
 
-function formatFeedTimestamp(date: Date): string {
-  const h = date.getHours().toString().padStart(2, '0');
-  const m = date.getMinutes().toString().padStart(2, '0');
-  const s = date.getSeconds().toString().padStart(2, '0');
+function formatFeedTimestamp(iso: string): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '--:--:--';
+  const h = d.getHours().toString().padStart(2, '0');
+  const m = d.getMinutes().toString().padStart(2, '0');
+  const s = d.getSeconds().toString().padStart(2, '0');
   return `${h}:${m}:${s}`;
 }
 
@@ -170,11 +201,12 @@ function healthLabel(score: number): string {
 function statusDotColor(status: string): string {
   switch (status) {
     case 'active':
-      return '#10B981';
     case 'busy':
-      return '#F59E0B';
+      return '#10B981';
     case 'idle':
       return '#6B7280';
+    case 'paused':
+      return '#F59E0B';
     case 'error':
       return '#EF4444';
     default:
@@ -188,7 +220,6 @@ function departmentColor(dept: string): string {
     Growth: '#10B981',
     Technology: '#3B82F6',
     Operations: '#84CC16',
-    // Legacy fallbacks
     Engineering: '#3B82F6',
     Sales: '#F97316',
     Marketing: '#EC4899',
@@ -199,80 +230,9 @@ function departmentColor(dept: string): string {
   return colors[dept] || '#6B7280';
 }
 
-function countCommaList(value: string | undefined): number {
+function countCommaList(value: string | undefined | null): number {
   if (!value || value.trim() === '') return 0;
   return value.split(',').filter((s) => s.trim() !== '').length;
-}
-
-// ─── Simulated Orchestration Feed ──────────────────────────────────────────────
-
-const FEED_ACTIONS = [
-  'optimizing global health factor',
-  'routing task via event ring',
-  'detecting ICP fatigue signals',
-  'generating multi-variant copy',
-  'adjusting bid modifiers',
-  'consolidating lead pipeline',
-  'trapping architectural violations',
-  'submitting code patch diff',
-  'running regression suite',
-  'executing rolling deployment',
-  'scanning for prompt injection',
-  'reconciling unit economics',
-  'auditing GDPR compliance',
-  'monitoring agent alignment drift',
-  'flushing kernel weights',
-  'processing MCP server sync',
-];
-
-const FEED_STATUSES: Array<'running' | 'completed' | 'failed'> = [
-  'running',
-  'running',
-  'running',
-  'completed',
-  'completed',
-  'completed',
-  'completed',
-  'completed',
-  'failed',
-];
-
-function generateInitialFeed(agents: WorkforceAgentData[]): FeedEntry[] {
-  if (agents.length === 0) return [];
-  const now = Date.now();
-  const entries: FeedEntry[] = [];
-  for (let i = 0; i < 10; i++) {
-    const agent = agents[Math.floor(Math.random() * agents.length)];
-    entries.push({
-      id: `feed-init-${i}`,
-      timestamp: new Date(now - Math.floor(Math.random() * 30 * 60 * 1000)),
-      agentName: agent.name,
-      agentAvatar: agent.avatar,
-      agentColor: agent.color,
-      department: agent.department,
-      action: FEED_ACTIONS[Math.floor(Math.random() * FEED_ACTIONS.length)],
-      status: FEED_STATUSES[Math.floor(Math.random() * FEED_STATUSES.length)],
-    });
-  }
-  entries.sort((a, b) => a.timestamp.getTime() - b.timestamp.getTime());
-  return entries;
-}
-
-function generateNextFeedEntry(
-  agents: WorkforceAgentData[],
-  counter: number
-): FeedEntry {
-  const agent = agents[Math.floor(Math.random() * agents.length)];
-  return {
-    id: `feed-${counter}`,
-    timestamp: new Date(),
-    agentName: agent.name,
-    agentAvatar: agent.avatar,
-    agentColor: agent.color,
-    department: agent.department,
-    action: FEED_ACTIONS[Math.floor(Math.random() * FEED_ACTIONS.length)],
-    status: FEED_STATUSES[Math.floor(Math.random() * FEED_STATUSES.length)],
-  };
 }
 
 // ─── Component ─────────────────────────────────────────────────────────────────
@@ -280,48 +240,25 @@ function generateNextFeedEntry(
 export function WorkforceDashboard({
   agents,
   tasks,
+  feedEntries,
   onOpenWorkspace,
   onRefresh,
+  onDeployAll,
+  onPauseAll,
+  onHealthCheck,
+  onSeedAgents,
+  actionLoading,
   isLoading = false,
 }: WorkforceDashboardProps) {
   // ── State ──
   const [clock, setClock] = useState(new Date());
-  const [feedEntries, setFeedEntries] = useState<FeedEntry[]>([]);
-  const [feedCounter, setFeedCounter] = useState(100);
   const [taskQueueOpen, setTaskQueueOpen] = useState(true);
-  const feedEndRef = useRef<HTMLDivElement>(null);
 
   // ── Clock ──
   useEffect(() => {
     const timer = setInterval(() => setClock(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
-
-  // ── Initialize feed ──
-  useEffect(() => {
-    if (agents.length > 0 && feedEntries.length === 0) {
-      setFeedEntries(generateInitialFeed(agents));
-    }
-  }, [agents, feedEntries.length]);
-
-  // ── Auto-scroll feed ──
-  useEffect(() => {
-    feedEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [feedEntries]);
-
-  // ── Simulate new feed entries ──
-  useEffect(() => {
-    if (agents.length === 0) return;
-    const timer = setInterval(() => {
-      setFeedCounter((c) => {
-        const next = c + 1;
-        const entry = generateNextFeedEntry(agents, next);
-        setFeedEntries((prev) => [...prev.slice(-50), entry]);
-        return next;
-      });
-    }, 4000 + Math.random() * 3000);
-    return () => clearInterval(timer);
-  }, [agents]);
 
   // ── Computed metrics ──
   const metrics = useMemo(() => {
@@ -339,10 +276,8 @@ export function WorkforceDashboard({
       totalAgents > 0
         ? agents.reduce((s, a) => s + a.healthScore, 0) / totalAgents
         : 0;
-    const totalInProgress = agents.reduce(
-      (s, a) => s + a.tasksInProgress,
-      0
-    );
+    const totalInProgress = agents.reduce((s, a) => s + a.tasksInProgress, 0);
+    const totalFailed = agents.reduce((s, a) => s + a.tasksFailed, 0);
     return {
       totalAgents,
       activeAgents,
@@ -351,6 +286,7 @@ export function WorkforceDashboard({
       totalTokens,
       avgHealth,
       totalInProgress,
+      totalFailed,
     };
   }, [agents]);
 
@@ -400,11 +336,23 @@ export function WorkforceDashboard({
     second: '2-digit',
   });
 
+  // ── Compute Δ for headline KPIs ──
+  // Compare completed-vs-failed to derive a rough health trend line
+  const completedVsFailed =
+    metrics.totalCompleted + metrics.totalFailed > 0
+      ? Math.round(
+          (metrics.totalCompleted /
+            (metrics.totalCompleted + metrics.totalFailed)) *
+            100
+        )
+      : 100;
+
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="bg-background text-foreground">
       {/* ─── 1. Command Center Header ─── */}
-      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1600px] items-center justify-between px-4 py-3 sm:px-6">
+      {/* sticky top-14 = below the global TopBar (h-14 = 56px) */}
+      <header className="sticky top-14 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1600px] flex-wrap items-center justify-between gap-3 px-4 py-3 sm:px-6">
           <div className="flex items-center gap-3">
             <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-emerald-500/20">
               <Bot className="h-5 w-5 text-emerald-500" />
@@ -423,37 +371,79 @@ export function WorkforceDashboard({
             </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex flex-wrap items-center gap-2">
             {/* Clock */}
             <div className="hidden items-center gap-1.5 rounded-lg border border-border bg-card px-3 py-1.5 font-mono text-sm text-emerald-400 sm:flex">
               <Clock className="h-3.5 w-3.5" />
               <span>{clockStr}</span>
             </div>
 
-            {/* Quick actions */}
+            {/* Deploy All */}
             <Button
               variant="ghost"
               size="sm"
-              className="hidden gap-1.5 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300 sm:flex"
+              className="gap-1.5 text-emerald-400 hover:bg-emerald-500/10 hover:text-emerald-300"
+              onClick={onDeployAll}
+              disabled={actionLoading.deploy || agents.length === 0}
+              title="Activate every managed agent"
             >
-              <Rocket className="h-3.5 w-3.5" />
-              Deploy All
+              {actionLoading.deploy ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Rocket className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">Deploy All</span>
             </Button>
+
+            {/* Pause All */}
             <Button
               variant="ghost"
               size="sm"
-              className="hidden gap-1.5 text-foreground/70 hover:bg-secondary hover:text-foreground sm:flex"
+              className="gap-1.5 text-amber-400 hover:bg-amber-500/10 hover:text-amber-300"
+              onClick={onPauseAll}
+              disabled={actionLoading.pause || agents.length === 0}
+              title="Pause every managed agent"
             >
-              <Stethoscope className="h-3.5 w-3.5" />
-              Health Check
+              {actionLoading.pause ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Pause className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">Pause All</span>
             </Button>
+
+            {/* Health Check */}
             <Button
               variant="ghost"
               size="sm"
-              className="hidden gap-1.5 text-foreground/70 hover:bg-secondary hover:text-foreground sm:flex"
+              className="gap-1.5 text-blue-400 hover:bg-blue-500/10 hover:text-blue-300"
+              onClick={onHealthCheck}
+              disabled={actionLoading.health || agents.length === 0}
+              title="Recompute health scores for every agent"
             >
-              <Sprout className="h-3.5 w-3.5" />
-              Seed Agents
+              {actionLoading.health ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Stethoscope className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">Health Check</span>
+            </Button>
+
+            {/* Seed Agents */}
+            <Button
+              variant="ghost"
+              size="sm"
+              className="gap-1.5 text-lime-400 hover:bg-lime-500/10 hover:text-lime-300"
+              onClick={onSeedAgents}
+              disabled={actionLoading.seed}
+              title="Seed the standard platform-managed agent fleet"
+            >
+              {actionLoading.seed ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Sprout className="h-3.5 w-3.5" />
+              )}
+              <span className="hidden sm:inline">Seed Agents</span>
             </Button>
 
             {/* Refresh */}
@@ -462,10 +452,12 @@ export function WorkforceDashboard({
               size="icon"
               className="text-foreground/70 hover:bg-secondary hover:text-foreground"
               onClick={onRefresh}
-              disabled={isLoading}
+              disabled={isLoading || actionLoading.deploy || actionLoading.health || actionLoading.seed}
             >
               <RefreshCw
-                className={`h-4 w-4 ${isLoading ? 'animate-spin' : ''}`}
+                className={`h-4 w-4 ${
+                  isLoading ? 'animate-spin' : ''
+                }`}
               />
             </Button>
           </div>
@@ -507,7 +499,7 @@ export function WorkforceDashboard({
                 </div>
                 <div className="flex items-center gap-0.5 text-xs text-blue-400">
                   <ArrowUpRight className="h-3 w-3" />
-                  <span>+12%</span>
+                  <span>{completedVsFailed}%</span>
                 </div>
               </div>
               <div className="mt-3">
@@ -529,8 +521,12 @@ export function WorkforceDashboard({
                   <Activity className="h-4 w-4 text-violet-400" />
                 </div>
                 <div className="flex items-center gap-0.5 text-xs text-violet-400">
-                  <ArrowUpRight className="h-3 w-3" />
-                  <span>+2.1%</span>
+                  {metrics.avgSuccessRate >= 90 ? (
+                    <ArrowUpRight className="h-3 w-3" />
+                  ) : (
+                    <ArrowDownRight className="h-3 w-3" />
+                  )}
+                  <span>{metrics.avgSuccessRate >= 90 ? 'Stable' : 'Watch'}</span>
                 </div>
               </div>
               <div className="mt-3">
@@ -553,7 +549,7 @@ export function WorkforceDashboard({
                 </div>
                 <div className="flex items-center gap-0.5 text-xs text-cyan-400">
                   <ArrowDownRight className="h-3 w-3" />
-                  <span>-8%</span>
+                  <span>Optimized</span>
                 </div>
               </div>
               <div className="mt-3">
@@ -617,54 +613,68 @@ export function WorkforceDashboard({
                 <Zap className="h-4 w-4 text-amber-400" />
                 Live Orchestration Feed
                 <span className="ml-1 inline-flex h-2 w-2 animate-pulse rounded-full bg-emerald-500" />
+                <Badge
+                  variant="secondary"
+                  className="border-0 bg-secondary/50 text-[10px] text-foreground/50"
+                >
+                  {feedEntries.length} events
+                </Badge>
               </CardTitle>
             </CardHeader>
             <CardContent className="pb-4">
               <ScrollArea className="h-48 w-full rounded-lg border border-border/50 bg-background">
                 <div className="space-y-0.5 p-2">
-                  {feedEntries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/50"
-                    >
-                      <span className="shrink-0 font-mono text-[11px] text-foreground/30">
-                        {formatFeedTimestamp(entry.timestamp)}
-                      </span>
-                      <span className="shrink-0 text-base leading-none">
-                        {entry.agentAvatar}
-                      </span>
-                      <span
-                        className="shrink-0 text-xs font-medium"
-                        style={{ color: entry.agentColor }}
-                      >
-                        {entry.agentName}
-                      </span>
-                      <span className="text-xs text-foreground/40">
-                        {entry.action}
-                      </span>
-                      <span className="ml-auto shrink-0">
-                        {entry.status === 'running' && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-blue-400">
-                            <Loader2 className="h-3 w-3 animate-spin" />
-                            running
-                          </span>
-                        )}
-                        {entry.status === 'completed' && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
-                            <CheckCircle2 className="h-3 w-3" />
-                            done
-                          </span>
-                        )}
-                        {entry.status === 'failed' && (
-                          <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
-                            <XCircle className="h-3 w-3" />
-                            failed
-                          </span>
-                        )}
-                      </span>
+                  {feedEntries.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-10">
+                      <Activity className="mb-2 h-6 w-6 text-foreground/15" />
+                      <p className="text-xs text-foreground/30">
+                        No recent activity — trigger an action above to begin
+                      </p>
                     </div>
-                  ))}
-                  <div ref={feedEndRef} />
+                  ) : (
+                    feedEntries.map((entry) => (
+                      <div
+                        key={entry.id}
+                        className="flex items-center gap-2 rounded-md px-2 py-1.5 transition-colors hover:bg-secondary/50"
+                      >
+                        <span className="shrink-0 font-mono text-[11px] text-foreground/30">
+                          {formatFeedTimestamp(entry.timestamp)}
+                        </span>
+                        <span className="shrink-0 text-base leading-none">
+                          {entry.agentAvatar}
+                        </span>
+                        <span
+                          className="shrink-0 text-xs font-medium"
+                          style={{ color: entry.agentColor }}
+                        >
+                          {entry.agentName}
+                        </span>
+                        <span className="truncate text-xs text-foreground/40">
+                          {entry.action}
+                        </span>
+                        <span className="ml-auto shrink-0">
+                          {entry.status === 'running' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-blue-400">
+                              <Loader2 className="h-3 w-3 animate-spin" />
+                              running
+                            </span>
+                          )}
+                          {entry.status === 'completed' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-emerald-400">
+                              <CheckCircle2 className="h-3 w-3" />
+                              done
+                            </span>
+                          )}
+                          {entry.status === 'failed' && (
+                            <span className="inline-flex items-center gap-1 text-[11px] text-red-400">
+                              <XCircle className="h-3 w-3" />
+                              failed
+                            </span>
+                          )}
+                        </span>
+                      </div>
+                    ))
+                  )}
                 </div>
               </ScrollArea>
             </CardContent>
@@ -677,12 +687,20 @@ export function WorkforceDashboard({
             <h2 className="text-sm font-semibold text-foreground/80">
               Agent Workforce
             </h2>
-            <Badge
-              variant="secondary"
-              className="border-border bg-secondary/50 text-muted-foreground"
-            >
-              {agents.length} agents
-            </Badge>
+            <div className="flex items-center gap-2">
+              <Badge
+                variant="secondary"
+                className="border-border bg-secondary/50 text-muted-foreground"
+              >
+                {metrics.activeAgents} active
+              </Badge>
+              <Badge
+                variant="secondary"
+                className="border-border bg-secondary/50 text-muted-foreground"
+              >
+                {agents.length} total
+              </Badge>
+            </div>
           </div>
 
           {agents.length === 0 ? (
@@ -691,8 +709,23 @@ export function WorkforceDashboard({
                 <Bot className="mb-3 h-10 w-10 text-foreground/20" />
                 <p className="text-sm text-foreground/40">No agents deployed</p>
                 <p className="mt-1 text-xs text-foreground/25">
-                  Seed your workforce to get started
+                  Use <span className="font-semibold">Seed Agents</span> in the
+                  toolbar to bootstrap the workforce
                 </p>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="mt-4 gap-1.5 border-lime-500/30 text-lime-400 hover:bg-lime-500/10"
+                  onClick={onSeedAgents}
+                  disabled={actionLoading.seed}
+                >
+                  {actionLoading.seed ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Sprout className="h-3.5 w-3.5" />
+                  )}
+                  Seed Agents Now
+                </Button>
               </CardContent>
             </Card>
           ) : (
@@ -911,6 +944,9 @@ export function WorkforceDashboard({
                         <p className="text-xs text-foreground/30">
                           No tasks in queue
                         </p>
+                        <p className="mt-1 text-[10px] text-foreground/20">
+                          Open an agent workspace to dispatch a task
+                        </p>
                       </div>
                     ) : (
                       <Table>
@@ -937,7 +973,7 @@ export function WorkforceDashboard({
                           </TableRow>
                         </TableHeader>
                         <TableBody>
-                          {tasks.slice(0, 20).map((task) => (
+                          {tasks.slice(0, 50).map((task) => (
                             <TableRow
                               key={task.id}
                               className="border-border/50"

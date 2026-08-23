@@ -512,9 +512,10 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
 
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-background text-foreground">
+    <div className="bg-background text-foreground">
       {/* ── Workspace Header ──────────────────────────────────────────────── */}
-      <header className="sticky top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+      {/* sticky top-14 = below the global TopBar (h-14 = 56px) */}
+      <header className="sticky top-14 z-30 border-b border-border bg-background/85 backdrop-blur-xl">
         <div className="mx-auto max-w-7xl px-4 py-4">
           {/* Top row: back + avatar + name */}
           <div className="flex items-center gap-4">

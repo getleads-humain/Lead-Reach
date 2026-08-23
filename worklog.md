@@ -388,3 +388,46 @@ Stage Summary:
 - Campaigns: pipeline now uses fallback search chain, no fake data, real lead counts displayed
 - All null/undefined guards in place across data-enrichment-view.tsx
 - EnrichmentJob model added to Prisma and migrated
+
+---
+Task ID: 2
+Agent: Main
+Task: Fix AI Workforce Command Center bugs — scroll bug, dead Deploy/Health Check/Seed buttons, and connect every element to the real system
+
+Work Log:
+- Diagnosed scroll bug: WorkforceDashboard root had `min-h-screen` AND an inner `sticky top-0 z-50` header, which (a) added a second full-viewport-height container inside the AppShell's already-padded main, and (b) caused the inner sticky header to overlap with the global TopBar (z-30, h-14). The two sticky elements competing for top:0 produced visual chaos and broken scroll behavior
+- Fix: removed `min-h-screen` from WorkforceDashboard + AgentWorkspace roots; changed inner header `sticky top-0 z-50` → `sticky top-14 z-30` so it sticks BELOW the AppShell's TopBar; same fix applied to AgentWorkspace
+- Fixed `WorkforceView` loading and error states to use `min-h-[60vh]` instead of `min-h-screen` (no more double-scroll)
+- Diagnosed dead buttons: Deploy All / Health Check / Seed Agents in the dashboard header had NO `onClick` handlers — they were purely decorative
+- Extended `POST /api/workforce` to support 4 orchestration actions (was 1):
+  * `action: 'seed'` (existing)
+  * `action: 'deploy_all'` (NEW) — sets every managed agent's status to 'active' + bumps lastActiveAt
+  * `action: 'pause_all'` (NEW) — sets every managed agent's status to 'paused'
+  * `action: 'health_check_all'` (NEW) — iterates all managed agents and calls `recalculateAgentHealth()` server-side
+- Added NEW endpoint `GET /api/workforce/tasks` — returns the latest N tasks across ALL agents (was previously N+1: list agents, then per-agent tasks fetch). Supports `?status`, `?priority`, `?limit`, `?since` filters and includes the parent agent's name/avatar/color/slug/department on every task. Returns a summary with byStatus counts
+- WorkforceView rewritten to:
+  * Use the new global `/api/workforce/tasks?limit=50` endpoint instead of N+1 per-agent fetches
+  * Poll for new tasks every 15s (`?since=<lastPoll>`) and push them as real entries to the Live Orchestration Feed
+  * Implement 4 orchestration handlers (handleDeployAll, handlePauseAll, handleHealthCheck, handleSeedAgents) that call the new API actions, show sonner toasts (info → success/error), push real feed entries ("Command Center deployed 14 agents", "Command Center health check complete — avg 100", etc.), and refresh data
+  * Auto-seed uses a ref guard so it only fires once (no infinite loop)
+- WorkforceDashboard rewritten to:
+  * Accept new props: feedEntries, onDeployAll, onPauseAll, onHealthCheck, onSeedAgents, actionLoading
+  * Wire all 4 action buttons with onClick + disabled state + spinner swap (Loader2 animates while actionLoading.X is true)
+  * Render the Live Orchestration Feed from REAL data (parent pushes task events + action log entries) instead of the previous FAKE simulated feed (FEED_ACTIONS / FEED_STATUSES / generateInitialFeed / generateNextFeedEntry — all deleted)
+  * Show a Seed Agents CTA inside the empty-state when agents.length === 0
+  * Display real `completedVsFailed` % (was hardcoded "+12%") and dynamic "Stable/Watch" status badges based on actual success rate
+- All 4 actions verified end-to-end via curl against the running server:
+  * `POST /api/workforce {"action":"seed"}` → 14 agents seeded
+  * `POST /api/workforce {"action":"deploy_all"}` → 14 agents deployed to active
+  * `POST /api/workforce {"action":"health_check_all"}` → 14 agents health-checked, all 100/100 healthy
+  * `POST /api/workforce {"action":"pause_all"}` → 14 agents paused (then re-deployed to restore)
+  * `POST /api/workforce/[id]/tasks` → task created, immediately visible in `GET /api/workforce/tasks?limit=5`
+- `next build` passes cleanly; `tsc --noEmit` reports zero errors in any workforce file
+- Restarted production server (PID 1204 → 5915) to pick up the rebuilt `.next/standalone/server.js`
+
+Stage Summary:
+- Scroll: fixed by removing nested min-h-screen and rebasing sticky header under the global TopBar (top-14 z-30)
+- Buttons: all 4 toolbar buttons (Deploy All / Pause All / Health Check / Seed Agents) now perform real server-side mutations with loading state, sonner toasts, and live feed entries
+- Live Orchestration Feed: now reflects REAL task events (polled every 15s) plus REAL action log entries pushed by the toolbar — no more fake random data
+- API surface: 4 new orchestration actions + 1 new global tasks endpoint
+- Build: clean ✓  ·  Endpoints: verified ✓  ·  TypeScript: zero workforce errors ✓
