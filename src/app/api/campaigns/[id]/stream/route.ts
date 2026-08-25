@@ -60,8 +60,6 @@ function buildDiscoveryQuery(campaign: CampaignRow): string {
   const parts: string[] = [];
 
   // Use the campaign name as the primary search intent
-  // (user typically names the campaign with their target, e.g.
-  //  "DragonFruit Suppliers in Vietnam" or "B2B SaaS Companies in fintech")
   parts.push(campaign.name);
 
   // Add industry/location/size as context if not already in name
@@ -82,6 +80,45 @@ function buildDiscoveryQuery(campaign: CampaignRow): string {
   }
 
   return parts.join(' ').trim();
+}
+
+/**
+ * Generate query variations to find MORE leads that the primary query missed.
+ * Uses synonyms, different phrasings, and directory-style queries.
+ */
+function generateQueryVariations(primaryQuery: string, campaign: CampaignRow): string[] {
+  const variations: string[] = [];
+  const name = campaign.name;
+
+  // Variation 1: "list of" + name (find directory/listicle pages)
+  variations.push(`list of ${name}`);
+
+  // Variation 2: "top" + name (find ranking pages)
+  variations.push(`top ${name}`);
+
+  // Variation 3: "best" + name (find recommendation pages)
+  variations.push(`best ${name} companies`);
+
+  // Variation 4: name + "directory" or "database"
+  variations.push(`${name} directory`);
+
+  // Variation 5: If industry is known, try industry + "companies"
+  if (campaign.targetIndustry) {
+    variations.push(`${campaign.targetIndustry} companies${campaign.targetLocation ? ` in ${campaign.targetLocation}` : ''}`);
+  }
+
+  // Variation 6: If location is known, try name + location
+  if (campaign.targetLocation) {
+    variations.push(`${name} ${campaign.targetLocation}`);
+  }
+
+  // Variation 7: name + "near me" (local SEO)
+  if (campaign.targetLocation) {
+    variations.push(`${name} near ${campaign.targetLocation}`);
+  }
+
+  // Deduplicate and return
+  return [...new Set(variations)].slice(0, 4);
 }
 
 /**
@@ -386,9 +423,73 @@ export async function POST(
           }
           send('step_progress', {
             stepIndex: 0,
-            message: `Found ${results.length} candidates from web search`,
+            message: `Found ${results.length} candidates from primary web search`,
             partialData: { candidateCount: results.length },
           });
+
+          // ── Multi-pass discovery: run 2 more query variations to find MORE leads ──
+          // This dramatically increases lead count by finding companies the first
+          // query missed (different phrasings, synonyms, locations).
+          if (results.length < 20 && !aborted) {
+            const queryVariations = generateQueryVariations(discoveryQuery, campaign);
+            for (let v = 0; v < Math.min(queryVariations.length, 2) && !aborted; v++) {
+              const variation = queryVariations[v];
+              send('step_progress', {
+                stepIndex: 0,
+                message: `Pass ${v + 2}/3: Searching "${variation.slice(0, 80)}…"`,
+                partialData: { candidateCount: results.length },
+              });
+
+              try {
+                const variationResp = await directDuckDuckGoSearch(variation, 10);
+                if (variationResp.success && variationResp.data.length > 0) {
+                  // Deduplicate against existing results by URL
+                  const existingUrls = new Set(results.map(r => r.url));
+                  const newResults = variationResp.data.filter(r => !existingUrls.has(r.url));
+                  results.push(...newResults);
+                  console.log(`[CampaignStream] Variation ${v + 1} found ${newResults.length} new results (total: ${results.length})`);
+
+                  send('step_progress', {
+                    stepIndex: 0,
+                    message: `Pass ${v + 2} found ${newResults.length} new candidates (total: ${results.length})`,
+                    partialData: { candidateCount: results.length },
+                  });
+                }
+              } catch (err) {
+                console.warn(`[CampaignStream] Variation ${v + 1} failed:`, err);
+              }
+
+              // Also try discoverBusinesses for this variation
+              if (!aborted) {
+                try {
+                  const fbResult = await discoverBusinesses(
+                    variation,
+                    campaign.targetLocation || undefined,
+                    campaign.targetIndustry || undefined,
+                  );
+                  if (fbResult.success && Array.isArray(fbResult.data) && fbResult.data.length > 0) {
+                    const existingUrls = new Set(results.map(r => r.url));
+                    const newFallback = fbResult.data
+                      .filter((r: { url?: string }) => !existingUrls.has(r.url || ''))
+                      .map((r: { title?: string; url?: string; snippet?: string; name?: string; headline?: string }) => ({
+                        title: r.title || r.name || '',
+                        url: r.url || '',
+                        snippet: r.snippet || r.headline || '',
+                      }));
+                    results.push(...newFallback);
+                    console.log(`[CampaignStream] Fallback variation ${v + 1} found ${newFallback.length} new results (total: ${results.length})`);
+                  }
+                } catch (err) {
+                  console.warn(`[CampaignStream] Fallback variation ${v + 1} failed:`, err);
+                }
+              }
+            }
+            send('step_progress', {
+              stepIndex: 0,
+              message: `Found ${results.length} total candidates from all search passes`,
+              partialData: { candidateCount: results.length },
+            });
+          }
 
           // Save each candidate as a basic Lead
           const savedLeads: Array<LeadRow & { snippet: string }> = [];

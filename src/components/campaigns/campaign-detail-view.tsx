@@ -133,6 +133,10 @@ export function CampaignDetailView() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Smart Auto-Fill state
+  const [autofillLoading, setAutofillLoading] = useState<string | null>(null);
+  const [batchAutofillLoading, setBatchAutofillLoading] = useState(false);
+
   // Pipeline state
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineState, setPipelineState] = useState<PipelineState | null>(null);
@@ -201,6 +205,64 @@ export function CampaignDetailView() {
   useEffect(() => {
     autoRunConsumedRef.current = false;
   }, [selectedCampaignId]);
+
+  // ── Smart Auto-Fill handlers ──────────────────────────────────────
+  const handleSmartAutofill = useCallback(async (leadId: string) => {
+    setAutofillLoading(leadId);
+    try {
+      const res = await fetch(`/api/leads/${leadId}/smart-autofill`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'all', upgradeTier: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Smart Auto-Fill complete', {
+          description: `Filled ${data.totalFieldsFilled} fields. Score: ${data.oldScore}→${data.newScore}. Tier: ${data.oldTier}→${data.newTier}. Completeness: ${data.dataCompleteness}%`,
+        });
+        // Reload leads to reflect the updated data
+        loadCampaignData();
+      } else {
+        toast.error('Auto-Fill failed', { description: data.error || 'Unknown error' });
+      }
+    } catch (err) {
+      toast.error('Auto-Fill failed', {
+        description: err instanceof Error ? err.message : 'Network error',
+      });
+    } finally {
+      setAutofillLoading(null);
+    }
+  }, [loadCampaignData]);
+
+  const handleBatchAutofill = useCallback(async () => {
+    if (!selectedCampaignId || batchAutofillLoading) return;
+    setBatchAutofillLoading(true);
+    toast.info('Batch Smart Auto-Fill started', {
+      description: `Filling all empty fields for up to 50 leads. This may take several minutes…`,
+    });
+    try {
+      const res = await fetch('/api/leads/batch-smart-autofill', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ campaignId: selectedCampaignId, upgradeTier: true }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        toast.success('Batch Auto-Fill complete', {
+          description: data.message || `Processed ${data.totalProcessed} leads, filled ${data.totalFieldsFilled} fields, ${data.tierUpgrades} tier upgrades`,
+        });
+        loadCampaignData();
+      } else {
+        toast.error('Batch Auto-Fill failed', { description: data.error || 'Unknown error' });
+      }
+    } catch (err) {
+      toast.error('Batch Auto-Fill failed', {
+        description: err instanceof Error ? err.message : 'Network error',
+      });
+    } finally {
+      setBatchAutofillLoading(false);
+    }
+  }, [selectedCampaignId, batchAutofillLoading, loadCampaignData]);
 
   // ── Run pipeline via SSE ──
   const runPipeline = useCallback(async () => {
@@ -635,6 +697,29 @@ export function CampaignDetailView() {
               )}
             </Button>
           )}
+
+          {/* Batch Smart Auto-Fill button — fills all empty fields for all leads */}
+          {totalLeads > 0 && (
+            <Button
+              onClick={handleBatchAutofill}
+              disabled={batchAutofillLoading || pipelineRunning}
+              variant="outline"
+              className="border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300 hover:border-cyan-500/50 gap-2"
+              title="Research and fill ALL empty fields for ALL leads in this campaign. Upgrades cold leads to warm/hot automatically."
+            >
+              {batchAutofillLoading ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Auto-Filling All Leads…
+                </>
+              ) : (
+                <>
+                  <Sparkles className="h-4 w-4" />
+                  Smart Auto-Fill All Leads
+                </>
+              )}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -824,6 +909,8 @@ export function CampaignDetailView() {
                 key={lead.id}
                 lead={lead}
                 onView={() => viewLeadInLeads(lead.id)}
+                onSmartAutofill={handleSmartAutofill}
+                autofillLoading={autofillLoading}
               />
             ))}
           </div>
@@ -839,21 +926,25 @@ interface LeadCardProps {
   lead: Lead;
   onView: () => void;
   isLive?: boolean;
+  onSmartAutofill?: (leadId: string) => void;
+  autofillLoading?: string | null;
 }
 
-function LeadCard({ lead, onView, isLive }: LeadCardProps) {
+function LeadCard({ lead, onView, isLive, onSmartAutofill, autofillLoading }: LeadCardProps) {
   const tierColor =
-    lead.leadTier === 'hot'
+    lead.leadTier === 'hot' || lead.leadTier === 'super_hot'
       ? 'border-amber-500/30 text-amber-400'
       : lead.leadTier === 'warm'
       ? 'border-emerald-500/30 text-emerald-400'
       : 'border-zinc-500/30 text-zinc-400';
 
+  const isAutofilling = autofillLoading === lead.id;
+
   return (
     <Card
       className={`bg-card/50 border-border/30 hover:border-cyan-500/40 transition-all cursor-pointer group ${
         isLive ? 'ring-1 ring-cyan-500/20' : ''
-      }`}
+      } ${isAutofilling ? 'ring-1 ring-cyan-500/40' : ''}`}
       onClick={onView}
     >
       <CardContent className="p-4">
@@ -940,8 +1031,8 @@ function LeadCard({ lead, onView, isLive }: LeadCardProps) {
           </div>
         )}
 
-        {/* Footer: completeness + stage */}
-        <div className="flex items-center justify-between pt-2 border-t border-border/20">
+        {/* Footer: completeness + stage + autofill */}
+        <div className="flex items-center justify-between pt-2 border-t border-border/20 gap-2">
           <div className="flex items-center gap-1.5">
             <div className="w-16 h-1.5 bg-muted/50 rounded-full overflow-hidden">
               <div
@@ -957,9 +1048,36 @@ function LeadCard({ lead, onView, isLive }: LeadCardProps) {
             </div>
             <span className="text-[9px] text-muted-foreground">{lead.dataCompleteness}%</span>
           </div>
-          <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground capitalize">
-            {lead.stage}
-          </Badge>
+          <div className="flex items-center gap-1.5">
+            {onSmartAutofill && (
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-6 px-2 text-[9px] text-cyan-400 hover:bg-cyan-500/10 hover:text-cyan-300 gap-1"
+                disabled={isAutofilling}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onSmartAutofill(lead.id);
+                }}
+                title="Smart Auto-Fill: research and fill all empty fields for this lead"
+              >
+                {isAutofilling ? (
+                  <>
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                    Filling…
+                  </>
+                ) : (
+                  <>
+                    <Sparkles className="h-3 w-3" />
+                    Auto-Fill
+                  </>
+                )}
+              </Button>
+            )}
+            <Badge variant="outline" className="text-[9px] border-border/30 text-muted-foreground capitalize">
+              {lead.stage}
+            </Badge>
+          </div>
         </div>
       </CardContent>
     </Card>
