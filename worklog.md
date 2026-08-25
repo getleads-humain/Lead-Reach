@@ -431,3 +431,75 @@ Stage Summary:
 - Live Orchestration Feed: now reflects REAL task events (polled every 15s) plus REAL action log entries pushed by the toolbar — no more fake random data
 - API surface: 4 new orchestration actions + 1 new global tasks endpoint
 - Build: clean ✓  ·  Endpoints: verified ✓  ·  TypeScript: zero workforce errors ✓
+
+---
+Task ID: 7
+Agent: Main
+Task: Build Office Chat (realistic office background + live inter-agent conversations) and comprehensive Work Log (year/month/day/hour hierarchy) for AI Workforce section
+
+Work Log:
+- Added two new Prisma models:
+  * WorkforceChatMessage: stores inter-agent and user-agent chat messages with role, content, fromAgent, toAgent, messageType, metadata, and timestamps
+  * WorkforceLog: comprehensive time-based activity log with year/month/day/hour/dayOfWeek fields for efficient hierarchical queries, plus level, category, action, description, details, and duration
+- Ran prisma db push to create the new tables (WorkforceChatMessage + WorkforceLog)
+- Created /src/lib/workforce/logger.ts:
+  * logAgentActivity() — creates a single log entry with automatic time extraction
+  * logBatchActivities() — creates multiple log entries at a specific timestamp
+  * getLogStats() — aggregated stats (total, byCategory, byLevel, byHour)
+- Created /src/lib/workforce/activity-seeder.ts:
+  * 24 realistic inter-agent chat message templates (PROMETHEUS→KRONOS directives, Content Architect↔Market Strategist collaboration, Feature Dev↔QA Tester code review, DevOps↔Cyber Guardian security alerts, CFO↔Compliance audit prep, HR capacity reports, casual watercooler messages)
+  * generateDailyLogs() — generates a full day of realistic log entries per agent (morning startup, mid-morning tasks, afternoon inter-agent communication, evening wrap-up, occasional warnings)
+  * seedWorkforceActivity() — generates N days of chat messages + work logs for all 14 agents
+- Added 'seed_activity' action to POST /api/workforce — calls seedWorkforceActivity() with configurable days parameter
+- Created GET/POST /api/workforce/[id]/messages:
+  * GET: returns chat messages with ?limit, ?since (for polling), ?role filters
+  * POST: creates a new chat message (user or agent_comm) and logs the activity
+- Created GET/POST /api/workforce/[id]/logs:
+  * GET (summary mode, no year filter): returns hierarchical year→month→day→hour structure + byCategory/byLevel stats
+  * GET (detailed mode, with year/month/day/hour filters): returns filtered log entries + stats
+  * Supports ?category, ?level, ?limit, ?view=summary filters
+  * POST: creates a manual log entry
+- Built /src/components/workforce/office-chat.tsx:
+  * Realistic office environment background (CSS gradients evoking office space with grid pattern + ambient glow)
+  * Live inter-agent messages with distinct styling per message type (text/status_update/task_update/alert)
+  * Agent avatars and names with color-coded sender identification
+  * "→ Recipient" indicator showing message routing
+  * Date separators (Today/Yesterday/date)
+  * Auto-scroll to latest message
+  * Polls for new messages every 10 seconds
+  * Online status indicator with animated pulse
+  * Message count badge (inter-agent messages)
+  * User-to-agent direct messaging with input area
+- Built /src/components/workforce/work-log-viewer.tsx:
+  * Hierarchical drill-down: Year → Month → Day → Hour → Log Entry
+  * Breadcrumb navigation with clickable levels
+  * Stats cards: Total Logs, Tasks, Messages, Warnings/Errors
+  * Hourly activity bar chart (24-hour distribution with colored bars)
+  * Category filter bar (task/chat/health/deploy/enrich/discover/system/decision)
+  * Level filter bar (debug/info/warn/error/critical)
+  * Expandable log entries with full JSON details
+  * Category icons and level icons with color coding
+  * Duration display (in seconds)
+  * Scrollable log list with 500px height
+- Integrated both components into agent-workspace.tsx:
+  * Added 'Office Chat' tab (Building2 icon) with the OfficeChat component
+  * Added 'Work Log' tab (CalendarClock icon) with the WorkLogViewer component
+  * Renamed existing 'Chat' tab to 'Direct Chat' for clarity
+  * Tab order: Overview → Superpowers → Live Tasks → Office Chat → Direct Chat → Work Log → Training & Config → Activity → Knowledge Base (9 tabs total)
+- Seeded 7 days of activity data:
+  * 350 chat messages (inter-agent conversations across all 14 agents)
+  * 1,876 log entries (time-based activity logs across all 14 agents)
+  * Messages include: strategic directives, task updates, code reviews, security alerts, compliance requests, capacity reports, and casual watercooler chats
+  * Logs span categories: system (47), chat (35), task (28), health (14), decision (7) with levels: info (119), warn (12) per agent
+- Verified via API:
+  * GET /api/workforce/[id]/messages → returns inter-agent messages with fromAgent/toAgent/messageType
+  * GET /api/workforce/[id]/logs (summary) → returns year/month/day/hour hierarchy + byCategory + byLevel stats
+  * GET /api/workforce/[id]/logs?year=2026 → returns filtered log entries with descriptions, categories, levels, and durations
+- Build: clean ✓ · TypeScript: zero errors ✓ · Server restarted ✓ · Data seeded ✓
+
+Stage Summary:
+- Office Chat: realistic office environment with live inter-agent conversations, message type styling (status/task/alert), agent avatars, date separators, 10-second polling, and user-to-agent messaging
+- Work Log: comprehensive time-based viewer with Year→Month→Day→Hour drill-down, hourly activity chart, category/level filters, expandable entries with JSON details, and summary stats
+- Infrastructure: 2 new Prisma models (WorkforceChatMessage, WorkforceLog), 2 new API endpoints (/messages, /logs), activity seeder with 24 chat templates + daily log generator
+- Data: 350 chat messages + 1,876 log entries seeded across 14 agents for 7 days
+- 9 tabs in agent workspace: Overview, Superpowers, Live Tasks, Office Chat, Direct Chat, Work Log, Training & Config, Activity, Knowledge Base

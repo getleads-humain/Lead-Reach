@@ -1137,6 +1137,8 @@ model WorkforceAgent {
   tasks       WorkforceTask[]
   sessions    WorkforceSession[]
   documents   WorkforceDocument[]
+  chatMessages WorkforceChatMessage[]
+  logs        WorkforceLog[]
 }
 
 model WorkforceTask {
@@ -1251,4 +1253,64 @@ model EnrichmentJob {
   enrichmentPlan  String?  // JSON object with newColumns, strategy, searchQueries
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
+}
+
+// ── Workforce Chat Messages ──────────────────────────────────────────────────
+// Inter-agent and user-agent chat messages. Stores the full conversation
+// history for the Office Chat feature, including agent-to-agent comms.
+
+model WorkforceChatMessage {
+  id          String   @id @default(cuid())
+  agentId     String                         // The agent this message belongs to
+  agent       WorkforceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // Message details
+  role        String                         // user, assistant, system, agent_comm
+  content     String                         // The message text
+  fromAgent   String?                        // For agent_comm: slug of the sending agent
+  toAgent     String?                        // For agent_comm: slug of the receiving agent
+  messageType String   @default("text")      // text, status_update, task_update, alert, system
+  metadata    String?                        // JSON — additional context (taskId, sessionId, etc.)
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+
+  // Index for efficient queries
+  @@index([agentId, createdAt])
+  @@index([createdAt])
+}
+
+// ── Workforce Work Logs ──────────────────────────────────────────────────────
+// Comprehensive time-based activity log for each agent. Records every
+// action, decision, task, and event for full auditability and
+// self-learning/adaptation.
+
+model WorkforceLog {
+  id          String   @id @default(cuid())
+  agentId     String                         // The agent this log entry belongs to
+  agent       WorkforceAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  // Time-based indexing (for year/month/day/hour queries)
+  logDate     DateTime                       // Full timestamp of the event
+  year        Int                            // e.g., 2026
+  month       Int                            // 1-12
+  day         Int                            // 1-31
+  hour        Int                            // 0-23
+  dayOfWeek   Int                            // 0=Sunday, 6=Saturday
+
+  // Log details
+  level       String   @default("info")      // debug, info, warn, error, critical
+  category    String                         // task, chat, health, deploy, enrich, discover, system, decision
+  action      String                         // What happened (e.g., "completed_task", "sent_message")
+  description String                         // Human-readable description
+  details     String?                        // JSON — structured data (taskId, result, metrics, etc.)
+  duration    Int?                           // Duration in milliseconds (if applicable)
+
+  // Timestamps
+  createdAt   DateTime @default(now())
+
+  // Indexes for efficient time-based queries
+  @@index([agentId, year, month, day, hour])
+  @@index([agentId, category, createdAt])
+  @@index([createdAt])
 }

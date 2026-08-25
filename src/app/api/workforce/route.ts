@@ -6,6 +6,7 @@ import {
   createWorkforceAgentFromDefinition,
   recalculateAgentHealth,
 } from '@/lib/workforce/engine';
+import { seedWorkforceActivity } from '@/lib/workforce/activity-seeder';
 import type { WorkforceAgentDefinition } from '@/lib/workforce/definitions';
 
 /**
@@ -127,6 +128,16 @@ export async function POST(request: NextRequest) {
       );
     }
 
+    // ── Action: Seed activity (chat messages + work logs) ────────────
+    if (body.action === 'seed_activity') {
+      const days = Math.min(30, Math.max(1, body.days || 7));
+      const result = await seedWorkforceActivity(days);
+      return NextResponse.json(
+        { ...result, days },
+        { status: 201 }
+      );
+    }
+
     // ── Action: Create/upsert a single agent ────────────────────────────
     if (body.agent) {
       const agent = await createWorkforceAgentFromDefinition(
@@ -138,7 +149,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json(
       {
         error:
-          'Invalid request. Provide one of: { action: "seed" | "deploy_all" | "pause_all" | "health_check_all" } or { agent: WorkforceAgentDefinition }',
+          'Invalid request. Provide one of: { action: "seed" | "deploy_all" | "pause_all" | "health_check_all" | "seed_activity" } or { agent: WorkforceAgentDefinition }',
       },
       { status: 400 }
     );

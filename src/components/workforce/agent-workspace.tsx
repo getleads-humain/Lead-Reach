@@ -1,6 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { OfficeChat } from './office-chat';
+import { WorkLogViewer } from './work-log-viewer';
 import {
   Card,
   CardContent,
@@ -80,6 +82,7 @@ import {
   Workflow,
   Gauge,
   CalendarClock,
+  Building2,
   Users,
   MessageCircle,
   BookOpen,
@@ -504,7 +507,9 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
     { value: 'overview', label: 'Overview', icon: Eye },
     { value: 'superpowers', label: 'Superpowers', icon: Zap },
     { value: 'tasks', label: 'Live Tasks', icon: Activity },
-    { value: 'chat', label: 'Chat', icon: MessageSquare },
+    { value: 'office-chat', label: 'Office Chat', icon: Building2 },
+    { value: 'chat', label: 'Direct Chat', icon: MessageSquare },
+    { value: 'work-log', label: 'Work Log', icon: CalendarClock },
     { value: 'config', label: 'Training & Config', icon: Settings },
     { value: 'activity', label: 'Activity', icon: BarChart3 },
     { value: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
@@ -1219,6 +1224,29 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
               </Card>
             </Collapsible>
           </div>
+        )}
+
+        {/* ── Tab: Office Chat ─────────────────────────────────────────── */}
+        {activeTab === 'office-chat' && (
+          <OfficeChat
+            agent={{
+              id: agent.id,
+              name: agent.name,
+              avatar: agent.avatar,
+              color: agent.color,
+              slug: agent.slug,
+              department: agent.department,
+            }}
+          />
+        )}
+
+        {/* ── Tab: Work Log ────────────────────────────────────────────── */}
+        {activeTab === 'work-log' && (
+          <WorkLogViewer
+            agentId={agent.id}
+            agentName={agent.name}
+            agentColor={agent.color}
+          />
         )}
 
         {/* ── Tab 4: Chat ──────────────────────────────────────────────── */}
