@@ -62,6 +62,19 @@ export function DashboardView() {
   const [pipeline, setPipeline] = useState<PipelineStage[]>([]);
   const [recentTasks, setRecentTasks] = useState<AgentTask[]>([]);
   const [loading, setLoading] = useState(true);
+  // Extended dashboard stats from /api/dashboard/stats
+  const [dashboardStats, setDashboardStats] = useState<{
+    newLeadsToday?: number;
+    newLeadsThisWeek?: number;
+    activeCampaigns?: number;
+    enrichedLeads?: number;
+    contactedLeads?: number;
+    averageLeadScore?: number;
+    pipelineValue?: number;
+    leadsByTier?: Record<string, number>;
+    activeAgents?: number;
+    campaignBreakdown?: Array<{ id: string; name: string; totalLeads: number; hotLeads: number; warmLeads: number; coldLeads: number }>;
+  }>({});
 
   // AI Insights state
   const [aiInsight, setAiInsight] = useState<string | null>(null);
@@ -75,32 +88,46 @@ export function DashboardView() {
 
   const loadDashboard = useCallback(async () => {
     try {
-      const [campaignsData, leadsData, tasksData] = await Promise.all([
+      // FIX: Use the unified /api/dashboard/stats endpoint for all metrics
+      // This eliminates client-side orchestration, fixes >1000 lead truncation,
+      // and ensures numbers are consistent across all sections.
+      const [statsData, campaignsData, tasksData] = await Promise.all([
+        safeFetchJSON<{
+          totalCampaigns: number;
+          activeCampaigns: number;
+          totalLeads: number;
+          newLeadsToday: number;
+          newLeadsThisWeek: number;
+          qualifiedLeads: number;
+          enrichedLeads: number;
+          contactedLeads: number;
+          engagedLeads: number;
+          responseRate: number;
+          averageLeadScore: number;
+          pipelineValue: number;
+          leadsByStage: Record<string, number>;
+          leadsByTier: Record<string, number>;
+          activeAgents: number;
+          campaignBreakdown: Array<{ id: string; name: string; totalLeads: number; hotLeads: number; warmLeads: number; coldLeads: number }>;
+        }>('/api/dashboard/stats'),
         safeFetchJSON<CampaignWithCounts[]>('/api/campaigns'),
-        safeFetchJSON<{ leads: Array<{ stage: string }>; total: number }>('/api/leads?limit=1000'),
         safeFetchJSON<{ tasks: AgentTask[] }>('/api/agents'),
       ]);
 
       setCampaigns(campaignsData);
 
-      const leads = leadsData.leads || [];
-      const qualified = leads.filter((l: { stage: string }) =>
-        ['qualified', 'contacted', 'engaged', 'negotiating', 'closed_won'].includes(l.stage)
-      ).length;
-      const contacted = leads.filter((l: { stage: string }) =>
-        ['contacted', 'engaged', 'negotiating', 'closed_won'].includes(l.stage)
-      ).length;
-      const responded = leads.filter((l: { stage: string }) =>
-        ['engaged', 'negotiating', 'closed_won'].includes(l.stage)
-      ).length;
-
+      // Use stats from the unified endpoint (DB-accurate, no truncation)
       setStats({
-        totalCampaigns: campaignsData.length,
-        totalLeads: leadsData.total || leads.length,
-        qualifiedLeads: qualified,
-        responseRate: contacted > 0 ? Math.round((responded / contacted) * 100) : 0,
+        totalCampaigns: statsData.totalCampaigns || 0,
+        totalLeads: statsData.totalLeads || 0,
+        qualifiedLeads: statsData.qualifiedLeads || 0,
+        responseRate: statsData.responseRate || 0,
       });
 
+      // Store additional stats for use in the UI
+      setDashboardStats(statsData);
+
+      // Build pipeline chart from DB-accurate stage distribution
       const stageOrder: LeadStage[] = ['new', 'enriched', 'qualified', 'contacted', 'engaged', 'negotiating', 'closed_won', 'closed_lost', 'nurture'];
       const stageColors: Record<string, string> = {
         new: 'bg-slate-500 dark:bg-slate-400', enriched: 'bg-cyan-400', qualified: 'bg-emerald-400',
@@ -111,7 +138,7 @@ export function DashboardView() {
       const pipelineData = stageOrder.map((stage) => ({
         stage,
         label: STAGE_LABELS[stage],
-        count: leads.filter((l: { stage: string }) => l.stage === stage).length,
+        count: statsData.leadsByStage?.[stage] || 0,
         color: stageColors[stage],
       }));
       setPipeline(pipelineData);
@@ -212,14 +239,14 @@ User question: ${msg}`,
           title="Total Campaigns"
           value={stats.totalCampaigns}
           icon={Target}
-          trend="+2 this week"
+          trend={`+${dashboardStats.newLeadsThisWeek || 0} new this week`}
           accent="emerald"
         />
         <StatCard
           title="Total Leads"
           value={stats.totalLeads}
           icon={Users}
-          trend="+18 today"
+          trend={`+${dashboardStats.newLeadsToday || 0} today`}
           accent="cyan"
         />
         <StatCard
@@ -233,7 +260,7 @@ User question: ${msg}`,
           title="Response Rate"
           value={`${stats.responseRate}%`}
           icon={TrendingUp}
-          trend="+5% vs last week"
+          trend={`${dashboardStats.contactedLeads || 0} contacted`}
           accent="violet"
         />
       </div>
@@ -288,10 +315,10 @@ User question: ${msg}`,
           <CardContent className="relative">
             <div className="grid grid-cols-2 gap-3">
               {[
-                { label: 'Active Agents', value: '8', status: 'online', color: 'emerald' },
-                { label: 'Channels', value: '17+', status: 'connected', color: 'cyan' },
-                { label: 'Queue Tasks', value: recentTasks.filter(t => t.status === 'running').length.toString(), status: 'processing', color: 'blue' },
-                { label: 'Uptime', value: '99.9%', status: 'healthy', color: 'emerald' },
+                { label: 'Active Agents', value: String(dashboardStats.activeAgents || 0), status: 'online', color: 'emerald' },
+                { label: 'Avg Lead Score', value: String(dashboardStats.averageLeadScore || 0), status: 'processing', color: 'cyan' },
+                { label: 'Running Tasks', value: String(recentTasks.filter(t => t.status === 'running').length), status: 'processing', color: 'blue' },
+                { label: 'Hot Leads', value: String((dashboardStats.leadsByTier?.hot || 0) + (dashboardStats.leadsByTier?.super_hot || 0)), status: 'healthy', color: 'amber' },
               ].map((item) => (
                 <div
                   key={item.label}
@@ -312,7 +339,7 @@ User question: ${msg}`,
             <div className="mt-4 flex items-center gap-2">
               <Badge variant="outline" className="border-emerald-500/20 text-emerald-400 text-[10px] bg-emerald-500/5">
                 <span className="mr-1.5 inline-block h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
-                All Systems Operational
+                {dashboardStats.activeAgents || 0} agents online · {stats.totalLeads} leads in pipeline
               </Badge>
             </div>
           </CardContent>

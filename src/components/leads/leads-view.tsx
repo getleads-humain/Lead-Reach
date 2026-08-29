@@ -1614,7 +1614,7 @@ ${agentInput.trim()}`;
         <div>
           <h2 className="text-2xl font-bold text-foreground">Leads</h2>
           <p className="text-sm text-muted-foreground">
-            {total} leads discovered across all campaigns
+            {total} leads {campaignFilter === 'all' ? 'across all campaigns' : `in selected campaign`}
           </p>
         </div>
       </div>

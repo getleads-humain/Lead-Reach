@@ -184,6 +184,9 @@ export function CampaignsView() {
             pipelineStatus: 'idle' | 'running' | 'completed' | 'failed';
             overallProgress: number;
             currentStage: string;
+            byStage?: Record<string, number>;
+            byTier?: Record<string, number>;
+            averageScore?: number;
           }>>(`/api/campaigns/pipeline-status-batch?campaignIds=${encodeURIComponent(ids)}`);
 
           // Set pipeline statuses from batch response
@@ -193,7 +196,8 @@ export function CampaignsView() {
               // Only start polling for campaigns that are actually running
               pollPipelineStatus(campaignId);
             } else {
-              // For non-running campaigns, just set the status directly without polling
+              // FIX: For non-running campaigns, USE the byTier/byStage data the batch endpoint returns
+              // Previously this was zeroing out leadsEnriched/leadsQualified/hotLeads/warmLeads/coldLeads
               newStatuses[campaignId] = {
                 campaignId,
                 campaignName: activeCampaigns.find(c => c.id === campaignId)?.name || '',
@@ -203,12 +207,12 @@ export function CampaignsView() {
                 stages: {},
                 summary: {
                   leadsFound: status.totalLeads,
-                  leadsEnriched: 0,
-                  leadsQualified: 0,
-                  leadsContacted: 0,
-                  hotLeads: 0,
-                  warmLeads: 0,
-                  coldLeads: 0,
+                  leadsEnriched: status.byStage?.['enriched'] || 0,
+                  leadsQualified: status.byStage?.['qualified'] || 0,
+                  leadsContacted: status.byStage?.['contacted'] || 0,
+                  hotLeads: status.byTier?.hot || 0,
+                  warmLeads: status.byTier?.warm || 0,
+                  coldLeads: status.byTier?.cold || 0,
                 },
                 errors: [],
               };

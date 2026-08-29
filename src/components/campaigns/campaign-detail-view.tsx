@@ -608,7 +608,12 @@ export function CampaignDetailView() {
   }
 
   const totalLeads = leads.length + liveLeads.filter(ll => !leads.some(l => l.id === ll.id)).length;
-  const enrichedCount = leads.filter(l => l.stage === 'enriched').length + liveLeads.filter(ll => ll.stage === 'enriched').length;
+  // FIX: Count ALL enriched stages (enriched + qualified + contacted + engaged + negotiating + closed_won)
+  const enrichedStages = ['enriched', 'qualified', 'contacted', 'engaged', 'negotiating', 'closed_won'];
+  const enrichedCount = leads.filter(l => enrichedStages.includes(l.stage)).length +
+    liveLeads.filter(ll => enrichedStages.includes(ll.stage)).length;
+  // FIX: Count both 'hot' AND 'super_hot' for Hot Leads card
+  const hotLeadsCount = leads.filter(l => l.leadTier === 'hot' || l.leadTier === 'super_hot').length;
 
   return (
     <div className="space-y-6 p-6 max-w-7xl mx-auto">
@@ -768,7 +773,7 @@ export function CampaignDetailView() {
               <div>
                 <p className="text-xs text-muted-foreground">Hot Leads</p>
                 <p className="text-2xl font-bold text-foreground">
-                  {leads.filter(l => l.leadTier === 'hot').length}
+                  {hotLeadsCount}
                 </p>
               </div>
               <Zap className="h-5 w-5 text-amber-400/60" />

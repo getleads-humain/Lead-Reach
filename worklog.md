@@ -503,3 +503,69 @@ Stage Summary:
 - Infrastructure: 2 new Prisma models (WorkforceChatMessage, WorkforceLog), 2 new API endpoints (/messages, /logs), activity seeder with 24 chat templates + daily log generator
 - Data: 350 chat messages + 1,876 log entries seeded across 14 agents for 7 days
 - 9 tabs in agent workspace: Overview, Superpowers, Live Tasks, Office Chat, Direct Chat, Work Log, Training & Config, Activity, Knowledge Base
+
+---
+Task ID: 8
+Agent: Main
+Task: Connect all sections (Dashboard, Campaigns, Leads, AI Workforce) — make numbers add up and data flow seamlessly
+
+Work Log:
+- Conducted comprehensive data flow audit (via Explore subagent) — found 9 disconnections across Dashboard, Campaigns, Leads, and AI Workforce
+- Created GET /api/dashboard/stats — single source of truth endpoint that returns ALL dashboard metrics in one server-side aggregated call:
+  * totalCampaigns, activeCampaigns, completedCampaigns, newCampaignsThisWeek
+  * totalLeads, newLeadsToday, newLeadsThisWeek
+  * qualifiedLeads, enrichedLeads, contactedLeads, engagedLeads, closedWon
+  * leadsByStage (group by stage — DB-accurate, no truncation)
+  * leadsByTier (group by tier — super_hot/hot/warm/cold/unqualified)
+  * averageLeadScore, pipelineValue, responseRate
+  * activeAgents (real count from WorkforceAgent table)
+  * campaignBreakdown (per-campaign: name, totalLeads, hotLeads, warmLeads, coldLeads)
+- Fixed dashboard-view.tsx:
+  * Replaced 3-endpoint client-side orchestration with single /api/dashboard/stats call — eliminates >1000 lead truncation bug
+  * Replaced hardcoded "+2 this week" trend with real newCampaignsThisWeek count
+  * Replaced hardcoded "+18 today" trend with real newLeadsToday count
+  * Replaced hardcoded "+5% vs last week" trend with real contactedLeads count
+  * Replaced hardcoded "8" Active Agents with real dashboardStats.activeAgents count
+  * Replaced hardcoded "17+" Channels with real Avg Lead Score metric
+  * Replaced hardcoded "99.9%" Uptime with real Hot Leads count (hot + super_hot)
+  * Replaced "All Systems Operational" with real status: "X agents online · Y leads in pipeline"
+  * Added dashboardStats state for extended metrics (newLeadsToday, leadsByTier, campaignBreakdown, etc.)
+- Fixed PUT /api/leads/[id] to sync campaign counters when lead stage changes:
+  * When lead moves TO 'qualified': increment campaign.leadsQualified
+  * When lead moves TO 'contacted': increment campaign.leadsContacted
+  * When lead moves TO 'engaged': increment campaign.leadsResponded
+  * When lead moves AWAY from these stages: decrement the corresponding counter
+  * This ensures campaign cards show accurate qualified/contacted counts
+- Fixed campaigns-view.tsx:
+  * Added byStage and byTier to the batch status response TypeScript type
+  * For non-running campaigns: now uses status.byStage.enriched/qualified/contacted instead of zeroing them out
+  * For non-running campaigns: now uses status.byTier.hot/warm/cold instead of zeroing them out
+  * Campaign cards now show REAL hot/warm/cold lead breakdowns
+- Fixed campaign-detail-view.tsx:
+  * Hot Leads card now counts BOTH 'hot' AND 'super_hot' tiers (was only counting 'hot')
+  * Enriched count now includes ALL enriched stages: enriched + qualified + contacted + engaged + negotiating + closed_won (was only counting stage === 'enriched')
+- Fixed leads-view.tsx:
+  * Header text now says "across all campaigns" only when campaignFilter === 'all'
+  * When a campaign filter is active, says "in selected campaign" instead
+- Removed duplicate middleware.ts (Next.js 16 conflict with proxy.ts)
+- Re-seeded all data after DB schema push:
+  * 14 agents seeded and deployed
+  * 350 chat messages seeded (7 days of inter-agent conversations)
+  * 1,933 work log entries seeded (7 days of activity)
+  * 50 campaigns with 169 leads in DB
+- Verified data consistency via DB inspection:
+  * Leads by stage: new=17, enriched=48, qualified=81, contacted=21, engaged=2
+  * Leads by tier: cold=85, warm=31, hot=7, unqualified=46
+  * Dashboard stats endpoint returns matching numbers
+  * Campaign cards show real tier breakdowns
+  * Campaign detail Hot Leads counts super_hot+hot
+  * Lead stage changes sync campaign counters
+
+Stage Summary:
+- Dashboard: all 4 stat cards now use real DB data (no hardcoded values)
+- Campaigns: cards now show real hot/warm/cold lead breakdowns (was zeroed out)
+- Campaign detail: Hot Leads counts super_hot+hot, Enriched counts all enriched stages
+- Leads: header text reflects active campaign filter
+- Lead updates: stage changes now sync campaign.leadsQualified/leadsContacted/leadsResponded
+- Dashboard stats: single endpoint eliminates client-side orchestration and >1000 lead truncation
+- Build: clean ✓ · Database: synced ✓ · Data: consistent across all sections ✓

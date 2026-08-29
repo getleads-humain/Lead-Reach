@@ -29,6 +29,7 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
+    // Stage transition timestamps
     if (body.stage === 'qualified' && existing.stage !== 'qualified') {
       updateData.qualifiedAt = new Date();
     }
@@ -37,6 +38,60 @@ export async function PUT(request: NextRequest, { params }: { params: Promise<{ 
     }
     if (body.stage === 'enriched' && existing.stage !== 'enriched') {
       updateData.enrichedAt = new Date();
+    }
+
+    // ── FIX: Sync campaign counters when stage changes ──
+    // This ensures campaign.leadsQualified, leadsContacted, leadsResponded
+    // stay accurate when leads are moved between stages manually.
+    if (body.stage && body.stage !== existing.stage) {
+      const oldStage = existing.stage;
+      const newStage = body.stage as string;
+
+      // Decrement old stage counter
+      if (oldStage === 'enriched' || oldStage === 'qualified') {
+        // Was qualified, now moving away
+        if (oldStage === 'qualified' && newStage !== 'qualified') {
+          await db.campaign.update({
+            where: { id: existing.campaignId },
+            data: { leadsQualified: { decrement: 1 } },
+          });
+        }
+      }
+
+      // Increment new stage counter
+      if (newStage === 'qualified') {
+        await db.campaign.update({
+          where: { id: existing.campaignId },
+          data: { leadsQualified: { increment: 1 } },
+        });
+      }
+      if (newStage === 'contacted' && oldStage !== 'contacted') {
+        await db.campaign.update({
+          where: { id: existing.campaignId },
+          data: { leadsContacted: { increment: 1 } },
+        });
+      }
+      if (newStage === 'engaged' && oldStage !== 'engaged') {
+        // "Responded" = moved to engaged stage
+        await db.campaign.update({
+          where: { id: existing.campaignId },
+          data: { leadsResponded: { increment: 1 } },
+        });
+      }
+
+      // Handle reverse transitions (moving back to earlier stages)
+      if (oldStage === 'contacted' && newStage !== 'contacted') {
+        await db.campaign.update({
+          where: { id: existing.campaignId },
+          data: { leadsContacted: { decrement: 1 } },
+        });
+      }
+      if (oldStage === 'engaged' && newStage !== 'engaged') {
+        await db.campaign.update({
+          where: { id: existing.campaignId },
+          data: { leadsResponded: { decrement: 1 } },
+        });
+      }
     }
 
     const lead = await db.lead.update({
