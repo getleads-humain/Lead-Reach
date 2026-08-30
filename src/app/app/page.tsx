@@ -76,12 +76,26 @@ export default function AppPage() {
     };
   }, [authLoading, hydrated]);
 
-  // Redirect to login if not authenticated (only after stable check)
+  // ── FIX: Add a timeout fallback so the page doesn't hang forever ──
+  // If authLoading is still true after 5 seconds, force it to false so the
+  // redirect-to-login logic can fire (or the page renders in demo mode).
+  const [authTimeout, setAuthTimeout] = useState(false);
   useEffect(() => {
-    if (hydrated && stableAuthChecked && !user) {
+    if (authLoading && hydrated) {
+      const timer = setTimeout(() => {
+        console.warn('[AppPage] Auth loading timeout — forcing load complete');
+        setAuthTimeout(true);
+      }, 5000);
+      return () => clearTimeout(timer);
+    }
+  }, [authLoading, hydrated]);
+
+  // Redirect to login if not authenticated (only after stable check or timeout)
+  useEffect(() => {
+    if (hydrated && (stableAuthChecked || authTimeout) && !user) {
       router.replace('/login');
     }
-  }, [hydrated, stableAuthChecked, user, router]);
+  }, [hydrated, stableAuthChecked, authTimeout, user, router]);
 
   // Redirect to onboarding if not complete (only after stable check)
   useEffect(() => {
@@ -90,8 +104,8 @@ export default function AppPage() {
     }
   }, [hydrated, stableAuthChecked, user, profile, router]);
 
-  // Show loading while auth state resolves
-  if (authLoading || !hydrated) {
+  // Show loading while auth state resolves (with timeout fallback)
+  if ((authLoading && !authTimeout) || !hydrated) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-background noise-bg">
         <div className="flex flex-col items-center gap-4">
