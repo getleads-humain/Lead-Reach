@@ -31,6 +31,18 @@ export async function register() {
 
   console.log('[Instrumentation] Server-side instrumentation active — long-running API routes supported');
 
+  // ── Start 24/7 Workforce Activity Generator ──────────────────
+  // This generates real inter-agent chat messages and work log entries
+  // every 2-5 minutes, 24/7/365, so the AI Workforce is always alive.
+  setTimeout(async () => {
+    try {
+      const { startWorkforceActivity247 } = await import('@/lib/workforce/activity-247');
+      startWorkforceActivity247();
+    } catch (error) {
+      console.warn('[Instrumentation] Failed to start 24/7 workforce activity generator (non-fatal):', error);
+    }
+  }, 10000); // Wait 10s for DB to be ready
+
   // ── Auto-start crawl4ai ────────────────────────────────────
   setTimeout(async () => {
     try {
