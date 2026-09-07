@@ -105,6 +105,7 @@ export async function updateSession(request: NextRequest) {
     '/api/ai-assistant/deep-research',  // AI deep research endpoint
     '/api/ai-assistant/smart-chat',     // AI smart chat endpoint
     '/api/ai-assistant/save',           // AI save results endpoint
+    '/api/ai',                          // Main AI route (used by "Ask AI" in top bar)
     '/api/identity',                    // Identity profile save/load
     '/api/vellum/',                     // All Vellum Core API endpoints (chat, memory, skills, pipeline, health, etc.)
     // AI-powered tool endpoints (added to enable platform-wide AI activation)

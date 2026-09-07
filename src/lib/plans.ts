@@ -195,7 +195,12 @@ export function getPlansByTrack(track: 'b2b' | 'b2c'): PlanDefinition[] {
 }
 
 /**
- * Map LeadReach plan tier to feature access level
+ * Map LeadReach plan tier to feature access level.
+ *
+ * GOD MODE: All views are accessible from every plan grade.
+ * This ensures every feature is unlocked for all users —
+ * 'tokens', 'ai-assistant', 'identity', 'knowledge' are included
+ * alongside the standard views.
  */
 export function getFeatureAccess(planTier: string): {
   views: string[];
@@ -207,43 +212,43 @@ export function getFeatureAccess(planTier: string): {
 } {
   const plan = getPlanById(planTier);
   if (!plan) {
+    // Even unknown plans get full access (GOD mode)
     return {
-      views: ['dashboard', 'prospect-discovery', 'icp', 'leads'],
-      maxCampaigns: 1, maxLeads: 100, maxAgents: 1, maxSetters: 0, maxTeamMembers: 1,
+      views: ALL_VIEWS,
+      maxCampaigns: -1, maxLeads: -1, maxAgents: -1, maxSetters: -1, maxTeamMembers: -1,
     };
   }
 
-  const baseViews = ['dashboard', 'prospect-discovery', 'icp', 'leads', 'reports'];
-
-  if (plan.grade === 'free') {
-    return {
-      views: [...baseViews, 'campaigns'],
-      maxCampaigns: plan.maxCampaigns, maxLeads: plan.includedLeads,
-      maxAgents: plan.includedAgents, maxSetters: plan.maxSetters,
-      maxTeamMembers: plan.includedTeamMembers,
-    };
-  }
-
-  if (plan.grade === 'standard') {
-    return {
-      views: [...baseViews, 'campaigns', 'outreach', 'data-enrichment', 'connectors'],
-      maxCampaigns: plan.maxCampaigns, maxLeads: plan.includedLeads,
-      maxAgents: plan.includedAgents, maxSetters: plan.maxSetters,
-      maxTeamMembers: plan.includedTeamMembers,
-    };
-  }
-
-  if (plan.grade === 'professional' || plan.grade === 'lifetime') {
-    return {
-      views: [...baseViews, 'campaigns', 'outreach', 'data-enrichment', 'connectors', 'agents', 'workforce', 'setter', 'booking', 'messaging', 'analytics'],
-      maxCampaigns: plan.maxCampaigns, maxLeads: plan.includedLeads,
-      maxAgents: plan.includedAgents, maxSetters: plan.maxSetters,
-      maxTeamMembers: plan.includedTeamMembers,
-    };
-  }
-
+  // ── GOD MODE: All views accessible from every plan ──
   return {
-    views: ['dashboard', 'prospect-discovery', 'icp', 'campaigns', 'leads', 'data-enrichment', 'connectors', 'agents', 'workforce', 'setter', 'booking', 'messaging', 'outreach', 'analytics', 'reports'],
-    maxCampaigns: -1, maxLeads: -1, maxAgents: -1, maxSetters: -1, maxTeamMembers: -1,
+    views: ALL_VIEWS,
+    maxCampaigns: plan.maxCampaigns ?? -1,
+    maxLeads: plan.includedLeads ?? -1,
+    maxAgents: plan.includedAgents ?? -1,
+    maxSetters: plan.maxSetters ?? -1,
+    maxTeamMembers: plan.includedTeamMembers ?? -1,
   };
 }
+
+// ── All available views (GOD MODE — every view unlocked) ──
+const ALL_VIEWS = [
+  'dashboard',
+  'prospect-discovery',
+  'icp',
+  'leads',
+  'reports',
+  'campaigns',
+  'outreach',
+  'data-enrichment',
+  'connectors',
+  'agents',
+  'workforce',
+  'tokens',
+  'setter',
+  'booking',
+  'messaging',
+  'analytics',
+  'ai-assistant',
+  'identity',
+  'knowledge',
+];

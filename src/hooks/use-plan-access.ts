@@ -52,7 +52,8 @@ export interface PlanAccessResult {
   usagePercent: (resource: 'campaigns' | 'leads' | 'agents' | 'setters' | 'teamMembers', currentCount: number) => number;
 }
 
-// Map each view to the minimum plan grade required
+// Map each view to the minimum plan grade required.
+// GOD MODE: All views are 'free' — no upgrade required for any feature.
 const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'enterprise'> = {
   'dashboard': 'free',
   'prospect-discovery': 'free',
@@ -60,16 +61,16 @@ const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'e
   'leads': 'free',
   'reports': 'free',
   'campaigns': 'free',
-  'outreach': 'standard',
-  'data-enrichment': 'standard',
-  'connectors': 'standard',
-  'agents': 'professional',
-  'workforce': 'professional',
-  'tokens': 'professional',
-  'setter': 'professional',
-  'booking': 'professional',
-  'messaging': 'professional',
-  'analytics': 'professional',
+  'outreach': 'free',
+  'data-enrichment': 'free',
+  'connectors': 'free',
+  'agents': 'free',
+  'workforce': 'free',
+  'tokens': 'free',
+  'setter': 'free',
+  'booking': 'free',
+  'messaging': 'free',
+  'analytics': 'free',
 };
 
 // Map grade to the first plan at that grade

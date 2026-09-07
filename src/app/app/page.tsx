@@ -36,15 +36,9 @@ import { usePlanAccess, type ViewType } from '@/hooks/use-plan-access';
 import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
 import { Zap, Loader2 } from 'lucide-react';
 
-/** Map views to the plan required to access them */
-const VIEW_UPGRADE_MAP: Record<string, { feature: string; requiredPlanId: string }> = {
-  'agents': { feature: 'AI Agents', requiredPlanId: 'command' },
-  'workforce': { feature: 'AI Workforce', requiredPlanId: 'command' },
-  'setter': { feature: 'AI Setter', requiredPlanId: 'command' },
-  'booking': { feature: 'Bookings', requiredPlanId: 'command' },
-  'messaging': { feature: 'Messaging', requiredPlanId: 'command' },
-  'analytics': { feature: 'Analytics', requiredPlanId: 'command' },
-};
+/** Map views to the plan required to access them.
+ *  GOD MODE: Empty map — no views require upgrade. All features unlocked. */
+const VIEW_UPGRADE_MAP: Record<string, { feature: string; requiredPlanId: string }> = {};
 
 export default function AppPage() {
   const { user, profile, loading: authLoading } = useAuth();
