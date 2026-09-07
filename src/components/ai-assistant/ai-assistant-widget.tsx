@@ -84,6 +84,7 @@ const VIEW_LABELS: Record<ViewType, string> = {
   knowledge: 'Knowledge Base',
   connectors: 'Connectors',
   workforce: 'AI Workforce',
+  tokens: 'Token Registry',
 };
 
 const SUGGESTED_PROMPTS = [

@@ -21,6 +21,7 @@ export type ViewType =
   | 'connectors'
   | 'agents'
   | 'workforce'
+  | 'tokens'
   | 'setter'
   | 'booking'
   | 'messaging'
@@ -64,6 +65,7 @@ const VIEW_MIN_GRADE: Record<ViewType, 'free' | 'standard' | 'professional' | 'e
   'connectors': 'standard',
   'agents': 'professional',
   'workforce': 'professional',
+  'tokens': 'professional',
   'setter': 'professional',
   'booking': 'professional',
   'messaging': 'professional',

@@ -145,6 +145,7 @@ const VIEW_LABELS: Record<ViewType, string> = {
   knowledge: 'Knowledge Base',
   connectors: 'Connectors',
   workforce: 'AI Workforce',
+  tokens: 'Token Registry',
 };
 
 const ACTION_CONFIG: Record<string, { emoji: string; color: string; bgColor: string; borderColor: string }> = {

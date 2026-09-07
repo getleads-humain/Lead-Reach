@@ -1314,3 +1314,80 @@ model WorkforceLog {
   @@index([agentId, category, createdAt])
   @@index([createdAt])
 }
+
+// ── Platform Token Registry ──────────────────────────────────────────────────
+// Tokenizes every aspect of the codebase, platform, and business.
+// Each token represents a trackable entity (component, API, agent, feature,
+// page, model, document, asset, etc.) with full versioning and audit trail.
+
+model PlatformToken {
+  id            String   @id @default(cuid())
+
+  // ── Identity ──────────────────────────────────────────────────────
+  tokenKey      String   @unique              // e.g., "api:campaigns:stream", "component:workforce:office-chat"
+  name          String                         // Human-readable name
+  category      String                         // api, component, page, model, agent, feature, asset, business, config, doc
+  subcategory   String?                        // e.g., "workforce", "campaigns", "auth", "blog"
+  description   String?                        // What this token represents
+
+  // ── Metadata ──────────────────────────────────────────────────────
+  filePath      String?                        // Source file path (for code tokens)
+  route         String?                        // URL route (for pages and APIs)
+  prismaModel   String?                        // Prisma model name (for data models)
+  dependencies  String?                        // JSON array of tokenKeys this depends on
+  tags          String?                        // JSON array of tags
+
+  // ── Versioning ────────────────────────────────────────────────────
+  version       Int      @default(1)            // Current version (increments on update)
+  status        String   @default("active")     // active, deprecated, removed, planned
+
+  // ── Audit ──────────────────────────────────────────────────────────
+  lastScannedAt DateTime?                       // When the codebase scanner last verified this
+  lastModifiedAt DateTime?                      // When the underlying file/entity was last modified
+  modifiedBy    String?                         // Who/what made the last change (agent slug, user, system)
+  changeLog     String?                         // JSON array of {version, timestamp, changedBy, description}
+
+  // ── Business Context ───────────────────────────────────────────────
+  businessValue String?                        // What business value does this provide?
+  owner         String?                        // Owning department or agent slug
+  priority      String   @default("normal")     // critical, high, normal, low
+
+  // ── Timestamps ─────────────────────────────────────────────────────
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // ── Relations ──────────────────────────────────────────────────────
+  audits        PlatformTokenAudit[]
+
+  // ── Indexes ─────────────────────────────────────────────────────────
+  @@index([category, subcategory])
+  @@index([status])
+  @@index([owner])
+  @@index([updatedAt])
+}
+
+// ── Platform Token Audit Trail ──────────────────────────────────────────────
+// Every change to a PlatformToken is recorded here for full auditability.
+
+model PlatformTokenAudit {
+  id            String   @id @default(cuid())
+  tokenId       String
+  token         PlatformToken @relation(fields: [tokenId], references: [id], onDelete: Cascade)
+
+  // ── Audit Details ─────────────────────────────────────────────────
+  action        String                         // created, updated, deprecated, removed, scanned, verified
+  fieldChanged  String?                        // Which field was changed (for updates)
+  oldValue      String?                        // Previous value (for updates)
+  newValue      String?                        // New value (for updates)
+  description   String?                        // Human-readable description of the change
+  changedBy     String?                        // Who/what made the change (agent slug, user email, system)
+  version       Int                            // The token version after this change
+
+  // ── Timestamps ─────────────────────────────────────────────────────
+  createdAt     DateTime @default(now())
+
+  // ── Indexes ─────────────────────────────────────────────────────────
+  @@index([tokenId, createdAt])
+  @@index([action])
+  @@index([changedBy])
+}

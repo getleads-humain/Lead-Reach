@@ -782,3 +782,54 @@ Image topics covered:
   - Industry: fintech leads, SaaS leads, agency multi-tenant, competitive intelligence
   - Technical: tech stack architecture, workforce bridge diagram, z-ai SDK capabilities, database schema ERD
   - Strategy: ICP best practices checklist, outreach cadence calendar, email deliverability auth diagram, pricing comparison table
+
+---
+Task ID: 15
+Agent: Main
+Task: Tokenize entire codebase, platform, and business — comprehensive tracking/audit system
+
+Work Log:
+- Inventoried the full codebase: 591 TS/TSX files, 203 API routes, 120 components, 43 Prisma models, 39 pages, 210 lib modules, 14 agents, 55 blog posts, 103 FAQ items, 105 public assets
+- Added 2 new Prisma models:
+  * PlatformToken: tokenizes every aspect with tokenKey, category, subcategory, filePath, route, prismaModel, dependencies, tags, version, status, lastScannedAt, lastModifiedAt, modifiedBy, changeLog, businessValue, owner, priority
+  * PlatformTokenAudit: full audit trail for every token change (action, fieldChanged, oldValue, newValue, description, changedBy, version)
+- Created /src/lib/tokenizer.ts — the codebase scanner:
+  * scanApiRoutes(): walks /src/app/api/ and creates tokens for every route.ts (204 tokens)
+  * scanComponents(): walks /src/components/ and creates tokens for every .tsx file (121 tokens)
+  * scanPages(): walks /src/app/ and creates tokens for every page.tsx (39 tokens)
+  * scanPrismaModels(): parses schema.prisma and creates tokens for every model (45 tokens)
+  * scanLibModules(): walks /src/lib/ and creates tokens for every .ts file (211 tokens)
+  * Agent tokens from WorkforceAgent table (14 tokens)
+  * Blog post tokens from BLOG_POSTS_META (55 tokens)
+  * FAQ tokens from FAQ_ITEMS (103 tokens)
+  * Business tokens: company identity, pricing plans (8), platform features (11), tech stack (6), compliance (3) = 29 tokens
+  * createOrUpdateToken(): idempotent — updates existing tokens with version increment + audit entry, creates new tokens with audit entry
+- Created /api/tokens API (GET/POST/PATCH):
+  * GET: list tokens with ?category, ?subcategory, ?status, ?owner, ?search, ?page, ?limit filters + category breakdown
+  * POST { action: 'scan' }: runs the tokenizer and returns counts per category
+  * POST { tokenKey, name, ... }: creates a single token manually
+  * PATCH: updates a token with version increment + audit entry
+- Created /src/components/tokens/token-registry.tsx — the Token Registry UI:
+  * Stats row: Total Tokens, Categories, Active count, Total Versions
+  * Category filter pills with count badges (11 categories: api, component, page, model, agent, feature, blog, faq, lib, business, config)
+  * Full-text search across tokenKey, name, description
+  * Status filter dropdown (active, deprecated, planned, removed)
+  * "Scan Codebase" button that runs the tokenizer
+  * Expandable token cards showing: description, file path, route, prismaModel, owner, businessValue, modifiedBy, lastModified, tags
+  * Per-token: version number, status badge, priority badge, audit count, last scanned time
+  * Pagination (50 per page)
+- Added 'tokens' to ViewType (types.ts + use-plan-access.ts + store.ts + sidebar.tsx)
+- Added "Token Registry" to the sidebar navigation (Boxes icon)
+- Added /api/tokens to the public API routes in supabase-middleware.ts
+- Ran the tokenizer: 821 tokens created across 10 categories:
+  * lib: 211, api: 204, component: 121, faq: 103, blog: 55, model: 45, page: 39, business: 18, agent: 14, feature: 11
+- Each token has an audit trail entry (created action, version 1, changedBy: tokenizer)
+- Build: clean ✓ · 821 tokens verified ✓ · API accessible ✓
+
+Stage Summary:
+- 821 tokens covering every aspect of the codebase, platform, and business
+- 10 categories: API routes (204), components (121), pages (39), Prisma models (45), lib modules (211), AI agents (14), blog posts (55), FAQ items (103), business concepts (18), platform features (11)
+- Every token has: unique tokenKey, version number, status, lastScannedAt, owner, priority, audit trail
+- The "Scan Codebase" button re-runs the tokenizer to detect new/changed/removed files
+- Re-scanning is idempotent: existing tokens get version increments + audit entries only when fields actually change
+- Token Registry accessible from the sidebar in the app

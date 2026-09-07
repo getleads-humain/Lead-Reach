@@ -118,6 +118,7 @@ export async function updateSession(request: NextRequest) {
     '/api/reports/ai-generate',         // AI report generator
     '/api/knowledge/',                  // Knowledge base API (stats, list, search, doc, gap-report — preview-accessible)
     '/api/workforce',                   // Workforce agents API (list, health, agent detail, chat, tasks, sessions, documents)
+    '/api/tokens',                      // Platform token registry (list, create, scan, update)
   ];
 
   // Static assets and Next.js internals

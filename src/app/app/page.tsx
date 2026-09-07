@@ -30,6 +30,7 @@ import { ICPView } from '@/components/icp/icp-view';
 import { AIAssistantView } from '@/components/ai-assistant/ai-assistant-view';
 import { ConnectorsView } from '@/components/connectors/connectors-view';
 import { WorkforceView } from '@/components/workforce/workforce-view';
+import { TokenRegistry } from '@/components/tokens/token-registry';
 import { useAppStore } from '@/lib/store';
 import { usePlanAccess, type ViewType } from '@/hooks/use-plan-access';
 import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
@@ -207,6 +208,8 @@ export default function AppPage() {
         return <ConnectorsView />;
       case 'workforce':
         return <WorkforceView />;
+      case 'tokens':
+        return <TokenRegistry />;
       default:
         return <DashboardView />;
     }
