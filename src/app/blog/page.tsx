@@ -32,6 +32,8 @@ export default function BlogPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [email, setEmail] = useState('');
   const [subscribed, setSubscribed] = useState(false);
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize] = useState(12);
 
   const filteredPosts = BLOG_POSTS_META.filter((post) => {
     const matchesCategory = activeCategory === 'All' || post.category === activeCategory;
@@ -42,6 +44,15 @@ export default function BlogPage() {
       post.tags.some(tag => tag.toLowerCase().includes(searchQuery.toLowerCase()));
     return matchesCategory && matchesSearch;
   });
+
+  // Pagination
+  const totalPages = Math.ceil(filteredPosts.length / pageSize);
+  const paginatedPosts = filteredPosts.slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+  // Reset to page 1 when filters change
+  React.useEffect(() => {
+    setCurrentPage(1);
+  }, [activeCategory, searchQuery]);
 
   return (
     <MarketingLayout>
@@ -116,8 +127,9 @@ export default function BlogPage() {
                   </Button>
                 </div>
               ) : (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                  {filteredPosts.map((post) => (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    {paginatedPosts.map((post) => (
                     <Link key={post.id} href={`/blog/${post.slug}`} className="group block cursor-pointer" style={{ pointerEvents: 'auto' }}>
                       <Card className="card-premium border-border/30 bg-card/50 h-full overflow-hidden transition-all duration-300 group-hover:border-emerald-500/20 group-hover:shadow-lg group-hover:shadow-emerald-500/5 cursor-pointer" style={{ pointerEvents: 'auto' }}>
                         {/* Hero Image */}
@@ -163,6 +175,71 @@ export default function BlogPage() {
                     </Link>
                   ))}
                 </div>
+
+                  {/* Pagination */}
+                  {totalPages > 1 && (
+                    <div className="mt-8 flex items-center justify-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(1)}
+                        disabled={currentPage === 1}
+                        className="border-border/30 text-muted-foreground hover:text-foreground"
+                      >
+                        First
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+                        disabled={currentPage === 1}
+                        className="border-border/30 text-muted-foreground hover:text-foreground"
+                      >
+                        Prev
+                      </Button>
+                      {Array.from({ length: totalPages }, (_, i) => i + 1).map((page) => (
+                        <Button
+                          key={page}
+                          variant={page === currentPage ? 'default' : 'outline'}
+                          size="sm"
+                          onClick={() => setCurrentPage(page)}
+                          className={
+                            page === currentPage
+                              ? 'bg-emerald-500 hover:bg-emerald-400 text-emerald-950 dark:text-white font-semibold'
+                              : 'border-border/30 text-muted-foreground hover:text-foreground'
+                          }
+                        >
+                          {page}
+                        </Button>
+                      ))}
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+                        disabled={currentPage === totalPages}
+                        className="border-border/30 text-muted-foreground hover:text-foreground"
+                      >
+                        Next
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setCurrentPage(totalPages)}
+                        disabled={currentPage === totalPages}
+                        className="border-border/30 text-muted-foreground hover:text-foreground"
+                      >
+                        Last
+                      </Button>
+                    </div>
+                  )}
+
+                  {/* Result count */}
+                  <p className="mt-4 text-center text-xs text-muted-foreground">
+                    Showing {paginatedPosts.length} of {filteredPosts.length} articles
+                    {activeCategory !== 'All' && ` in ${activeCategory}`}
+                    {searchQuery && ` matching "${searchQuery}"`}
+                  </p>
+                </>
               )}
             </div>
 

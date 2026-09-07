@@ -54,6 +54,7 @@ const sectionsCache = new Map<string, BlogPostSection[]>();
 /**
  * Get a full blog post (metadata + sections) by slug.
  * Uses dynamic imports to load only the requested post's content.
+ * New posts (19-55) load from the consolidated content file.
  */
 export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> {
   const meta = BLOG_POSTS_META.find((post) => post.slug === slug);
@@ -64,18 +65,32 @@ export async function getBlogPostBySlug(slug: string): Promise<BlogPost | null> 
     return { ...meta, sections: sectionsCache.get(slug)! };
   }
 
-  // Dynamic import — only loads this specific post's content
+  // Try the individual post importer first (existing 18 posts)
   const importer = postImporters[slug];
-  if (!importer) return null;
-
-  try {
-    const module = await importer();
-    sectionsCache.set(slug, module.sections);
-    return { ...meta, sections: module.sections };
-  } catch (error) {
-    console.error(`[LeadReach] Failed to load blog post content for slug: ${slug}`, error);
-    return null;
+  if (importer) {
+    try {
+      const module = await importer();
+      sectionsCache.set(slug, module.sections);
+      return { ...meta, sections: module.sections };
+    } catch (error) {
+      console.error(`[LeadReach] Failed to load blog post content for slug: ${slug}`, error);
+      // Fall through to try the consolidated content file
+    }
   }
+
+  // Try the consolidated new posts content file (posts 19-55)
+  try {
+    const { NEW_POST_SECTIONS } = await import('@/lib/blog-new-posts-content');
+    const sections = NEW_POST_SECTIONS[slug];
+    if (sections) {
+      sectionsCache.set(slug, sections);
+      return { ...meta, sections };
+    }
+  } catch (error) {
+    console.error(`[LeadReach] Failed to load new post content for slug: ${slug}`, error);
+  }
+
+  return null;
 }
 
 /**

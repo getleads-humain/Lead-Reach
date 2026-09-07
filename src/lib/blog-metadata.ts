@@ -350,5 +350,9 @@ export const BLOG_POSTS_META: BlogPostMeta[] = [
     tags: ['ROI', 'Sales Intelligence', 'Analytics', 'Pipeline', 'B2B Sales'],
     seoTitle: 'ROI of AI Lead Generation: A Framework for Measuring Impact | LeadReach',
     seoDescription: 'Learn how to measure the ROI of AI-powered lead generation with a comprehensive framework covering cost per lead, time savings, pipeline velocity, conversion rates, and comparison against traditional SDR costs.'
-  }
+  },
 ];
+
+// ── Append new posts (19-55) ──
+import { NEW_BLOG_POSTS_META } from './blog-new-posts-metadata';
+BLOG_POSTS_META.push(...NEW_BLOG_POSTS_META);
