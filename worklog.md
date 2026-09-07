@@ -754,3 +754,31 @@ Stage Summary:
 - Topics include: PROMETHEUS decision engine, KRONOS event ring, Command Center, Office Chat, Work Logs, 24/7 activity generator, Smart Auto-Fill, multi-pass discovery, 5-dimension scoring, lead tiers, campaign pipeline, data enrichment, ICP model, search fallback, dashboard metrics, pipeline tracking, competitive intelligence, tech stack, workforce bridge, z-ai SDK, Prisma schema, best practices, outreach sequences, email deliverability, pricing plans
 - Pagination added: 12 per page with First/Prev/Next/Last controls
 - All new posts accessible at /blog/[slug] with full content rendering
+
+---
+Task ID: 14
+Agent: Main
+Task: Generate cover images for all 37 new blog posts
+
+Work Log:
+- Audited all 37 new blog posts: ALL 37 hero images were missing from /public/blog/
+- Created /scripts/generate-blog-images.sh with topic-specific prompts for each of the 37 images
+- Generated all 37 images using z-ai image generation CLI (1344x768 resolution, PNG format):
+  * Each prompt was crafted to visually represent the blog post's topic with:
+    - Platform UI screenshots/representations (dashboards, charts, interfaces)
+    - Technical diagrams (architecture, data flows, entity relationships)
+    - Topic-specific visualizations (funnels, radar charts, timelines, calendars)
+    - Dark background with emerald/cyan/violet accent colors matching the platform theme
+- Generated in 6 batches of 5-10 images to avoid CLI timeout
+- Verified all 37 images present (37/37, 0 missing)
+- Total blog hero images in /public/blog/: 55 (18 original + 37 new)
+- Build: clean ✓ · Blog page: HTTP 200 ✓ · All images served: HTTP 200 ✓
+
+Image topics covered:
+  - AI Workforce: PROMETHEUS decision engine, KRONOS event ring, Command Center dashboard, Office Chat interface, Work Log viewer, 24/7 activity generator, Knowledge Base library
+  - Lead Generation: Smart Auto-Fill form, multi-pass discovery pipeline, 5-dimension radar chart, lead tier funnel, campaign pipeline flowchart, data enrichment 4-tab interface, ICP scoring model, search fallback chain
+  - Sales Intelligence: dashboard metrics, campaign breakdown card, lead stage sync diagram, pipeline kanban board
+  - Tutorials: first campaign steps, pipeline workspace 5-tab, prospect discovery search, CSV import drag-drop, agent workspace 9-tab, agent config panel
+  - Industry: fintech leads, SaaS leads, agency multi-tenant, competitive intelligence
+  - Technical: tech stack architecture, workforce bridge diagram, z-ai SDK capabilities, database schema ERD
+  - Strategy: ICP best practices checklist, outreach cadence calendar, email deliverability auth diagram, pricing comparison table
