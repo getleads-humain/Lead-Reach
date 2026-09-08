@@ -923,3 +923,68 @@ Stage Summary:
   6 tools (48 total), 5 metrics (40 total), 3 FAQs (24 total), full config for each
 - Agent cards on /agent are now clickable and navigate to detail pages
 - All pages are public (no auth required) via startsWith matching in the proxy
+
+---
+Task ID: expand-agent-detail-tabs
+Agent: main (Super Z)
+Task: Expand each and every tab inside each /agent/[slug] detail page to make content real, full-length, and most extensive. Display full system prompts and all other prompts in the most exhaustive form.
+
+Work Log:
+- Refactored `/src/lib/agent-details.ts` (single 619-line file) into `/src/lib/agent-details/` directory:
+  - types.ts — extended AgentDetailFull interface with new fields:
+    * capabilities[].details[] — bullet expansion per capability
+    * pipelineStages[].substeps[], errorHandling, retryStrategy
+    * knowledgeBase[].sectionList[], owner, lastReviewed, version
+    * tools[].endpoint, authMethod, rateLimit, config[], schemaExample, failureMode
+    * metrics[].trend30d, description
+    * config.systemPromptFull (1500-2500 words), reasoningEffort, topP, presencePenalty,
+      frequencyPenalty, stopSequences, responseFormat, jsonSchema, timeout, retryPolicy, fallbackModel
+    * NEW userPromptTemplates[] (5+ per agent)
+    * NEW toolCallExamples[] (3+ per agent)
+    * NEW examples[] (3+ worked examples each with input/reasoning/output/outcome)
+    * NEW guardrails[] (7+ per agent with severity block/warn/log)
+    * NEW decisionMatrix[] (7+ per agent with condition/action/rationale/example)
+    * NEW failureModes[] (5+ per agent with detection/mitigation/recoveryTime)
+    * NEW evaluationCases[] (4+ per agent with scoringCriteria/passThreshold)
+  - index.ts — barrel aggregator exporting AGENT_DETAILS_FULL
+  - orchestrator.ts (1,123 lines, written by main agent)
+  - prospect-discovery.ts (1,140 lines, written by main agent)
+  - data-enrichment.ts (1,366 lines, written by parallel subagent)
+  - web-research.ts (1,531 lines, written by parallel subagent)
+  - lead-qualification.ts (1,366 lines, written by parallel subagent)
+  - outreach-composer.ts (1,566 lines, written by parallel subagent)
+  - pipeline-manager.ts (1,466 lines, written by parallel subagent)
+  - report-generator.ts (1,464 lines, written by parallel subagent)
+  - TOTAL: ~11,200 lines of curated agent detail content (vs original 619 lines = ~18x expansion)
+
+- Rewrote `/src/app/agent/[slug]/agent-detail-page.tsx` to render the expanded schema:
+  - Added 3 NEW tabs (Prompts, Examples, Guardrails) — total 10 tabs
+  - Added RichText component that renders markdown-style headings (#, ##), numbered lists, bulleted lists
+  - Added JsonBlock component with monospace formatting for JSON examples
+  - Overview tab: now shows "At a Glance" sidebar with counts of every content type
+  - Capabilities tab: shows capability + metric + bullet details expansion
+  - Pipeline tab: per-stage expandable substeps, error handling, retry strategy
+  - Knowledge Base tab: per-document expandable section breakdowns with owner/version/reviewed date
+  - Tools tab: shows endpoint, auth method, rate limit, config key/values, JSON schema example, failure mode
+  - Metrics tab: shows value, benchmark, 30-day trend (↑/↓/→), description
+  - Prompts tab (NEW): full multi-paragraph system prompt in scrollable viewer + user prompt templates + tool call examples with request/response JSON + response schema
+  - Examples tab (NEW): worked examples (input/reasoning/output/outcome) + evaluation cases with scoring criteria
+  - Guardrails tab (NEW): guardrails with severity color-coding + decision matrix (if/then/because/example) + failure modes (detection/mitigation/recovery)
+
+- Verification:
+  * TypeScript: agent-details/* and agent-detail-page.tsx compile clean (no errors)
+  * Dev server: starts and runs on :3000
+  * HTTP 200 for /agent and all 8 detail pages:
+    - /agent/orchestrator (120KB), /agent/prospect-discovery (126KB), /agent/data-enrichment (164KB),
+      /agent/web-research (181KB), /agent/lead-qualification (153KB), /agent/outreach-composer (184KB),
+      /agent/pipeline-manager (166KB), /agent/report-generator (166KB)
+  * Full system prompts present on each page (verified: "You are ATLAS", "You are SCOUT", etc. + all # headings)
+  * Agent-specific rich content rendering confirmed (Forge: "60+ Field", "Smart Auto-Fill", "Merge-Not-Overwrite", "SIC/NAICS", "Never fabricate"; Scout: 17+ channels, 3-tier fallback; etc.)
+
+Stage Summary:
+- Every tab on every agent detail page is now exhaustive and full-length
+- System prompts are displayed IN FULL (1500-2500 words each, 8 agents = ~13,000 words total of system prompts)
+- User prompt templates, tool call examples, guardrails, decision matrix, failure modes, eval cases — all visible
+- ~18x content expansion (619 → 11,200 lines of curated agent detail)
+- 3 new tabs added (Prompts, Examples, Guardrails) for a total of 10 tabs per agent
+- All 8 detail pages load successfully with HTTP 200
