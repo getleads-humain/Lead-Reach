@@ -872,3 +872,54 @@ Stage Summary:
 - Token Registry: 'tokens' added to ALL_VIEWS in plans.ts (was missing from all plan grades)
 - No more UpgradePrompt overlays — VIEW_UPGRADE_MAP is empty
 - No more plan-based view restrictions — VIEW_MIN_GRADE is all 'free'
+
+---
+Task ID: 17
+Agent: Main
+Task: Build individualized agent detail pages for all 8 agents on /agent
+
+Work Log:
+- Created /src/lib/agent-details.ts with comprehensive curated content for all 8 agents:
+  Each agent has: slug, name, tagline, longDescription, department, pipelineRole, pipelinePosition,
+  6 capabilities (with name, description, metric), 4 pipeline stages (with inputs/outputs/duration),
+  5 knowledge base items (SOP, Runbook, Playbook, Reference, Training), 6 tools (with type/status),
+  5 performance metrics (with benchmarks), full config (model, temperature, maxTokens, schedule,
+  maxConcurrentTasks, priority, systemPromptSummary), channels list, dependencies list, 3 FAQs each
+
+  Agents covered:
+  1. Orchestrator (Atlas) — strategic coordination, task delegation, error recovery
+  2. Prospect Discovery (Scout) — 17+ channel search, multi-pass discovery, 3-tier fallback
+  3. Data Enrichment (Forge) — 60+ field enrichment, Smart Auto-Fill, merge-not-overwrite
+  4. Web Research (Sage) — deep website analysis, trigger events, competitive intelligence
+  5. Lead Qualification (Judge) — 5-dimension scoring, tier assignment, stage progression
+  6. Outreach Composer (Bard) — hyper-personalization, 7-touchpoint sequences, A/B testing
+  7. Pipeline Manager (Flow) — 9-stage lifecycle, SLA enforcement, nurture orchestration
+  8. Report Generator (Echo) — analytics, channel ROI, AI recommendations, scheduled reports
+
+- Created /src/app/agent/[slug]/page.tsx — server component that loads agent by slug
+- Created /src/app/agent/[slug]/agent-detail-page.tsx — client component with 7 tabs:
+  * Overview — pipeline position, department, priority, schedule, dependencies, FAQ
+  * Capabilities — 6 capability cards with metrics + channels list
+  * Pipeline — visual stage flowchart with inputs/outputs/duration per stage
+  * Knowledge Base — 5 KB items (SOP, Runbook, Playbook, Reference, Training) with category badges
+  * Tools — 6 tool cards with type (MCP/API/SDK/Internal), status (connected/available/needs-setup)
+  * Metrics — 5 performance metric cards with values, units, and benchmarks
+  * Config — model, temperature, maxTokens, schedule, maxConcurrent, priority, system prompt summary
+
+- Updated /src/app/agent/page.tsx — wrapped agent cards in <Link href="/agent/{slug}">
+  * Cards now navigate to individualized detail pages on click
+  * Added hover effects (border-emerald, shadow) for clickability feedback
+
+- Fixed /src/lib/supabase-middleware.ts:
+  * Changed publicRoute matching from exact (=== route || === route/) to startsWith (=== route || startsWith(route/))
+  * This allows /agent/orchestrator, /agent/prospect-discovery, etc. to be public (not redirect to /login)
+
+- Build: clean ✓ · /agent: HTTP 200 ✓ · All 8 detail pages: HTTP 200 ✓
+
+Stage Summary:
+- 8 individualized agent detail pages created with full-length curated content
+- Each page has 7 tabs: Overview, Capabilities, Pipeline, Knowledge Base, Tools, Metrics, Config
+- Content includes: 6 capabilities per agent (48 total), 4 pipeline stages (32 total), 5 KB items (40 total),
+  6 tools (48 total), 5 metrics (40 total), 3 FAQs (24 total), full config for each
+- Agent cards on /agent are now clickable and navigate to detail pages
+- All pages are public (no auth required) via startsWith matching in the proxy

@@ -226,7 +226,8 @@ export default function AgentPage() {
             {AGENT_DETAILS.map((agent) => {
               const Icon = AGENT_ICONS[agent.name] || Brain;
               return (
-                <Card key={agent.name} className="card-premium border-border/30 bg-card/50 relative overflow-hidden group">
+                <Link key={agent.name} href={`/agent/${agent.name}`} className="group block cursor-pointer" style={{ pointerEvents: 'auto' }}>
+                <Card className="card-premium border-border/30 bg-card/50 relative overflow-hidden group transition-all duration-300 hover:border-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/5 cursor-pointer" style={{ pointerEvents: 'auto' }}>
                   {/* Top accent bar */}
                   <div
                     className="absolute top-0 left-0 right-0 h-1"
@@ -282,6 +283,7 @@ export default function AgentPage() {
                     </div>
                   </CardContent>
                 </Card>
+                </Link>
               );
             })}
           </div>

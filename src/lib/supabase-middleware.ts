@@ -79,6 +79,7 @@ export async function updateSession(request: NextRequest) {
     '/culture',            // Company culture page
     '/agentic-framework',  // Full agentic system framework page
     '/agent',              // Agent showcase page
+    '/agent/',             // Agent detail pages (e.g., /agent/orchestrator)
     '/api-docs',           // API documentation page
     '/blog',
     '/careers',
@@ -131,7 +132,7 @@ export async function updateSession(request: NextRequest) {
 
   // Check if the current route is public
   const isPublicRoute = publicRoutes.some(
-    (route) => pathname === route || pathname === `${route}/`
+    (route) => pathname === route || pathname.startsWith(`${route}/`)
   );
   const isPublicApiRoute = publicApiRoutes.some(
     (route) => pathname.startsWith(route)
