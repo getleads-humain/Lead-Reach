@@ -25,6 +25,13 @@ import { db } from '@/lib/db';
 import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
 import type { OrchestratorEvent } from '@/lib/prospect-agent/orchestrator-types';
 import { directDuckDuckGoSearch, type SearchResult } from '@/lib/direct-search';
+import {
+  onCampaignCreated,
+  onLeadsDiscovered,
+  onLeadEnriched,
+  onLeadScored,
+  onPipelineComplete,
+} from '@/lib/workforce/bridge';
 import { discoverBusinesses } from '@/lib/agent-reach-bridge';
 
 export const maxDuration = 300;
@@ -512,6 +519,9 @@ export async function POST(
             });
           }
 
+          // ── Workforce Bridge: notify AI workforce of discovery ──
+          onLeadsDiscovered(campaignId, campaign.name, savedLeads.length, newLeadCount).catch(() => {});
+
           send('step_complete', {
             stepIndex: 0,
             status: 'completed',
@@ -660,6 +670,13 @@ export async function POST(
                   enrichmentIndex: i + 1,
                   enrichmentTotal: toEnrich.length,
                 });
+
+                // ── Workforce Bridge: log enrichment + scoring ──
+                const completeness = Number(prospect.dataCompleteness) || 0;
+                const score = Number(prospect.leadScore) || completeness;
+                const tier = (prospect.leadTier as string) || (completeness >= 80 ? 'hot' : completeness >= 60 ? 'warm' : 'cold');
+                onLeadEnriched(lead.id, (prospect.companyName as string) || lead.companyName, 20, completeness).catch(() => {});
+                onLeadScored(lead.id, (prospect.companyName as string) || lead.companyName, score, tier).catch(() => {});
               }
 
               // Increment campaign.leadsQualified for each enriched lead
@@ -706,6 +723,17 @@ export async function POST(
             overallProgress: 100,
             message: `Pipeline complete: ${savedLeads.length} discovered, ${enrichedCount} enriched, ${failedCount} failed`,
           });
+
+          // ── Workforce Bridge: notify AI workforce of pipeline completion ──
+          onPipelineComplete(campaignId, campaign.name, {
+            discovered: savedLeads.length,
+            newDiscovered: newLeadCount,
+            loadedFromPrior: savedLeads.length - newLeadCount,
+            enriched: enrichedCount,
+            fullyEnriched: enrichedCount,
+            autoEnriched: 0,
+            failed: failedCount,
+          }).catch(() => {});
 
           send('done', {
             campaignId,

@@ -19,6 +19,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import { callLLM, callLLMForJSON } from '@/lib/llm';
+import { onSmartAutoFill } from '@/lib/workforce/bridge';
 
 // ── Field Groups ──────────────────────────────────────────────────────
 
@@ -583,6 +584,15 @@ Return just the summary text, no preamble.`;
       dataCompleteness: updatedLead.dataCompleteness,
       steps,
     };
+
+    // ── Workforce Bridge: notify AI workforce of smart auto-fill ──
+    onSmartAutoFill(
+      leadId,
+      updatedLead.companyName,
+      fieldsFilled.length,
+      oldTier,
+      updatedLead.leadTier,
+    ).catch(() => {});
 
     return NextResponse.json(response);
   } catch (error) {

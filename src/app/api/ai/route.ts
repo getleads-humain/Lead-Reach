@@ -26,6 +26,11 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 });
     }
 
+    // ── Workforce Bridge: notify AI workforce of user query ──
+    import('@/lib/workforce/bridge').then(({ onUserQuery }) => {
+      onUserQuery(message, 'ai_assistant').catch(() => {});
+    }).catch(() => {});
+
     // Step 1: Use LLM to understand intent and plan agent execution
     let plan: {
       intent: string;
