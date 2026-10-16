@@ -304,7 +304,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Architecture Overview */}
-      <section className="py-20 lg:py-28">
+      <section id="architecture" className="py-20 lg:py-28 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -359,7 +359,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Campaign Pipeline Flow */}
-      <section className="py-20 lg:py-28 border-t border-border/30">
+      <section id="pipeline" className="py-20 lg:py-28 border-t border-border/30 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -398,7 +398,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Agent Deep Dives */}
-      <section className="py-20 lg:py-28 border-t border-border/30">
+      <section id="agents" className="py-20 lg:py-28 border-t border-border/30 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -459,7 +459,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Decision-Making Framework */}
-      <section className="py-20 lg:py-28 border-t border-border/30">
+      <section id="decision-making" className="py-20 lg:py-28 border-t border-border/30 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -497,7 +497,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Channel Directory */}
-      <section className="py-20 lg:py-28 border-t border-border/30">
+      <section id="channels" className="py-20 lg:py-28 border-t border-border/30 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -539,7 +539,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Quality Assurance */}
-      <section className="py-20 lg:py-28 border-t border-border/30">
+      <section id="quality" className="py-20 lg:py-28 border-t border-border/30 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
@@ -567,7 +567,7 @@ export default function AgenticFrameworkPage() {
       </section>
 
       {/* Performance Benchmarks */}
-      <section className="py-20 lg:py-28 border-t border-border/30">
+      <section id="benchmarks" className="py-20 lg:py-28 border-t border-border/30 scroll-mt-24">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="max-w-2xl mb-16">
             <h2 className="text-3xl sm:text-4xl font-bold text-foreground">
