@@ -32,7 +32,8 @@ import {
   onLeadScored,
   onPipelineComplete,
 } from '@/lib/workforce/bridge';
-import { discoverBusinesses } from '@/lib/agent-reach-bridge';
+import { discoverBusinesses, webRead } from '@/lib/agent-reach-bridge';
+import { callLLMForJSON } from '@/lib/llm';
 
 export const maxDuration = 300;
 
@@ -131,7 +132,90 @@ function generateQueryVariations(primaryQuery: string, campaign: CampaignRow): s
 /**
  * Save a search result as a basic Lead row.
  * Returns the Lead row + whether it was newly created (vs. an existing dedupe hit).
+ *
+ * DIRECTORY/LISTICLE FILTER: search queries like "top N fintech startups"
+ * surface ranking pages (fintechnews.sg, startupblink.com, f6s.com, …) rather
+ * than actual companies. Those are SOURCE pages, not leads — saving them as
+ * leads pollutes the pipeline (enrichment would "research" a magazine article).
+ * We skip results whose title/domain look like a directory page and only keep
+ * results that look like an individual company.
  */
+const DIRECTORY_DOMAIN_PATTERNS = [
+  /(^|\.)(f6s|crunchbase|startupblink|clutch\.co|g2|capterra|producthunt|producthunt\.com|angel|angellist|wellfound|linkedin|facebook|twitter|x\.com|instagram|youtube|medium|substack|reddit|quora|glassdoor|indeed|zoominfo|apollo\.io|rocketreach|bloomberg|reuters|prnewswire|businesswire|globenewswire)\./i,
+  /(^|\.)(techinasia|fintechnews|e27|vir|techcrunch|venturebeat|techround|techspot|innreg|growthonomics|consultancy\.[a-z]{2,})\./i,
+  /(^|\.)(forbes|cnbc|businesstimes|straitstimes|finextra|americanbanker|paymentsdive|bankingdive|fintechmagazine|thebanker|eu-startups|siliconcanals|sifted)\./i,
+  // Subdomain/slug signals: blog.x.com, news.y.com, x.com/blog/…, x.com/top-10-…
+  /^(blog|news|magazine|insights|press|media|list|directory|compare|reviews?|resources?|guides?)\./i,
+  /\/(blog|news|magazine|insights|lists?|directory|compare|comparison|resources?|guides?)\//i,
+];
+const LISTICLE_TITLE_PATTERNS = [
+  /\b(top|best|leading)\s+\d+\b/i,                                  // "Top 10 …", "Best 20 …"
+  /\b\d+\s+(top|best|leading|most)\b/i,                             // "100 Top …", "10 Best …"
+  /\b\d+\s+(b2b|b2c|crm|fintech|saas|hr|marketing|sales|ai)\b/i,            // "10 B2B CRM …" (numbered list)
+  /\b(top|best|leading)\b[^|]{0,80}\b(companies|startups|software|tools|platforms|vendors|agencies|apps|solutions|systems|services|consulting|firms)\b/i,
+  /\b(list of|directory|ranking|compared|comparison|alternatives|feature comparison|reviews and|pricing and)\b/i,
+  /\b\d{4}\b\s*(reviews|comparison|guide|list|edition)/i,           // "2026 Reviews …"
+  /[-–—|]\s*(updated|october|november|december|january|february|march|april|may|june|july|august|september)?\s*202[4-9]\s*[-–—|)]?\s*(\||$)/i,
+];
+
+function isDirectoryResult(title: string, url: string): boolean {
+  let host = '';
+  try {
+    host = new URL(url).hostname.toLowerCase();
+  } catch {
+    host = url.toLowerCase();
+  }
+  if (DIRECTORY_DOMAIN_PATTERNS.some((re) => re.test(host))) return true;
+  if (LISTICLE_TITLE_PATTERNS.some((re) => re.test(title))) return true;
+  return false;
+}
+
+/**
+ * Save an explicit company (name + website) as a Lead row.
+ * Used by BOTH direct search results and listicle mining.
+ */
+async function upsertCompanyAsLead(
+  campaignId: string,
+  company: { companyName: string; website: string; snippet?: string; sourceUrl?: string },
+): Promise<{ lead: LeadRow; isNew: boolean } | null> {
+  let website: string | null = company.website;
+  try {
+    website = new URL(company.website).origin;
+  } catch {
+    // keep as-is
+  }
+
+  try {
+    const existing = await db.lead.findFirst({
+      where: { campaignId, website },
+      select: { id: true, companyName: true, website: true },
+    });
+    if (existing) return { lead: existing, isNew: false };
+
+    const lead = await db.lead.create({
+      data: {
+        campaignId,
+        companyName: company.companyName.slice(0, 200),
+        website,
+        industry: (company as { industry?: string }).industry || null,
+        stage: 'new',
+        leadScore: 0,
+        leadTier: 'cold',
+        dataCompleteness: 5, // minimal — just a name + website
+        sources: JSON.stringify([company.sourceUrl || website]),
+        notes: `Discovered via ${company.sourceUrl ? `listicle mining (${company.sourceUrl.slice(0, 80)})` : 'search'}: ${(company.snippet || '').slice(0, 250)}`,
+        discoveredAt: new Date(),
+      },
+      select: { id: true, companyName: true, website: true },
+    });
+
+    return { lead, isNew: true };
+  } catch (err) {
+    console.error('[CampaignStream] Failed to save company as lead:', err);
+    return null;
+  }
+}
+
 async function saveCandidateAsLead(
   campaignId: string,
   result: SearchResult,
@@ -159,34 +243,120 @@ async function saveCandidateAsLead(
     website = result.url;
   }
 
-  try {
-    // Dedupe by website within this campaign
-    const existing = await db.lead.findFirst({
-      where: { campaignId, website },
-      select: { id: true, companyName: true, website: true },
-    });
-    if (existing) return { lead: existing, isNew: false };
+  // Skip directory/listicle pages — they are sources, not companies.
+  // (They are mined for real companies later via mineCompaniesFromListicle.)
+  if (isDirectoryResult(result.title, result.url)) {
+    console.log(`[CampaignStream] Skipped directory/listicle result: ${result.title.slice(0, 60)}`);
+    return null;
+  }
 
-    const lead = await db.lead.create({
+  return upsertCompanyAsLead(campaignId, {
+    companyName,
+    website: website || result.url,
+    snippet: result.snippet,
+    sourceUrl: result.url,
+  });
+}
+
+/**
+ * MINE LISTICLES FOR REAL COMPANIES.
+ * "Top N" articles dominate search results for B2B queries. Instead of saving
+ * the article AS a lead (wrong) or discarding it (wasteful), we read the page
+ * and use the LLM to extract the actual companies being listed — turning the
+ * directory page into a rich source of qualified candidates.
+ */
+interface MinedCompany {
+  companyName: string;
+  website: string;
+  description?: string;
+}
+
+async function mineCompaniesFromListicle(
+  listicleUrl: string,
+  industryHint: string,
+): Promise<MinedCompany[]> {
+  try {
+    const read = await webRead(listicleUrl, 'text');
+    if (!read.success || !read.data?.content) {
+      console.log(`[CampaignStream] Listicle read failed for ${listicleUrl.slice(0, 60)}`);
+      return [];
+    }
+    const content = String(read.data.content).slice(0, 12000);
+    const companies = await callLLMForJSON<MinedCompany[]>(
+      'You extract real B2B company leads from "top N" listicle articles. Return ONLY a valid JSON array — no commentary.',
+      `From the following listicle article, extract up to 10 REAL companies being listed (NOT the publisher, NOT directories, NOT the article's own site). For each company provide its official website domain (e.g. "https://mailchimp.com") and a one-line description of what it does${industryHint ? `. The target industry is: ${industryHint}` : ''}.\n\nArticle content:\n${content}\n\nReturn a JSON array like: [{"companyName": "...", "website": "https://...", "description": "..."}]`,
+      { temperature: 0.2 },
+    );
+    if (!Array.isArray(companies)) return [];
+    return companies
+      .filter((c) => c && typeof c.companyName === 'string' && typeof c.website === 'string' && /^https?:\/\//.test(c.website))
+      .slice(0, 10);
+  } catch (err) {
+    console.warn('[CampaignStream] Listicle mining failed:', err instanceof Error ? err.message.slice(0, 100) : err);
+    return [];
+  }
+}
+
+// ── AgentTask stage tracking ──────────────────────────────────────────────
+// The campaign UI (pipeline-execution-view) polls /api/campaigns/[id]/pipeline-status,
+// which derives per-stage progress from AgentTask rows. The SSE stream below
+// drives the real work, so we mirror each phase into AgentTask rows here.
+async function startStageTask(
+  campaignId: string,
+  agentName: string,
+  taskType: string,
+  input: Record<string, unknown>,
+): Promise<void> {
+  try {
+    await db.agentTask.create({
       data: {
         campaignId,
-        companyName,
-        website,
-        stage: 'new',
-        leadScore: 0,
-        leadTier: 'cold',
-        dataCompleteness: 5, // minimal — just a name + website
-        sources: JSON.stringify([result.url]),
-        notes: `Discovered via search: ${result.snippet.slice(0, 300)}`,
-        discoveredAt: new Date(),
+        agentName,
+        taskType,
+        status: 'running',
+        progress: 5,
+        input: JSON.stringify(input),
+        startedAt: new Date(),
       },
-      select: { id: true, companyName: true, website: true },
     });
-
-    return { lead, isNew: true };
   } catch (err) {
-    console.error('[CampaignStream] Failed to save candidate as lead:', err);
-    return null;
+    console.warn(`[CampaignStream] Failed to create ${agentName} task:`, err);
+  }
+}
+
+async function updateStageProgress(
+  campaignId: string,
+  agentName: string,
+  progress: number,
+): Promise<void> {
+  try {
+    await db.agentTask.updateMany({
+      where: { campaignId, agentName, status: 'running' },
+      data: { progress: Math.max(0, Math.min(100, Math.round(progress))) },
+    });
+  } catch {
+    // non-fatal
+  }
+}
+
+async function completeStageTask(
+  campaignId: string,
+  agentName: string,
+  output: Record<string, unknown>,
+  failed = false,
+): Promise<void> {
+  try {
+    await db.agentTask.updateMany({
+      where: { campaignId, agentName, status: 'running' },
+      data: {
+        status: failed ? 'failed' : 'completed',
+        progress: failed ? undefined : 100,
+        output: JSON.stringify(output),
+        completedAt: new Date(),
+      },
+    });
+  } catch (err) {
+    console.warn(`[CampaignStream] Failed to complete ${agentName} task:`, err);
   }
 }
 
@@ -382,6 +552,19 @@ export async function POST(
         .catch(() => {});
 
       // ── Phase 1: DISCOVERY ──
+      // Cancel stale 'running' tasks from a previous aborted run, then mirror
+      // the discovery stage into AgentTask so pipeline-status / UI shows live progress
+      db.agentTask
+        .updateMany({
+          where: { campaignId, status: 'running' },
+          data: { status: 'cancelled', completedAt: new Date() },
+        })
+        .catch(() => {});
+      startStageTask(campaignId, 'prospect-discovery', 'search', {
+        query: discoveryQuery,
+        startedBy: 'stream',
+      }).catch(() => {});
+
       send('pipeline_progress', {
         phase: 'discovery',
         overallProgress: 5,
@@ -501,13 +684,55 @@ export async function POST(
           // Save each candidate as a basic Lead
           const savedLeads: Array<LeadRow & { snippet: string }> = [];
           let newLeadCount = 0;
+          const rejectedListicles: SearchResult[] = [];
           for (const result of results) {
             if (aborted) return;
+            // Keep the top 2 directory/listicle pages for mining instead of saving
+            if (isDirectoryResult(result.title, result.url)) {
+              if (rejectedListicles.length < 2) rejectedListicles.push(result);
+              continue;
+            }
             const saved = await saveCandidateAsLead(campaignId, result);
             if (saved) {
               savedLeads.push({ ...saved.lead, snippet: result.snippet });
               if (saved.isNew) newLeadCount++;
             }
+          }
+
+          // ── LISTICLE MINING ──
+          // B2B queries surface "Top N" articles that the filter correctly
+          // rejects. When direct results yield too few real companies, mine
+          // those rejected pages for the actual companies they list.
+          if (savedLeads.length < 3 && rejectedListicles.length > 0 && !aborted) {
+            send('step_progress', {
+              stepIndex: 0,
+              message: `Direct results were mostly directories — mining ${rejectedListicles.length} listicle page(s) for real companies…`,
+              partialData: { candidateCount: savedLeads.length },
+            });
+            console.log(`[CampaignStream] Mining ${rejectedListicles.length} listicles for real companies`);
+            for (const listicle of rejectedListicles) {
+              if (aborted) return;
+              const mined = await mineCompaniesFromListicle(listicle.url, campaign.targetIndustry || '');
+              console.log(`[CampaignStream] Mined ${mined.length} companies from ${listicle.url.slice(0, 60)}`);
+              for (const c of mined) {
+                if (aborted) return;
+                const saved = await upsertCompanyAsLead(campaignId, {
+                  companyName: c.companyName,
+                  website: c.website,
+                  snippet: c.description || listicle.snippet,
+                  sourceUrl: listicle.url,
+                });
+                if (saved) {
+                  savedLeads.push({ ...saved.lead, snippet: c.description || listicle.snippet });
+                  if (saved.isNew) newLeadCount++;
+                }
+              }
+            }
+            send('step_progress', {
+              stepIndex: 0,
+              message: `Listicle mining complete — ${savedLeads.length} total candidates`,
+              partialData: { candidateCount: savedLeads.length },
+            });
           }
 
           // Increment campaign.leadsFound only by the number of NEW leads
@@ -518,6 +743,15 @@ export async function POST(
               data: { leadsFound: { increment: newLeadCount } },
             });
           }
+
+          // Complete the discovery AgentTask with its real output
+          completeStageTask(campaignId, 'prospect-discovery', {
+            query: discoveryQuery,
+            candidatesFound: results.length,
+            leadsSaved: savedLeads.length,
+            newLeads: newLeadCount,
+            leads: savedLeads.map(l => ({ id: l.id, companyName: l.companyName, website: l.website })),
+          }).catch(() => {});
 
           // ── Workforce Bridge: notify AI workforce of discovery ──
           onLeadsDiscovered(campaignId, campaign.name, savedLeads.length, newLeadCount).catch(() => {});
@@ -564,6 +798,17 @@ export async function POST(
 
           // ── Phase 2: ENRICHMENT (top N candidates) ──
           const toEnrich = savedLeads.slice(0, enrichCount);
+
+          // Mirror enrichment + qualification stages into AgentTask
+          startStageTask(campaignId, 'data-enrichment', 'enrich', {
+            targets: toEnrich.map(l => ({ id: l.id, companyName: l.companyName, website: l.website })),
+            orchestrator: 'atlas-8-agent',
+          }).catch(() => {});
+          startStageTask(campaignId, 'lead-qualification', 'qualify', {
+            basis: '5-dimension weighted score (firmographic 25% / intent 20% / reachability 20% / strategic 20% / completeness 15%)',
+            leadIds: toEnrich.map(l => l.id),
+          }).catch(() => {});
+
           send('pipeline_progress', {
             phase: 'enrichment',
             overallProgress: 25,
@@ -576,6 +821,9 @@ export async function POST(
           for (let i = 0; i < toEnrich.length; i++) {
             if (aborted) return;
             const lead = toEnrich[i];
+
+            // Live per-lead progress for the pipeline-status UI
+            updateStageProgress(campaignId, 'data-enrichment', (i / toEnrich.length) * 100).catch(() => {});
 
             send('enrichment_start', {
               leadId: lead.id,
@@ -684,6 +932,9 @@ export async function POST(
                 where: { id: campaignId },
                 data: { leadsQualified: { increment: 1 } },
               });
+
+              // Qualification completes alongside enrichment (score + tier assigned above)
+              updateStageProgress(campaignId, 'lead-qualification', ((i + 1) / toEnrich.length) * 100).catch(() => {});
             } catch (err) {
               console.error(`[CampaignStream] Enrichment failed for lead ${lead.id}:`, err);
               failedCount++;
@@ -717,6 +968,19 @@ export async function POST(
           } catch (dbErr) {
             console.error('[CampaignStream] Failed to update campaign status on completion:', dbErr);
           }
+
+          // Close the enrichment / qualification AgentTasks with their real outputs
+          completeStageTask(campaignId, 'data-enrichment', {
+            enriched: enrichedCount,
+            failed: failedCount,
+            skipped: Math.max(0, savedLeads.length - toEnrich.length),
+            orchestratorEvents: 'atlas → scout → forge → sage → judge → bard → flow → echo',
+          }, enrichedCount === 0 && failedCount > 0).catch(() => {});
+          completeStageTask(campaignId, 'lead-qualification', {
+            qualified: enrichedCount,
+            rejected: 0,
+            note: 'Scores assigned via 5-dimension weighted model during enrichment',
+          }).catch(() => {});
 
           send('pipeline_progress', {
             phase: 'complete',

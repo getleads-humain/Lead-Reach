@@ -194,23 +194,34 @@ async function handleProspectToICP(body: {
     }
   }
 
-  const icp = await db.iCP.create({
+  // Persist as ICPProfile: structured fields map to real columns, the full
+  // legacy payload is preserved in the flexible `criteria` JSON column.
+  const icp = await db.iCPProfile.create({
     data: {
-      prospectName,
-      prospectUrl: prospectUrl || null,
-      title: icpTitle,
-      segment: icpSegment,
-      ticketSize: icpTicketSize,
-      avendusProduct: icpAvendusProduct,
-      kpiDashboard,
-      decisionTriggers,
-      buyingJourney,
-      preferredChannels,
-      keyCompetitors,
-      targetIndustry: targetIndustry || null,
-      targetLocation: targetLocation || null,
-      targetCompanySize: targetCompanySize || null,
-      source: 'ai-generated',
+      name: icpTitle,
+      description: icpSegment || buyingJourney || null,
+      industries: targetIndustry ? JSON.stringify([targetIndustry]) : null,
+      locations: targetLocation ? JSON.stringify([targetLocation]) : null,
+      companySizes: targetCompanySize ? JSON.stringify([targetCompanySize]) : null,
+      challenges: decisionTriggers,
+      engagementPatterns: preferredChannels,
+      criteria: JSON.stringify({
+        prospectName,
+        prospectUrl: prospectUrl || null,
+        title: icpTitle,
+        segment: icpSegment,
+        ticketSize: icpTicketSize,
+        avendusProduct: icpAvendusProduct,
+        kpiDashboard,
+        decisionTriggers,
+        buyingJourney,
+        preferredChannels,
+        keyCompetitors,
+        targetIndustry: targetIndustry || null,
+        targetLocation: targetLocation || null,
+        targetCompanySize: targetCompanySize || null,
+        source: 'ai-generated',
+      }),
     },
   });
 
@@ -271,35 +282,54 @@ async function handleICPToCampaign(body: {
     return NextResponse.json({ error: 'icpId is required' }, { status: 400 });
   }
 
-  const icp = await db.iCP.findUnique({ where: { id: icpId } });
+  const icp = await db.iCPProfile.findUnique({ where: { id: icpId } });
   if (!icp) {
     return NextResponse.json({ error: 'ICP not found' }, { status: 404 });
   }
 
+  // The legacy flat fields live inside the `criteria` JSON column
+  type IcpCriteria = {
+    prospectName?: string;
+    segment?: string;
+    ticketSize?: string;
+    targetIndustry?: string | null;
+    targetLocation?: string | null;
+    targetCompanySize?: string | null;
+    [key: string]: unknown;
+  };
+  let legacy: IcpCriteria = {};
+  try {
+    legacy = icp.criteria ? (JSON.parse(icp.criteria) as IcpCriteria) : {};
+  } catch {
+    legacy = {};
+  }
+
   // Build targeting criteria from ICP
   const targetingCriteria: Record<string, string> = {};
-  if (icp.targetIndustry) targetingCriteria.industry = icp.targetIndustry;
-  if (icp.targetLocation) targetingCriteria.location = icp.targetLocation;
-  if (icp.targetCompanySize) targetingCriteria.companySize = icp.targetCompanySize;
-  if (icp.segment) targetingCriteria.segment = icp.segment;
-  if (icp.ticketSize) targetingCriteria.ticketSize = icp.ticketSize;
+  if (legacy.targetIndustry) targetingCriteria.industry = String(legacy.targetIndustry);
+  if (legacy.targetLocation) targetingCriteria.location = String(legacy.targetLocation);
+  if (legacy.targetCompanySize) targetingCriteria.companySize = String(legacy.targetCompanySize);
+  if (legacy.segment) targetingCriteria.segment = String(legacy.segment);
+  if (legacy.ticketSize) targetingCriteria.ticketSize = String(legacy.ticketSize);
 
   const campaign = await db.campaign.create({
     data: {
-      name: campaignName || `${icp.prospectName} — ${icp.title}`,
-      description: `Campaign generated from ICP: ${icp.title} (${icp.prospectName})`,
-      targetIndustry: icp.targetIndustry,
-      targetLocation: icp.targetLocation,
-      targetCompanySize: icp.targetCompanySize,
+      name: campaignName || `${legacy.prospectName ?? 'ICP'} — ${icp.name}`,
+      description: `Campaign generated from ICP: ${icp.name} (${legacy.prospectName ?? 'unknown prospect'})`,
+      targetIndustry: legacy.targetIndustry ? String(legacy.targetIndustry) : null,
+      targetLocation: legacy.targetLocation ? String(legacy.targetLocation) : null,
+      targetCompanySize: legacy.targetCompanySize ? String(legacy.targetCompanySize) : null,
       targetCriteria: Object.keys(targetingCriteria).length > 0 ? JSON.stringify(targetingCriteria) : null,
       status: 'active',
     },
   });
 
-  // Link the ICP to the campaign
-  await db.iCP.update({
+  // Link the ICP to the campaign (persisted back into criteria JSON)
+  await db.iCPProfile.update({
     where: { id: icpId },
-    data: { campaignId: campaign.id },
+    data: {
+      criteria: JSON.stringify({ ...legacy, campaignId: campaign.id }),
+    },
   });
 
   return NextResponse.json({

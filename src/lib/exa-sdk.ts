@@ -907,8 +907,12 @@ export const INTENT_SIGNALS_SCHEMA: ExaOutputSchema = {
  */
 export function createExaWebSearchTool(config?: Omit<ExaSearchConfig, 'query'>) {
   try {
-    // Try to use the @exalabs/ai-sdk package directly
-    const { webSearch } = require('@exalabs/ai-sdk');
+    // Try to use the @exalabs/ai-sdk package directly.
+    // NOTE: eval('require') defers resolution to runtime so webpack's static
+    // analysis doesn't emit "Module not found" warnings for this optional
+    // dependency (the fallback below is fully functional without it).
+    const nodeRequire = eval('require') as NodeRequire;
+    const { webSearch } = nodeRequire('@exalabs/ai-sdk');
     return webSearch(config);
   } catch {
     // Fallback: Create a manual tool definition if the package isn't available

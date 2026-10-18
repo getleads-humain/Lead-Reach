@@ -1088,3 +1088,30 @@ Stage Summary:
 - Workspace codebase visibility restored: project root permissions corrected 700 → 755
 - Root causes: (1) ephemeral-shell server starts dying silently, (2) missing Workforce DB tables error-spamming, (3) project root chmod 700 blocking file-tree services, (4) instrumentation Edge-bundle noise
 - DB backup saved at db/custom.db.backup-20261016-235055 before schema repair
+
+---
+Task ID: 5
+Agent: main (Z.ai)
+Task: Make sure all features on the platform/app function perfectly and each stage runs and actually solves the problem and shows the output (incl. leftover task 4: fix preview & codebase visibility)
+
+Work Log:
+- Diagnosed preview outage root cause: the sandbox platform runs .zscripts/dev.sh, which does a PRODUCTION build (next build + next start, detached spawn that survives the tini process reaper). An earlier interrupted build had left .next with artifacts compiled from EMPTY route files; the platform monitor kept crash-looping `next start` on the corrupted build. Direct `next dev` runs kept being killed by the sandbox process reaper (not OOM — cgroup oom_kill=0).
+- Restored two EMPTY route files from git history: src/app/api/campaigns/route.ts (from commit 1ee7d98, 244 lines) and src/app/api/leads/batch-smart-autofill/route.ts (from 7a4138f, 169 lines).
+- Added missing Prisma models to schema.prisma (code referenced them but they never existed): AutoresearchJob/AutoresearchExperiment/AutoresearchFragment, ProspectReport, Dataset/DatasetColumn/DatasetEmbedding, BillingPlan/Subscription/BillingEvent/ConsumptionRecord (+ fields embeddingStatus/embeddingCount/aiSummary, isActive, totalBilled). Pushed to SQLite, generated client.
+- Fixed db.iCP (nonexistent model) → db.iCPProfile in workflow/bridge/route.ts with legacy fields preserved in the criteria JSON column (both prospect-to-icp and icp-to-campaign handlers).
+- Fixed @exalabs/ai-sdk webpack warning via runtime-only require (eval('require')) — optional dep with functional fallback.
+- Created scripts/spawn-build.js + spawn-server.js replicating the platform's reaper-safe detached spawn; full production build now succeeds (166 static pages) and /tmp/next-server.pid keeps the platform monitor loop attached to the healthy server.
+- Full route verification: all 46 pages return 200 (9 auth pages correctly 307→login, followed →200); ~190 API routes swept with an authenticated session (Supabase test user via service-role admin API + password grant, scripts/make-test-session.js) — only correct 400s (param required), 405s (method), 503 (optional external scrapegraph service), 401 remain.
+- END-TO-END PIPELINE RUNS (campaign stream /api/campaigns/[id]/stream):
+  * Run 1: discovery via DuckDuckGo(0)→fallback discoverBusinesses (z-ai web_search works, 10 queries) → 17 lead_created → 2 leads enriched through the 8-agent orchestrator (Atlas→Scout→Forge→Sage→Judge→Bard→Flow→Echo; 36 agent_status + 40 agent_comm events) → done.
+  * QUALITY FIX: discovery was saving listicle/directory pages (f6s, fintechnews, blog.*) as leads. Added isDirectoryResult filter (directory domains + listicle title patterns, unit-tested 12/12) AND a LLM listicle-mining stage: rejected "Top N" pages are read (webRead/jina) and mined for the real companies they list → Run 3 produced 10 REAL companies (Intuit Mailchimp, ActiveCampaign, Marigold, Adobe Marketo, Acoustic, Dotdigital, customer.io, Hightouch, Listrak, LOB).
+  * UI-OUTPUT FIX: pipeline-status derives stage progress from AgentTask rows that the stream never wrote (UI showed "idle" while running). Added startStageTask/updateStageProgress/completeStageTask mirroring discovery/enrichment/qualification into AgentTask (progress %, output JSON), stale-running-task cleanup at stream start, and overall=completed derivation fix. pipeline-status now shows prospect-discovery/data-enrichment/lead-qualification completed 100%, overall "completed".
+- Verified per-stage AI features with real output: /api/leads/[id]/auto-enrich (real industry extraction), /api/leads/[id]/ai-score (5-dimension weighted score, tier=hot, 68/100 with rationales), /api/outreach/ai-compose (personalized email w/ subject+CTA), /api/reports/ai-generate (pipeline snapshot report with sections), /api/workforce seed (14 agents active), /api/knowledge/search (results), /api/prospect-discovery/stream (full agent flow, done event).
+- Browser-verified via agent-browser: /agent/orchestrator 10 tabs (Prompts shows full system prompt; Pipeline/Knowledge/Tools render), /docs 4 tabs + slide-over opens full-length article on entity click, /app login→onboarding→portal, dashboard stats (4 campaigns/32 leads), campaign detail (status completed, Discovered 10/Enriched 3/Avg Score 11, real leads with tiers), AI Workforce Command Center with seeded agents. Zero console page errors.
+
+Stage Summary:
+- Preview FIXED (production build + platform-managed server, healthy on :3000), codebase visible at /home/z/my-project.
+- All pipeline stages run end-to-end and produce real, visible output (DB rows, SSE events, pipeline-status UI, campaign cards).
+- Fixed: 2 empty route files restored, 10+ missing Prisma models/fields added, iCP model bug, listicle-as-lead quality bug (filter + mining), AgentTask stage tracking, pipeline-status derivation, stale task cleanup.
+- Scripts persisted: scripts/{make-test-session.js, spawn-build.js, spawn-server.js, route-sweep.sh, api-sweep.sh, check-prisma-models.py, dev-supervisor.sh, test-search.js}.
+- Test account: demo@leadreach.test / Demo1234!Pass (Supabase, onboarded, Scout plan).

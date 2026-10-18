@@ -1391,3 +1391,281 @@ model PlatformTokenAudit {
   @@index([action])
   @@index([changedBy])
 }
+
+// ═══════════════════════════════════════════════════════════════════
+// Autoresearch — iterative prompt/data research engine
+// ═══════════════════════════════════════════════════════════════════
+
+model AutoresearchJob {
+  id                String   @id @default(cuid())
+  name              String
+  bodyName          String   @default("custom")
+  bodyText          String
+  verifierText      String   @default("")
+  strategies        String   @default("[]")
+  status            String   @default("draft")
+  currentStrategy   String?
+  currentIteration  Int      @default(0)
+  totalExperiments  Int      @default(0)
+  bestScore         Float    @default(0)
+  baselineScore     Float    @default(0)
+  maxIterations     Int      @default(3)
+  chatHistory       String   @default("[]")
+  errorMessage      String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  experiments       AutoresearchExperiment[]
+  fragments         AutoresearchFragment[]
+
+  @@index([status, createdAt])
+}
+
+model AutoresearchExperiment {
+  id                 String   @id @default(cuid())
+  jobId              String
+  runId              String   @default("")
+  strategy           String
+  iteration          Int      @default(0)
+  candidateName      String   @default("")
+  header             String   @default("")
+  footer             String   @default("")
+  messagesJson       String   @default("[]")
+  turnCount          Int      @default(0)
+  assistantTurnCount Int      @default(0)
+  targetModel        String   @default("")
+  researcherModel    String   @default("")
+  scorerModel        String   @default("")
+  response           String   @default("")
+  score              Float    @default(0)
+  scorerRaw          String   @default("")
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  job                AutoresearchJob  @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fragments          AutoresearchFragment[]
+
+  @@index([jobId, score])
+  @@index([jobId, strategy])
+}
+
+model AutoresearchFragment {
+  id                 String   @id @default(cuid())
+  jobId              String
+  sourceExperimentId String   @default("")
+  bodyName           String   @default("custom")
+  kind               String
+  text               String
+  score              Float    @default(0)
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  job                AutoresearchJob     @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  sourceExperiment   AutoresearchExperiment? @relation(fields: [sourceExperimentId], references: [id], onDelete: Cascade)
+
+  @@index([jobId, kind, score])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Prospect Reports — AI-generated research & sales enablement docs
+// ═══════════════════════════════════════════════════════════════════
+
+model ProspectReport {
+  id              String   @id @default(cuid())
+  prospectName    String
+  prospectUrl     String?
+  title           String
+  type            String   @default("prospect-profile")
+  content         String   @default("")
+  sections        String?
+  data            String?
+  summary         String?
+  keyFindings     String?
+  recommendations String?
+  campaignId      String?
+  leadId          String?
+  icpId           String?
+  status          String   @default("active")
+  source          String   @default("prospect-discovery")
+  usageCount      Int      @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([prospectName])
+  @@index([type, createdAt])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Datasets — uploaded CSV/Excel data with profiling & embeddings
+// ═══════════════════════════════════════════════════════════════════
+
+model Dataset {
+  id                String   @id @default(cuid())
+  userId            String?
+  fileName          String
+  fileType          String
+  fileSize          Int      @default(0)
+  fileHash          String?
+  rowCount          Int      @default(0)
+  columnCount       Int      @default(0)
+  headers           String   @default("[]")
+  sampleData        String   @default("[]")
+  status            String   @default("uploading")
+  dataProfile       String?
+  qualityScore      Float    @default(0)
+  valueScore        Float    @default(0)
+  validationResults String?
+  chartConfigs      String?
+  platformFit       String?
+  embeddingStatus   String   @default("pending")
+  embeddingCount    Int      @default(0)
+  aiSummary         String?
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  columns           DatasetColumn[]
+  embeddings        DatasetEmbedding[]
+
+  @@index([userId, createdAt])
+  @@index([fileHash])
+}
+
+model DatasetColumn {
+  id           String   @id @default(cuid())
+  datasetId    String
+  name         String
+  index        Int      @default(0)
+  dataType     String   @default("string")
+  nullable     Boolean  @default(false)
+  nullCount    Int      @default(0)
+  uniqueCount  Int      @default(0)
+  sampleValues String   @default("[]")
+  statistics   String?
+  semanticType String?
+  createdAt    DateTime @default(now())
+
+  dataset      Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId, index])
+}
+
+model DatasetEmbedding {
+  id          String   @id @default(cuid())
+  datasetId   String
+  chunkIndex  Int      @default(0)
+  content     String   @default("")
+  rowRange    String?
+  embedding   String   @default("[]")
+  tokenCount  Int      @default(0)
+  createdAt   DateTime @default(now())
+
+  dataset     Dataset  @relation(fields: [datasetId], references: [id], onDelete: Cascade)
+
+  @@index([datasetId, chunkIndex])
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Billing — plans, subscriptions, events, consumption metering
+// ═══════════════════════════════════════════════════════════════════
+
+model BillingPlan {
+  id                  String   @id @default(cuid())
+  name                String   @unique
+  displayName         String
+  clientType          String   @default("b2b")
+  billingCycle        String   @default("monthly")
+  basePrice           Float    @default(0)
+  annualPrice         Float    @default(0)
+  setupFee            Float    @default(0)
+  pricePerApiCall     Float    @default(0)
+  pricePerToken       Float    @default(0)
+  pricePerLead        Float    @default(0)
+  pricePerEnrichment  Float    @default(0)
+  billingThreshold    Float    @default(0)
+  includedApiCalls    Int      @default(0)
+  includedLeads       Int      @default(0)
+  includedEnrichments Int      @default(0)
+  includedTokens      Int      @default(0)
+  maxCampaigns        Int      @default(0)
+  maxSetters          Int      @default(0)
+  maxTeamMembers      Int      @default(1)
+  features            String   @default("[]")
+  grade               String   @default("standard")
+  description         String   @default("")
+  highlight           Boolean  @default(false)
+  badge               String?
+  isActive            Boolean  @default(true)
+  sortOrder           Int      @default(0)
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  subscriptions       Subscription[]
+
+  @@index([clientType, sortOrder])
+}
+
+model Subscription {
+  id                     String    @id @default(cuid())
+  planId                 String
+  clientType             String    @default("b2b")
+  clientName             String?
+  clientEmail            String?
+  billingCycle           String    @default("monthly")
+  status                 String    @default("active")
+  currentPeriodStart     DateTime?
+  currentPeriodEnd       DateTime?
+  nextBillingDate        DateTime?
+  apiKey                 String?
+  apiEnabled             Boolean   @default(true)
+  cancelAtPeriodEnd      Boolean   @default(false)
+  currentSpend           Float     @default(0)
+  totalBilled            Float     @default(0)
+  apiCallsUsed           Int       @default(0)
+  tokensUsed             Int       @default(0)
+  leadsProcessed         Int       @default(0)
+  enrichmentsProcessed   Int       @default(0)
+  setterConversationsUsed Int      @default(0)
+  createdAt              DateTime  @default(now())
+  updatedAt              DateTime  @updatedAt
+
+  plan                   BillingPlan        @relation(fields: [planId], references: [id], onDelete: Restrict)
+  billingEvents          BillingEvent[]
+  consumptionRecords     ConsumptionRecord[]
+
+  @@index([clientType, status])
+  @@index([apiKey])
+}
+
+model BillingEvent {
+  id             String   @id @default(cuid())
+  subscriptionId String?
+  eventType      String
+  amount         Float    @default(0)
+  description    String   @default("")
+  metadata       String?
+  createdAt      DateTime @default(now())
+
+  subscription   Subscription? @relation(fields: [subscriptionId], references: [id], onDelete: SetNull)
+
+  @@index([subscriptionId, createdAt])
+  @@index([eventType, createdAt])
+}
+
+model ConsumptionRecord {
+  id                 String    @id @default(cuid())
+  subscriptionId     String
+  resourceType       String
+  quantity           Int       @default(1)
+  unitPrice          Float     @default(0)
+  totalCost          Float     @default(0)
+  description        String    @default("")
+  metadata           String?
+  billingPeriodStart DateTime?
+  billingPeriodEnd   DateTime?
+  billed             Boolean   @default(false)
+  createdAt          DateTime  @default(now())
+
+  subscription       Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@index([subscriptionId, billed, createdAt])
+}

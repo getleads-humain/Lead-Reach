@@ -111,8 +111,11 @@ export async function GET(
     } else if (hasRunning) {
       pipelineStatus = 'running';
     } else {
-      // Some completed, some pending (between stages)
-      pipelineStatus = 'running';
+      // No task is actively running. If at least one stage completed and none
+      // failed, the pipeline run has finished — remaining pending stages were
+      // simply not part of this run (e.g. outreach-composer).
+      const completedCount = stageStatuses.filter(s => s === 'completed').length;
+      pipelineStatus = completedCount > 0 ? 'completed' : 'running';
     }
 
     // Calculate overall progress (average of all stages)
