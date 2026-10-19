@@ -370,3 +370,37 @@ export async function seedWorkforceAgents() {
 
   return results;
 }
+
+// ── Boot-Time Self-Healing Bootstrap ───────────────────────────────────
+// Guarantees the AI Workforce exists and is operational on every server
+// start. If the WorkforceAgent table is empty (e.g. the sandbox container
+// was restored from a filesystem snapshot that predated the seed, or a
+// destructive DB operation wiped the tables), the full 14-agent roster is
+// re-seeded and deployed — so the portal always renders a live team and
+// the 24/7 ops engine always has employees to route work to.
+
+export async function ensureWorkforceBootstrapped(): Promise<{
+  seeded: boolean;
+  agents: number;
+}> {
+  const existing = await db.workforceAgent.count();
+
+  if (existing > 0) {
+    // Fleet present — heartbeat the active employees only. Deliberately
+    // user-paused agents are left untouched (their choice is respected).
+    await db.workforceAgent.updateMany({
+      where: { isManaged: true, status: 'active' },
+      data: { lastActiveAt: new Date() },
+    });
+    return { seeded: false, agents: existing };
+  }
+
+  await seedWorkforceAgents();
+  await db.workforceAgent.updateMany({
+    where: { isManaged: true },
+    data: { status: 'active', lastActiveAt: new Date() },
+  });
+
+  const total = await db.workforceAgent.count();
+  return { seeded: true, agents: total };
+}

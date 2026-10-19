@@ -23,6 +23,24 @@ export async function registerNode(): Promise<void> {
 
   console.log('[Instrumentation] Server-side instrumentation active — long-running API routes supported');
 
+  // ── Boot-Time Workforce Self-Healing ────────────────────────────
+  // If the WorkforceAgent table is empty (e.g. container restored from a
+  // snapshot that predated seeding), re-seed + deploy the full AI team so
+  // the portal and the 24/7 ops engine always have a live workforce.
+  setTimeout(async () => {
+    try {
+      const { ensureWorkforceBootstrapped } = await import('@/lib/workforce/engine');
+      const boot = await ensureWorkforceBootstrapped();
+      if (boot.seeded) {
+        console.log(`[Instrumentation] Workforce table was empty — auto-seeded and deployed ${boot.agents} AI employees`);
+      } else {
+        console.log(`[Instrumentation] Workforce verified: ${boot.agents} AI employees present`);
+      }
+    } catch (error) {
+      console.warn('[Instrumentation] Workforce bootstrap failed (non-fatal):', error);
+    }
+  }, 8000); // before the ops loop (12s) so employees exist when work starts
+
   // ── Start the 24/7 REAL Operations Engine ─────────────────────
   // The AI workforce does actual work around the clock: route sweeps,
   // repair verification, DB audits, LLM probes, live-web research,

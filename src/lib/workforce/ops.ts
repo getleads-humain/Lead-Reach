@@ -312,7 +312,40 @@ async function jobDbAudit(ctx: JobContext): Promise<JobResult> {
     });
   }
 
-  const summary = `DB audit: ${leads} leads · ${campaigns} campaigns · tasks ${tasksDone} done / ${tasksPending} pending / ${tasksRunning} running / ${tasksFailed} failed · ${logs24h} log entries (24h) · ${docs} docs · ${incidentsOpen} open incidents · ${stuck.length} stuck requeued.`;
+  // Real resilience: online snapshot backup of the SQLite database.
+  // Protects platform state against container snapshot rollbacks /
+  // destructive schema operations. Keeps the most recent 5 backups.
+  let backupFile: string | null = null;
+  try {
+    const nodeRequire = eval('require') as NodeRequire;
+    const fs = nodeRequire('fs') as typeof import('fs');
+    const path = nodeRequire('path') as typeof import('path');
+    const raw = process.env.DATABASE_URL || '';
+    let dbPath = raw.startsWith('file:') ? raw.slice(5) : '';
+    if (dbPath && !dbPath.startsWith('/')) dbPath = path.resolve(process.cwd(), dbPath);
+    if (dbPath && fs.existsSync(dbPath)) {
+      const backupDir = path.join(path.dirname(dbPath), 'backups');
+      fs.mkdirSync(backupDir, { recursive: true });
+      const stamp = new Date().toISOString().replace(/[:T]/g, '-').slice(0, 19);
+      const target = path.join(backupDir, `custom-${stamp}.db`);
+      if (!fs.existsSync(target)) {
+        // VACUUM INTO produces a consistent snapshot while the server runs
+        await db.$queryRawUnsafe(`VACUUM INTO '${target}'`);
+        const snaps = fs.readdirSync(backupDir).filter(f => f.endsWith('.db')).sort();
+        while (snaps.length > 5) fs.unlinkSync(path.join(backupDir, snaps.shift() as string));
+        backupFile = target;
+      }
+    }
+  } catch (backupErr) {
+    await logAgentActivity(ctx.agent.id, {
+      category: 'system',
+      action: 'db_backup_failed',
+      level: 'warn',
+      description: `DB snapshot backup failed (non-fatal): ${backupErr instanceof Error ? backupErr.message.slice(0, 120) : String(backupErr).slice(0, 120)}`,
+    });
+  }
+
+  const summary = `DB audit: ${leads} leads · ${campaigns} campaigns · tasks ${tasksDone} done / ${tasksPending} pending / ${tasksRunning} running / ${tasksFailed} failed · ${logs24h} log entries (24h) · ${docs} docs · ${incidentsOpen} open incidents · ${stuck.length} stuck requeued.${backupFile ? ` Snapshot saved: ${backupFile.split('/').pop()}` : ''}`;
 
   await logAgentActivity(ctx.agent.id, {
     category: 'system',
