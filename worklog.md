@@ -1115,3 +1115,25 @@ Stage Summary:
 - Fixed: 2 empty route files restored, 10+ missing Prisma models/fields added, iCP model bug, listicle-as-lead quality bug (filter + mining), AgentTask stage tracking, pipeline-status derivation, stale task cleanup.
 - Scripts persisted: scripts/{make-test-session.js, spawn-build.js, spawn-server.js, route-sweep.sh, api-sweep.sh, check-prisma-models.py, dev-supervisor.sh, test-search.js}.
 - Test account: demo@leadreach.test / Demo1234!Pass (Supabase, onboarded, Scout plan).
+
+---
+Task ID: 14
+Agent: Main Agent
+Task: Train the actual AI Workforce with real internet knowledge + make AI employees actually work 24/7 (run/build/maintain/repair/reship/reassure) with per-employee training-record worklogs and a collaborative UI
+
+Work Log:
+- Audited existing workforce system: found 14-agent Autonomous Enterprise (Prometheus/KRONOS + Growth/Tech/Ops), engine.ts task/RAG/health layer, WorkforceLog/Task/Document/ChatMessage Prisma models — but the "24/7 activity" was SYNTHETIC (hardcoded fake conversations in activity-247.ts) with 0 real tasks/docs/logs in DB
+- Fixed the root preview/codebase instability: dev server had stale .next route manifest (new /api routes shadowed by [id]), dead hot-reload, and the platform recovery loop demanding a production build. Cleaned .next, ran production build successfully (next.config has ignoreBuildErrors), platform self-heals via next start — stable ever since
+- Built REAL training pipeline (src/lib/workforce/training.ts): 84-unit curriculum across 14 agents (6 units each), trainAgentOnce() does live exaSearch → reads real pages via webRead → extractive distillation into cited knowledge docs (WorkforceDocument sourceType=web_trained) → WorkforceLog training records + real chat report to KRONOS; 3-round backoff against DuckDuckGo throttling
+- Built REAL 24/7 ops engine (src/lib/workforce/ops.ts): 8-job round-robin registry — platform.route_sweep (real HTTP probes of 10 routes, auto-opens incident tasks), platform.repair_verify (QA re-checks → resolve/escalate: repair→reship→reassure), platform.db_audit (real counts + auto-requeue of tasks stuck >30min), llm.health_probe, growth.web_research (6-topic agenda), sales.pulse (live buying signals), ops.training_session (trains least-trained agent), report.daily_brief (real telemetry); every job = full task lifecycle + worklog + chat report; started via instrumentation every 4 min, concurrency-guarded, also triggerable via API
+- Built user⇄team goal system (src/lib/workforce/goals.ts): assignGoal() decomposes plain-language goals into research/content/sales_angle/platform_check/decision_memo tasks (keyword routing); goals ALWAYS run first in ops cycles; failed tasks auto-retry up to 2x; executeNextGoalTask() performs real web research/platform checks and saves cited briefs; listGoals() gives live per-task progress
+- Retired synthetic generator: instrumentation-node.ts now starts the real ops loop instead of activity-247
+- Extended /api/workforce with view=ops|training|goals (GET) and ops_tick/ops_ensure_loop/train/assign_goal (POST); also added standalone /api/workforce/{train,ops,goals} routes for post-restart use
+- UI/UX (src/components/workforce/mission-control.tsx + dashboard/workspace integration): Mission Control with 3 panels — Live Ops (health chips, incidents, real work-log feed, Run-a-real-cycle button), Training Academy (fleet progress bar, per-agent curriculum + Train now buttons + expandable learned units), Goals & Collaboration (assign goal input, goal cards with per-task live progress and output summaries); per-agent workspace gained a dedicated Training tab (curriculum progress, Train now, web-learned docs with source domains)
+- End-to-end verified: route sweep 10/10 healthy (real 7-30ms probes); training learned real units from landbase.com/genflows.com/floworks.ai/hubspot.com etc; goal "Launch outreach campaign to HR tech companies" → 4 tasks → 100% completed with cited briefs (incl. one auto-retry recovery); goal assigned via UI executed live; repaired incident resolved by verify pass; DB totals grew to 39 real logs / 19 tasks / 8 docs (5 web_trained) / 40 chat messages; lint clean on all new files; agent-browser verified login → /app → Mission Control renders live real data
+
+Stage Summary:
+- The AI Workforce now does REAL work 24/7: internet-backed training with cited knowledge docs, route sweeps with incident→repair→verify loop, DB maintenance, market/sales research, and daily briefs — all logged per employee as training records
+- Users collaborate with the team by assigning goals in plain language; the team decomposes, executes (goals first), auto-retries failures, and shows live progress + real outputs
+- Preview stabilized on a production build with platform self-healing; synthetic activity removed in favor of verifiable real actions
+- Key files: src/lib/workforce/{training,ops,goals}.ts, src/app/api/workforce/route.ts (+train/ops/goals), src/components/workforce/mission-control.tsx, src/instrumentation-node.ts

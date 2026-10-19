@@ -23,17 +23,19 @@ export async function registerNode(): Promise<void> {
 
   console.log('[Instrumentation] Server-side instrumentation active — long-running API routes supported');
 
-  // ── Start 24/7 Workforce Activity Generator ──────────────────
-  // Generates real inter-agent chat messages and work log entries
-  // every 2-5 minutes, 24/7/365, so the AI Workforce is always alive.
+  // ── Start the 24/7 REAL Operations Engine ─────────────────────
+  // The AI workforce does actual work around the clock: route sweeps,
+  // repair verification, DB audits, LLM probes, live-web research,
+  // prospecting pulses, training sessions and daily briefs — each job
+  // creates a real task, writes real work logs and reports to KRONOS.
   setTimeout(async () => {
     try {
-      const { startWorkforceActivity247 } = await import('@/lib/workforce/activity-247');
-      startWorkforceActivity247();
+      const { startOpsLoop } = await import('@/lib/workforce/ops');
+      startOpsLoop(4 * 60 * 1000); // one real job every 4 minutes
     } catch (error) {
-      console.warn('[Instrumentation] Failed to start 24/7 workforce activity generator (non-fatal):', error);
+      console.warn('[Instrumentation] Failed to start 24/7 real-ops engine (non-fatal):', error);
     }
-  }, 10000); // Wait 10s for DB to be ready
+  }, 12000); // Wait 12s for DB to be ready
 
   // ── Auto-start crawl4ai ────────────────────────────────────
   setTimeout(async () => {

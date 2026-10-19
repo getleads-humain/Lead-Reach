@@ -90,6 +90,8 @@ import {
   Rocket,
   ArrowRight,
   Power,
+  GraduationCap,
+  BadgeCheck,
 } from 'lucide-react';
 
 // ─── Data Types ────────────────────────────────────────────────────────────────
@@ -637,7 +639,8 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
     { value: 'office-chat', label: 'Office Chat', icon: Building2 },
     { value: 'chat', label: 'Direct Chat', icon: MessageSquare },
     { value: 'work-log', label: 'Work Log', icon: CalendarClock },
-    { value: 'config', label: 'Training & Config', icon: Settings },
+    { value: 'training', label: 'Training', icon: GraduationCap },
+    { value: 'config', label: 'Config', icon: Settings },
     { value: 'activity', label: 'Activity', icon: BarChart3 },
     { value: 'knowledge', label: 'Knowledge Base', icon: BookOpen },
   ];
@@ -1482,6 +1485,10 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         )}
 
         {/* ── Tab 5: Training & Config ─────────────────────────────────── */}
+        {activeTab === 'training' && (
+          <TrainingPanel agentId={agent.id} agentSlug={agent.slug} agentName={agent.name} agentColor={agent.color} />
+        )}
+
         {activeTab === 'config' && (
           <div className="space-y-6 animate-in fade-in duration-300">
             {/* Model Configuration */}
@@ -1885,6 +1892,219 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
           </div>
         )}
       </main>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Training Panel — real curriculum progress + live-web learning for one agent
+// ══════════════════════════════════════════════════════════════════════════════
+
+interface TrainingStatusEntry {
+  slug: string;
+  name: string;
+  curriculumTotal: number;
+  learned: number;
+  lastTrainedAt: string | null;
+  learnedTopics: string[];
+}
+
+interface TrainingApiResponse {
+  status: TrainingStatusEntry[];
+  totals: { curriculum: number; learned: number; percent: number };
+}
+
+interface AgentDocMeta {
+  id: string;
+  title: string;
+  category: string;
+  sourceType: string;
+  tags: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+function TrainingPanel({
+  agentId,
+  agentSlug,
+  agentName,
+  agentColor,
+}: {
+  agentId: string;
+  agentSlug: string;
+  agentName: string;
+  agentColor: string;
+}) {
+  const [training, setTraining] = React.useState<TrainingStatusEntry | null>(null);
+  const [docs, setDocs] = React.useState<AgentDocMeta[]>([]);
+  const [loading, setLoading] = React.useState(true);
+  const [busy, setBusy] = React.useState(false);
+  const [lastResult, setLastResult] = React.useState<string | null>(null);
+
+  const load = React.useCallback(async () => {
+    try {
+      const [tRes, dRes] = await Promise.all([
+        fetch('/api/workforce?view=training', { cache: 'no-store' }),
+        fetch(`/api/workforce/${agentId}/documents?limit=50`, { cache: 'no-store' }),
+      ]);
+      if (tRes.ok) {
+        const data: TrainingApiResponse = await tRes.json();
+        setTraining(data.status.find((s) => s.slug === agentSlug) ?? null);
+      }
+      if (dRes.ok) {
+        const data = await dRes.json();
+        setDocs((data.documents ?? []) as AgentDocMeta[]);
+      }
+    } catch {
+      // best-effort
+    } finally {
+      setLoading(false);
+    }
+  }, [agentId, agentSlug]);
+
+  React.useEffect(() => {
+    load();
+  }, [load]);
+
+  const trainNow = async () => {
+    setBusy(true);
+    setLastResult(null);
+    try {
+      const res = await fetch('/api/workforce', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'train', slug: agentSlug }),
+      });
+      const data = await res.json();
+      setLastResult(
+        data.ok
+          ? `Learned "${data.topic}" from ${data.sources?.length ?? 0} live sources — knowledge doc saved.`
+          : data.error ?? 'Training could not run right now.'
+      );
+      await load();
+    } catch {
+      setLastResult('Training request failed.');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const webDocs = docs.filter((d) => d.sourceType === 'web_trained');
+  const otherDocs = docs.filter((d) => d.sourceType !== 'web_trained');
+  const pct = training && training.curriculumTotal > 0
+    ? Math.round((training.learned / training.curriculumTotal) * 100)
+    : 0;
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center py-16 text-sm text-muted-foreground">
+        <Loader2 className="mr-2 size-4 animate-spin" />
+        Loading training records…
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6 animate-in fade-in duration-300">
+      {/* Curriculum progress */}
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
+              <GraduationCap className="size-4" style={{ color: agentColor }} />
+              Live-Web Training Curriculum
+            </CardTitle>
+            <button
+              onClick={trainNow}
+              disabled={busy}
+              className="inline-flex items-center gap-1.5 rounded-lg px-3 py-1.5 text-[11px] font-medium text-emerald-300 bg-emerald-500/15 hover:bg-emerald-500/25 disabled:opacity-50 transition"
+            >
+              {busy ? <Loader2 className="size-3 animate-spin" /> : <GraduationCap className="size-3" />}
+              {busy ? 'Learning from the web…' : 'Train now (learn next unit)'}
+            </button>
+          </div>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="flex items-center justify-between text-xs">
+            <span className="text-foreground/60">
+              {training ? `${training.learned}/${training.curriculumTotal} curriculum units learned` : 'No curriculum data'}
+              {training?.lastTrainedAt && (
+                <span className="text-foreground/40"> · last trained {formatRelativeTime(training.lastTrainedAt)}</span>
+              )}
+            </span>
+            <span className="font-semibold" style={{ color: agentColor }}>{pct}%</span>
+          </div>
+          <div className="h-2 overflow-hidden rounded-full bg-secondary">
+            <div
+              className="h-full rounded-full transition-all duration-500"
+              style={{ width: `${pct}%`, background: `linear-gradient(90deg, ${agentColor}, ${agentColor}80)` }}
+            />
+          </div>
+          <p className="text-[11px] leading-relaxed text-muted-foreground">
+            Every unit runs a real internet search, reads real pages, and saves a fully-cited knowledge document to this
+            employee&apos;s knowledge base. Each session is recorded in their work log as a permanent training record.
+          </p>
+          {lastResult && (
+            <div className="rounded-lg border border-emerald-500/25 bg-emerald-500/[0.06] px-3 py-2 text-xs text-emerald-200/90">
+              {lastResult}
+            </div>
+          )}
+          {training && training.learnedTopics.length > 0 && (
+            <div className="space-y-1.5 pt-1">
+              {training.learnedTopics.map((t, i) => (
+                <div key={i} className="flex items-start gap-2 text-xs text-foreground/75">
+                  <BadgeCheck className="mt-0.5 size-3.5 shrink-0" style={{ color: agentColor }} />
+                  {t}
+                </div>
+              ))}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Learned documents (real) */}
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <CardTitle className="flex items-center gap-2 text-sm text-foreground/80">
+            <Brain className="size-4" style={{ color: agentColor }} />
+            Knowledge Learned From the Internet
+            <Badge variant="outline" className="ml-2 text-[10px] border-border text-foreground/40">
+              {webDocs.length} doc{webDocs.length === 1 ? '' : 's'}
+            </Badge>
+          </CardTitle>
+        </CardHeader>
+        <CardContent>
+          {webDocs.length === 0 ? (
+            <p className="py-6 text-center text-xs text-muted-foreground">
+              No web-learned documents yet — hit &ldquo;Train now&rdquo; and {agentName} will research the live web and save their first cited knowledge document.
+            </p>
+          ) : (
+            <div className="max-h-72 space-y-2 overflow-y-auto pr-1 [scrollbar-width:thin]">
+              {webDocs.map((d) => {
+                let domains: string[] = [];
+                try {
+                  const tags = d.tags ? (JSON.parse(d.tags) as string[]) : [];
+                  domains = tags.filter((t) => t.includes('.') && !t.startsWith('curriculum:') && t !== 'web_trained');
+                } catch { /* ignore */ }
+                return (
+                  <div key={d.id} className="rounded-lg border border-border/60 bg-secondary/20 px-3 py-2">
+                    <p className="text-xs font-medium text-foreground/85">{d.title}</p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      Learned {formatRelativeTime(d.updatedAt)}
+                      {domains.length > 0 ? ` · sources: ${domains.slice(0, 3).join(', ')}` : ''}
+                    </p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+          {otherDocs.length > 0 && (
+            <p className="mt-3 text-[10px] text-muted-foreground">
+              Plus {otherDocs.length} curated/knowledge-base document{otherDocs.length === 1 ? '' : 's'} in the Knowledge Base tab.
+            </p>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 }

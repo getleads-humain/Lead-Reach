@@ -7,15 +7,47 @@ import {
   recalculateAgentHealth,
 } from '@/lib/workforce/engine';
 import { seedWorkforceActivity } from '@/lib/workforce/activity-seeder';
+import { getTrainingStatus, trainAgentOnce, trainAllOnce } from '@/lib/workforce/training';
+import { runOpsCycle, getOpsStatus, getJobRegistry, startOpsLoop } from '@/lib/workforce/ops';
+import { assignGoal, listGoals } from '@/lib/workforce/goals';
 import type { WorkforceAgentDefinition } from '@/lib/workforce/definitions';
 
 /**
  * GET /api/workforce — List all workforce agents with stats
  * Optional query: ?includeStats=false — skip _count aggregation
+ * Optional query: ?view=ops — live ops status (real work logs, incidents, jobs)
+ * Optional query: ?view=training — fleet training status (curriculum progress)
+ * Optional query: ?view=goals — user-assigned goals with live progress
  */
 export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
+    const view = searchParams.get('view');
+
+    if (view === 'ops') {
+      const status = await getOpsStatus();
+      return NextResponse.json(status);
+    }
+
+    if (view === 'training') {
+      const status = await getTrainingStatus();
+      const totalLearned = status.reduce((s, a) => s + a.learned, 0);
+      const totalCurriculum = status.reduce((s, a) => s + a.curriculumTotal, 0);
+      return NextResponse.json({
+        status,
+        totals: {
+          curriculum: totalCurriculum,
+          learned: totalLearned,
+          percent: totalCurriculum > 0 ? Math.round((totalLearned / totalCurriculum) * 100) : 0,
+        },
+      });
+    }
+
+    if (view === 'goals') {
+      const goals = await listGoals();
+      return NextResponse.json({ goals });
+    }
+
     const includeStats = searchParams.get('includeStats') !== 'false';
     const agents = await listWorkforceAgents(includeStats);
     return NextResponse.json({ agents });
@@ -126,6 +158,45 @@ export async function POST(request: NextRequest) {
         { checked: results, count: results.length },
         { status: 200 }
       );
+    }
+
+    // ── Action: Run ONE real 24/7 ops cycle now (goals always first) ────
+    if (body.action === 'ops_tick') {
+      const result = await runOpsCycle();
+      return NextResponse.json(result, { status: result.ran ? 200 : 202 });
+    }
+
+    // ── Action: Ensure the 24/7 ops scheduler is running ──────────────
+    if (body.action === 'ops_ensure_loop') {
+      startOpsLoop(4 * 60 * 1000);
+      return NextResponse.json({ ensured: true, jobs: getJobRegistry() });
+    }
+
+    // ── Action: Train one agent (slug) or the whole fleet from the live web ──
+    if (body.action === 'train') {
+      if (typeof body.slug === 'string' && body.slug) {
+        const result = await trainAgentOnce(body.slug);
+        return NextResponse.json(result, { status: result.ok ? 200 : 422 });
+      }
+      const results = await trainAllOnce();
+      const okCount = results.filter(r => r.ok).length;
+      return NextResponse.json({
+        trained: results,
+        okCount,
+        total: results.length,
+        summary: `Trained ${okCount}/${results.length} agents on their next curriculum unit from live web sources.`,
+      });
+    }
+
+    // ── Action: Assign a goal to the team (decomposed + executed) ─────
+    if (body.action === 'assign_goal') {
+      const title = typeof body.title === 'string' ? body.title.trim() : '';
+      const detail = typeof body.detail === 'string' ? body.detail.trim() : null;
+      if (!title) {
+        return NextResponse.json({ error: 'Goal title is required' }, { status: 400 });
+      }
+      const goal = await assignGoal(title, detail);
+      return NextResponse.json({ goal }, { status: 201 });
     }
 
     // ── Action: Seed activity (chat messages + work logs) ────────────

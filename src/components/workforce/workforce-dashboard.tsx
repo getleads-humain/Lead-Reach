@@ -65,6 +65,7 @@ import {
   Shield,
   FolderOpen,
 } from 'lucide-react';
+import { MissionControl } from './mission-control';
 
 // ─── Data Types ────────────────────────────────────────────────────────────────
 
@@ -465,6 +466,9 @@ export function WorkforceDashboard({
       </header>
 
       <main className="mx-auto max-w-[1600px] space-y-6 px-4 py-6 sm:px-6">
+        {/* ─── 1b. Mission Control — real 24/7 ops, training & goals ─── */}
+        <MissionControl />
+
         {/* ─── 2. Global Metrics Bar ─── */}
         <section className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-5 lg:gap-4">
           {/* Total Agents */}
