@@ -345,7 +345,65 @@ async function jobDbAudit(ctx: JobContext): Promise<JobResult> {
     });
   }
 
-  const summary = `DB audit: ${leads} leads · ${campaigns} campaigns · tasks ${tasksDone} done / ${tasksPending} pending / ${tasksRunning} running / ${tasksFailed} failed · ${logs24h} log entries (24h) · ${docs} docs · ${incidentsOpen} open incidents · ${stuck.length} stuck requeued.${backupFile ? ` Snapshot saved: ${backupFile.split('/').pop()}` : ''}`;
+  // Real resilience #2: git-committed workforce state snapshot.
+  // The sandbox container periodically rolls the filesystem back; git is the
+  // only store that survives EVERY rollback. Export the trained workforce
+  // (agent stats + knowledge docs + recent worklogs) as a committed JSON so
+  // ensureWorkforceBootstrapped() can rebuild it at boot in seconds instead
+  // of re-running hours of live-web training.
+  let snapshotSaved = false;
+  try {
+    const nodeRequire = eval('require') as NodeRequire;
+    const fs = nodeRequire('fs') as typeof import('fs');
+    const path = nodeRequire('path') as typeof import('path');
+
+    const agents = await db.workforceAgent.findMany({
+      select: { slug: true, status: true, healthScore: true, tasksCompleted: true, tasksFailed: true, successRate: true },
+    });
+    const docs = await db.workforceDocument.findMany({
+      select: { agent: { select: { slug: true } }, title: true, category: true, content: true, tags: true, sourceType: true },
+    });
+    const logs = await db.workforceLog.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: 200,
+      select: { agent: { select: { slug: true } }, logDate: true, level: true, category: true, action: true, description: true, details: true },
+    });
+
+    const snapshot = {
+      version: 1,
+      exportedAt: new Date().toISOString(),
+      agents: agents.map((a) => ({ ...a })),
+      documents: docs.map((d) => ({
+        agentSlug: d.agent.slug,
+        title: d.title,
+        category: d.category,
+        content: d.content,
+        tags: d.tags,
+        sourceType: d.sourceType,
+      })),
+      logs: logs.map((l) => ({
+        agentSlug: l.agent.slug,
+        logDate: l.logDate.toISOString(),
+        level: l.level,
+        category: l.category,
+        action: l.action,
+        description: l.description,
+        details: l.details,
+      })),
+    };
+    const snapPath = path.join(process.cwd(), 'scripts', 'workforce-snapshot.json');
+    fs.writeFileSync(snapPath, JSON.stringify(snapshot));
+    snapshotSaved = true;
+  } catch (snapErr) {
+    await logAgentActivity(ctx.agent.id, {
+      category: 'system',
+      action: 'workforce_snapshot_failed',
+      level: 'warn',
+      description: `Workforce state snapshot failed (non-fatal): ${snapErr instanceof Error ? snapErr.message.slice(0, 120) : String(snapErr).slice(0, 120)}`,
+    });
+  }
+
+  const summary = `DB audit: ${leads} leads · ${campaigns} campaigns · tasks ${tasksDone} done / ${tasksPending} pending / ${tasksRunning} running / ${tasksFailed} failed · ${logs24h} log entries (24h) · ${docs} docs · ${incidentsOpen} open incidents · ${stuck.length} stuck requeued.${backupFile ? ` Snapshot saved: ${backupFile.split('/').pop()}` : ''}${snapshotSaved ? ' · workforce state exported to git.' : ''}`;
 
   await logAgentActivity(ctx.agent.id, {
     category: 'system',

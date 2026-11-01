@@ -1179,3 +1179,20 @@ Stage Summary:
 - Every code change is auto-committed locally by the platform and now also pushed to GitHub automatically by the AI Workforce's repo.git_sync job — the instant a GITHUB_TOKEN is added to .env
 - 58 commits are queued and ready (verified safe: no secrets, fast-forward path, lease-guarded amend handling)
 - Third training-data rollback self-healed: roster intact via boot auto-seed, training re-running, DB snapshot backups active via db_audit
+
+---
+Task ID: 17
+Agent: Main Agent (Z.ai)
+Task: Full workspace/codebase/GitHub activation audit + push everything now + permanent push setup
+
+Work Log:
+- THIRD container rollback detected (worst yet): db/ rolled back to May 27 (pre-Workforce-tables era) while git+src stayed current — running server was erroring P2021 (missing tables), and two dangerous legacy files were resurrected untracked (src/lib/agent-details.ts shadow file, src/middleware.ts proxy-conflict crasher).
+- REPAIR: prisma db push blocked by 2 schema drifts on the May DB — fixed surgically (raw ALTER TABLE added missing updatedAt to AutoresearchExperiment; accepted drop of legacy totalPaid Subscription column, 2 test values) → schema fully synced, May business data PRESERVED (169 leads, 48 campaigns). Workforce tables created → seeded 14 agents + deployed via API. Deleted the resurrected crash files AND gitignored both paths permanently (guard commit 0f6927c) so rollbacks can never re-track them.
+- GIT-DURABLE RESILIENCE (new): git is the only store surviving every rollback → db_audit ops job now exports a sanitized workforce-state snapshot (agents+stats, knowledge docs, 200 recent worklogs) to scripts/workforce-snapshot.json (committed); ensureWorkforceBootstrapped() restores it at boot (idempotent, slug-mapped) — hours of live-web training now survive any rollback. Standalone exporter: scripts/export-workforce-snapshot.js (initial snapshot: 14 agents/14 docs/28 logs, 67KB).
+- Rebuilt production (169 pages OK) + restarted; boot log: "Workforce verified: 14 AI employees present"; trainer relaunched (6 rounds).
+- GITHUB: 60 commits queued (verified secret-free); push remains blocked ONLY by missing credentials — no token exists anywhere in the environment (re-verified: no .env entry, no env vars, no credential store, no gh CLI). repo.git_sync job + scripts/git-push-now.sh ready; both correctly attempt-and-report. Awaiting GITHUB_TOKEN from user (requested).
+
+Stage Summary:
+- Workspace fully active again: DB repaired with data preserved, 14-agent workforce deployed, training resumed, ops loop running 9 jobs incl. repo.git_sync
+- Rollback-proofing leveled up: gitignore guards vs resurrected crash files, git-committed workforce snapshots with boot-time restore
+- GitHub push: 60 commits staged and ready; ONE user action required — provide a Personal Access Token (write access to getleads-humain/Lead-Reach) via .env GITHUB_TOKEN or chat

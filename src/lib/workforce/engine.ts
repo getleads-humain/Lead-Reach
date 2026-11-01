@@ -382,6 +382,8 @@ export async function seedWorkforceAgents() {
 export async function ensureWorkforceBootstrapped(): Promise<{
   seeded: boolean;
   agents: number;
+  restoredDocs?: number;
+  restoredLogs?: number;
 }> {
   const existing = await db.workforceAgent.count();
 
@@ -401,6 +403,92 @@ export async function ensureWorkforceBootstrapped(): Promise<{
     data: { status: 'active', lastActiveAt: new Date() },
   });
 
+  // ── Restore trained state from the git-committed snapshot ──────────
+  // The sandbox container periodically rolls the filesystem back (wiping
+  // DB rows). git is the only store that survives every rollback, so the
+  // db_audit ops job exports the workforce state to
+  // scripts/workforce-snapshot.json. Restore it here so hours of live-web
+  // training survive restarts and rollbacks.
+  let restoredDocs = 0;
+  let restoredLogs = 0;
+  try {
+    const nodeRequire = eval('require') as NodeRequire;
+    const fs = nodeRequire('fs') as typeof import('fs');
+    const path = nodeRequire('path') as typeof import('path');
+    const snapPath = path.join(process.cwd(), 'scripts', 'workforce-snapshot.json');
+    if (fs.existsSync(snapPath)) {
+      const snap = JSON.parse(fs.readFileSync(snapPath, 'utf-8')) as {
+        agents?: Array<{ slug: string; status?: string; healthScore?: number; tasksCompleted?: number; tasksFailed?: number; successRate?: number }>;
+        documents?: Array<{ agentSlug: string; title: string; category?: string; content?: string; tags?: string | null; sourceType?: string }>;
+        logs?: Array<{ agentSlug: string; logDate: string; level?: string; category?: string; action?: string; description?: string; details?: string | null }>;
+      };
+
+      const bySlug = new Map((await db.workforceAgent.findMany({ select: { id: true, slug: true } })).map((a) => [a.slug, a.id]));
+
+      // 1. Agent stats
+      for (const a of snap.agents ?? []) {
+        const id = bySlug.get(a.slug);
+        if (!id) continue;
+        await db.workforceAgent.update({
+          where: { id },
+          data: {
+            ...(typeof a.healthScore === 'number' ? { healthScore: a.healthScore } : {}),
+            ...(typeof a.tasksCompleted === 'number' ? { tasksCompleted: a.tasksCompleted } : {}),
+            ...(typeof a.tasksFailed === 'number' ? { tasksFailed: a.tasksFailed } : {}),
+            ...(typeof a.successRate === 'number' ? { successRate: a.successRate } : {}),
+          },
+        }).catch(() => {});
+      }
+
+      // 2. Knowledge docs (skip any that already exist — idempotent)
+      const existingTitles = new Set((await db.workforceDocument.findMany({ select: { title: true } })).map((d) => d.title));
+      for (const d of snap.documents ?? []) {
+        const agentId = bySlug.get(d.agentSlug);
+        if (!agentId || !d.title || existingTitles.has(d.title)) continue;
+        await db.workforceDocument.create({
+          data: {
+            agentId,
+            title: d.title,
+            category: d.category || 'knowledge',
+            content: d.content || '',
+            tags: d.tags ?? null,
+            sourceType: d.sourceType || 'manual',
+          },
+        }).catch(() => {});
+        restoredDocs += 1;
+      }
+
+      // 3. Recent worklogs (only when the log table is empty)
+      const logCount = await db.workforceLog.count();
+      if (logCount === 0) {
+        for (const l of snap.logs ?? []) {
+          const agentId = bySlug.get(l.agentSlug);
+          if (!agentId) continue;
+          const dt = new Date(l.logDate);
+          await db.workforceLog.create({
+            data: {
+              agentId,
+              logDate: dt,
+              year: dt.getUTCFullYear(),
+              month: dt.getUTCMonth() + 1,
+              day: dt.getUTCDate(),
+              hour: dt.getUTCHours(),
+              dayOfWeek: dt.getUTCDay(),
+              level: l.level || 'info',
+              category: l.category || 'system',
+              action: l.action || 'restored',
+              description: l.description || '',
+              details: l.details ?? null,
+            },
+          }).catch(() => {});
+          restoredLogs += 1;
+        }
+      }
+    }
+  } catch {
+    // Snapshot restore is best-effort — never block boot on it.
+  }
+
   const total = await db.workforceAgent.count();
-  return { seeded: true, agents: total };
+  return { seeded: true, agents: total, restoredDocs, restoredLogs };
 }
