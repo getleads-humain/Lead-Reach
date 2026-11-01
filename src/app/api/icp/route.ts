@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { buildICP, scoreLeadAgainstICP, type ICP as ICPType, type ICPCriteria } from '@/lib/agents/icp-builder';
+import { buildICP, scoreLeadAgainstICP, type ICPCriteria } from '@/lib/agents/icp-builder';
 
 // ============================================================
 // GET — List all ICP profiles
@@ -60,7 +60,11 @@ export async function POST(request: NextRequest) {
       if (!lead || !icp) {
         return NextResponse.json({ error: 'lead and icp are required for score action' }, { status: 400 });
       }
-      const result = scoreLeadAgainstICP(lead, icp as ICPType);
+      // Normalize the caller-supplied ICP through buildICP so every
+      // dimension exists with safe defaults — prevents TypeErrors (500)
+      // when callers pass a partial ICP (e.g. only name + industry).
+      const normalized = buildICP(icp as ICPCriteria);
+      const result = scoreLeadAgainstICP(lead, normalized);
       return NextResponse.json({ score: result });
     }
 

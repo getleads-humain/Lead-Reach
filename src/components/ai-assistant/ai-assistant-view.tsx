@@ -177,9 +177,18 @@ const RELATED_TOOLS: Record<string, string[]> = {
   build_icp: ['discover_leads', 'compose_outreach', 'enrich_data'],
   analyze_pipeline: ['discover_leads', 'compose_outreach', 'build_icp'],
   research_market: ['discover_leads', 'enrich_data', 'build_icp'],
+  // general_chat is the most common action emitted by smart-chat —
+  // it MUST have an entry (or the `|| []` fallback below fires) so the
+  // context panel suggests relevant tools after ordinary questions.
+  general_chat: ['discover_leads', 'build_icp', 'compose_outreach', 'analyze_pipeline'],
 };
 
 const PLATFORM_TIPS: Record<string, string[]> = {
+  general_chat: [
+    'Ask AI to discover leads, build an ICP, or draft outreach',
+    'The assistant can act — ask it to save results to your tools',
+    'Switch tools from the left panel anytime; your chat stays here',
+  ],
   discover_leads: [
     'Use specific industry keywords for better results',
     'Combine multiple channels for comprehensive coverage',
@@ -1278,7 +1287,10 @@ function PlatformContextPanel({
   onQuickAction: (prompt: string) => void;
 }) {
   const tips = lastActionType ? PLATFORM_TIPS[lastActionType] : null;
-  const relatedKeys = lastActionType ? RELATED_TOOLS[lastActionType] : [];
+  // `|| []` is critical: smart-chat emits action types beyond the
+  // RELATED_TOOLS keys (e.g. general_chat before it was mapped) — an
+  // undefined lookup here crashed the whole view with `.map of undefined`.
+  const relatedKeys = lastActionType ? RELATED_TOOLS[lastActionType] || [] : [];
   const relatedItems = relatedKeys
     .map(key => ACTION_NAV_MAP[key])
     .filter(Boolean)

@@ -46,8 +46,23 @@ async function main() {
     );
     const listed = await listRes.json();
     const found = listed.users?.find((u) => u.email === EMAIL);
-    if (!found) throw new Error('Could not create or find test user: ' + JSON.stringify(created));
-    console.log('# user already existed:', found.id);
+    if (!found) {
+      // Service role key may be rotated/invalid — fall back to a direct
+      // password grant probe. If sign-in succeeds the user exists and we
+      // can proceed; only truly-missing users need the Admin API.
+      const probe = await fetch(`${SUPABASE_URL}/auth/v1/token?grant_type=password`, {
+        method: 'POST',
+        headers: { apikey: ANON, Authorization: `Bearer ${ANON}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: EMAIL, password: PASSWORD }),
+      });
+      if (probe.ok) {
+        console.log('# user exists (verified via password grant; admin API key invalid)');
+      } else {
+        throw new Error('Could not create or find test user: ' + JSON.stringify(created));
+      }
+    } else {
+      console.log('# user already existed:', found.id);
+    }
   } else {
     console.log('# user created:', created.id);
   }

@@ -135,7 +135,20 @@ function loadConversations(): Conversation[] {
     const stored = localStorage.getItem(STORAGE_KEY);
     if (stored) {
       const parsed = JSON.parse(stored);
-      if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Sanitize: older/corrupt storage shapes (missing messages array,
+        // wrong types) would crash the engine on first .map() call.
+        return parsed
+          .filter((c: unknown): c is Conversation => !!c && typeof c === 'object' && typeof (c as Conversation).id === 'string')
+          .map((c: Conversation) => ({
+            ...c,
+            title: typeof c.title === 'string' ? c.title : 'Conversation',
+            lastMessage: typeof c.lastMessage === 'string' ? c.lastMessage : '',
+            timestamp: typeof c.timestamp === 'number' ? c.timestamp : Date.now(),
+            pinned: !!c.pinned,
+            messages: Array.isArray(c.messages) ? c.messages : [],
+          }));
+      }
     }
   } catch {
     // Ignore parse errors
@@ -209,7 +222,7 @@ export function useChatEngine(): ChatEngine {
       if (c.id !== activeConversationId) return c;
       return {
         ...c,
-        messages: c.messages.map(m =>
+        messages: (c.messages || []).map(m =>
           m.id === messageId ? { ...m, ...updates } : m
         ),
       };
@@ -244,13 +257,14 @@ export function useChatEngine(): ChatEngine {
     // Add user message + thinking indicator
     setConversations(prev => prev.map(c => {
       if (c.id !== convId) return c;
-      const updatedMessages = [...c.messages, userMessage, thinkingMessage];
+      const convMessages = Array.isArray(c.messages) ? c.messages : [];
+      const updatedMessages = [...convMessages, userMessage, thinkingMessage];
       return {
         ...c,
         messages: updatedMessages,
         lastMessage: content.trim().slice(0, 60),
         timestamp: Date.now(),
-        title: c.messages.length === 0
+        title: convMessages.length === 0
           ? content.trim().slice(0, 40) + (content.trim().length > 40 ? '...' : '')
           : c.title,
       };
@@ -645,7 +659,7 @@ export function useChatEngine(): ChatEngine {
         if (c.id !== activeConversationId) return c;
         return {
           ...c,
-          messages: c.messages.map(m =>
+          messages: (c.messages || []).map(m =>
             m.id === messageId
               ? {
                   ...m,

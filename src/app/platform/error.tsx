@@ -17,6 +17,16 @@ export default function PlatformError({
   reset: () => void;
 }) {
   console.error('[LeadReach] Platform error boundary caught:', error);
+  // Expose the caught error on window for diagnostics — lets support and
+  // QA read the exact stack from the console (window.__platformError)
+  // without needing dev tools attached at crash time.
+  if (typeof window !== 'undefined') {
+    (window as unknown as { __platformError?: unknown }).__platformError = {
+      message: error?.message,
+      stack: error?.stack,
+      digest: error?.digest,
+    };
+  }
 
   return (
     <div className="flex min-h-[60vh] flex-col items-center justify-center gap-6 px-4">

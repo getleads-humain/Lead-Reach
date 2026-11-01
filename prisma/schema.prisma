@@ -986,7 +986,7 @@ model Connector {
 
   // ── Identity & Classification ────────────────────────────────
   name          String                         // User-given name
-  connectorKey  String                         // Unique key (e.g. "hubspot-crm-prod")
+  connectorKey  String   @unique               // Unique key (e.g. "hubspot-crm-prod")
   type          String                         // crm, communication, data_enrichment, marketing, analytics, storage, database, payment, webhook, custom
   provider      String                         // hubspot, salesforce, slack, stripe, etc.
   version       String   @default("1.0.0")     // Connector version

@@ -12,25 +12,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/components/auth/auth-provider';
 import { AppShell } from '@/components/layout/app-shell';
-import { DashboardView } from '@/components/dashboard/dashboard-view';
-import { CampaignsView } from '@/components/campaigns/campaigns-view';
-import { CampaignDetailView } from '@/components/campaigns/campaign-detail-view';
-import { LeadsView } from '@/components/leads/leads-view';
-import { AgentsView } from '@/components/agents/agents-view';
-import { OutreachView } from '@/components/outreach/outreach-view';
-import { ReportsView } from '@/components/reports/reports-view';
-import { SetterView } from '@/components/setter/setter-view';
-import { BookingView } from '@/components/booking/booking-view';
-import { MessagingView } from '@/components/messaging/messaging-view';
-import { AnalyticsView } from '@/components/analytics/analytics-view';
-import { DataEnrichmentView } from '@/components/data-enrichment/data-enrichment-view';
-import { ProspectDiscoveryView } from '@/components/prospect-discovery/prospect-discovery-view';
-import { IdentityView } from '@/components/identity/identity-view';
-import { ICPView } from '@/components/icp/icp-view';
-import { AIAssistantView } from '@/components/ai-assistant/ai-assistant-view';
-import { ConnectorsView } from '@/components/connectors/connectors-view';
-import { WorkforceView } from '@/components/workforce/workforce-view';
-import { TokenRegistry } from '@/components/tokens/token-registry';
+import { PlatformView } from '@/components/layout/platform-views';
 import { useAppStore } from '@/lib/store';
 import { usePlanAccess, type ViewType } from '@/hooks/use-plan-access';
 import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
@@ -165,48 +147,8 @@ export default function AppPage() {
       );
     }
 
-    switch (activeView) {
-      case 'dashboard':
-        return <DashboardView />;
-      case 'campaigns':
-        return <CampaignsView />;
-      case 'campaign-detail':
-        return <CampaignDetailView />;
-      case 'leads':
-        return <LeadsView />;
-      case 'agents':
-        return <AgentsView />;
-      case 'setter':
-        return <SetterView />;
-      case 'booking':
-        return <BookingView />;
-      case 'messaging':
-        return <MessagingView />;
-      case 'outreach':
-        return <OutreachView />;
-      case 'analytics':
-        return <AnalyticsView />;
-      case 'reports':
-        return <ReportsView />;
-      case 'data-enrichment':
-        return <DataEnrichmentView />;
-      case 'prospect-discovery':
-        return <ProspectDiscoveryView />;
-      case 'identity':
-        return <IdentityView />;
-      case 'icp':
-        return <ICPView />;
-      case 'ai-assistant':
-        return <AIAssistantView />;
-      case 'connectors':
-        return <ConnectorsView />;
-      case 'workforce':
-        return <WorkforceView />;
-      case 'tokens':
-        return <TokenRegistry />;
-      default:
-        return <DashboardView />;
-    }
+    // All 17 sidebar tools render through the shared renderer
+    return <PlatformView view={activeView} />;
   };
 
   return <AppShell>{renderView()}</AppShell>;
