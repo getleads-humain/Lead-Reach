@@ -389,6 +389,127 @@ async function jobLlmProbe(ctx: JobContext): Promise<JobResult> {
   return { ok: true, summary, details: { ...health } };
 }
 
+// ── Job 4b: GitHub repository sync (reship the codebase upstream) ──────
+// Keeps github.com/getleads-humain/Lead-Reach perfectly in sync with the
+// workspace: commits any pending platform changes, then pushes all local
+// commits to origin/main. Auth comes from GITHUB_TOKEN (env or .env) via
+// the git credential store, so a token provided once works forever.
+
+function gitExec(cmd: string): { code: number; out: string } {
+  const nodeRequire = eval('require') as NodeRequire;
+  const { execSync } = nodeRequire('child_process') as typeof import('child_process');
+  try {
+    const out = execSync(cmd, {
+      cwd: '/home/z/my-project',
+      timeout: 120_000,
+      encoding: 'utf-8',
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    return { code: 0, out: (out || '').trim() };
+  } catch (err) {
+    const e = err as { status?: number; stdout?: string; stderr?: string };
+    return { code: e.status ?? 1, out: `${e.stdout || ''}${e.stderr || ''}`.trim().slice(0, 400) };
+  }
+}
+
+async function jobGitSync(ctx: JobContext): Promise<JobResult> {
+  // 1. Best-effort credential wiring: if GITHUB_TOKEN is present (env or
+  //    .env), persist it in the git credential store (write-once).
+  let tokenConfigured = false;
+  try {
+    const nodeRequire = eval('require') as NodeRequire;
+    const fs = nodeRequire('fs') as typeof import('fs');
+    const os = nodeRequire('os') as typeof import('os');
+    let token = process.env.GITHUB_TOKEN || process.env.GH_TOKEN || '';
+    if (!token) {
+      const envPath = '/home/z/my-project/.env';
+      if (fs.existsSync(envPath)) {
+        const m = fs.readFileSync(envPath, 'utf-8').match(/^GITHUB_TOKEN=(.+)$/m);
+        if (m) token = m[1].trim().replace(/^["']|["']$/g, '');
+      }
+    }
+    if (token) {
+      const credPath = `${os.homedir()}/.git-credentials`;
+      const existing = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf-8') : '';
+      if (!existing.includes('github.com')) {
+        fs.writeFileSync(credPath, `${existing}https://x-access-token:${token}@github.com\n`, { mode: 0o600 });
+      }
+      gitExec('git config credential.helper store');
+      tokenConfigured = true;
+    }
+  } catch { /* auth setup is best-effort; plain push may still work */ }
+
+  // 2. Commit any uncommitted platform changes (double-guard — the platform
+  //    auto-committer usually handles this already).
+  let committed = false;
+  const status = gitExec('git status --porcelain');
+  if (status.code === 0 && status.out.length > 0) {
+    const commit = gitExec('git add -A && git commit -m "workforce: checkpoint sync" --quiet');
+    committed = commit.code === 0;
+  }
+
+  // 3. Fetch and count how many commits are queued for GitHub.
+  gitExec('git fetch origin --quiet');
+  const aheadRaw = gitExec('git rev-list --count origin/main..HEAD');
+  const ahead = parseInt(aheadRaw.out || '0', 10) || 0;
+
+  if (ahead === 0) {
+    const summary = `GitHub sync: origin/main already up to date${committed ? ' (local checkpoint committed)' : ''}.`;
+    await logAgentActivity(ctx.agent.id, {
+      category: 'system',
+      action: 'git_sync',
+      description: summary,
+      details: JSON.stringify({ ahead: 0, committed, tokenConfigured }),
+    });
+    return { ok: true, summary, details: { ahead: 0, committed } };
+  }
+
+  // 4. Push. If the platform's auto-committer amended an already-pushed
+  //    commit, a normal push is rejected — retry once with a LEASE-GUARDED
+  //    force (only succeeds if no one else pushed in the meantime).
+  const remoteBefore = gitExec('git rev-parse origin/main').out;
+  let push = gitExec('git push origin main');
+  if (push.code !== 0) {
+    push = gitExec(`git push --force-with-lease=main:${remoteBefore} origin main`);
+  }
+
+  if (push.code !== 0) {
+    const reason = push.out.split('\n').filter(l => l.includes('fatal') || l.includes('rejected') || l.includes('error') || l.includes('Authentication') || l.includes('Username')) [0] || push.out.slice(0, 120);
+    const summary = `GitHub sync: push failed — ${reason}. ${ahead} commit(s) remain queued locally; retrying next cycle.`;
+    await logAgentActivity(ctx.agent.id, {
+      category: 'system',
+      action: 'git_sync',
+      level: 'warn',
+      description: summary,
+      details: JSON.stringify({ ahead, error: push.out.slice(0, 200), tokenConfigured }),
+    });
+    await postChat({
+      agentId: ctx.agent.id,
+      fromSlug: ctx.agent.slug,
+      content: `GitHub sync failed (${reason}). ${ahead} commits queued. ${tokenConfigured ? 'Check token validity/permissions.' : 'Add GITHUB_TOKEN to .env to enable pushes.'}`,
+      messageType: 'status_update',
+      taskId: ctx.taskId,
+    });
+    return { ok: false, summary, details: { ahead, error: push.out.slice(0, 200) } };
+  }
+
+  const summary = `GitHub sync: pushed ${ahead} commit(s) to getleads-humain/Lead-Reach main${committed ? ' (incl. fresh checkpoint)' : ''}.`;
+  await logAgentActivity(ctx.agent.id, {
+    category: 'system',
+    action: 'git_sync',
+    description: summary,
+    details: JSON.stringify({ ahead, committed, tokenConfigured }),
+  });
+  await postChat({
+    agentId: ctx.agent.id,
+    fromSlug: ctx.agent.slug,
+    content: summary,
+    messageType: 'status_update',
+    taskId: ctx.taskId,
+  });
+  return { ok: true, summary, details: { ahead, committed } };
+}
+
 // ── Job 5: Growth web research (build knowledge) ───────────────────────
 
 const RESEARCH_AGENDA = [
@@ -679,6 +800,7 @@ const JOB_REGISTRY: JobDef[] = [
   { id: 'growth.web_research', label: 'Growth web research', agentSlug: 'market-strategist', taskType: 'research', verb: 'researching the market on the live web', run: jobWebResearch },
   { id: 'sales.pulse', label: 'Prospecting signal pulse', agentSlug: 'sales-engine', taskType: 'research', verb: 'scanning live buying signals', run: jobSalesPulse },
   { id: 'ops.training_session', label: 'Workforce training session', agentSlug: 'synthetic-hr', taskType: 'training', verb: 'running a training session', run: jobTrainingSession },
+  { id: 'repo.git_sync', label: 'GitHub repository sync', agentSlug: 'devops-automator', taskType: 'maintenance', verb: 'syncing the codebase to GitHub', run: jobGitSync },
   { id: 'report.daily_brief', label: 'Platform daily brief', agentSlug: 'prometheus-ceo', taskType: 'analysis', verb: 'compiling the platform brief', run: jobDailyBrief },
 ];
 
