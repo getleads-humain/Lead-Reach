@@ -168,3 +168,8 @@ lib/crawl4ai-service/.cache/
 # Crawl4AI internal cache (browser cache, page cache)
 .crawl4ai-cache/
 .crawl4ai/
+
+# guard: files deleted intentionally (shadow agent-details/ dir; crash Next 16 with proxy.ts)
+# if a container rollback recreates them, git will never track them again
+/src/lib/agent-details.ts
+/src/middleware.ts
