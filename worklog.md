@@ -1196,3 +1196,24 @@ Stage Summary:
 - Workspace fully active again: DB repaired with data preserved, 14-agent workforce deployed, training resumed, ops loop running 9 jobs incl. repo.git_sync
 - Rollback-proofing leveled up: gitignore guards vs resurrected crash files, git-committed workforce snapshots with boot-time restore
 - GitHub push: 60 commits staged and ready; ONE user action required — provide a Personal Access Token (write access to getleads-humain/Lead-Reach) via .env GITHUB_TOKEN or chat
+
+---
+Task ID: 18
+Agent: Main Agent (Z.ai)
+Task: Verify every left-side-panel tool has full functionality — each user task completes as asked through the platform
+
+Work Log:
+- MAPPED the full tool surface: 17 sidebar tools (Ask AI, Dashboard, Prospect Discovery, ICP Builder, Campaigns, Leads, Enrichment, Connectors, Agents, AI Workforce, Token Registry, AI Setter, Bookings, Messaging, Outreach, Analytics, Reports) + AI Hub/KB links; extracted the complete UI→API workflow map (scripts/audit-tool-apis.js) and verified every referenced route exists (scripts/audit-ui-api-paths.js: 227 refs, 0 missing after fixes).
+- BUG 1 (silent tool loss): /platform's view switch handled only 12 of 17 tools — Ask AI, ICP Builder, Connectors, AI Workforce and Token Registry rendered the DASHBOARD instead; /portal was missing 7. FIX: new shared renderer src/components/layout/platform-views.tsx used by /app, /platform and /portal — every tool now works on every shell.
+- FOURTH env rollback detected: container recycle overwrote .env to DATABASE_URL-only → app ran in demo mode (auth broken: "Service not configured"). Restored all vars from .zscripts source; hardened scripts/spawn-build.js to load .env so NEXT_PUBLIC_* vars inline into client builds (the truncated-key build taught us build-time inlining is the failure point). Auth fully re-verified: sign-in, session cookie, profile, proxy protection all working.
+- BUG 2 (500): POST /api/connectors create crashed — connectorKey lacked @unique in Prisma schema (findUnique rejected). Added constraint (0 rows, no data loss) + wrote scripts/audit-findunique.js to sweep for the same bug class (0 remaining).
+- BUG 3 (404): UI "Test Connection" button called /api/connectors/[id]/test which DID NOT EXIST. Built the route: real endpoint probe (8s timeout), health metrics update, event logging, config-only connector handling. Full connector lifecycle now green: create → test → sync → toggle → events → delete.
+- BUG 4 (500): /api/icp action=score crashed on partial ICPs (scoreLeadAgainstICP accessed icp.firmographic.* unguarded). Fixed: route normalizes via buildICP before scoring.
+- BUG 5 (THE BIG ONE — intermittent Ask AI crash): "Cannot read properties of undefined (reading 'map')" crashed the workspace 3× during chat. Systematic hunt (error-boundary stack capture via console monkey-patch + chunk column extraction) pinned it: PlatformContextPanel did RELATED_TOOLS[lastActionType] with no fallback, and smart-chat emits general_chat — an UNMAPPED action — after ordinary questions. Deterministic repro on /portal. FIX: || [] fallback + general_chat entries in RELATED_TOOLS/PLATFORM_TIPS; plus chat-engine hardening (localStorage conversation sanitization, guarded every messages.map).
+- LIVE FUNCTIONAL TESTING: scripts/test-all-tools.js (46 checks) + test-all-tools-r2.js (26 checks) drove real tasks through every tool with an authenticated session: AI chat round-trips (chat + smart-chat SSE), prospect discovery with live web search, ICP build/score/save/delete, campaign CRUD + AI brief + pipeline status, lead CRUD + AI score/next-action/intelligence/execute-action/live-enrich, CSV import/enrich/analyze (FormData), connector lifecycle, agent execution, workforce roster/ops/tasks/training (devops-automator hit 6/6 curriculum — resume working), token registry scan, setter create + AI reply, booking suggestions, messaging compose, outreach compose + sequences, analytics insights, report generation. All green (2 LLM-burst timeouts passed on retry; 2 by-design 4xx responses).
+- BROWSER VERIFICATION: clicked through all 17 tools on /platform (correct views, real data: 171 leads, 48 campaigns, 14-agent workforce) + all 3 shells × 17 tools alive with ZERO page/console errors after fixes; drove real UI chat tasks incl. action-triggering prompts (ICP build, lead discovery, outreach) and the original crashing message — no crash, reply + context panel tips render.
+
+Stage Summary:
+- All 17 left-panel tools: full functionality verified end-to-end at API level AND in the real browser, across all three authenticated shells
+- 5 real bugs found and fixed (view dispatch, connector unique key, missing test route, ICP score crash, Ask AI general_chat crash) + 1 env-rollback repair + 2 audit tools committed for regression
+- GitHub: now 63 commits queued; still blocked ONLY on missing GITHUB_TOKEN (user action from Task 17 pending)
