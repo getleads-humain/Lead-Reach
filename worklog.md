@@ -1160,3 +1160,22 @@ Stage Summary:
 - /app, /platform, /portal now load perfectly every time: verified 200s across rounds, real-browser sign-in flow, zero console/server errors, error+loading boundaries on all three routes
 - AI Workforce data loss root-caused (container snapshot rollback) and made self-healing: boot-time auto-seed if workforce empty + online DB snapshot backups (last 5) via db_audit + verified schema sync so boot-time db:push can never wipe data again
 - Fleet re-training in progress via resumable driver + 24/7 ops loop; mission control streams real training work-logs to the user in real time
+
+---
+Task ID: 16
+Agent: Main Agent (Z.ai)
+Task: Keep the full codebase synced with github.com/getleads-humain/Lead-Reach — every update committed now and always
+
+Work Log:
+- AUDIT: workspace auto-commits all changes locally (verified: task-15 work was committed as f083f2b), but 57-58 commits had NEVER been pushed — origin/main was still at the June 22 merge; no GitHub credentials exist anywhere in the environment (no gh CLI, no tokens in env/.env, no credential store, no netrc). Push test failed: "could not read Username".
+- SAFETY VERIFICATION before any push: repo is PUBLIC (anonymous fetch works); .env and db/ are properly gitignored; historical .env commits (May, already on GitHub) contain only the local DATABASE_URL path — no secrets; working tree clean of secrets (git add -A dry-run empty). The 58 queued commits are safe to publish. Note for user: Supabase/ZHIPU keys live only in .env, which is ignored — good.
+- BUILT repo.git_sync ops job (src/lib/workforce/ops.ts): the AI Workforce now owns GitHub sync as a 24/7 duty (9th job in rotation, ~every 36 min) — commits pending platform changes, fetches, pushes queued commits to origin/main; lease-guarded force retry handles the platform auto-committer's amend-after-push race; GITHUB_TOKEN (env or .env) is wired once into the git credential store (mode 600); every attempt writes a worklog (success = "pushed N commits", failure = actionable warn visible in Mission Control Live Ops feed).
+- Created scripts/git-push-now.sh — immediate manual sync with identical logic (tested end-to-end: committed checkpoint, detected 58 queued commits, push correctly failed on missing auth with clear guidance).
+- Configured git credential.helper store (persists any future token).
+- RECOVERY (another container recycle during the session gap rolled the DB back again — training docs 0, agents roster survived): relaunched scripts/train-fleet.sh (6 rounds x 14 agents, tag-deduped, resumable); ops loop's ops.training_session + daily-brief directive ("if knowledge learned = 0 in 24h run training") continue rebuilding automatically. Server rebuilt (169 pages) + restarted; repo.git_sync confirmed registered in /api/workforce?view=ops (9 jobs).
+- BLOCKER (user action required): a GitHub Personal Access Token (classic, repo scope — write access to getleads-humain/Lead-Reach) must be provided once; it goes into .env as GITHUB_TOKEN (or given in chat) and every push thereafter is automatic.
+
+Stage Summary:
+- Every code change is auto-committed locally by the platform and now also pushed to GitHub automatically by the AI Workforce's repo.git_sync job — the instant a GITHUB_TOKEN is added to .env
+- 58 commits are queued and ready (verified safe: no secrets, fast-forward path, lease-guarded amend handling)
+- Third training-data rollback self-healed: roster intact via boot auto-seed, training re-running, DB snapshot backups active via db_audit
