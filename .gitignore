@@ -164,6 +164,18 @@ lib/crawl4ai-source/**/requirements.txt
 lib/crawl4ai-source/**/requirements*.txt
 lib/crawl4ai-source/**/*.lock
 lib/crawl4ai-source/sbom/
+# Upstream Python packaging manifests — Lead Reach imports crawl4ai as a
+# source tree via sys.path.insert (lib/crawl4ai-service/server.py), NEVER via
+# pip. Tracking these caused Dependabot false positives on crawl4ai's OWN
+# transitive deps (anyio, PyJWT, nltk, aiohttp, lxml, etc.).
+lib/crawl4ai-source/pyproject.toml
+lib/crawl4ai-source/setup.py
+lib/crawl4ai-source/setup.cfg
+lib/crawl4ai-source/MANIFEST.in
+lib/crawl4ai-source/**/pyproject.toml
+lib/crawl4ai-source/**/setup.py
+lib/crawl4ai-source/**/setup.cfg
+lib/crawl4ai-source/**/MANIFEST.in
 
 # Crawl4AI service runtime artifacts (regenerated on startup)
 lib/crawl4ai-service/server.pid
