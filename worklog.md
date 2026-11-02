@@ -1256,3 +1256,18 @@ Stage Summary:
 - All 84 CodeQL alerts addressed at root cause (not suppressed): 1 High security fix, 1 genuine data-flow bug fixed (contact signals), 4 dead-code warnings, 78 unused symbols
 - Typecheck/build/browser/API verification all green; zero regressions vs baseline
 - Awaiting CodeQL re-scan on 43d1fdd to confirm alerts auto-close
+
+---
+Task ID: 19 (completion)
+Agent: Main Agent (Z.ai)
+Task: CodeQL alerts fully resolved — final count 0 open (was 84)
+
+Work Log:
+- Re-scan after 43d1fdd: 84 -> 5 (multi-name import lines the cautious script skipped). Fixed all: connectors-view lucide block (Filter/Clock/Zap/ArrowRight/ChevronDown/Settings/Bell + later TooltipTrigger/Progress), token-registry (FileText/AlertCircle/Clock), sidebar (useAuth import — profile destructure was already removed earlier).
+- The platform auto-committer raced a couple of these edits (re-staging its own snapshot mid-fix); resolved by re-applying and verifying disk bytes each time.
+- Final verification: tsc zero NEW errors (connectors-view's 2 pre-existing errors confirmed present in pre-change baseline too); build clean; /app /platform /portal 200; final CodeQL run on the pushed commit: completed/success.
+- FINAL STATE: 0 open Code Scanning Alerts. All 84 fixed at root cause: 1 High (SSRF-class URL sanitization in ops.ts), 5 Warnings (1 real data-flow bug — crawl4ai contact signals now feed the LLM enrichment prompt; 4 dead-code warnings), 78 Notes (unused symbols across 42 files, net -77 lines).
+
+Stage Summary:
+- GitHub repo: 0 open code-scanning alerts; CodeQL/CI/Agentic Safety/Evals/Pages all green on latest main
+- Platform: rebuilt, restarted, all shells verified 200 post-change; repo.git_sync pushing normally
