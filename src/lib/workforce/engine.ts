@@ -7,7 +7,7 @@
  */
 
 import { db } from '@/lib/db';
-import { WORKFORCE_AGENT_MAP, type WorkforceAgentDefinition } from './definitions';
+import { type WorkforceAgentDefinition } from './definitions';
 
 // ── Types ──────────────────────────────────────────────────────────────
 

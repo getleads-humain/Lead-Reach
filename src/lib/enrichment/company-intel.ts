@@ -13,7 +13,7 @@
  * analogous to Relevance AI's Account Researcher agent.
  */
 
-import { callLLM, callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 import { db } from '@/lib/db';
 import { cacheCapabilityResult, getCapabilityResult } from './cache';
 
@@ -353,7 +353,6 @@ function buildBenchmarkIntelligence(lead: Record<string, any>, industry: string)
   const employees = lead.employeeCount || '';
   const revenue = lead.revenueEstimate || '';
 
-  const dealConfig = INDUSTRY_DEAL_SIZES[industry] || INDUSTRY_DEAL_SIZES['Business Services'];
   const isLargeCompany = /201-500|501-1000|1001-5000|5000+/.test(employees);
   const isSMB = /1-10|11-50/.test(employees);
 

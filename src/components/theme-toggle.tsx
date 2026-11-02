@@ -5,8 +5,8 @@ import { useEffect, useState } from 'react';
 import { Sun, Moon, Monitor } from 'lucide-react';
 
 export function ThemeToggle({ className = '' }: { className?: string }) {
-  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { resolvedTheme, setTheme } = useTheme();
 
   useEffect(() => setMounted(true), []);
 
@@ -50,8 +50,8 @@ export function ThemeToggle({ className = '' }: { className?: string }) {
 }
 
 export function ThemeToggleExpanded({ className = '' }: { className?: string }) {
-  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { theme, setTheme } = useTheme();
 
   useEffect(() => setMounted(true), []);
 

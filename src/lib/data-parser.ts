@@ -318,7 +318,6 @@ function parseXML(buffer: ArrayBuffer): ParsedData {
 
   // Extract all elements and their text content
   const tagRegex = /<(\w+)[^>]*>([\s\S]*?)<\/\1>/g;
-  const selfClosingRegex = /<(\w+)[^>]*\/>/g;
 
   // Find the repeating element pattern
   const elementCounts: Record<string, number> = {};
@@ -673,7 +672,6 @@ export function recommendCharts(profile: DataProfile): ChartRecommendation[] {
     c.dataType === 'string' && c.uniquePercent > 0 && c.uniquePercent < 80 && c.uniqueCount <= 30
   );
   const dateCols = profile.columns.filter(c => c.dataType === 'date' || c.semanticType === 'date');
-  const idCols = profile.columns.filter(c => c.uniquePercent > 95);
 
   // 1. Bar charts: categorical vs numeric
   for (const catCol of categoricalCols.slice(0, 5)) {

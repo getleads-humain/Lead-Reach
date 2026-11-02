@@ -16,9 +16,6 @@
  */
 
 import React, { useEffect, useState, useCallback } from 'react';
-import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   BookOpen,
@@ -37,7 +34,6 @@ import {
   Sparkles,
   ArrowLeft,
   Zap,
-  Activity,
   Layers,
   BarChart3,
   Compass,
@@ -182,8 +178,8 @@ const GRADE_STYLES: Record<string, { bg: string; text: string; border: string; g
 // ============================================================
 
 export default function KnowledgeAdminPage() {
-  const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);
+  const { theme, setTheme } = useTheme();
   const [stats, setStats] = useState<KnowledgeStats | null>(null);
   const [files, setFiles] = useState<KnowledgeFile[]>([]);
   const [activeCategory, setActiveCategory] = useState<string>('industry');
@@ -1402,99 +1398,3 @@ function PathTraceLoader({ size = 44, color = '#8b5cf6' }: { size?: number; colo
   );
 }
 
-/**
- * Isometric 3D Cube Decoration
- * Inspired by: https://uiverse.io/csemszepp/tiny-firefox-14
- * (Kept for reference but not rendered in the new design)
- */
-function IsometricCubes() {
-  return (
-    <div className="isometric-cubes">
-      <style>{`
-        @keyframes kb-isoHueRotate {
-          0% { filter: hue-rotate(0deg); }
-          100% { filter: hue-rotate(360deg); }
-        }
-        .isometric-cubes {
-          position: relative;
-          transform: skewY(-20deg);
-          animation: kb-isoHueRotate 8s linear infinite;
-        }
-        .iso-cube {
-          position: relative;
-        }
-        .iso-cube:nth-child(2) {
-          z-index: 1;
-          translate: -60px -60px;
-        }
-        .iso-cube:nth-child(3) {
-          z-index: 3;
-          translate: 60px 60px;
-        }
-        .iso-col {
-          position: absolute;
-          display: flex;
-          flex-direction: column;
-          gap: 30px;
-          translate: calc(-70px * var(--x)) calc(-60px * var(--y));
-        }
-        .iso-tile {
-          position: relative;
-          display: inline-block;
-          width: 40px;
-          height: 40px;
-          background: rgba(139, 92, 246, 0.15);
-          border: 1px solid rgba(139, 92, 246, 0.1);
-          z-index: calc(1 * var(--i));
-          transition: 1.5s;
-        }
-        .iso-tile:hover {
-          transition: 0s;
-          background: rgba(139, 92, 246, 0.6);
-          filter: drop-shadow(0 0 20px rgba(139, 92, 246, 0.5));
-        }
-        .iso-tile:hover::before,
-        .iso-tile:hover::after {
-          transition: 0s;
-          background: rgba(139, 92, 246, 0.5);
-        }
-        .iso-tile::before {
-          content: '';
-          position: absolute;
-          left: -32px;
-          width: 32px;
-          height: 100%;
-          background: rgba(139, 92, 246, 0.08);
-          border: 1px solid rgba(139, 92, 246, 0.05);
-          transform-origin: right;
-          transform: skewY(45deg);
-          transition: 1.5s;
-        }
-        .iso-tile::after {
-          content: '';
-          position: absolute;
-          top: -32px;
-          left: 0px;
-          width: 100%;
-          height: 32px;
-          background: rgba(139, 92, 246, 0.1);
-          border: 1px solid rgba(139, 92, 246, 0.05);
-          transform-origin: bottom;
-          transform: skewX(45deg);
-          transition: 1.5s;
-        }
-      `}</style>
-      {[0, 1, 2].map((cubeIdx) => (
-        <div key={cubeIdx} className="iso-cube">
-          {[-1, 0, 1].map((x) => (
-            <div key={x} className="iso-col" style={{ '--x': x, '--y': 0 } as React.CSSProperties}>
-              {[3, 2, 1].map((i) => (
-                <span key={i} className="iso-tile" style={{ '--i': i } as React.CSSProperties} />
-              ))}
-            </div>
-          ))}
-        </div>
-      ))}
-    </div>
-  );
-}

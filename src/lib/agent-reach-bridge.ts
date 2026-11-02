@@ -2505,14 +2505,10 @@ export async function runDoctor(): Promise<ToolResult<Record<string, unknown>>> 
 
 import {
   crawlUrl as crawl4aiCrawlUrl,
-  crawlUrlAdvanced as crawl4aiCrawlUrlAdvanced,
   deepCrawl as crawl4aiDeepCrawl,
   extractWithCSS as crawl4aiExtractCSS,
-  extractWithXPath as crawl4aiExtractXPath,
   extractWithLLM as crawl4aiExtractLLM,
-  extractWithRegex as crawl4aiExtractRegex,
   takeScreenshot as crawl4aiTakeScreenshot,
-  capturePdf as crawl4aiCapturePdf,
   generateSitemap as crawl4aiGenerateSitemap,
   crawlForLeads as crawl4aiCrawlForLeads,
   checkCrawl4AIStatus as crawl4aiCheckStatus,

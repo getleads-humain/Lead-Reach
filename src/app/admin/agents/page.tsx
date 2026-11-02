@@ -23,7 +23,7 @@ import { Button } from '@/components/ui/button';
 import { Progress } from '@/components/ui/progress';
 import {
   Activity, Shield, Zap, RefreshCw, AlertCircle, CheckCircle2,
-  Cpu, Database, Layers, Clock, Brain, Wrench,
+  Cpu, Layers, Clock, Brain, Wrench,
 } from 'lucide-react';
 
 interface AgentSpec {

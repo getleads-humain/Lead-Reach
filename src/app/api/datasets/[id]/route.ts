@@ -159,7 +159,6 @@ async function handleAIAnalyze(datasetId: string) {
   }
 
   // Lazy-load LLM
-  const { callLLM } = await import('@/lib/llm');
 
   const headers: string[] = JSON.parse(dataset.headers);
   const sampleRows: Record<string, unknown>[] = JSON.parse(dataset.sampleData).slice(0, 5);

@@ -19,7 +19,7 @@
  */
 
 import { useState, useEffect, useCallback } from 'react';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -107,12 +107,6 @@ const CATEGORY_COLORS: Record<string, string> = {
   config: 'text-zinc-400 border-zinc-500/20 bg-zinc-500/5',
 };
 
-const PRIORITY_COLORS: Record<string, string> = {
-  critical: 'text-red-400',
-  high: 'text-amber-400',
-  normal: 'text-blue-400',
-  low: 'text-zinc-400',
-};
 
 const STATUS_COLORS: Record<string, string> = {
   active: 'text-emerald-400',

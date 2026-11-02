@@ -3,7 +3,7 @@
 // ============================================================
 
 import type { AgentPersona, UserIntent, ConversationContext } from './types';
-import { retrieveContextForAgent, isKnowledgeAvailable, getKnowledgeSummary } from '@/lib/knowledge/integration';
+import { retrieveContextForAgent, isKnowledgeAvailable } from '@/lib/knowledge/integration';
 
 /**
  * The master system prompt that governs the agent's behavior.

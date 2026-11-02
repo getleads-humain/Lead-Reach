@@ -22,7 +22,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
   ChevronRight,
@@ -38,7 +37,6 @@ import {
   Server,
   Database,
   Shield,
-  DollarSign,
   MessageSquare,
   Target,
   Settings,
@@ -138,7 +136,6 @@ const MONTH_NAMES = [
   'July', 'August', 'September', 'October', 'November', 'December'
 ];
 
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 // ── Component ─────────────────────────────────────────────────────────
 

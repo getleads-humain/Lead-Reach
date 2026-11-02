@@ -137,7 +137,6 @@ export async function runAgenticWorkflow(
 
   // ── Step 3: Wall-clock budget ──
   const totalTimeoutMs = SOP_CONSTRAINTS.totalTimeoutMs;
-  const phaseTimeoutMs = opts.perPhaseTimeoutMs ?? SOP_CONSTRAINTS.perPhaseTimeoutMs;
   const timeoutController = new AbortController();
   const timeoutId = setTimeout(() => timeoutController.abort(), totalTimeoutMs);
 

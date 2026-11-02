@@ -43,9 +43,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { useAppStore } from '@/lib/store';
-import { AGENT_8_DISPLAY } from '@/lib/prospect-agent/orchestrator-types';
 import { AgenticPipelineWorkspace } from './agentic-pipeline-workspace';
 import { toast } from 'sonner';
 

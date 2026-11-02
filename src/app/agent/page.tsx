@@ -6,7 +6,6 @@ import { MarketingLayout } from '@/components/marketing/marketing-layout';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
-import { AGENT_DEFINITIONS } from '@/lib/types';
 import { hexToRgba } from '@/lib/utils';
 import {
   Brain,

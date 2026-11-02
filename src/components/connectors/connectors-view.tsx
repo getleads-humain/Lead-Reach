@@ -22,10 +22,10 @@ import { Badge } from '@/components/ui/badge';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuSeparator, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { TooltipTrigger } from '@/components/ui/tooltip';
 import { Progress } from '@/components/ui/progress';
 import {
   CONNECTOR_TEMPLATES,
@@ -96,7 +96,6 @@ function getIcon(iconName: string | null): React.ElementType {
 // ── Status Indicator ────────────────────────────────────────────
 
 function StatusDot({ status }: { status: string }) {
-  const config = STATUS_CONFIG[status as ConnectorStatus] || STATUS_CONFIG.disconnected;
   const pulseClass = status === 'connected' ? 'animate-pulse' : status === 'connecting' ? 'animate-pulse' : '';
   return (
     <span className={cn('relative flex h-2.5 w-2.5', pulseClass)}>
@@ -487,7 +486,9 @@ function ConnectorDetailPanel({
 
   const fetchDetail = useCallback(async () => {
     try {
-      const [detailRes, eventsRes] = await Promise.all([
+      // Only the connector detail is consumed here; the events feed is
+      // fetched by the events endpoint consumers directly.
+      const [detailRes] = await Promise.all([
         fetch(`/api/connectors/${connectorId}`),
         fetch(`/api/connectors/${connectorId}/events?limit=20`),
       ]);
@@ -510,7 +511,6 @@ function ConnectorDetailPanel({
     setTesting(true);
     try {
       const res = await fetch(`/api/connectors/${connector.id}/test`, { method: 'POST' });
-      const data = await res.json();
       if (res.ok) {
         await fetchDetail();
       }

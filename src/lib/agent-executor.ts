@@ -1007,6 +1007,8 @@ async function executeDataEnrichment(ctx: AgentExecutionContext): Promise<AgentE
                 : 0,
             });
             if (leadsResult.success) {
+              // Deterministic contact signals extracted straight from the site
+              // markup — more reliable than hoping the LLM spots them in prose.
               crawl4aiContactSignals = leadsResult.data.company;
             }
           }
@@ -1104,6 +1106,7 @@ ${JSON.stringify({
 })}
 
 Website content: ${websiteContent?.slice(0, 8000) || 'No website content available'}
+Contact signals extracted from site: ${JSON.stringify(crawl4aiContactSignals || {})}
 Search results: ${JSON.stringify(exaResult.success ? exaResult.data.slice(0, 5) : [])}
 LinkedIn people: ${JSON.stringify(linkedInPeopleData.slice(0, 3))}
 LinkedIn companies: ${JSON.stringify(linkedInCompanyData.slice(0, 3))}

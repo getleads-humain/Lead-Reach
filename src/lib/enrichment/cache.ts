@@ -12,7 +12,6 @@
  * TTL: 24 hours for standard entries, 1 hour for real-time data
  */
 
-import { db } from '@/lib/db';
 
 // ============================================================
 // Types

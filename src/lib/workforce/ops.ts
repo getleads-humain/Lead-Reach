@@ -494,9 +494,18 @@ async function jobGitSync(ctx: JobContext): Promise<JobResult> {
       const existing = fs.existsSync(credPath)
         ? fs.readFileSync(credPath, 'utf-8')
         : '';
+      // Parse each stored URL and drop only genuine github.com entries.
+      // Substring matching is unsafe here ("evil-github.com" would match);
+      // compare the parsed hostname exactly.
       const filtered = existing
         .split('\n')
-        .filter((line) => line.trim() && !line.includes('github.com'))
+        .filter((line) => {
+          const t = line.trim();
+          if (!t) return false;
+          const m = t.match(/^https:\/\/([^/@]+)@([^/]+)/);
+          if (!m) return true; // keep unrecognized lines untouched
+          return m[2] !== 'github.com';
+        })
         .join('\n');
       const prefix = filtered ? filtered + '\n' : '';
       fs.writeFileSync(

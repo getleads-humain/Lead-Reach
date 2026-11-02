@@ -30,7 +30,6 @@ import {
   ChevronDown,
   ChevronRight,
   Clock,
-  Zap,
   Activity,
   ArrowRight,
   Filter,
@@ -48,7 +47,6 @@ import {
   Cpu,
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
-import { Button } from '@/components/ui/button';
 import { AGENT_8_DISPLAY } from '@/lib/prospect-agent/orchestrator-types';
 
 // ── Types ──────────────────────────────────────────────────────────

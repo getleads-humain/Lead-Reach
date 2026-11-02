@@ -9,7 +9,6 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Input } from '@/components/ui/input';
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell, Legend, LineChart, Line, AreaChart, Area,
@@ -888,7 +887,8 @@ export function DataEnrichmentView() {
       if (missingPct > 20) {
         const impactPct = Math.round(missingPct * (totalRows / 100));
         let reason = '';
-        let priority: 'high' | 'medium' | 'low' = 'low';
+        // Priority ladder below always assigns; the 'low' seed was dead.
+        let priority: 'high' | 'medium' | 'low';
 
         if (col.type === 'url' || mappedField === 'website') {
           reason = `Enriching '${col.name}' would improve ${missingPct}% of leads' web presence data`;
@@ -1450,7 +1450,6 @@ export function DataEnrichmentView() {
                       {csvHeaders.map((header) => {
                         const validation = fieldValidations.find((v) => v.field === header);
                         const isValid = validation && validation.validPct >= 90 && validation.issues.length === 0;
-                        const isPartial = validation && validation.validPct >= 50 && (validation.validPct < 90 || validation.issues.length > 0);
                         const isInvalid = validation && validation.validPct < 50;
                         return (
                           <div key={header} className="flex items-center gap-2 p-2.5 rounded-md bg-secondary/50">

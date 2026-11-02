@@ -389,7 +389,7 @@ export async function POST(
 ) {
   const { id: leadId } = await params;
   const body: AutofillRequest = await request.json().catch(() => ({}));
-  const { mode = 'all', group, fields, upgradeTier = true } = body;
+  const { mode = 'all', group, fields } = body;
 
   const steps: AutofillResponse['steps'] = [];
   const fieldsFilled: FieldResult[] = [];

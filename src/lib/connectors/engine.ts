@@ -85,7 +85,6 @@ export async function testConnectorConnection(connector: {
   try {
     // Parse secrets and config
     const secrets = connector.secrets ? JSON.parse(connector.secrets) : {};
-    const config = connector.config ? JSON.parse(connector.config) : {};
     const headers = connector.headers ? JSON.parse(connector.headers) : {};
 
     // Provider-specific test logic

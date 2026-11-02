@@ -20,7 +20,7 @@
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import { callLLM, callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 
 export const maxDuration = 180;
 export const dynamic = 'force-dynamic';

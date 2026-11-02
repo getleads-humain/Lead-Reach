@@ -144,9 +144,6 @@ function findSimilarLeadsByKeywords(
   lead: Record<string, any>,
   limit: number,
 ): SimilarLeadResult[] {
-  const industry = lead.industry || '';
-  const country = lead.country || '';
-  const employeeCount = lead.employeeCount || '';
 
   // This is a simplified version — in production, this would use
   // the vector database for similarity search

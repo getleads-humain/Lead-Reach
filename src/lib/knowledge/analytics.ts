@@ -15,7 +15,7 @@
 // All functions are non-throwing. Analytics is best-effort.
 // ============================================================
 
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, renameSync } from 'fs';
+import { appendFileSync, existsSync, mkdirSync, readFileSync } from 'fs';
 import { join, resolve } from 'path';
 
 // ============================================================

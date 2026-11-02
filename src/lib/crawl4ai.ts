@@ -38,7 +38,6 @@
 import { exec } from 'child_process';
 import { promisify } from 'util';
 import { existsSync, readFileSync } from 'fs';
-import { join } from 'path';
 
 const execAsync = promisify(exec);
 
@@ -856,7 +855,7 @@ export async function crawlForLeads(
         (combined.match(linkedinRegex) || []).forEach(l => allLinkedin.add(l));
         (combined.match(twitterRegex) || []).forEach(t => allTwitter.add(t));
         if (!companyName && result.data.metadata.title) companyName = result.data.metadata.title.replace(/\s*[-|].*$/, '').trim();
-        if (!description && result.data.metadata.description) description = result.data.metadata.description;
+        description ||= result.data.metadata.description || '';
       } else if (result.error) {
         return { success: false, leads: [], companyInfo: { emails: [], phones: [], social: {} }, pagesCrawled: 0, rawContent: '', error: result.error };
       }

@@ -63,7 +63,6 @@ export interface EmbeddingCache {
 // ============================================================
 
 let cache: EmbeddingCache | null = null;
-let embeddingInProgress: Promise<void> | null = null;
 
 // ============================================================
 // Cache Management

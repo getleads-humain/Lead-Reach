@@ -22,8 +22,6 @@ import {
   type RetrievedDocument,
   type RetrievalQuery,
 } from './loader';
-import { retrieveKnowledgeSemantic } from './semantic';
-import { isSemanticReady } from './embeddings';
 
 // ============================================================
 // Types

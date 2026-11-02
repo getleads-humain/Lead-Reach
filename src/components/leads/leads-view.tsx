@@ -382,44 +382,7 @@ export function LeadsView() {
     nextBestChannel: string;
     outreachAngle: string;
   } | null>(null);
-  const [aiScoringLoading, setAiScoringLoading] = useState(false);
-  const [aiScoringError, setAiScoringError] = useState<string | null>(null);
 
-  // Run AI scoring for the currently selected lead
-  const generateAIScore = useCallback(async (lead: Lead) => {
-    if (!lead?.id) return;
-    setAiScoringLoading(true);
-    setAiScoringError(null);
-    try {
-      const data = await safeFetchJSON<{
-        scoring: {
-          overallScore: number;
-          tier: string;
-          confidence: number;
-          dimensions: Record<string, { score: number; rationale: string }>;
-          signals: { positive: string[]; negative: string[]; missing: string[] };
-          recommendedActions: string[];
-          riskFactors: string[];
-          nextBestChannel: string;
-          outreachAngle: string;
-        };
-        applied?: boolean;
-      }>(`/api/leads/${lead.id}/ai-score`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ applyUpdate: true }),
-      });
-      if (data?.scoring) {
-        setAiScoring(data.scoring);
-      } else {
-        setAiScoringError('AI scoring returned no result.');
-      }
-    } catch (err) {
-      setAiScoringError(err instanceof Error ? err.message : 'AI scoring failed');
-    } finally {
-      setAiScoringLoading(false);
-    }
-  }, []);
 
   // Action pipeline state
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
@@ -1228,7 +1191,6 @@ ${agentInput.trim()}`;
     setAiSuggestion(null);
     setAiSuggestionLoading(false);
     setAiScoring(null);
-    setAiScoringError(null);
     setActionItems([]);
     setEnrichedData({
       discoveredContacts: [],
@@ -1251,7 +1213,6 @@ ${agentInput.trim()}`;
     setAiSuggestion(null);
     setAiSuggestionLoading(false);
     setAiScoring(null);
-    setAiScoringError(null);
     setActionItems([]);
     setEnrichedData({
       discoveredContacts: [],
@@ -2383,9 +2344,11 @@ ${agentInput.trim()}`;
                         </Button>
                       </div>
 
-                      {/* Tier Upgrade Visualization */}
-                      {selectedLead && (
-                        <div className="mb-3">
+                      {/* Tier Upgrade Visualization — rendered inside the
+                          selectedLead-guaranteed detail sheet, so selectedLead is
+                          always non-null here (the old redundant guard always
+                          evaluated to true). */}
+                      <div className="mb-3">
                           <div className="flex items-center gap-1.5 mb-1.5">
                             <span className="text-[10px] text-muted-foreground">Current:</span>
                             <Badge variant="outline" className={`text-[9px] ${TIER_COLORS[selectedLead.leadTier as LeadTier] || ''}`}>
@@ -2400,7 +2363,6 @@ ${agentInput.trim()}`;
                           {/* Tier Progress Bar */}
                           <div className="flex items-center gap-1">
                             {['unqualified', 'cold', 'warm', 'hot', 'super_hot'].map((tier, idx) => {
-                              const thresholds = [0, 25, 45, 70, 88];
                               const currentIdx = ['unqualified', 'cold', 'warm', 'hot', 'super_hot'].indexOf(selectedLead.leadTier);
                               const isReached = idx <= currentIdx;
                               const isCurrent = tier === selectedLead.leadTier;
@@ -2428,7 +2390,6 @@ ${agentInput.trim()}`;
                             })}
                           </div>
                         </div>
-                      )}
 
                       {/* Pipeline Health Quick Stats */}
                       {liveEnrichResult?.pipelineHealth && (

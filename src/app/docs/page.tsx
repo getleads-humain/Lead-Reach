@@ -149,7 +149,6 @@ export default function DocsPage() {
           <div className="flex flex-wrap gap-2">
             {(['Getting Started', 'AI Agents', 'API Reference', 'Integrations'] as DocCategory[]).map((cat) => {
               const Icon = CATEGORY_ICONS[cat];
-              const count = DOC_SECTIONS.filter((s) => s.category === cat).length;
               const itemCount = DOC_SECTIONS
                 .filter((s) => s.category === cat)
                 .reduce((acc, s) => acc + s.items.length, 0);

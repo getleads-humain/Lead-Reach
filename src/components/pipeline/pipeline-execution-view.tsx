@@ -30,7 +30,6 @@ import {
   Activity,
 } from 'lucide-react';
 import { useAppStore } from '@/lib/store';
-import { useTheme } from 'next-themes';
 import { safeFetchJSON } from '@/lib/utils';
 import type { LeadTier } from '@/lib/types';
 import { TIER_COLORS } from '@/lib/types';

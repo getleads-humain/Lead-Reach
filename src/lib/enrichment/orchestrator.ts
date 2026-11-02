@@ -25,7 +25,7 @@
  */
 
 import { db } from '@/lib/db';
-import { callLLM, callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
+import { callLLMForJSON, MODEL_PRIMARY } from '@/lib/llm';
 import { cacheCapabilityResult, getCapabilityResult, invalidateLeadCache } from './cache';
 import { generateCompanyIntelligence, inferIndustryFromName, INDUSTRY_DEAL_SIZES, INDUSTRY_TECH_STACKS } from './company-intel';
 
@@ -110,7 +110,6 @@ export async function processBANT(leadId: string): Promise<EnrichmentStepResult>
     }
 
     const inferredIndustry = lead.industry || inferIndustryFromName(lead.companyName || '');
-    const isLargeCompany = /201-500|501-1000|1001-5000|5000+/.test(lead.employeeCount || '');
 
     // Build rich heuristic BANT first
     const heuristicResult = buildRichBANT(lead, inferredIndustry);
@@ -541,7 +540,6 @@ export async function processNextAction(leadId: string): Promise<EnrichmentStepR
     if (!lead) return { capability: 'next_action', status: 'failed', result: null, durationMs: Date.now() - start };
 
     const inferredIndustry = lead.industry || inferIndustryFromName(lead.companyName || '');
-    const hasEmail = !!(lead.keyContactEmail || lead.generalEmail);
 
     // Rich heuristic action
     const heuristicAction = buildRichNextAction(lead, inferredIndustry);
@@ -1057,7 +1055,6 @@ export async function runFullPipeline(leadId: string, capabilities?: EnrichmentC
 
 function buildRichBANT(lead: Record<string, any>, industry: string) {
   const companyName = lead.companyName || 'Unknown';
-  const isLargeCompany = /201-500|501-1000|1001-5000|5000+/.test(lead.employeeCount || '');
 
   const highNeedIndustries = ['Technology', 'Finance', 'Healthcare', 'Retail & E-Commerce', 'Manufacturing'];
   const needLevel = highNeedIndustries.includes(industry) ? 'high' : 'medium';
@@ -1141,7 +1138,6 @@ function buildRichNextAction(lead: Record<string, any>, industry: string): Recor
   const companyName = lead.companyName || 'the company';
   const stage = lead.stage || 'new';
   const hasEmail = !!(lead.keyContactEmail || lead.generalEmail);
-  const hasContact = !!lead.keyContactName;
   const contactName = lead.keyContactName || 'there';
 
   const stageActions: Record<string, Record<string, unknown>> = {

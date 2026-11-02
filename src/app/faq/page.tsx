@@ -18,7 +18,6 @@ import {
   Sparkles,
   MessageSquare,
   Shield,
-  Zap,
   CreditCard,
   Plug,
   Search,
@@ -38,7 +37,6 @@ import {
   Layers,
   Clock,
   Star,
-  ArrowUpRight,
 } from 'lucide-react';
 import {
   FAQ_ITEMS,

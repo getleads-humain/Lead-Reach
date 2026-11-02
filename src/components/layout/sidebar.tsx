@@ -75,7 +75,6 @@ const navItems: NavItem[] = [
 
 export function Sidebar() {
   const { activeView, setActiveView, sidebarCollapsed, setSidebarCollapsed } = useAppStore();
-  const { profile } = useAuth();
   const { canAccess, currentPlanId, isFreePlan } = usePlanAccess();
   const { theme, setTheme, resolvedTheme } = useTheme();
   const [mounted, setMounted] = useState(false);

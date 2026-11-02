@@ -13,7 +13,6 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
-import { Progress } from '@/components/ui/progress';
 import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Label } from '@/components/ui/label';
@@ -21,7 +20,6 @@ import {
   Tabs,
   TabsList,
   TabsTrigger,
-  TabsContent,
 } from '@/components/ui/tabs';
 import {
   Select,
@@ -43,17 +41,13 @@ import {
   Zap,
   Heart,
   Clock,
-  RefreshCw,
   Wrench,
   Shield,
   Database,
-  Globe,
   ChevronDown,
-  ChevronUp,
   CheckCircle2,
   XCircle,
   Loader2,
-  Circle,
   Send,
   Plus,
   Search,
@@ -68,27 +62,19 @@ import {
   Sparkles,
   Terminal,
   Server,
-  Lock,
-  Unlock,
-  FolderOpen,
   Upload,
   Timer,
   TrendingUp,
-  AlertCircle,
-  Pause,
-  RotateCcw,
   Layers,
   Target,
   Workflow,
   Gauge,
   CalendarClock,
   Building2,
-  Users,
   MessageCircle,
   BookOpen,
   Lightbulb,
   Rocket,
-  ArrowRight,
   Power,
   GraduationCap,
   BadgeCheck,
@@ -252,39 +238,17 @@ function priorityBadgeStyle(priority: string): string {
   }
 }
 
-// ─── Simulated Data (legacy — replaced by real DB fetches) ───────────────────
-// These functions are kept as fallbacks but no longer used for initialization.
-// Real data is fetched from /api/workforce/[id]/tasks and /api/workforce/[id]/logs.
-
-function generateSimulatedTasks(agentId: string): TaskData[] {
-  return [];
-}
-
-function generateSimulatedActivity(): ActivityEntry[] {
-  return [];
-}
-
-function generateSimulatedDocuments(): KnowledgeDoc[] {
-  return [];
-}
-
 // ─── Main Component ───────────────────────────────────────────────────────────
 
 export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
   // ── State ──────────────────────────────────────────────────────────────────
   const [activeTab, setActiveTab] = useState('overview');
   const [tasks, setTasks] = useState<TaskData[]>([]);
-  const [tasksLoading, setTasksLoading] = useState(true);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [chatLoading, setChatLoading] = useState(false);
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
-  const [activityLoading, setActivityLoading] = useState(true);
   const [documents, setDocuments] = useState<KnowledgeDoc[]>([]);
-  const [docsLoading, setDocsLoading] = useState(true);
-  const [docsError, setDocsError] = useState<string | null>(null);
-  const [viewerDoc, setViewerDoc] = useState<KnowledgeDoc | null>(null);
-  const [viewerLoading, setViewerLoading] = useState(false);
   const [uptime, setUptime] = useState(0);
 
   // Task creation form
@@ -341,7 +305,6 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
   // ── REAL: Fetch tasks from DB ──
   useEffect(() => {
     let cancelled = false;
-    setTasksLoading(true);
     fetch(`/api/workforce/${agent.id}/tasks?limit=20`)
       .then(async (res) => {
         if (!res.ok) throw new Error('Failed to fetch tasks');
@@ -359,15 +322,13 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         }));
         setTasks(dbTasks);
       })
-      .catch((err) => console.error('[AgentWorkspace] Task fetch error:', err))
-      .finally(() => { if (!cancelled) setTasksLoading(false); });
+      .catch((err) => console.error('[AgentWorkspace] Task fetch error:', err));
     return () => { cancelled = true; };
   }, [agent.id]);
 
   // ── REAL: Fetch activity log from DB (WorkforceLog) ──
   useEffect(() => {
     let cancelled = false;
-    setActivityLoading(true);
     fetch(`/api/workforce/${agent.id}/logs?limit=50`)
       .then(async (res) => {
         if (!res.ok) throw new Error('Failed to fetch logs');
@@ -383,16 +344,13 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
         }));
         setActivityLog(entries);
       })
-      .catch((err) => console.error('[AgentWorkspace] Activity fetch error:', err))
-      .finally(() => { if (!cancelled) setActivityLoading(false); });
+      .catch((err) => console.error('[AgentWorkspace] Activity fetch error:', err));
     return () => { cancelled = true; };
   }, [agent.id]);
 
   // ── REAL: Fetch documents from DB ──
   useEffect(() => {
     let cancelled = false;
-    setDocsLoading(true);
-    setDocsError(null);
     fetch(`/api/workforce/${agent.id}/documents?limit=100`)
       .then(async (res) => {
         if (!res.ok) throw new Error(`Failed to fetch documents: ${res.status}`);
@@ -411,9 +369,7 @@ export function AgentWorkspace({ agent, onBack }: AgentWorkspaceProps) {
       .catch((err) => {
         if (cancelled) return;
         console.error('[AgentWorkspace] Error fetching documents:', err);
-        setDocsError(err instanceof Error ? err.message : 'Failed to load documents');
-      })
-      .finally(() => { if (!cancelled) setDocsLoading(false); });
+      });
     return () => { cancelled = true; };
   }, [agent.id]);
 

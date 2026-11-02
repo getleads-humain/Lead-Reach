@@ -172,7 +172,6 @@ export async function seedWorkforceActivity(daysToGenerate = 7): Promise<{
   logEntries: number;
 }> {
   const { ALL_WORKFORCE_AGENTS } = await import('./definitions');
-  const { WORKFORCE_AGENT_MAP } = await import('./definitions');
 
   let totalChatMessages = 0;
   let totalLogEntries = 0;

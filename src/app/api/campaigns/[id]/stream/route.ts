@@ -26,7 +26,6 @@ import { processWithOrchestrator } from '@/lib/prospect-agent/orchestrator';
 import type { OrchestratorEvent } from '@/lib/prospect-agent/orchestrator-types';
 import { directDuckDuckGoSearch, type SearchResult } from '@/lib/direct-search';
 import {
-  onCampaignCreated,
   onLeadsDiscovered,
   onLeadEnriched,
   onLeadScored,

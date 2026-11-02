@@ -44,7 +44,8 @@ export interface GuardrailResult {
  */
 export function applyInputGuardrails(message: string): GuardrailResult {
   const violations: string[] = [];
-  let sanitized = message;
+  // PII redaction happens unconditionally below — no need to seed with the
+  // raw message first (that initial assignment was always overwritten).
 
   // ── Length cap ──
   if (message.length > 10_000) {
@@ -69,7 +70,7 @@ export function applyInputGuardrails(message: string): GuardrailResult {
   }
 
   // ── PII redaction (soft — sanitize but don't block) ──
-  sanitized = redactPii(message);
+  const sanitized = redactPii(message);
 
   return {
     passed: violations.length === 0,
