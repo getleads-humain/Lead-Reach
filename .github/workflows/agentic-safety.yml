@@ -40,21 +40,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: '24'
+          cache: npm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Generate Prisma client
-        run: bun run db:generate
+        run: npm run db:generate
         env:
           DATABASE_URL: file:./db/ci.db
 
       - name: Run safety eval suite
-        run: bun run scripts/evals/run-safety.ts
+        run: npx tsx scripts/evals/run-safety.ts
         env:
           DATABASE_URL: file:./db/ci.db
           ZHIPU_API_KEY: ci-placeholder-key

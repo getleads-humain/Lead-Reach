@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S npx tsx
 /**
  * Run the agentic eval suite (dry-run mode) and write the report to disk.
  * Used by .github/workflows/agentic-evals.yml.

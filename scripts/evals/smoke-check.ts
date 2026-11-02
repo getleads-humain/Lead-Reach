@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S npx tsx
 /**
  * Run a smoke check (3 fixtures, dry-run) and write the result to disk.
  * Used by .github/workflows/agentic-evals.yml as a fast sanity check.

@@ -1,4 +1,4 @@
-#!/usr/bin/env bun
+#!/usr/bin/env -S npx tsx
 /**
  * Run the safety eval suite and write the report to disk.
  * Used by .github/workflows/agentic-safety.yml.

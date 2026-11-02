@@ -45,28 +45,29 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v2
+      - name: Setup Node
+        uses: actions/setup-node@v4
         with:
-          bun-version: latest
+          node-version: '24'
+          cache: npm
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: npm ci
 
       - name: Generate Prisma client
-        run: bun run db:generate
+        run: npm run db:generate
         env:
           DATABASE_URL: file:./db/ci.db
 
       - name: Run eval suite (dry-run)
-        run: bun run scripts/evals/run-evals.ts
+        run: npx tsx scripts/evals/run-evals.ts
         env:
           DATABASE_URL: file:./db/ci.db
           EVAL_DRY_RUN: '1'
           ZHIPU_API_KEY: ci-placeholder-key
 
       - name: Smoke check
-        run: bun run scripts/evals/smoke-check.ts
+        run: npx tsx scripts/evals/smoke-check.ts
         env:
           DATABASE_URL: file:./db/ci.db
           EVAL_DRY_RUN: '1'
