@@ -1074,8 +1074,8 @@ x-request-id: req_8f3a2b1c9d4e7f06`,
   "active": true,
   "status": "pending_verification",
   "description": "CRM sync - leads and replies",
-  "secret": "whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
-  "secret_fingerprint": "whsec_xxxxxxxx",
+  "secret": "whsec_••••••••••••••••••••••••••••••••",
+  "secret_fingerprint": "whsec_••••••••",
   "metadata": {
     "environment": "production",
     "owner": "revenue-ops"
