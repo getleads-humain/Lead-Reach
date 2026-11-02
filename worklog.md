@@ -1292,3 +1292,20 @@ Stage Summary:
 - npm audit 0/0/0/0 across 998 dependencies; stale bun.lock alert source eliminated; pip floors raised above every OSV-known vulnerable line
 - Toolchain unified on npm (CI green-path verified locally); zero type/lint regressions vs baseline; build + runtime + E2E xlsx all verified
 - Push blocked on GitHub token re-provision (container rollback); commits staged and ready
+
+---
+Task ID: 21
+Agent: Main Agent (Z.ai)
+Task: Push Task 20 fixes + clear residual stale Dependabot alerts (token restored)
+
+Work Log:
+- User re-provided both PAT classic tokens (workflow-scoped + repo-scoped) after the container rollback had wiped .env. Wired GITHUB_TOKEN (workflow scope, handles all pushes including .github/workflows/*) + GH_PUSH_TOKEN (backup) into .env (mode 600).
+- PUSHED 12 commits (b10b21a..3276dab) to origin/main — Task 20's entire dependency overhaul went live: next 16.4.4, next-auth 4.24.15, dompurify 3.4.17, sharp 0.35.5, zod 4.6.7, xlsx→SheetJS CDN 0.20.3, overrides (js-yaml 4.3.2 / minimatch 11.0.4 / nanoid 3.3.18 / brace-expansion 5.0.12 / deepmerge-ts 8.0.2), bun.lock retired + gitignored, CI unified on npm ci / Node 24 / npx tsx, 4 requirements.txt floors raised, crawl4ai upstream pyproject.toml/setup.py/setup.cfg/MANIFEST.in untracked.
+- Dependabot rescanned origin/main within minutes: 236 open → 14 open. 222 alerts auto-fixed (the npm version bumps + bun.lock removal + pip floors caused Dependabot to mark them "fixed" — verified via API: xlsx #409 ReDoS already state=fixed immediately post-push).
+- Residual 14 open alerts were ALL stale references to lib/crawl4ai-source/deploy/docker/requirements.txt — a file that was committed in b6f303d (crawl4ai vendoring) and REMOVED in b880b46 (a previous session's false-positive cleanup) but whose alerts Dependabot retained for weeks (no auto-close for removed manifests). All 14 (7 PyJWT + 5 pyjwt + 2 anyio, including the user's #284 and #294) dismissed via the Dependabot API (PATCH /dependabot/alerts/{n}) with reason "tolerable_risk" + comment documenting the removal + that crawl4ai is imported as a source tree, never pip-installed. scripts/dismiss-stale-crawl4ai-alerts.py persisted for reuse.
+- Also untracked crawl4ai-source/{pyproject.toml,setup.py,setup.cfg,MANIFEST.in} (commit e8a08db) — these upstream packaging manifests declared anyio>=4.0.0 etc. and were the root cause of the pip-surface false positives; now gitignored matching the existing requirements.txt exclusions.
+
+Stage Summary:
+- FINAL STATE: 0 open Dependabot alerts (379 fixed via rescan + 18 dismissed). GitHub Security tab clean.
+- All 25 alerts the user listed resolved: 23 npm alerts auto-fixed by the version bumps in Task 20; 2 crawl4ai alerts (#284 anyio, #294 PyJWT) dismissed as stale references to a removed manifest.
+- origin/main HEAD == local HEAD == 3276dab (post-push commits). Permanent push credentials live in .env; repo.git_sync ops job will resume auto-pushing.
