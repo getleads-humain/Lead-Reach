@@ -1217,3 +1217,23 @@ Stage Summary:
 - All 17 left-panel tools: full functionality verified end-to-end at API level AND in the real browser, across all three authenticated shells
 - 5 real bugs found and fixed (view dispatch, connector unique key, missing test route, ICP score crash, Ask AI general_chat crash) + 1 env-rollback repair + 2 audit tools committed for regression
 - GitHub: now 63 commits queued; still blocked ONLY on missing GITHUB_TOKEN (user action from Task 17 pending)
+
+---
+Task ID: 17 (completion)
+Agent: Main Agent (Z.ai)
+Task: GitHub permanent push credentials wired + all queued code pushed + sync verified live
+
+Work Log:
+- USER CREDENTIALS RECEIVED: two PAT classics — "LeadReach Push" (repo scope) and "LeadReach Workflow [LeadReach CodeQL Fix]" (repo+workflow scope). Both verified via GitHub API (X-OAuth-Scopes): login getleads-humain, access to Lead-Reach confirmed.
+- FIRST PUSH ATTEMPT FAILED with the repo-scope token: "refusing to allow a Personal Access Token to create or update workflow `.github/workflows/agentic-evals.yml` without `workflow` scope" — queued commits include workflow-file changes, so repo scope alone is insufficient.
+- ROOT-CAUSED a credential-store flaw found during retry: both push paths (scripts/git-push-now.sh and jobGitSync in src/lib/workforce/ops.ts) wrote the credential store WRITE-ONCE — a stale/under-scoped token could never be replaced. FIXED both to always (re)write the store with the resolved token (ops.ts filters out old github.com lines first).
+- TOKEN ARCHITECTURE (permanent): .env GITHUB_TOKEN = workflow-scoped token (repo+workflow — pushes EVERYTHING incl. .github/workflows/*); GH_PUSH_TOKEN = repo-scope push token (fallback/API use). Credential store (mode 600) + credential.helper store configured. Rationale: the platform auto-committer regularly commits workflow-file changes, so all push duties must run on the workflow-scoped token.
+- PUSHED ALL 66 QUEUED COMMITS (67691ff..a44846f): local HEAD == GitHub origin/main verified via API (both a44846f...); ahead count 0. GitHub reported 236 Dependabot vulnerabilities on default branch (21 critical / 115 high / 82 moderate / 18 low) — flagged to user, separate remediation task.
+- SERVER REBUILT (ops.ts change) via spawn-build.js + restarted via spawn-server.js: workforce API 200 in ~5s, all 9 ops jobs registered incl. repo.git_sync.
+- VERIFIED PERMANENT SYNC LIVE: drove ops_tick rotation until repo.git_sync fired through the real production path — "GitHub sync: pushed 1 commit(s) to getleads-humain/Lead-Reach main (incl. fresh checkpoint)" in 2.3s. Its checkpoint commit (scripts/workforce-snapshot.json only) safety-audited: zero secrets (only env-var NAME references inside error-message strings).
+- GITHUB WORKFLOWS ALL GREEN on the new commits: CodeQL Security Analysis success, CI success, Agentic Evals success, Agentic Safety success, pages build and deployment success. The "CodeQL Fix" intent is delivered — CodeQL now runs and passes on the default branch.
+
+Stage Summary:
+- All 66 queued commits pushed; workspace/codebase/GitHub perfectly in sync (verified: HEAD == origin/main)
+- Permanent automated push LIVE: repo.git_sync ops job (~36 min rotation) + git-push-now.sh both verified pushing successfully with the workflow-scoped token; credential rotation now always takes effect
+- Task 18 (all 17 sidebar tools end-to-end) remains green from previous session — 5 bugs fixed, 46+26 automated checks + real-browser verification passed
