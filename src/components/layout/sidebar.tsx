@@ -3,7 +3,6 @@
 import React from 'react';
 import { useAppStore } from '@/lib/store';
 import type { ViewType } from '@/lib/types';
-import { useAuth } from '@/components/auth/auth-provider';
 import { usePlanAccess } from '@/hooks/use-plan-access';
 import { UpgradePrompt } from '@/components/billing/upgrade-prompt';
 import {

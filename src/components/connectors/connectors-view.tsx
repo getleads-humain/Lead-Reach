@@ -8,13 +8,12 @@
 
 import React, { useState, useEffect, useCallback } from 'react';
 import {
-  Plug, Plus, Search, Filter, RefreshCw, Activity, CheckCircle2,
+  Plug, Plus, Search, RefreshCw, Activity, CheckCircle2,
   XCircle, AlertTriangle, MoreVertical, Trash2, Power, PowerOff,
-  ExternalLink, Clock, Zap, Shield, Globe, Database, Code,
+  ExternalLink, Shield, Globe, Database, Code,
   Building2, Hash, Rocket, Mail, Send, BarChart3, HardDrive,
   CreditCard, Cloud, MessageSquare, Gamepad2, PieChart, Search as SearchIcon,
-  Globe as GlobeIcon, Webhook, ArrowRight, Loader2, ChevronDown,
-  Settings, Bell, TrendingUp, AlertCircle, Info, X,
+  Globe as GlobeIcon, Webhook, Loader2, TrendingUp, AlertCircle, Info, X,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { Button } from '@/components/ui/button';
