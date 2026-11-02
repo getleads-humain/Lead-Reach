@@ -472,7 +472,8 @@ function gitExec(cmd: string): { code: number; out: string } {
 
 async function jobGitSync(ctx: JobContext): Promise<JobResult> {
   // 1. Best-effort credential wiring: if GITHUB_TOKEN is present (env or
-  //    .env), persist it in the git credential store (write-once).
+  //    .env), persist it in the git credential store (overwriting any stale
+  //    or under-scoped token so rotation always takes effect).
   let tokenConfigured = false;
   try {
     const nodeRequire = eval('require') as NodeRequire;
@@ -487,11 +488,22 @@ async function jobGitSync(ctx: JobContext): Promise<JobResult> {
       }
     }
     if (token) {
+      // Always (re)write the credential store with the resolved token —
+      // write-once logic kept a stale/under-scoped token forever.
       const credPath = `${os.homedir()}/.git-credentials`;
-      const existing = fs.existsSync(credPath) ? fs.readFileSync(credPath, 'utf-8') : '';
-      if (!existing.includes('github.com')) {
-        fs.writeFileSync(credPath, `${existing}https://x-access-token:${token}@github.com\n`, { mode: 0o600 });
-      }
+      const existing = fs.existsSync(credPath)
+        ? fs.readFileSync(credPath, 'utf-8')
+        : '';
+      const filtered = existing
+        .split('\n')
+        .filter((line) => line.trim() && !line.includes('github.com'))
+        .join('\n');
+      const prefix = filtered ? filtered + '\n' : '';
+      fs.writeFileSync(
+        credPath,
+        `${prefix}https://x-access-token:${token}@github.com\n`,
+        { mode: 0o600 }
+      );
       gitExec('git config credential.helper store');
       tokenConfigured = true;
     }

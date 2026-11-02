@@ -13,7 +13,9 @@ TOKEN="${GITHUB_TOKEN:-}"
 if [ -z "$TOKEN" ] && [ -f .env ]; then
   TOKEN=$(grep -E '^GITHUB_TOKEN=' .env 2>/dev/null | head -1 | cut -d= -f2- | tr -d '"' | tr -d "'" | tr -d ' ')
 fi
-if [ -n "$TOKEN" ] && [ ! -f "$HOME/.git-credentials" ]; then
+# Always (re)write the credential store with the resolved token — write-once
+# logic kept a stale/under-scoped token forever and blocked rotation.
+if [ -n "$TOKEN" ]; then
   umask 077
   echo "https://x-access-token:${TOKEN}@github.com" > "$HOME/.git-credentials"
   git config credential.helper store
