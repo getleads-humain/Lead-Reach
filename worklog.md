@@ -1237,3 +1237,22 @@ Stage Summary:
 - All 66 queued commits pushed; workspace/codebase/GitHub perfectly in sync (verified: HEAD == origin/main)
 - Permanent automated push LIVE: repo.git_sync ops job (~36 min rotation) + git-push-now.sh both verified pushing successfully with the workflow-scoped token; credential rotation now always takes effect
 - Task 18 (all 17 sidebar tools end-to-end) remains green from previous session — 5 bugs fixed, 46+26 automated checks + real-browser verification passed
+
+---
+Task ID: 19
+Agent: Main Agent (Z.ai)
+Task: Fix ALL GitHub Code Scanning alerts (84 open: 1 High, 5 Warnings, 78 Notes) — codebase fully solved
+
+Work Log:
+- Fetched all 84 open CodeQL alerts with exact symbols/lines via GitHub code-scanning API (scripts/fetch-codeql-alerts.py; 82 unique locations across 42 files) — user pasted 49, API revealed 35 more (incl. Jun-era ones).
+- HIGH #456 (incomplete URL substring sanitization, ops.ts:499): MY OWN credential-store filter used line.includes('github.com') — spoofable (evil-github.com.attacker.io). Fixed with exact-hostname parsing: each stored credential URL is regex-parsed and only genuine github.com hosts are replaced. Verified live: repo.git_sync pushed successfully post-change (2.9s).
+- #450 Warning (agent-executor.ts): crawl4aiContactSignals was collected then DROPPED — real bug. Fixed by feeding the extracted emails/phones/social JSON into the LLM enrichment prompt (deterministic signals now enrich leads instead of being discarded).
+- 4 more Warnings: trivial always-true negation (crawl4ai.ts description ||=); dead priority seed (data-enrichment-view); dead sanitized seed (output-validator); redundant selectedLead guard (leads-view, outer guard at 1819 already guarantees).
+- 78 Notes (unused imports/vars/functions): first pass scripted (scripts/fix-codeql-unused.py — 40 clean line edits), then manual repair where the script hit multi-line constructs: agent-workspace legacy simulated-data orphan block removed + dead loading-state tuple members dropped (setters were writing state nothing read); knowledge-page orphaned IsometricCubes body (95 lines) removed; leads-view dead generateAIScore useCallback body removed; token-registry orphaned PRIORITY_COLORS entries removed; agent-reach-bridge import aliases restored after mangling (crawl4ai import list rebuilt correctly); smart-autofill mode/group/fields destructuring restored minus upgradeTier; data-enrichment isValid restored (used in JSX); theme-toggle/sidebar/knowledge useTheme destructures narrowed to actually-used members; auth'd knowledge theme-switch preserved.
+- VERIFICATION: tsc --noEmit — ZERO new error files vs pre-change baseline (2 script-introduced regressions caught & fixed during pass); production build clean (169 pages, "Compiled successfully in 35.2s"); server restarted — /app /platform /portal 200 with zero error markers; edited pages (/docs /faq /knowledge /agent) all 200; live API tests green: enrichment/analyze (file upload 200 + profile), leads/smart-autofill (success:true on real lead), connectors, workforce, repo.git_sync (end-to-end push).
+- PUSHED: all fixes on GitHub as 43d1fdd (42 files, +184/-261 — net 77 lines of dead code deleted). CodeQL Security Analysis + CI + Agentic Evals + Agentic Safety re-triggered on the commit.
+
+Stage Summary:
+- All 84 CodeQL alerts addressed at root cause (not suppressed): 1 High security fix, 1 genuine data-flow bug fixed (contact signals), 4 dead-code warnings, 78 unused symbols
+- Typecheck/build/browser/API verification all green; zero regressions vs baseline
+- Awaiting CodeQL re-scan on 43d1fdd to confirm alerts auto-close
