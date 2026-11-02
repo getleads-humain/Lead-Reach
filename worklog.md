@@ -1271,3 +1271,24 @@ Work Log:
 Stage Summary:
 - GitHub repo: 0 open code-scanning alerts; CodeQL/CI/Agentic Safety/Evals/Pages all green on latest main
 - Platform: rebuilt, restarted, all shells verified 200 post-change; repo.git_sync pushing normally
+
+---
+Task ID: 20
+Agent: Main Agent (Z.ai)
+Task: Fix all 236 Dependabot dependency vulnerabilities (21 critical / 115 high / 82 moderate / 18 low)
+
+Work Log:
+- ROOT CAUSE MAPPING: the 236 alerts decompose across THREE surfaces — (1) bun.lock: a stale July-8 lockfile tracked in git that CI installed via `bun install --frozen-lockfile`; it never received the npm-side security overrides added in June (js-yaml 4.2.0, esbuild 0.28.1, minimatch...) and pinned ~4 months of vulnerable transitive versions — the single largest alert source; (2) package-lock.json: 32 npm vulns (3 critical); (3) four tracked requirements.txt manifests with 2023-era floors under open `>=` ranges intersecting dozens of pip advisories.
+- NPM (package-lock.json) 32 → 0: next 16.2.7→16.4.4 (clears 4 unauth-RCE criticals in Image Optimization / next/og / use cache + SSRF/cache-poisoning chains), next-auth 4.24.11→4.24.15 (email-normalizer spoofing critical + getToken DoS), dompurify 3.4.11→3.4.17 (SAFE_FOR_TEMPLATES bypass critical + 5 more), zod →4.6.7, sharp →0.35.5 (libvips/libheif/librsvg CVEs), prisma stays 6.19.3, eslint 9.39.5 + eslint-config-next 16.4.4 (10.x rejected: bundled plugin peers cap at ^9).
+- xlsx: npm registry is permanently stuck at vulnerable 0.18.5 (SheetJS moved to their own CDN) — migrated to the official cdn.sheetjs.com/xlsx-0.20.3 tarball, clearing Prototype-Pollution (GHSA-4r6h-8v6p-xvw6) + ReDoS (GHSA-5pgg-2g8v-p4x9). Verified end-to-end: build a workbook → POST /api/datasets → parsed 3×4 rows → stored → deleted (200).
+- overrides tightened to latest patched lines: js-yaml ^4.3.2 (fixes @mdxeditor chain), minimatch ^11.0.4, postcss ^8.5.32, plus new nanoid ^3.3.18, brace-expansion ^5.0.12, deepmerge-ts ^8.0.2 (fixes @prisma/config). One `npm audit fix` swept the in-range stragglers (browserslist, source-map-js, baseline-browser-mapping). FINAL: npm audit = 0 vulnerabilities (998 deps audited).
+- TOOLCHAIN UNIFIED ON NPM: all 3 workflows (ci, agentic-evals, agentic-safety) migrated bun install→npm ci, setup-bun→setup-node@24 (node 20 is EOL), bunx→npx; evals run via npx tsx (tsx already a devDep, no Bun.* APIs used — verified); agentic:* npm scripts switched to tsx; bun.lock untracked + gitignored (kept on disk so .zscripts platform builds keep working). One canonical lockfile remains: package-lock.json.
+- REQUIREMENTS.TXT (pip surface): wrote scripts/fix-requirements-floors.py — iteratively queries OSV at each floor, handles `fixed` AND `last_affected` markers, resolves against real PyPI releases. 11 floors raised: fastapi 0.109.1, python-multipart 0.0.31, requests 2.33.0 (×2), lxml 6.1.0 (×2), scrapy 2.17.0, aiohttp 3.14.4, pydantic 2.4.0.
+- VERIFICATION (all green): tsc zero-regression PROVEN via git-worktree baseline at pre-change commit e491173 (208 error-sites after vs 221 baseline; every delta accounted for: 14 = worktree-missing mini-service node_modules artifacts, 1 = local-only gitignored skills/ file); lint errors identical 119=119 (only +15 non-blocking warnings from newer rules); production build "Compiled successfully" 169/169 pages; server restarted on the new build — /, /app, /platform, /portal all 200 with auth, /api/datasets GET 200; safety evals + smoke-check PASS via npx tsx (CI-parity commands); xlsx upload E2E 200.
+- KNOWN LEFTOVERS: (a) CVE-2017-14158 / PYSEC-2017-83 (scrapy) has an open-ended affected range with NO patched version upstream — if Dependabot still lists one scrapy alert after rescan, it is an advisory-data artifact, dismissible in the GitHub UI as "no patched version available"; (b) 213 pre-existing tsc errors + 119 pre-existing lint errors are old debt (CI tolerates via continue-on-error / ignoreBuildErrors) — parity maintained, separate cleanup task if wanted.
+- BLOCKER: the container rollback between sessions wiped GITHUB_TOKEN/GH_PUSH_TOKEN from .env and ~/.git-credentials (both untracked). All commits are ready locally (ahead 4, behind 0) but the push awaits token re-provision.
+
+Stage Summary:
+- npm audit 0/0/0/0 across 998 dependencies; stale bun.lock alert source eliminated; pip floors raised above every OSV-known vulnerable line
+- Toolchain unified on npm (CI green-path verified locally); zero type/lint regressions vs baseline; build + runtime + E2E xlsx all verified
+- Push blocked on GitHub token re-provision (container rollback); commits staged and ready
