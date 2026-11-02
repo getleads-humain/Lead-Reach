@@ -1309,3 +1309,20 @@ Stage Summary:
 - FINAL STATE: 0 open Dependabot alerts (379 fixed via rescan + 18 dismissed). GitHub Security tab clean.
 - All 25 alerts the user listed resolved: 23 npm alerts auto-fixed by the version bumps in Task 20; 2 crawl4ai alerts (#284 anyio, #294 PyJWT) dismissed as stale references to a removed manifest.
 - origin/main HEAD == local HEAD == 3276dab (post-push commits). Permanent push credentials live in .env; repo.git_sync ops job will resume auto-pushing.
+
+---
+Task ID: 22
+Agent: Main Agent (Z.ai)
+Task: Fix GitHub Secret Scanning alert #3 (Stripe webhook secret in docs) + recover from container rollback that wiped Task 20/21 from origin
+
+Work Log:
+- SECRET SCANNING ALERT #3: Stripe webhook signing secret whsec_4f9c2a8e7b1d6034ab12cd56ef9087ab detected in src/lib/docs-content/api-reference.ts:1077 (committed in d6366c8, crawl4ai vendoring). INVESTIGATION: the value sits inside a fabricated JSON code-sample block (caption: "201 Created response with secret") — every surrounding value is fake (id is a ULID not a Stripe we_ ID; url is hooks.crm.example.com; events are custom names). The app's REAL webhook handler (src/app/api/stripe/webhook/route.ts:28) reads process.env.STRIPE_WEBHOOK_SECRET! — the docs string is not an active credential. Replaced the secret + its 8-char fingerprint with whsec_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx / whsec_xxxxxxxx (x is not a hex digit → won't match Stripe's whsec_[a-f0-9]{32} pattern). Dismissed alert #3 as false_positive via PATCH /secret-scanning/alerts/3 (HTTP 200).
+- CRITICAL ROLLBACK RECOVERY: between sessions the container rolled back, resetting local .git to the Task 19 era (HEAD=96d89da) and wiping the .env (Supabase keys + GitHub tokens). The platform auto-committer then force-pushed the rolled-back (pre-Task-20) history to origin/main, WIPING Task 20/21 commits (c7a28f4 security deps, 2d539e4 worklog, e8a08db crawl4ai untrack, bd52c1e Task 21 worklog) from origin — which would have re-opened all 236 Dependabot alerts. Detected via post-push commit-ancestry verification. RECOVERED: the commit objects survived in the local object store (git cat-file -t confirmed) AND on GitHub's API (dangling, not yet GC'd). Reset local to bd52c1e (Task 21 tip) + cherry-picked the secret fix → 9ab6cbc. Force-pushed (--force-with-lease) the recovered complete history to origin. Verified post-recovery: all Task 20/21 commits on origin, npm audit=0, Dependabot open=0, secret alert dismissed.
+- Restored GITHUB_TOKEN + GH_PUSH_TOKEN to .env (mode 600) + ~/.git-credentials from the PATs provided last session (still valid). NOTE: the broader .env keys (NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, NEXT_PUBLIC_SUPABASE_ANON_KEY, DIRECT_URL, ZHIPU_API_KEY) were ALSO wiped by the rollback and could NOT be restored (not in conversation history). Local node_modules is stale-cached at next 16.2.7 while package-lock.json correctly pins 16.4.4 — origin/CI/Dependabot are unaffected (lockfile is canonical); a local npm install + rebuild is needed once Supabase keys are restored.
+
+Stage Summary:
+- GitHub Secret Scanning: 0 open alerts (#3 dismissed as false_positive — fabricated docs example; app uses env var for real secret).
+- Dependabot: 0 open (Task 20/21 recovered on origin, lockfile intact).
+- origin/main HEAD = 9ab6cbc (Task 20 + Task 21 + secret fix), in sync with local.
+- BLOCKER for local rebuild: .env lost Supabase keys in the rollback — user must restore NEXT_PUBLIC_SUPABASE_URL / SUPABASE_SERVICE_ROLE_KEY / NEXT_PUBLIC_SUPABASE_ANON_KEY for the production build to inline client auth config.
+- ADVISORY: repo is PUBLIC. The dismissed secret is a docs-example string (not a real credential), but if the user ever pasted a real whsec_ value as the "example", they should verify on Stripe Dashboard → Developers → Webhooks and rotate if it matches any live endpoint (it remains in reachable git history d6366c8→bd52c1e).
